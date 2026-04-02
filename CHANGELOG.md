@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.7.6](https://github.com/spokvulcan/poker-planning/compare/agilekit-v2.7.5...agilekit-v2.7.6) (2026-04-01)
+
+
+### Miscellaneous
+
+* **deps:** bump brace-expansion ([#178](https://github.com/spokvulcan/poker-planning/issues/178)) ([958d2a5](https://github.com/spokvulcan/poker-planning/commit/958d2a5e2b7a64ebcc003983c3853c023505276c))
+* **deps:** bump picomatch ([#177](https://github.com/spokvulcan/poker-planning/issues/177)) ([c5a5943](https://github.com/spokvulcan/poker-planning/commit/c5a5943727276e19b7ddf89df65b5886d688dbb9))
+* **deps:** bump yaml from 2.8.2 to 2.8.3 ([#176](https://github.com/spokvulcan/poker-planning/issues/176)) ([70d1925](https://github.com/spokvulcan/poker-planning/commit/70d192525eecba499784f8eb7fc94ac5afea465f))
+
 ## [2.7.5](https://github.com/spokvulcan/poker-planning/compare/agilekit-v2.7.4...agilekit-v2.7.5) (2026-03-26)
 
 
