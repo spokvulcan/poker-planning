@@ -33,7 +33,7 @@
     "feed": "5.2.0",
     "github-slugger": "2.0.0",
     "gray-matter": "4.0.3",
-    "lodash": "4.17.23",
+    "lodash": "4.18.1",
     "lucide-react": "0.575.0",
     "next": "16.1.7",
     "next-mdx-remote-client": "2.1.9",
