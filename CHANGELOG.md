@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.7.7](https://github.com/spokvulcan/poker-planning/compare/agilekit-v2.7.6...agilekit-v2.7.7) (2026-04-04)
+
+
+### Miscellaneous
+
+* **deps:** bump defu from 6.1.4 to 6.1.6 ([#182](https://github.com/spokvulcan/poker-planning/issues/182)) ([af67cce](https://github.com/spokvulcan/poker-planning/commit/af67cce47fb2f470aa97408bdf97e907a652b054))
+* **deps:** bump lodash from 4.17.23 to 4.18.1 ([#180](https://github.com/spokvulcan/poker-planning/issues/180)) ([a356263](https://github.com/spokvulcan/poker-planning/commit/a35626388856cbdce978e32bf2901188c21c5d9c))
+
 ## [2.7.6](https://github.com/spokvulcan/poker-planning/compare/agilekit-v2.7.5...agilekit-v2.7.6) (2026-04-01)
 
 
