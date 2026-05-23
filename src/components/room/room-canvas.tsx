@@ -93,6 +93,15 @@ function RoomCanvasInner({ roomData, currentUserId, isDemoMode = false, isEmbedd
   // Permission flags for the current user
   const permissions = usePermissions(roomData, currentUserId);
 
+  // Stable wrapper so passing it into useCanvasNodes doesn't change identity on
+  // every render. `permissions` is memoized, so this only changes when it does.
+  // Without this, the inline arrow recreated `nodes` each render, retriggering
+  // the setNodes effect in an infinite loop.
+  const canRemoveTarget = useCallback(
+    (targetRole: MemberRole) => permissions.removeTarget(targetRole).allowed,
+    [permissions]
+  );
+
   // Stable ref for roomId - prevents callback recreation on roomData changes
   // Based on Vercel React Best Practices: advanced-use-latest
   const roomIdRef = useLatest(roomData.room._id);
@@ -152,6 +161,30 @@ function RoomCanvasInner({ roomData, currentUserId, isDemoMode = false, isEmbedd
     setIsSettingsOpen(false);
     setIsIssuesPanelOpen(true);
   }, []);
+
+  // Close the docked side panels on Escape. The mobile Sheet handles this
+  // natively, but the desktop docked panels are plain elements. We only listen
+  // while a panel is open so Escape behaves normally elsewhere on the canvas.
+  useEffect(() => {
+    if (!isSettingsOpen && !isIssuesPanelOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+
+      // Let Escape commit/cancel the field edit (e.g. the Room Name input)
+      // instead of tearing down the whole panel and discarding the edit.
+      const target = e.target as HTMLElement | null;
+      if (target?.closest("input, textarea, [contenteditable]")) return;
+
+      // A Base UI dialog layered over the panel (e.g. the remove-user confirm)
+      // handles its own Escape. Don't also collapse the panel underneath it.
+      if (document.querySelector("[role=dialog], [role=alertdialog]")) return;
+
+      setIsSettingsOpen(false);
+      setIsIssuesPanelOpen(false);
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [isSettingsOpen, isIssuesPanelOpen]);
 
   // Handle note content updates
   const handleUpdateNoteContent = useCallback(
@@ -301,8 +334,7 @@ function RoomCanvasInner({ roomData, currentUserId, isDemoMode = false, isEmbedd
     canRevealCards: permissions.revealCards.allowed,
     canControlGameFlow: permissions.gameFlow.allowed,
     canChangeRoomSettings: permissions.roomSettings.allowed,
-    canRemoveTarget: (targetRole: MemberRole) =>
-      permissions.removeTarget(targetRole).allowed,
+    canRemoveTarget,
     onRevealCards: handleRevealCards,
     onResetGame: handleResetGame,
     onCardSelect: handleCardSelect,
