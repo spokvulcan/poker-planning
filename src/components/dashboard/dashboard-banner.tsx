@@ -1,4 +1,4 @@
-import { Github } from "lucide-react";
+import { GithubIcon } from "@/components/icons";
 
 export function DashboardBanner() {
   return (
@@ -27,7 +27,7 @@ export function DashboardBanner() {
             rel="noopener noreferrer"
             className="inline-flex items-center justify-center whitespace-nowrap rounded-md text-xs font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-indigo-600 text-white hover:bg-indigo-600/90 h-8 px-3 w-full sm:w-auto shadow-sm"
           >
-            <Github className="mr-2 h-3.5 w-3.5" />
+            <GithubIcon className="mr-2 h-3.5 w-3.5" />
             Submit Issue
           </a>
         </div>
