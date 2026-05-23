@@ -5,6 +5,7 @@ import {
   Action,
   evaluate,
   denialMessage,
+  requiresOwnerLevel,
   getEffectivePermissions,
   getEffectiveRole,
 } from "../permissions";
@@ -132,7 +133,6 @@ export async function requireCan(
   }
 
   const permissions = getEffectivePermissions(room);
-  const ownerAbsent = await isRoomOwnerAbsent(ctx, room);
   const actorRole = getEffectiveRole(membership);
 
   let action: Action;
@@ -177,6 +177,12 @@ export async function requireCan(
       action = { kind: "relationship", verb: spec.verb };
     }
   }
+
+  // Owner absence only refines an owner-level denial (see evaluate); for any
+  // other action it can't change the result, so skip the DB read.
+  const ownerAbsent = requiresOwnerLevel(action)
+    ? await isRoomOwnerAbsent(ctx, room)
+    : false;
 
   const decision = evaluate(action, { actorRole, permissions, ownerAbsent });
   if (!decision.allowed) {

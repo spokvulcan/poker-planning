@@ -154,9 +154,10 @@ function assertNever(action: never): never {
 
 /**
  * Whether an action's role requirement is owner-level. Drives both the
- * owner-absent refinement and the "Only the owner..." denial copy.
+ * owner-absent refinement and the "Only the owner..." denial copy. Exported so
+ * the guard can skip the owner-absence DB read when it can't affect the result.
  */
-function requiresOwnerLevel(action: Action): boolean {
+export function requiresOwnerLevel(action: Action): boolean {
   if (action.kind === "category") return action.level === "owner";
   return (
     action.verb === "transfer" ||
