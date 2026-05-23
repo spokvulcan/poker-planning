@@ -9,9 +9,17 @@ import path from "path";
 // edge-runtime too, so the whole convex/ tree lives in one project.
 export default defineConfig({
   resolve: {
-    alias: {
-      "@": path.resolve(__dirname, "./src"),
-    },
+    // Mirror tsconfig's `paths`: `@/convex/*` resolves into the convex/ tree
+    // (so pure modules like summarize/scales/constants are importable from
+    // src/ tests), everything else `@/*` resolves into src/. Order matters —
+    // the more specific `@/convex` rule must be matched before the `@` rule.
+    alias: [
+      {
+        find: /^@\/convex\/(.*)$/,
+        replacement: path.resolve(__dirname, "./convex/$1"),
+      },
+      { find: /^@\/(.*)$/, replacement: path.resolve(__dirname, "./src/$1") },
+    ],
   },
   test: {
     projects: [

@@ -49,7 +49,6 @@ export const getMyMembership = query({
       name: result.user.name,
       avatarUrl: result.user.avatarUrl,
       isSpectator: result.membership.isSpectator,
-      isBot: result.membership.isBot,
       role: result.membership.role ?? ("participant" as const),
       joinedAt: result.membership.joinedAt,
       membershipId: result.membership._id,

@@ -205,38 +205,35 @@ export async function completeIssueVoting(
 ): Promise<void> {
   const now = Date.now();
 
-  // Find and close the latest voting timestamp for this issue (skip demo rooms)
-  const room = await ctx.db.get(args.roomId);
+  // Close the latest open voting timestamp for this issue and total the time
+  // across rounds. Always recorded for an issue-backed round (the former
+  // demo-room exemption is gone with the demo — ADR-0003).
   let timeToConsensusMs: number | undefined;
+  const timestamps = await ctx.db
+    .query("votingTimestamps")
+    .withIndex("by_issue", (q) => q.eq("issueId", args.issueId))
+    .collect();
 
-  if (!room?.isDemoRoom) {
-    const timestamps = await ctx.db
-      .query("votingTimestamps")
-      .withIndex("by_issue", (q) => q.eq("issueId", args.issueId))
-      .collect();
+  const latestTimestamp = timestamps[timestamps.length - 1];
+  if (latestTimestamp && !latestTimestamp.votingEndedAt) {
+    const durationMs = now - latestTimestamp.votingStartedAt;
+    await ctx.db.patch(latestTimestamp._id, {
+      votingEndedAt: now,
+      durationMs,
+    });
 
-    const latestTimestamp = timestamps[timestamps.length - 1];
-    if (latestTimestamp && !latestTimestamp.votingEndedAt) {
-      const durationMs = now - latestTimestamp.votingStartedAt;
-      await ctx.db.patch(latestTimestamp._id, {
-        votingEndedAt: now,
-        durationMs,
-      });
-
-      // Total time = sum of all previously completed rounds + current round
-      const totalMs =
-        timestamps.reduce((sum, ts) => sum + (ts.durationMs ?? 0), 0) +
-        durationMs;
+    // Total time = sum of all previously completed rounds + current round
+    const totalMs =
+      timestamps.reduce((sum, ts) => sum + (ts.durationMs ?? 0), 0) + durationMs;
+    timeToConsensusMs = totalMs;
+  } else if (timestamps.length > 0) {
+    // All rounds already closed (e.g. issue was reset then completed) — sum existing
+    const totalMs = timestamps.reduce(
+      (sum, ts) => sum + (ts.durationMs ?? 0),
+      0
+    );
+    if (totalMs > 0) {
       timeToConsensusMs = totalMs;
-    } else if (timestamps.length > 0) {
-      // All rounds already closed (e.g. issue was reset then completed) — sum existing
-      const totalMs = timestamps.reduce(
-        (sum, ts) => sum + (ts.durationMs ?? 0),
-        0
-      );
-      if (totalMs > 0) {
-        timeToConsensusMs = totalMs;
-      }
     }
   }
 

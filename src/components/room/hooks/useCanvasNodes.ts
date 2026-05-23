@@ -10,6 +10,7 @@ import type { RoomWithRelatedData, SanitizedVote } from "@/convex/model/rooms";
 import type { RoomUserData } from "@/convex/model/users";
 import type { MemberRole } from "@/convex/permissions";
 import { DEFAULT_SCALE } from "@/convex/scales";
+import { useDemoSimulation } from "../demo/DemoSimulationProvider";
 
 // Layout constants for voting cards (matching backend canvas.ts)
 const CANVAS_CENTER_X = 0;
@@ -62,15 +63,27 @@ export function useCanvasNodes({
   onUpdateNoteContent,
   onDeleteNote,
 }: UseCanvasNodesProps): UseCanvasNodesReturn {
-  // Query canvas nodes from Convex
-  const canvasNodes = useQuery(api.canvas.getCanvasNodes, { roomId });
+  // In the Demo simulation, the persisted nodes and the current issue come from
+  // context — never from Convex (zero reads, ADR-0003). Real rooms subscribe as
+  // before. `"skip"` keeps the hook call unconditional (rules of hooks).
+  const demo = useDemoSimulation();
 
-  // Query current issue for the session node
-  const currentIssueQuery = useQuery(api.issues.getCurrent, { roomId });
+  const canvasNodesQuery = useQuery(
+    api.canvas.getCanvasNodes,
+    demo ? "skip" : { roomId },
+  );
+  const canvasNodes = demo ? demo.canvasNodes : canvasNodesQuery;
+
+  const currentIssueQuery = useQuery(
+    api.issues.getCurrent,
+    demo ? "skip" : { roomId },
+  );
 
   // Stabilize currentIssue reference to prevent excessive re-renders
-  const currentIssueId = currentIssueQuery?._id;
-  const currentIssueTitle = currentIssueQuery?.title;
+  const currentIssueId = demo ? demo.currentIssue._id : currentIssueQuery?._id;
+  const currentIssueTitle = demo
+    ? demo.currentIssue.title
+    : currentIssueQuery?.title;
 
   // Store callbacks in refs to avoid adding them to useMemo dependency arrays
   // Based on Vercel React Best Practices: advanced-use-latest

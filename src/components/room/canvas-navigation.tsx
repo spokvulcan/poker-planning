@@ -15,7 +15,7 @@ import {
   Menu,
   ListTodo,
 } from "lucide-react";
-import { FC, useState, useRef } from "react";
+import { FC, useState, useRef, useSyncExternalStore } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -45,6 +45,17 @@ import {
 import type { RoomWithRelatedData } from "@/convex/model/rooms";
 import { copyTextToClipboard } from "@/utils/copy-text-to-clipboard";
 import { UserPresenceAvatars } from "./user-presence-avatars";
+
+// `document.fullscreenEnabled` is a client-only capability. Reading it through
+// useSyncExternalStore — with a `false` server snapshot — keeps SSR and the
+// hydrating client render in agreement, then swaps to the real value once
+// hydrated. This is what avoids a hydration mismatch now that /demo
+// server-renders the canvas. Module-scope so the store isn't re-subscribed
+// on every render.
+const subscribeFullscreenSupport = () => () => {};
+const getFullscreenSupported = () =>
+  typeof document !== "undefined" && document.fullscreenEnabled;
+const getFullscreenSupportedServer = () => false;
 
 interface CanvasNavigationProps {
   roomData: RoomWithRelatedData;
@@ -79,8 +90,12 @@ export const CanvasNavigation: FC<CanvasNavigationProps> = ({
     roomData.users,
   );
   const { toast } = useToast();
-  const [isFullscreenSupported] = useState(
-    () => typeof document !== "undefined" && document.fullscreenEnabled,
+  // Fullscreen support is a client-only capability resolved via the store
+  // callbacks defined above — no hydration mismatch, no setState-in-effect.
+  const isFullscreenSupported = useSyncExternalStore(
+    subscribeFullscreenSupport,
+    getFullscreenSupported,
+    getFullscreenSupportedServer,
   );
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const settingsButtonRef = useRef<HTMLButtonElement>(null);

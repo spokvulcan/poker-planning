@@ -5,6 +5,7 @@ import { useCallback } from "react";
 import { api } from "@/convex/_generated/api";
 import type { Id, Doc } from "@/convex/_generated/dataModel";
 import type { EnhancedExportableIssue } from "@/convex/model/issues";
+import { useDemoSimulation } from "../demo/DemoSimulationProvider";
 
 interface UseIssuesProps {
   roomId: Id<"rooms">;
@@ -27,10 +28,25 @@ interface UseIssuesReturn {
 }
 
 export function useIssues({ roomId, isDemoMode = false }: UseIssuesProps): UseIssuesReturn {
-  // Queries
-  const issues = useQuery(api.issues.list, { roomId });
-  const currentIssue = useQuery(api.issues.getCurrent, { roomId });
-  const exportData = useQuery(api.issues.getForEnhancedExport, isDemoMode ? "skip" : { roomId });
+  // In the Demo simulation, the issues list and current issue come from context
+  // — never from Convex (zero reads, ADR-0003). Real rooms subscribe as before.
+  const demo = useDemoSimulation();
+
+  // Queries (skipped in demo mode; data is served from context below)
+  const issuesQuery = useQuery(api.issues.list, demo ? "skip" : { roomId });
+  const currentIssueQuery = useQuery(
+    api.issues.getCurrent,
+    demo ? "skip" : { roomId },
+  );
+  const exportData = useQuery(
+    api.issues.getForEnhancedExport,
+    demo || isDemoMode ? "skip" : { roomId },
+  );
+
+  const issues = demo ? demo.issues : (issuesQuery ?? []);
+  const currentIssue = demo
+    ? (demo.issues.find((i) => i._id === demo.currentIssue._id) ?? null)
+    : (currentIssueQuery ?? null);
 
   // Mutations
   const createMutation = useMutation(api.issues.create);
@@ -88,10 +104,10 @@ export function useIssues({ roomId, isDemoMode = false }: UseIssuesProps): UseIs
   );
 
   return {
-    issues: issues ?? [],
-    currentIssue: currentIssue ?? null,
+    issues,
+    currentIssue,
     isQuickVoteMode: !currentIssue,
-    isLoading: issues === undefined,
+    isLoading: demo ? false : issuesQuery === undefined,
     createIssue,
     startVoting,
     switchToQuickVote,
