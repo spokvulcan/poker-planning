@@ -1,6 +1,7 @@
 import { QueryCtx, MutationCtx } from "../_generated/server";
 import { Id } from "../_generated/dataModel";
 import * as Rooms from "./rooms";
+import * as VotingRound from "./votingRound";
 import * as Canvas from "./canvas";
 
 // Bot configuration with famous developer names
@@ -215,7 +216,7 @@ export async function resetDemoRoom(ctx: MutationCtx): Promise<void> {
   const demoRoomId = await getDemoRoomId(ctx);
   if (!demoRoomId) return;
 
-  await Rooms.resetRoomGame(ctx, demoRoomId);
+  await VotingRound.reset(ctx, demoRoomId);
 }
 
 /**

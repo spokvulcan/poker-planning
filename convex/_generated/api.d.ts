@@ -28,6 +28,7 @@ import type * as model_analytics from "../model/analytics.js";
 import type * as model_auth from "../model/auth.js";
 import type * as model_canvas from "../model/canvas.js";
 import type * as model_cleanup from "../model/cleanup.js";
+import type * as model_countdown from "../model/countdown.js";
 import type * as model_demo from "../model/demo.js";
 import type * as model_issues from "../model/issues.js";
 import type * as model_permissions from "../model/permissions.js";
@@ -36,14 +37,17 @@ import type * as model_rooms from "../model/rooms.js";
 import type * as model_timer from "../model/timer.js";
 import type * as model_users from "../model/users.js";
 import type * as model_votes from "../model/votes.js";
+import type * as model_votingRound from "../model/votingRound.js";
 import type * as permissions from "../permissions.js";
 import type * as presence from "../presence.js";
 import type * as roles from "../roles.js";
 import type * as rooms from "../rooms.js";
 import type * as scales from "../scales.js";
+import type * as summarize from "../summarize.js";
 import type * as timer from "../timer.js";
 import type * as users from "../users.js";
 import type * as votes from "../votes.js";
+import type * as votingRound from "../votingRound.js";
 
 import type {
   ApiFromModules,
@@ -72,6 +76,7 @@ declare const fullApi: ApiFromModules<{
   "model/auth": typeof model_auth;
   "model/canvas": typeof model_canvas;
   "model/cleanup": typeof model_cleanup;
+  "model/countdown": typeof model_countdown;
   "model/demo": typeof model_demo;
   "model/issues": typeof model_issues;
   "model/permissions": typeof model_permissions;
@@ -80,14 +85,17 @@ declare const fullApi: ApiFromModules<{
   "model/timer": typeof model_timer;
   "model/users": typeof model_users;
   "model/votes": typeof model_votes;
+  "model/votingRound": typeof model_votingRound;
   permissions: typeof permissions;
   presence: typeof presence;
   roles: typeof roles;
   rooms: typeof rooms;
   scales: typeof scales;
+  summarize: typeof summarize;
   timer: typeof timer;
   users: typeof users;
   votes: typeof votes;
+  votingRound: typeof votingRound;
 }>;
 
 /**

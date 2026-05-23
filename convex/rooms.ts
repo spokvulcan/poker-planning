@@ -1,26 +1,12 @@
-import { mutation, query, internalMutation } from "./_generated/server";
+import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import * as Rooms from "./model/rooms";
+import * as VotingRound from "./model/votingRound";
 import {
   requireAuth,
   requireAuthUser,
   requireCan,
 } from "./model/auth";
-
-// Internal mutation called by scheduler for auto-reveal
-export const scheduledAutoReveal = internalMutation({
-  args: { roomId: v.id("rooms") },
-  handler: async (ctx, args) => {
-    const room = await ctx.db.get(args.roomId);
-    // Idempotency: skip if already revealed, cancelled, or room doesn't exist
-    if (!room || room.isGameOver || !room.autoRevealCountdownStartedAt) {
-      return;
-    }
-    // Clear the scheduled ID and reveal cards
-    await ctx.db.patch(args.roomId, { autoRevealScheduledId: undefined });
-    await Rooms.showRoomCards(ctx, args.roomId);
-  },
-});
 
 // Create a new room
 export const create = mutation({
@@ -85,21 +71,21 @@ export const updateActivity = mutation({
   },
 });
 
-// Show cards
+// Show cards (reveal the round)
 export const showCards = mutation({
   args: { roomId: v.id("rooms") },
   handler: async (ctx, args) => {
     await requireCan(ctx, args.roomId, { kind: "category", category: "revealCards" });
-    await Rooms.showRoomCards(ctx, args.roomId);
+    await VotingRound.reveal(ctx, args.roomId);
   },
 });
 
-// Reset game
+// Reset game (start a fresh round on the same target)
 export const resetGame = mutation({
   args: { roomId: v.id("rooms") },
   handler: async (ctx, args) => {
     await requireCan(ctx, args.roomId, { kind: "category", category: "gameFlow" });
-    await Rooms.resetRoomGame(ctx, args.roomId);
+    await VotingRound.reset(ctx, args.roomId);
   },
 });
 
@@ -108,19 +94,10 @@ export const toggleAutoComplete = mutation({
   args: { roomId: v.id("rooms") },
   handler: async (ctx, args) => {
     const { room } = await requireCan(ctx, args.roomId, { kind: "category", category: "roomSettings" });
-    // Cancel any scheduled reveal when toggling
-    if (room.autoRevealScheduledId) {
-      try {
-        await ctx.scheduler.cancel(room.autoRevealScheduledId);
-      } catch {
-        // Job may have already executed - this is fine
-      }
-    }
+    // Toggling cancels any active countdown (one seam), then flips the setting.
+    await VotingRound.cancelCountdown(ctx, args.roomId);
     await ctx.db.patch(args.roomId, {
       autoCompleteVoting: !room.autoCompleteVoting,
-      // Clear any active countdown when toggling
-      autoRevealCountdownStartedAt: undefined,
-      autoRevealScheduledId: undefined,
     });
   },
 });
@@ -129,21 +106,8 @@ export const toggleAutoComplete = mutation({
 export const cancelAutoRevealCountdown = mutation({
   args: { roomId: v.id("rooms") },
   handler: async (ctx, args) => {
-    const { room } = await requireCan(ctx, args.roomId, { kind: "category", category: "revealCards" });
-    if (room.autoRevealCountdownStartedAt) {
-      // Cancel the scheduled job if it exists
-      if (room.autoRevealScheduledId) {
-        try {
-          await ctx.scheduler.cancel(room.autoRevealScheduledId);
-        } catch {
-          // Job may have already executed - this is fine
-        }
-      }
-      await ctx.db.patch(args.roomId, {
-        autoRevealCountdownStartedAt: undefined,
-        autoRevealScheduledId: undefined,
-      });
-    }
+    await requireCan(ctx, args.roomId, { kind: "category", category: "revealCards" });
+    await VotingRound.cancelCountdown(ctx, args.roomId);
   },
 });
 

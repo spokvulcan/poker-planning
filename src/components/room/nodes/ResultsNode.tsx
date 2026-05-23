@@ -4,66 +4,24 @@ import { Handle, Position, NodeProps } from "@xyflow/react";
 import { ReactElement, memo, useMemo } from "react";
 
 import { cn } from "@/lib/utils";
+import { summarize } from "@/convex/summarize";
 import type { ResultsNodeType } from "../types";
 
 export const ResultsNode = memo(
   ({ data, selected }: NodeProps<ResultsNodeType>): ReactElement => {
     const { votes, isNumericScale } = data;
 
-    // Calculate average, median, agreement, and vote groups inline
+    // One shared summary (same as the backend snapshot/export) — so the live
+    // numbers can never diverge from the stored ones. Special cards are excluded
+    // from agreement here exactly as on the backend.
     const { average, median, agreement, voteGroups, totalVotes } = useMemo(() => {
-      const validVotes = votes.filter((v) => v.hasVoted && v.cardLabel);
-
-      // Get numeric votes for average and median (only for numeric scales, exclude "?" and special cards)
-      let avg = null;
-      let med = null;
-      if (isNumericScale) {
-        const numericVotes = validVotes
-          .map((v) => parseFloat(v.cardLabel || ""))
-          .filter((v) => !isNaN(v));
-
-        if (numericVotes.length > 0) {
-          // Calculate average
-          avg = numericVotes.reduce((sum, v) => sum + v, 0) / numericVotes.length;
-
-          // Calculate median
-          const sorted = [...numericVotes].sort((a, b) => a - b);
-          const mid = Math.floor(sorted.length / 2);
-          med = sorted.length % 2 !== 0
-            ? sorted[mid]
-            : (sorted[mid - 1] + sorted[mid]) / 2;
-        }
-      }
-
-      // Group votes by value
-      const groups: Record<string, number> = {};
-      validVotes.forEach((vote) => {
-        const label = vote.cardLabel!;
-        groups[label] = (groups[label] || 0) + 1;
-      });
-
-      // Sort: numeric first (ascending), then special chars
-      const sortedGroups = Object.entries(groups).sort(([a], [b]) => {
-        const numA = parseFloat(a);
-        const numB = parseFloat(b);
-        if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
-        if (!isNaN(numA)) return -1;
-        if (!isNaN(numB)) return 1;
-        return a.localeCompare(b);
-      });
-
-      // Calculate agreement as percentage of votes on the most common value
-      const counts = Object.values(groups);
-      const maxCount = counts.length > 0 ? Math.max(...counts) : 0;
-      const total = validVotes.length;
-      const agreement = total > 0 ? Math.round((maxCount / total) * 100) : 0;
-
+      const summary = summarize(votes, { isNumeric: isNumericScale });
       return {
-        average: avg,
-        median: med,
-        agreement,
-        voteGroups: sortedGroups,
-        totalVotes: total,
+        average: summary.stats.average,
+        median: summary.stats.median,
+        agreement: summary.stats.agreement,
+        voteGroups: summary.distribution,
+        totalVotes: summary.distribution.reduce((n, d) => n + d.count, 0),
       };
     }, [votes, isNumericScale]);
 
@@ -161,7 +119,7 @@ export const ResultsNode = memo(
 
             {/* Simplified distribution bars */}
             <div className="flex-1 flex flex-col gap-0.5 min-w-24">
-              {voteGroups.map(([label, count]) => {
+              {voteGroups.map(({ label, count }) => {
                 const percentage = (count / totalVotes) * 100;
                 return (
                   <div key={label} className="flex items-center gap-1.5 h-4">

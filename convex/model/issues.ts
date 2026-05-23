@@ -1,6 +1,6 @@
 import { QueryCtx, MutationCtx } from "../_generated/server";
 import { Id, Doc } from "../_generated/dataModel";
-import { SPECIAL_CARDS } from "../scales";
+import * as VotingRound from "./votingRound";
 
 export type IssueStatus = "pending" | "voting" | "completed";
 
@@ -166,14 +166,12 @@ export async function removeIssue(
   const issue = await ctx.db.get(issueId);
   if (!issue) throw new Error("Issue not found");
 
-  // If this was the current issue, clear it and related state
+  // Deleting the issue being voted on ends the round cleanly: delegate to the
+  // round's abandon (drops the target to a Quick Vote, cancels the countdown,
+  // clears votes) before the issue and its records are removed below.
   const room = await ctx.db.get(issue.roomId);
   if (room?.currentIssueId === issueId) {
-    await ctx.db.patch(issue.roomId, {
-      currentIssueId: undefined,
-      autoRevealCountdownStartedAt: undefined,
-      lastActivityAt: Date.now(),
-    });
+    await VotingRound.abandon(ctx, issue.roomId);
   }
 
   // Delete associated voting timestamps
@@ -191,63 +189,6 @@ export async function removeIssue(
   await Promise.all(individualVotes.map((iv) => ctx.db.delete(iv._id)));
 
   await ctx.db.delete(issueId);
-}
-
-/**
- * Starts voting on an issue - clears previous votes, sets as current
- */
-export async function startVotingOnIssue(
-  ctx: MutationCtx,
-  args: { roomId: Id<"rooms">; issueId: Id<"issues"> }
-): Promise<void> {
-  const room = await ctx.db.get(args.roomId);
-  if (!room) throw new Error("Room not found");
-
-  const issue = await ctx.db.get(args.issueId);
-  if (!issue) throw new Error("Issue not found");
-
-  // If there's a current issue that was voting, reset it to pending (no estimate)
-  if (room.currentIssueId && room.currentIssueId !== args.issueId) {
-    const previousIssue = await ctx.db.get(room.currentIssueId);
-    if (previousIssue && previousIssue.status === "voting") {
-      await closeOpenTimestamp(ctx, room.currentIssueId);
-      await ctx.db.patch(room.currentIssueId, { status: "pending" });
-    }
-  }
-
-  // Set the new issue as current and mark as voting
-  await ctx.db.patch(args.issueId, { status: "voting" });
-
-  // Update room with new current issue
-  await ctx.db.patch(args.roomId, {
-    currentIssueId: args.issueId,
-    isGameOver: false,
-    autoRevealCountdownStartedAt: undefined,
-    lastActivityAt: Date.now(),
-  });
-
-  // Clear all existing votes
-  const votes = await ctx.db
-    .query("votes")
-    .withIndex("by_room", (q) => q.eq("roomId", args.roomId))
-    .collect();
-
-  await Promise.all(votes.map((vote) => ctx.db.delete(vote._id)));
-
-  // Record voting timestamp for time-to-consensus tracking (skip demo rooms)
-  if (!room.isDemoRoom) {
-    const existingRounds = await ctx.db
-      .query("votingTimestamps")
-      .withIndex("by_issue", (q) => q.eq("issueId", args.issueId))
-      .collect();
-
-    await ctx.db.insert("votingTimestamps", {
-      roomId: args.roomId,
-      issueId: args.issueId,
-      votingStartedAt: Date.now(),
-      roundNumber: existingRounds.length + 1,
-    });
-  }
 }
 
 /**
@@ -314,111 +255,6 @@ export async function completeIssueVoting(
 }
 
 /**
- * Calculates consensus from votes (most common vote, tie-breaker: lower numeric value)
- */
-export async function calculateConsensus(
-  ctx: QueryCtx,
-  roomId: Id<"rooms">
-): Promise<string | null> {
-  const room = await ctx.db.get(roomId);
-  if (!room) return null;
-
-  const votes = await ctx.db
-    .query("votes")
-    .withIndex("by_room", (q) => q.eq("roomId", roomId))
-    .collect();
-
-  // Filter valid votes (exclude special cards)
-  const validVotes = votes.filter(
-    (v) => v.cardLabel && !SPECIAL_CARDS.includes(v.cardLabel)
-  );
-
-  if (validVotes.length === 0) return null;
-
-  // Count votes by label
-  const counts: Record<string, number> = {};
-  validVotes.forEach((v) => {
-    const label = v.cardLabel!;
-    counts[label] = (counts[label] || 0) + 1;
-  });
-
-  // Find mode (most common vote)
-  const maxCount = Math.max(...Object.values(counts));
-  const modes = Object.entries(counts)
-    .filter(([, count]) => count === maxCount)
-    .map(([label]) => label);
-
-  // If single mode, return it
-  if (modes.length === 1) return modes[0];
-
-  // Tie-breaker: prefer lower numeric value
-  const numeric = modes.map((m) => parseFloat(m)).filter((n) => !isNaN(n));
-  if (numeric.length > 0) {
-    return Math.min(...numeric).toString();
-  }
-
-  // For non-numeric ties, return first alphabetically
-  return modes.sort()[0];
-}
-
-/**
- * Calculates vote statistics (average, median, agreement) from current votes
- */
-export async function calculateVoteStats(
-  ctx: QueryCtx,
-  roomId: Id<"rooms">
-): Promise<VoteStats> {
-  const votes = await ctx.db
-    .query("votes")
-    .withIndex("by_room", (q) => q.eq("roomId", roomId))
-    .collect();
-
-  // Filter valid votes (exclude special cards)
-  const validVotes = votes.filter(
-    (v) => v.cardLabel && !SPECIAL_CARDS.includes(v.cardLabel)
-  );
-
-  const voteCount = validVotes.length;
-
-  if (voteCount === 0) {
-    return { average: null, median: null, agreement: 0, voteCount: 0 };
-  }
-
-  // Get numeric votes for average and median
-  const numericVotes = validVotes
-    .map((v) => parseFloat(v.cardLabel || ""))
-    .filter((v) => !isNaN(v));
-
-  let average: number | null = null;
-  let median: number | null = null;
-
-  if (numericVotes.length > 0) {
-    // Calculate average
-    average = numericVotes.reduce((sum, v) => sum + v, 0) / numericVotes.length;
-
-    // Calculate median
-    const sorted = [...numericVotes].sort((a, b) => a - b);
-    const mid = Math.floor(sorted.length / 2);
-    median =
-      sorted.length % 2 !== 0
-        ? sorted[mid]
-        : (sorted[mid - 1] + sorted[mid]) / 2;
-  }
-
-  // Calculate agreement (percentage of votes on most common value)
-  const counts: Record<string, number> = {};
-  validVotes.forEach((v) => {
-    const label = v.cardLabel!;
-    counts[label] = (counts[label] || 0) + 1;
-  });
-
-  const maxCount = Math.max(...Object.values(counts));
-  const agreement = Math.round((maxCount / voteCount) * 100);
-
-  return { average, median, agreement, voteCount };
-}
-
-/**
  * Gets issues formatted for CSV export
  */
 export async function getIssuesForExport(
@@ -468,42 +304,6 @@ export async function reorderIssues(
 
   // Update room activity
   await ctx.db.patch(args.roomId, { lastActivityAt: Date.now() });
-}
-
-/**
- * Clears the current issue (switches to Quick Vote mode)
- */
-export async function clearCurrentIssue(
-  ctx: MutationCtx,
-  roomId: Id<"rooms">
-): Promise<void> {
-  const room = await ctx.db.get(roomId);
-  if (!room) throw new Error("Room not found");
-
-  // Reset current issue status if it was voting
-  if (room.currentIssueId) {
-    const currentIssue = await ctx.db.get(room.currentIssueId);
-    if (currentIssue && currentIssue.status === "voting") {
-      await closeOpenTimestamp(ctx, room.currentIssueId);
-      await ctx.db.patch(room.currentIssueId, { status: "pending" });
-    }
-  }
-
-  // Clear current issue and reset game state
-  await ctx.db.patch(roomId, {
-    currentIssueId: undefined,
-    isGameOver: false,
-    autoRevealCountdownStartedAt: undefined,
-    lastActivityAt: Date.now(),
-  });
-
-  // Clear all votes
-  const votes = await ctx.db
-    .query("votes")
-    .withIndex("by_room", (q) => q.eq("roomId", roomId))
-    .collect();
-
-  await Promise.all(votes.map((vote) => ctx.db.delete(vote._id)));
 }
 
 /**

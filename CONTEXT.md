@@ -1,6 +1,6 @@
 # AgileKit
 
-Online planning poker for Scrum teams. This context covers the domain language teams and code share — rooms, roles, and who is allowed to do what inside a session.
+Online planning poker for Scrum teams. This context covers the domain language teams and code share — rooms, roles, who is allowed to do what, and the **voting round** each session runs.
 
 ## Language
 
@@ -44,10 +44,38 @@ _Avoid_: permission group, scope
 The state after the owner *explicitly leaves* (membership deleted), detected at query time as "`ownerId` set, but no membership for that user". Owner-level and owner-only actions become unavailable. **Invariant:** lockdown is a *reason refinement, not a separate gate* — an absent owner already fails the role check, so lockdown only changes the **denial reason** to `owner-absent` (and thus the message/banner), never the allow/deny outcome (see [ADR-0001](docs/adr/0001-lockdown-is-a-denial-reason-not-a-gate.md)). Network disconnects do not trigger it.
 _Avoid_: orphaned, locked, frozen
 
+### Voting round
+
+**Voting round** (or **round**):
+One start-to-settle voting cycle on the room's current **target**. Owned end-to-end by a single module (`convex/model/votingRound.ts`) that is the sole writer of the round's state.
+_Avoid_: game, session, vote cycle
+
+**Target**:
+What a round votes on — either an **issue** (issue-backed round) or nothing (a **Quick Vote**). The issue-coupled steps (issue **status**, timing, consensus snapshot) run only when the target is an issue.
+_Avoid_: subject, topic
+
+**Quick Vote**:
+A round with no target issue: ephemeral, untimed, and not recorded against any issue.
+_Avoid_: ad-hoc vote, anonymous round
+
+**Phase**:
+A round's derived lifecycle state — `voting`, `countingDown` (auto-reveal armed), or `revealed`. Computed from existing room and issue fields; never stored as its own column. A room is *always* running a round (a **Quick Vote** by default), so there is no idle phase: a target-less, unrevealed room is simply a Quick Vote in `voting`.
+_Avoid_: game state, mode, idle; do not conflate with issue **status**
+
+**Transition**:
+A control action that moves the **phase**: **start** (begin a round on a target), **reveal** (settle and compute results), **reset** (begin a fresh round on the same target), **abandon** (drop the issue target, falling back to a target-less **Quick Vote**, still `voting`). Gated by the **game flow** / **reveal cards** permission categories. Casting or retracting a vote is a participant action, not a transition, though it may arm or cancel the countdown.
+_Avoid_: event, command
+
+**Auto-reveal countdown**:
+The armed timer that reveals automatically once every non-spectator has voted, when the room's auto-complete setting is on. Its two room fields and the scheduled reveal are one unit — clearing the countdown must cancel the scheduled reveal. The scheduled reveal is *bound to the countdown that armed it* by a token: it reveals only while that token is still the room's live countdown, so a stale job (its countdown since cleared or replaced) is inert even if it fires.
+_Avoid_: timer (reserve **timer** for the canvas TimerNode), auto-complete (that is the room setting that enables it)
+
 ## Flagged ambiguities
 
 - **"Permission"** is overloaded: the **permissions** config (the levels an owner sets) versus a **permission decision** (the runtime verdict). Always qualify which one. The bare table/field name `permissions` always means the config.
 - **"Owner absent" vs "owner offline"**: only an explicit *leave* causes **lockdown**. Going offline (disconnect, tab close) is cosmetic presence and changes no permissions.
+- **"Phase" vs "status"**: a **voting round** has a derived **phase**; an **issue** has a stored **status** (`pending` / `voting` / `completed`). They correlate but are different axes — a **Quick Vote** round has a phase but no issue status.
+- **"Round" vs round number**: each **reset** opens a new timing record (`votingTimestamps.roundNumber`) for the same issue. The module concept **round** is one start-to-settle cycle; the round number counts them within an issue.
 
 ## Example dialogue
 
@@ -62,3 +90,15 @@ _Avoid_: orphaned, locked, frozen
 > **Dev:** So where does "a facilitator can't remove another facilitator" live?
 >
 > **Domain expert:** That's a `remove` **relationship action**. The **permission decision** returns `reason: "target-rank"`. The **permission guard** is what fetched the target's **role** to make that call — the decision itself stayed pure.
+
+> **Dev:** A facilitator switches from an issue to Quick Vote while the **auto-reveal countdown** is running. What happens to the round?
+>
+> **Domain expert:** That's **abandon** — the round drops its **target** and falls back to a **Quick Vote** (still `voting`); there's no idle state to land in. The **transition** must cancel the countdown in the same step; leaving the scheduled reveal alive is exactly the bug the round module exists to prevent.
+>
+> **Dev:** And if that scheduled reveal had already fired before we cancelled it?
+>
+> **Domain expert:** It no-ops. The scheduled reveal is bound to the countdown that armed it by a token; once **abandon** clears that countdown, the old job no longer matches the room's live countdown and reveals nothing. Cancelling it is hygiene — the token is what makes it correct.
+>
+> **Dev:** And the **issue** it left behind?
+>
+> **Domain expert:** Its **status** goes back to `pending` — a separate axis from the round's **phase**. A **Quick Vote** round never had an issue status to begin with, so there's nothing to revert; it simply has no target.
