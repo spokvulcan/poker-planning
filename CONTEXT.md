@@ -70,12 +70,17 @@ _Avoid_: event, command
 The armed timer that reveals automatically once every non-spectator has voted, when the room's auto-complete setting is on. Its two room fields and the scheduled reveal are one unit — clearing the countdown must cancel the scheduled reveal. The scheduled reveal is *bound to the countdown that armed it* by a token: it reveals only while that token is still the room's live countdown, so a stale job (its countdown since cleared or replaced) is inert even if it fires.
 _Avoid_: timer (reserve **timer** for the canvas TimerNode), auto-complete (that is the room setting that enables it)
 
+**Demo simulation**:
+The looping illustration on `/demo`. It is **not a room and runs no voting round** — there is no `rooms` row, no membership, no persisted vote, and the backend never participates. Bots, issues, and **phase** transitions are computed entirely on the viewer's machine and discarded. It *imitates* a round's **phase** lifecycle and reuses the one pure results computation (`summarize`) so its revealed numbers match a real round's, but it lives deliberately outside the **voting round** module's authority. Paused while its tab is hidden (see [ADR-0003](docs/adr/0003-demo-is-a-client-simulation.md)).
+_Avoid_: demo room (there is no room), demo game, bot round
+
 ## Flagged ambiguities
 
 - **"Permission"** is overloaded: the **permissions** config (the levels an owner sets) versus a **permission decision** (the runtime verdict). Always qualify which one. The bare table/field name `permissions` always means the config.
 - **"Owner absent" vs "owner offline"**: only an explicit *leave* causes **lockdown**. Going offline (disconnect, tab close) is cosmetic presence and changes no permissions.
 - **"Phase" vs "status"**: a **voting round** has a derived **phase**; an **issue** has a stored **status** (`pending` / `voting` / `completed`). They correlate but are different axes — a **Quick Vote** round has a phase but no issue status.
 - **"Round" vs round number**: each **reset** opens a new timing record (`votingTimestamps.roundNumber`) for the same issue. The module concept **round** is one start-to-settle cycle; the round number counts them within an issue.
+- **"Demo room" is retired**: the `/demo` page is a **Demo simulation**, not a room. There is no `isDemoRoom` flag, no seeded room, no bot membership — those were removed when the demo moved fully client-side. Any reference to a "demo room" predates that change.
 
 ## Example dialogue
 
