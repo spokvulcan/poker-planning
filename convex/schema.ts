@@ -9,10 +9,6 @@ export default defineSchema({
     autoRevealScheduledId: v.optional(v.id("_scheduled_functions")), // Scheduled function ID for auto-reveal
     roomType: v.optional(v.literal("canvas")), // Optional for backward compatibility
     isGameOver: v.boolean(),
-    // Deprecated (ADR-0003): the Demo is now client-side, so nothing writes this.
-    // Drop it — with roomMemberships.isBot and the demo filter in model/cleanup.ts
-    // — only after `npx convex run cleanupDemo:purgeDemoRoom` has run in prod.
-    isDemoRoom: v.optional(v.boolean()),
     votingScale: v.optional(
       v.object({
         type: v.union(
@@ -104,8 +100,6 @@ export default defineSchema({
     roomId: v.id("rooms"),
     userId: v.id("users"), // FK to global users
     isSpectator: v.boolean(),
-    // Deprecated (ADR-0003): see rooms.isDemoRoom — drop after purgeDemoRoom runs.
-    isBot: v.optional(v.boolean()),
     role: v.optional(
       v.union(
         v.literal("owner"),
