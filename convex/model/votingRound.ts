@@ -58,7 +58,7 @@ export async function start(
 
   await clearRoomVotes(ctx, args.roomId);
 
-  if (shouldRecordTiming(room, args.issueId)) {
+  if (shouldRecordTiming(args.issueId)) {
     await openTimingRecord(ctx, args.roomId, args.issueId!);
   }
 }
@@ -77,11 +77,11 @@ export async function reset(ctx: MutationCtx, roomId: Id<"rooms">): Promise<void
     if (issue && (issue.status === "voting" || issue.status === "completed")) {
       // A mid-vote reset leaves an open round; close it before opening a fresh
       // one so durations don't overlap.
-      if (issue.status === "voting" && shouldRecordTiming(room, room.currentIssueId)) {
+      if (issue.status === "voting" && shouldRecordTiming(room.currentIssueId)) {
         await Issues.closeOpenTimestamp(ctx, room.currentIssueId);
       }
       await ctx.db.patch(room.currentIssueId, { status: "voting" });
-      if (shouldRecordTiming(room, room.currentIssueId)) {
+      if (shouldRecordTiming(room.currentIssueId)) {
         await openTimingRecord(ctx, roomId, room.currentIssueId);
       }
     }
@@ -125,7 +125,7 @@ export async function reveal(ctx: MutationCtx, roomId: Id<"rooms">): Promise<voi
         finalEstimate: summary.consensus,
         voteStats: summary.stats,
       });
-    } else if (shouldRecordTiming(room, room.currentIssueId)) {
+    } else if (shouldRecordTiming(room.currentIssueId)) {
       // No consensus to snapshot (all special / no votes), so the issue stays
       // un-completed — but the round is over. Close its open timing record now
       // so the duration ends at reveal, not at the next reset/abandon.
@@ -308,14 +308,11 @@ async function clearRoomVotes(ctx: MutationCtx, roomId: Id<"rooms">): Promise<vo
 
 /**
  * Whether this round is timed and recorded. Quick Vote (no issue) rounds are
- * not, and the demo room is exempted to avoid unbounded growth — the previously
- * scattered `isDemoRoom` checks collapse to this one decision.
+ * not; an issue-backed round always is. (The former demo-room exemption is gone
+ * with the demo, which is now a client-only simulation — ADR-0003.)
  */
-function shouldRecordTiming(
-  room: { isDemoRoom?: boolean },
-  issueId?: Id<"issues">
-): boolean {
-  return !!issueId && !room.isDemoRoom;
+function shouldRecordTiming(issueId?: Id<"issues">): boolean {
+  return !!issueId;
 }
 
 /** Opens a fresh timed round for an issue, numbering it after prior rounds. */

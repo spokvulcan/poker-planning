@@ -4,6 +4,7 @@ import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { useCallback, useEffect, useState, useRef } from "react";
+import { useDemoSimulation } from "../demo/DemoSimulationProvider";
 
 interface UseTimerSyncProps {
   roomId: Id<"rooms">;
@@ -32,8 +33,15 @@ export function useTimerSync({
   nodeId,
   userId,
 }: UseTimerSyncProps): UseTimerSyncReturn {
+  // In the Demo simulation the timer is local and stopped — never subscribe to
+  // `api.timer.getTimerState` (zero reads, ADR-0003). Real rooms subscribe.
+  const demo = useDemoSimulation();
+
   // Convex hooks
-  const serverTimerState = useQuery(api.timer.getTimerState, { roomId, nodeId });
+  const serverTimerState = useQuery(
+    api.timer.getTimerState,
+    demo ? "skip" : { roomId, nodeId },
+  );
   const startTimerMutation = useMutation(api.timer.startTimer);
   const pauseTimerMutation = useMutation(api.timer.pauseTimer);
   const resetTimerMutation = useMutation(api.timer.resetTimer);
@@ -130,11 +138,12 @@ export function useTimerSync({
     }
   }, [resetTimerMutation, roomId, nodeId, userId]);
 
-  // Calculate current display values
-  const currentSeconds = Math.floor(localSeconds);
-  const isRunning = serverTimerState?.isRunning ?? false;
-  const displayTime = formatTime(localSeconds);
-  const isLoading = serverTimerState === undefined;
+  // Calculate current display values. In demo mode the timer is a local,
+  // stopped 0:00 (no server state, never loading).
+  const currentSeconds = demo ? 0 : Math.floor(localSeconds);
+  const isRunning = demo ? false : (serverTimerState?.isRunning ?? false);
+  const displayTime = demo ? "0:00" : formatTime(localSeconds);
+  const isLoading = demo ? false : serverTimerState === undefined;
 
   return {
     currentSeconds,

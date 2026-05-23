@@ -279,7 +279,6 @@ export async function getRoomUsers(
       name: user.name,
       avatarUrl: user.avatarUrl,
       isSpectator: membership.isSpectator,
-      isBot: membership.isBot,
       role: membership.role ?? "participant",
       joinedAt: membership.joinedAt,
       membershipId: membership._id,

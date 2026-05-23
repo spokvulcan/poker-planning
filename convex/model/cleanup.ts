@@ -18,7 +18,10 @@ export async function removeInactiveRooms(
 ): Promise<CleanupResult> {
   const cutoffTime = Date.now() - (inactiveDays * 24 * 60 * 60 * 1000);
 
-  // Find inactive rooms (excluding demo rooms which should never be deleted)
+  // Find inactive rooms (excluding the legacy demo room, which must be removed by
+  // cleanupDemo:purgeDemoRoom — not generic cleanup, which would orphan its bot
+  // users and its scheduled auto-reveal). Deprecated with rooms.isDemoRoom
+  // (ADR-0003): drop this filter together with the schema field, after the purge.
   const inactiveRooms = await ctx.db
     .query("rooms")
     .withIndex("by_activity", (q) => q.lt("lastActivityAt", cutoffTime))
