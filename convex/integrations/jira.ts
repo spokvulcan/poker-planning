@@ -14,7 +14,14 @@ import { v } from "convex/values";
 import { Doc } from "../_generated/dataModel";
 import { ActionCtx } from "../_generated/server";
 import { encryptToken, decryptToken } from "../lib/encryption";
-import { requirePermission } from "../model/permissions";
+import {
+  Action,
+  evaluate,
+  denialMessage,
+  getEffectivePermissions,
+  getEffectiveRole,
+} from "../permissions";
+import { isRoomOwnerAbsent } from "../model/permissions";
 import { JiraClient } from "./jiraClient";
 
 function getTokenEncryptionKey(): string {
@@ -876,7 +883,23 @@ export const verifyRoomAccess = internalQuery({
     const room = await ctx.db.get(args.roomId);
     if (!room) throw new Error("Room not found");
 
-    await requirePermission(ctx, room, membership, "issueManagement");
+    // This internal query authenticates via an explicit authUserId rather than
+    // ctx.auth, so it can't use requireCan; it reaches the permission decision
+    // directly with the room and membership already in hand.
+    const permissions = getEffectivePermissions(room);
+    const action: Action = {
+      kind: "category",
+      category: "issueManagement",
+      level: permissions.issueManagement,
+    };
+    const decision = evaluate(action, {
+      actorRole: getEffectiveRole(membership),
+      permissions,
+      ownerAbsent: await isRoomOwnerAbsent(ctx, room),
+    });
+    if (!decision.allowed) {
+      throw new Error(denialMessage(action, decision.reason));
+    }
 
     return { userId: user._id };
   },

@@ -39,6 +39,7 @@ import {
 import { DEMO_VIEWER_ID, type CustomNodeType, type PlayerNodeData } from "./types";
 import type { RoomWithRelatedData, SanitizedVote } from "@/convex/model/rooms";
 import { usePermissions } from "@/hooks/usePermissions";
+import type { MemberRole } from "@/convex/permissions";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -228,7 +229,7 @@ function RoomCanvasInner({ roomData, currentUserId, isDemoMode = false, isEmbedd
       // Find the target user's role for permission check
       const targetUser = roomData?.users.find((u) => u._id === userId);
       const targetRole = targetUser?.role ?? "participant";
-      if (!permissions.canRemoveTarget(targetRole)) return;
+      if (!permissions.removeTarget(targetRole).allowed) return;
       setPendingDeleteUserId({ id: userId, name: userName });
     },
     [isDemoMode, roomData?.users, permissions]
@@ -297,10 +298,11 @@ function RoomCanvasInner({ roomData, currentUserId, isDemoMode = false, isEmbedd
     currentUserId,
     selectedCardValue,
     isDemoMode,
-    canRevealCards: permissions.canRevealCards,
-    canControlGameFlow: permissions.canControlGameFlow,
-    canChangeRoomSettings: permissions.canChangeRoomSettings,
-    canRemoveTarget: permissions.canRemoveTarget,
+    canRevealCards: permissions.revealCards.allowed,
+    canControlGameFlow: permissions.gameFlow.allowed,
+    canChangeRoomSettings: permissions.roomSettings.allowed,
+    canRemoveTarget: (targetRole: MemberRole) =>
+      permissions.removeTarget(targetRole).allowed,
     onRevealCards: handleRevealCards,
     onResetGame: handleResetGame,
     onCardSelect: handleCardSelect,
@@ -547,8 +549,8 @@ function RoomCanvasInner({ roomData, currentUserId, isDemoMode = false, isEmbedd
         isOpen={isIssuesPanelOpen}
         onClose={() => setIsIssuesPanelOpen(false)}
         isDemoMode={isDemoMode}
-        canManageIssues={permissions.canManageIssues}
-        canControlGameFlow={permissions.canControlGameFlow}
+        canManageIssues={permissions.issueManagement.allowed}
+        canControlGameFlow={permissions.gameFlow.allowed}
       />
     </div>
   );

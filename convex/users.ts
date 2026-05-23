@@ -4,11 +4,9 @@ import * as Users from "./model/users";
 import {
   requireAuth,
   requireAuthUser,
-  requireRoomMember,
+  requireCan,
   getOptionalAuthUser,
 } from "./model/auth";
-import { getEffectiveRole } from "./permissions";
-import { canRemoveMember } from "./model/permissions";
 
 function validateName(name: string): string {
   const trimmed = name.trim();
@@ -128,29 +126,12 @@ export const remove = mutation({
     roomId: v.id("rooms"),
   },
   handler: async (ctx, args) => {
-    const { membership: actorMembership } = await requireRoomMember(
+    await requireCan(
       ctx,
-      args.roomId
+      args.roomId,
+      { kind: "relationship", verb: "remove" },
+      args.userId
     );
-    const actorRole = getEffectiveRole(actorMembership);
-
-    // Get target's membership to check their role
-    const targetMembership = await ctx.db
-      .query("roomMemberships")
-      .withIndex("by_room_user", (q) =>
-        q.eq("roomId", args.roomId).eq("userId", args.userId)
-      )
-      .first();
-
-    if (!targetMembership) {
-      throw new Error("Target user is not a member of this room");
-    }
-
-    const targetRole = getEffectiveRole(targetMembership);
-
-    if (!canRemoveMember(actorRole, targetRole)) {
-      throw new Error("You don't have permission to remove this user");
-    }
 
     await Users.leaveRoom(ctx, args.userId, args.roomId);
   },

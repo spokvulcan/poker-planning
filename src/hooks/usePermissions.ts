@@ -3,40 +3,39 @@ import type { RoomWithRelatedData } from "@/convex/model/rooms";
 import type { Id } from "@/convex/_generated/dataModel";
 import {
   type MemberRole,
-  type PermissionLevel,
   type RoomPermissions,
+  type Decision,
+  type PermissionCategory,
   DEFAULT_PERMISSIONS,
   getEffectivePermissions,
+  evaluate,
 } from "@/convex/permissions";
-import {
-  roleSatisfiesLevel,
-  canRemoveMember,
-  canPromoteToFacilitator,
-  canDemoteFacilitator,
-  canTransferOwnership,
-  canChangePermissions,
-} from "@/convex/model/permissions";
 
 export interface UsePermissionsReturn {
   role: MemberRole;
   isOwner: boolean;
   isFacilitator: boolean;
   isOwnerAbsent: boolean;
-  canRevealCards: boolean;
-  canControlGameFlow: boolean;
-  canManageIssues: boolean;
-  canChangeRoomSettings: boolean;
-  canRemoveTarget: (targetRole: MemberRole) => boolean;
-  canPromoteTarget: (targetRole: MemberRole) => boolean;
-  canDemoteFacilitatorFlag: boolean;
-  canTransferOwnershipFlag: boolean;
-  canChangePermissionsFlag: boolean;
+  /** Per-category permission decisions. Consumers read `.allowed` / `.reason`. */
+  revealCards: Decision;
+  gameFlow: Decision;
+  issueManagement: Decision;
+  roomSettings: Decision;
+  /** Per-target relationship decisions — the target's role refines the verdict. */
+  removeTarget: (targetRole: MemberRole) => Decision;
+  promoteTarget: (targetRole: MemberRole) => Decision;
+  demoteTarget: (targetRole: MemberRole) => Decision;
+  transfer: Decision;
+  changePermissions: Decision;
   permissions: RoomPermissions;
 }
 
+const ALLOWED: Decision = { allowed: true };
+const DENIED: Decision = { allowed: false, reason: "insufficient-role" };
+
 /**
- * Returns permission flags computed from room data and the current user's role.
- * Pure computation — no queries or mutations.
+ * Maps room data to permission Decisions through the shared `evaluate` decision.
+ * Pure computation — no queries or mutations, and no duplicated lockdown logic.
  */
 export function usePermissions(
   roomData: RoomWithRelatedData | null | undefined,
@@ -44,20 +43,22 @@ export function usePermissions(
 ): UsePermissionsReturn {
   return useMemo(() => {
     if (!roomData || !currentUserId) {
+      // Optimistic defaults before data loads: configurable actions open,
+      // relationship actions closed (mirrors prior behaviour).
       return {
         role: "participant" as MemberRole,
         isOwner: false,
         isFacilitator: false,
         isOwnerAbsent: false,
-        canRevealCards: true,
-        canControlGameFlow: true,
-        canManageIssues: true,
-        canChangeRoomSettings: true,
-        canRemoveTarget: () => false,
-        canPromoteTarget: () => false,
-        canDemoteFacilitatorFlag: false,
-        canTransferOwnershipFlag: false,
-        canChangePermissionsFlag: false,
+        revealCards: ALLOWED,
+        gameFlow: ALLOWED,
+        issueManagement: ALLOWED,
+        roomSettings: ALLOWED,
+        removeTarget: () => DENIED,
+        promoteTarget: () => DENIED,
+        demoteTarget: () => DENIED,
+        transfer: DENIED,
+        changePermissions: DENIED,
         permissions: DEFAULT_PERMISSIONS,
       };
     }
@@ -65,47 +66,33 @@ export function usePermissions(
     const currentUser = roomData.users.find((u) => u._id === currentUserId);
     const role: MemberRole = currentUser?.role ?? "participant";
     const permissions = getEffectivePermissions(roomData.room);
-    const isOwnerAbsent = roomData.isOwnerAbsent;
+    const ownerAbsent = roomData.isOwnerAbsent;
+    const ctx = { actorRole: role, permissions, ownerAbsent };
 
-    // For permission checks, if owner is absent AND level is "owner", block the action
-    const canDoAction = (level: PermissionLevel): boolean => {
-      if (level === "owner" && isOwnerAbsent) return false;
-      return roleSatisfiesLevel(role, level);
-    };
+    const category = (c: PermissionCategory): Decision =>
+      evaluate({ kind: "category", category: c, level: permissions[c] }, ctx);
 
     return {
       role,
       isOwner: role === "owner",
       isFacilitator: role === "facilitator",
-      isOwnerAbsent,
-      canRevealCards: canDoAction(permissions.revealCards),
-      canControlGameFlow: canDoAction(permissions.gameFlow),
-      canManageIssues: canDoAction(permissions.issueManagement),
-      canChangeRoomSettings: canDoAction(permissions.roomSettings),
-      canRemoveTarget: (targetRole: MemberRole) =>
-        canRemoveMember(role, targetRole),
-      canPromoteTarget: (targetRole: MemberRole) =>
-        targetRole === "participant" && canPromoteToFacilitator(role),
-      canDemoteFacilitatorFlag: canDemoteFacilitator(role),
-      canTransferOwnershipFlag: canTransferOwnership(role),
-      canChangePermissionsFlag: canChangePermissions(role),
+      isOwnerAbsent: ownerAbsent,
+      revealCards: category("revealCards"),
+      gameFlow: category("gameFlow"),
+      issueManagement: category("issueManagement"),
+      roomSettings: category("roomSettings"),
+      removeTarget: (targetRole) =>
+        evaluate({ kind: "relationship", verb: "remove", targetRole }, ctx),
+      promoteTarget: (targetRole) =>
+        evaluate({ kind: "relationship", verb: "promote", targetRole }, ctx),
+      demoteTarget: (targetRole) =>
+        evaluate({ kind: "relationship", verb: "demote", targetRole }, ctx),
+      transfer: evaluate({ kind: "relationship", verb: "transfer" }, ctx),
+      changePermissions: evaluate(
+        { kind: "relationship", verb: "changePerms" },
+        ctx
+      ),
       permissions,
     };
   }, [roomData, currentUserId]);
-}
-
-/**
- * Returns a human-readable tooltip for why an action is disabled.
- */
-export function getPermissionDeniedTooltip(
-  level: PermissionLevel
-): string {
-  switch (level) {
-    case "owner":
-      return "Only the room owner can do this";
-    case "facilitators":
-      return "Only facilitators and the owner can do this";
-    default:
-      return "You don't have permission to do this";
-  }
 }
