@@ -78,7 +78,7 @@ export const runDemoCycle = internalMutation({
 
     // Counting down: the round armed a real scheduled reveal when the last bot
     // voted — let it fire on its own. Don't vote, don't poll.
-    if (phase === "counting down") return;
+    if (phase === "countingDown") return;
 
     // Voting: let a few more bots cast their card through the round.
     const [botMemberships, votes] = await Promise.all([

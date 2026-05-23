@@ -59,7 +59,7 @@ A round with no target issue: ephemeral, untimed, and not recorded against any i
 _Avoid_: ad-hoc vote, anonymous round
 
 **Phase**:
-A round's derived lifecycle state — `voting`, `counting down` (auto-reveal armed), or `revealed`. Computed from existing room and issue fields; never stored as its own column. A room is *always* running a round (a **Quick Vote** by default), so there is no idle phase: a target-less, unrevealed room is simply a Quick Vote in `voting`.
+A round's derived lifecycle state — `voting`, `countingDown` (auto-reveal armed), or `revealed`. Computed from existing room and issue fields; never stored as its own column. A room is *always* running a round (a **Quick Vote** by default), so there is no idle phase: a target-less, unrevealed room is simply a Quick Vote in `voting`.
 _Avoid_: game state, mode, idle; do not conflate with issue **status**
 
 **Transition**:

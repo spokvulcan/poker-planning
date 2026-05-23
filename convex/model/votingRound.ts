@@ -285,7 +285,7 @@ export async function abandon(ctx: MutationCtx, roomId: Id<"rooms">): Promise<vo
 
 /**
  * cancelCountdown — manually stop an active auto-reveal countdown (story 13),
- * returning the round from `counting down` to `voting`. A facilitator action;
+ * returning the round from `countingDown` to `voting`. A facilitator action;
  * delegates to the one countdown seam so the teardown stays consistent.
  */
 export async function cancelCountdown(
@@ -341,7 +341,7 @@ async function openTimingRecord(
  * ADR-0002. There is no `idle`: a target-less, unrevealed room is an active
  * Quick Vote in `voting`, indistinguishable from a fresh one.
  */
-export type Phase = "voting" | "counting down" | "revealed";
+export type Phase = "voting" | "countingDown" | "revealed";
 
 /**
  * phaseOf — the round's phase as one derived read, so callers branch on a
@@ -354,7 +354,7 @@ export function phaseOf(room: {
   autoRevealCountdownStartedAt?: number;
 }): Phase {
   if (room.isGameOver) return "revealed";
-  if (room.autoRevealCountdownStartedAt) return "counting down";
+  if (room.autoRevealCountdownStartedAt) return "countingDown";
   return "voting";
 }
 

@@ -776,10 +776,10 @@ describe("VotingRound.phaseOf", () => {
     expect(VotingRound.phaseOf({ isGameOver: false })).toBe("voting");
   });
 
-  it("is `counting down` while the auto-reveal countdown is armed", () => {
+  it("is `countingDown` while the auto-reveal countdown is armed", () => {
     expect(
       VotingRound.phaseOf({ isGameOver: false, autoRevealCountdownStartedAt: 123 })
-    ).toBe("counting down");
+    ).toBe("countingDown");
   });
 
   it("is `revealed` once the round is settled", () => {
