@@ -26,6 +26,8 @@ const eslintConfig = defineConfig([
     "playwright-report/**",
     "blob-report/**",
     "playwright/.cache/**",
+    // Claude Code local worktrees (ephemeral, not part of the repo)
+    ".claude/worktrees/**",
   ]),
 ]);
 
