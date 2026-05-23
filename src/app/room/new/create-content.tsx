@@ -57,7 +57,7 @@ export function CreateContent() {
   const [isCreating, setIsCreating] = useState(false);
 
   const router = useRouter();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, isLoading: authLoading } = useAuth();
   const createRoom = useMutation(api.rooms.create);
   const ensureGlobalUser = useMutation(api.users.ensureGlobalUser);
   const { copyRoomUrlToClipboard } = useCopyRoomUrlToClipboard();
@@ -164,6 +164,10 @@ export function CreateContent() {
 
   const isCreateDisabled =
     isCreating ||
+    // Wait until the auth state is known. Creating while `isAuthenticated` is
+    // still resolving would wrongly trigger a second anonymous sign-in for a
+    // user who already has a session (BetterAuth rejects it with a 400).
+    authLoading ||
     (selectedScale === "custom" && (!!customError || !customCards.trim()));
 
   return (

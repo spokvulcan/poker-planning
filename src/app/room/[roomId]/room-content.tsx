@@ -17,6 +17,9 @@ export function RoomContent() {
   const joinRoom = useMutation(api.users.join);
   const [isAutoJoining, setIsAutoJoining] = useState(false);
   const autoJoinAttemptedRef = useRef(false);
+  // Tracks whether the user has held a membership in this room during this
+  // session, so we can tell "first/returning visit" apart from "was removed".
+  const wasMemberRef = useRef(false);
 
   // Query for existing membership in this room (derived server-side from auth)
   const existingMembership = useQuery(
@@ -35,6 +38,13 @@ export function RoomContent() {
 
   // User is in room if they have a membership in the database
   const isInRoom = existingMembership !== null && existingMembership !== undefined;
+
+  // Once the user holds a membership, remember it. If it later disappears
+  // (an owner removed them, or they left), they should land on the join dialog
+  // rather than being silently auto-rejoined.
+  useEffect(() => {
+    if (isInRoom) wasMemberRef.current = true;
+  }, [isInRoom]);
 
   // Auto-join callback
   const performAutoJoin = useCallback(async () => {
@@ -61,6 +71,7 @@ export function RoomContent() {
   useEffect(() => {
     const shouldAutoJoin =
       !autoJoinAttemptedRef.current &&
+      !wasMemberRef.current && // don't re-add a user who was removed / left
       roomData?.room &&
       globalUser &&
       existingMembership === null && // No membership in this room (query returned null, not undefined)
