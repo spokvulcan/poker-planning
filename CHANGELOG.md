@@ -1,5 +1,42 @@
 # Changelog
 
+## [2.8.0](https://github.com/spokvulcan/poker-planning/compare/agilekit-v2.7.8...agilekit-v2.8.0) (2026-05-23)
+
+
+### Features
+
+* **demo:** make the Demo a fully client-side simulation (zero Convex) ([#206](https://github.com/spokvulcan/poker-planning/issues/206)) ([f21e112](https://github.com/spokvulcan/poker-planning/commit/f21e1125e36e51636d17896b144f7b1907b646c1))
+
+
+### Bug Fixes
+
+* **deps:** update security-critical dependencies for advisories ([d5d332a](https://github.com/spokvulcan/poker-planning/commit/d5d332a4666ea184d02b76df996bf9274a37aab1))
+* **room:** keep removed users out of auto-join and gate creation on auth load ([aae3c00](https://github.com/spokvulcan/poker-planning/commit/aae3c00ebfe7c604c525ce051c1e5999c6302ff3))
+* **room:** prevent infinite render loop in canvas and harden Escape ([d252585](https://github.com/spokvulcan/poker-planning/commit/d252585edfc5b626e472384df19678ec8de3c7ae))
+
+
+### Documentation
+
+* add product and design system documentation ([cd8ce50](https://github.com/spokvulcan/poker-planning/commit/cd8ce5016852778c3d24b94d7863fcbf0049be20))
+* capture client-side Demo simulation decision ([#205](https://github.com/spokvulcan/poker-planning/issues/205)) ([09f5284](https://github.com/spokvulcan/poker-planning/commit/09f52847e1a4b7dddfbdf765694015e51bedb84a)), closes [#204](https://github.com/spokvulcan/poker-planning/issues/204)
+
+
+### Miscellaneous
+
+* **deps:** upgrade dependencies to latest ([#203](https://github.com/spokvulcan/poker-planning/issues/203)) ([588d206](https://github.com/spokvulcan/poker-planning/commit/588d206ad96a74f6fa6536b4d3930b18588ce331))
+* ignore Claude Code local worktrees ([442d79d](https://github.com/spokvulcan/poker-planning/commit/442d79d97c8b710e60a1944cac8c58f3e4357ce0))
+
+
+### Code Refactoring
+
+* consolidate authorization into one pure permission decision module ([#198](https://github.com/spokvulcan/poker-planning/issues/198)) ([18c5a5c](https://github.com/spokvulcan/poker-planning/commit/18c5a5cd62e5393ada3b10e6c038ef78b5847398))
+* **voting:** consolidate the voting round into one module ([#202](https://github.com/spokvulcan/poker-planning/issues/202)) ([cf2f65d](https://github.com/spokvulcan/poker-planning/commit/cf2f65d8d069963540f55283b5e636e818b6b59c))
+
+
+### Tests
+
+* **e2e:** repair Playwright suite for guest auto-join model ([1b951bd](https://github.com/spokvulcan/poker-planning/commit/1b951bd19074a90b2e447117dfed0ed4dae8d27e))
+
 ## [2.7.8](https://github.com/spokvulcan/poker-planning/compare/agilekit-v2.7.7...agilekit-v2.7.8) (2026-04-14)
 
 
