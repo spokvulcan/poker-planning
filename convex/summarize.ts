@@ -48,12 +48,15 @@ export function summarize(
     if (modes.length === 1) {
       consensus = modes[0];
     } else {
-      const numericModes = modes
-        .map((m) => parseFloat(m))
-        .filter((n) => !isNaN(n));
+      // Tie-break toward the lowest numeric value, but return the original
+      // label (not the reparsed number) so it round-trips for non-canonical
+      // decks like "1.0"; fall back to alphabetical for non-numeric ties.
+      const numericModes = modes.filter((m) => !isNaN(parseFloat(m)));
       consensus =
         numericModes.length > 0
-          ? Math.min(...numericModes).toString()
+          ? numericModes.reduce((lo, m) =>
+              parseFloat(m) < parseFloat(lo) ? m : lo
+            )
           : [...modes].sort()[0];
     }
   }
@@ -61,10 +64,13 @@ export function summarize(
   // Agreement: share of counted votes on the consensus.
   const agreement = voteCount > 0 ? Math.round((maxCount / voteCount) * 100) : 0;
 
-  // Average/median over numeric counted votes — only for numeric scales.
+  // Average/median over numeric counted votes — only for numeric scales. An
+  // absent scale defaults to numeric: the default scale is numeric and the
+  // client renders these via `votingScale?.isNumeric ?? true`, so the stored
+  // stats must use the same default or the two diverge (ADR-0002).
   let average: number | null = null;
   let median: number | null = null;
-  if (scale?.isNumeric) {
+  if (scale?.isNumeric ?? true) {
     const numericVotes = labels
       .map((l) => parseFloat(l))
       .filter((n) => !isNaN(n));

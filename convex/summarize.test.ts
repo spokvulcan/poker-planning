@@ -26,6 +26,14 @@ describe("summarize — consensus", () => {
     );
     expect(s.consensus).toBe("L");
   });
+
+  it("returns the real card label on a numeric tie, not a reparsed number", () => {
+    // A custom numeric deck can use non-canonical labels like "1.0"/"2.0".
+    // The consensus must be an actual card label so it round-trips for
+    // display and scale-index lookups — not Math.min(...).toString() ("1").
+    const s = summarize([{ cardLabel: "1.0" }, { cardLabel: "2.0" }], numeric);
+    expect(s.consensus).toBe("1.0");
+  });
 });
 
 describe("summarize — stats", () => {
@@ -67,6 +75,15 @@ describe("summarize — stats", () => {
     expect(s.stats.median).toBeNull();
     expect(s.consensus).toBe("M");
     expect(s.stats.agreement).toBe(67);
+  });
+
+  it("treats an absent scale as numeric (the default scale is numeric)", () => {
+    // A room with no explicit votingScale (the demo room, and rooms predating
+    // the field) must still get numeric stats — the client renders them via
+    // `votingScale?.isNumeric ?? true`, so the stored stats must agree.
+    const s = summarize([{ cardLabel: "2" }, { cardLabel: "4" }, { cardLabel: "6" }]);
+    expect(s.stats.average).toBe(4);
+    expect(s.stats.median).toBe(4);
   });
 
   it("returns nulls and zero agreement when there are no countable votes", () => {

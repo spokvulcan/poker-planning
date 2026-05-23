@@ -31,5 +31,10 @@ export async function areAllVotesIn(
   const nonSpectatorMembers = memberships.filter((m) => !m.isSpectator);
   const votedUserIds = new Set(votes.map((vote) => vote.userId));
 
-  return nonSpectatorMembers.every((m) => votedUserIds.has(m.userId));
+  // `[].every()` is vacuously true — a room with no non-spectator members is
+  // not "all in" (nobody can vote), so require at least one real voter.
+  return (
+    nonSpectatorMembers.length > 0 &&
+    nonSpectatorMembers.every((m) => votedUserIds.has(m.userId))
+  );
 }

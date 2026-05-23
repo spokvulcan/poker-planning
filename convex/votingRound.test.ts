@@ -238,6 +238,22 @@ describe("Countdown.evaluate", () => {
     expect(room?.autoRevealCountdownStartedAt).toBeUndefined();
   });
 
+  it("does not arm a room with no non-spectator members (empty is not all-in)", async () => {
+    // `[].every()` is vacuously true, so a spectator-only room would otherwise
+    // report "all in" and auto-reveal a round nobody really voted in. A stray
+    // spectator ballot (the backend doesn't block it) must not arm.
+    const t = convexTest(schema, modules);
+    const roomId = await seedRoom(t, { autoCompleteVoting: true });
+    const s = await addMember(t, roomId, { isSpectator: true });
+    await rawVote(t, roomId, s);
+
+    await t.run((ctx) => Countdown.evaluate(ctx, roomId));
+
+    const room = await readRoom(t, roomId);
+    expect(room?.autoRevealCountdownStartedAt).toBeUndefined();
+    expect(await scheduledFns(t)).toHaveLength(0);
+  });
+
   it("cancels an armed countdown once a voter retracts (no longer all-in)", async () => {
     const t = convexTest(schema, modules);
     const roomId = await seedRoom(t, { autoCompleteVoting: true });
@@ -619,6 +635,28 @@ describe("VotingRound.reveal", () => {
     expect(issue?.voteStats?.agreement).toBe(67); // 2 of 3
   });
 
+  it("stores numeric average/median when the room has no explicit scale", async () => {
+    // The demo room and pre-`votingScale` rooms have no scale; the canvas
+    // panel still shows an average (client default `?? true`), so the stored
+    // stats must be numeric too — not null (ADR-0002, no client/server divergence).
+    const t = convexTest(schema, modules);
+    const roomId = await seedRoom(t); // seedRoom sets no votingScale
+    const issueId = await seedIssue(t, roomId, { status: "voting" });
+    await t.run((ctx) => ctx.db.patch(roomId, { currentIssueId: issueId }));
+    const a = await addMember(t, roomId);
+    const b = await addMember(t, roomId);
+    const c = await addMember(t, roomId);
+    await rawVote(t, roomId, a, "2");
+    await rawVote(t, roomId, b, "4");
+    await rawVote(t, roomId, c, "6");
+
+    await t.run((ctx) => VotingRound.reveal(ctx, roomId));
+
+    const issue = await t.run((ctx) => ctx.db.get(issueId));
+    expect(issue?.voteStats?.average).toBe(4);
+    expect(issue?.voteStats?.median).toBe(4);
+  });
+
   it("snapshots per-voter alignment into individualVotes", async () => {
     const t = convexTest(schema, modules);
     const roomId = await seedRoom(t);
@@ -670,6 +708,29 @@ describe("VotingRound.reveal", () => {
     await t.run((ctx) => VotingRound.reveal(ctx, roomId));
 
     expect((await readRoom(t, roomId))?.isGameOver).toBe(true);
+  });
+
+  it("closes the open timing record even when there is no consensus", async () => {
+    // Revealing a round with only special cards (or no votes) yields no
+    // consensus, so the issue isn't completed — but the round IS over, so its
+    // open timing record must close at reveal, not leak until the next reset.
+    const t = convexTest(schema, modules);
+    const roomId = await seedRoom(t);
+    const issueId = await seedIssue(t, roomId, { status: "pending" });
+    await t.run((ctx) => VotingRound.start(ctx, { roomId, issueId })); // opens round 1
+    const a = await addMember(t, roomId);
+    await rawVote(t, roomId, a, "?"); // special only → consensus null
+
+    await t.run((ctx) => VotingRound.reveal(ctx, roomId));
+
+    const ts = await t.run((ctx) =>
+      ctx.db
+        .query("votingTimestamps")
+        .withIndex("by_issue", (q) => q.eq("issueId", issueId))
+        .collect()
+    );
+    expect(ts).toHaveLength(1);
+    expect(ts[0].votingEndedAt).toEqual(expect.any(Number));
   });
 
   it("cancels an armed countdown when revealing", async () => {

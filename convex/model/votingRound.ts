@@ -125,6 +125,11 @@ export async function reveal(ctx: MutationCtx, roomId: Id<"rooms">): Promise<voi
         finalEstimate: summary.consensus,
         voteStats: summary.stats,
       });
+    } else if (shouldRecordTiming(room, room.currentIssueId)) {
+      // No consensus to snapshot (all special / no votes), so the issue stays
+      // un-completed — but the round is over. Close its open timing record now
+      // so the duration ends at reveal, not at the next reset/abandon.
+      await Issues.closeOpenTimestamp(ctx, room.currentIssueId);
     }
 
     // Per-voter alignment snapshot for analytics/export.
