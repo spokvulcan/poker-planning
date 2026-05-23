@@ -1,7 +1,15 @@
 import { QueryCtx, MutationCtx } from "../_generated/server";
 import { Id, Doc } from "../_generated/dataModel";
-import { PermissionCategory } from "../permissions";
-import { requirePermission } from "./permissions";
+import {
+  PermissionCategory,
+  Action,
+  evaluate,
+  denialMessage,
+  requiresOwnerLevel,
+  getEffectivePermissions,
+  getEffectiveRole,
+} from "../permissions";
+import { isRoomOwnerAbsent } from "./permissions";
 
 /**
  * Auth identity returned by ctx.auth.getUserIdentity().
@@ -85,24 +93,101 @@ export async function requireRoomMember(
 }
 
 /**
- * Requires authentication, room membership, AND permission for a specific category.
- * Combines requireRoomMember + requirePermission in one call.
+ * What an authorization guard is being asked to permit. The caller names the
+ * category or relationship verb; it cannot know the target's role, so the
+ * guard fills targetRole itself for target-constrained verbs.
  */
-export async function requireRoomPermission(
+export type RequireCanSpec =
+  | { kind: "category"; category: PermissionCategory }
+  | {
+      kind: "relationship";
+      verb: "remove" | "promote" | "demote" | "transfer" | "changePerms";
+    };
+
+/**
+ * The permission guard: the single authorization entry point for room
+ * mutations. Does the IO — loads the room and memberships, computes owner
+ * absence, fetches the target for target-constrained verbs — assembles the
+ * precise Action, calls evaluate, and throws a reason-derived message on
+ * denial. Returns the loaded bundle so callers stop re-fetching.
+ *
+ * Identity rules (self-transfer, authoritative ownerId) are NOT enforced here;
+ * they stay in the calling handler, after the guard.
+ */
+export async function requireCan(
   ctx: QueryCtx | MutationCtx,
   roomId: Id<"rooms">,
-  category: PermissionCategory
+  spec: RequireCanSpec,
+  targetUserId?: Id<"users">
 ): Promise<{
   identity: AuthIdentity;
   user: Doc<"users">;
   membership: Doc<"roomMemberships">;
   room: Doc<"rooms">;
+  target?: Doc<"roomMemberships">;
 }> {
   const { identity, user, membership } = await requireRoomMember(ctx, roomId);
   const room = await ctx.db.get(roomId);
   if (!room) {
     throw new Error("Room not found");
   }
-  await requirePermission(ctx, room, membership, category);
-  return { identity, user, membership, room };
+
+  const permissions = getEffectivePermissions(room);
+  const actorRole = getEffectiveRole(membership);
+
+  let action: Action;
+  let target: Doc<"roomMemberships"> | undefined;
+
+  if (spec.kind === "category") {
+    action = {
+      kind: "category",
+      category: spec.category,
+      level: permissions[spec.category],
+    };
+  } else {
+    // Relationship verb. Fetch the target membership whenever a target is
+    // supplied; fill targetRole only for the target-constrained verbs.
+    if (targetUserId !== undefined) {
+      target =
+        (await ctx.db
+          .query("roomMemberships")
+          .withIndex("by_room_user", (q) =>
+            q.eq("roomId", roomId).eq("userId", targetUserId)
+          )
+          .first()) ?? undefined;
+      if (!target) {
+        throw new Error("Target user is not a member of this room");
+      }
+    }
+
+    if (
+      spec.verb === "remove" ||
+      spec.verb === "promote" ||
+      spec.verb === "demote"
+    ) {
+      if (!target) {
+        throw new Error("Target user is not a member of this room");
+      }
+      action = {
+        kind: "relationship",
+        verb: spec.verb,
+        targetRole: getEffectiveRole(target),
+      };
+    } else {
+      action = { kind: "relationship", verb: spec.verb };
+    }
+  }
+
+  // Owner absence only refines an owner-level denial (see evaluate); for any
+  // other action it can't change the result, so skip the DB read.
+  const ownerAbsent = requiresOwnerLevel(action)
+    ? await isRoomOwnerAbsent(ctx, room)
+    : false;
+
+  const decision = evaluate(action, { actorRole, permissions, ownerAbsent });
+  if (!decision.allowed) {
+    throw new Error(denialMessage(action, decision.reason));
+  }
+
+  return { identity, user, membership, room, target };
 }

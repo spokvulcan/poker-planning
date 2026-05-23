@@ -6,7 +6,7 @@
 import { mutation, query } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
-import { requireAuthUser, requireRoomMember, requireRoomPermission } from "./model/auth";
+import { requireAuthUser, requireRoomMember, requireCan } from "./model/auth";
 
 // ---------------------------------------------------------------------------
 // Connection queries & mutations
@@ -129,7 +129,7 @@ export const saveRoomMapping = mutation({
     autoPushEstimates: v.boolean(),
   },
   handler: async (ctx, args) => {
-    await requireRoomPermission(ctx, args.roomId, "roomSettings");
+    await requireCan(ctx, args.roomId, { kind: "category", category: "roomSettings" });
 
     // Verify the connection belongs to the current user
     const { user } = await requireAuthUser(ctx);
@@ -201,7 +201,7 @@ export const saveRoomMapping = mutation({
 export const removeRoomMapping = mutation({
   args: { roomId: v.id("rooms") },
   handler: async (ctx, args) => {
-    await requireRoomPermission(ctx, args.roomId, "roomSettings");
+    await requireCan(ctx, args.roomId, { kind: "category", category: "roomSettings" });
 
     const mapping = await ctx.db
       .query("integrationMappings")

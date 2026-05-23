@@ -4,7 +4,7 @@ import * as Rooms from "./model/rooms";
 import {
   requireAuth,
   requireAuthUser,
-  requireRoomPermission,
+  requireCan,
 } from "./model/auth";
 
 // Internal mutation called by scheduler for auto-reveal
@@ -89,7 +89,7 @@ export const updateActivity = mutation({
 export const showCards = mutation({
   args: { roomId: v.id("rooms") },
   handler: async (ctx, args) => {
-    await requireRoomPermission(ctx, args.roomId, "revealCards");
+    await requireCan(ctx, args.roomId, { kind: "category", category: "revealCards" });
     await Rooms.showRoomCards(ctx, args.roomId);
   },
 });
@@ -98,7 +98,7 @@ export const showCards = mutation({
 export const resetGame = mutation({
   args: { roomId: v.id("rooms") },
   handler: async (ctx, args) => {
-    await requireRoomPermission(ctx, args.roomId, "gameFlow");
+    await requireCan(ctx, args.roomId, { kind: "category", category: "gameFlow" });
     await Rooms.resetRoomGame(ctx, args.roomId);
   },
 });
@@ -107,7 +107,7 @@ export const resetGame = mutation({
 export const toggleAutoComplete = mutation({
   args: { roomId: v.id("rooms") },
   handler: async (ctx, args) => {
-    const { room } = await requireRoomPermission(ctx, args.roomId, "roomSettings");
+    const { room } = await requireCan(ctx, args.roomId, { kind: "category", category: "roomSettings" });
     // Cancel any scheduled reveal when toggling
     if (room.autoRevealScheduledId) {
       try {
@@ -129,7 +129,7 @@ export const toggleAutoComplete = mutation({
 export const cancelAutoRevealCountdown = mutation({
   args: { roomId: v.id("rooms") },
   handler: async (ctx, args) => {
-    const { room } = await requireRoomPermission(ctx, args.roomId, "revealCards");
+    const { room } = await requireCan(ctx, args.roomId, { kind: "category", category: "revealCards" });
     if (room.autoRevealCountdownStartedAt) {
       // Cancel the scheduled job if it exists
       if (room.autoRevealScheduledId) {
@@ -154,7 +154,7 @@ export const rename = mutation({
     name: v.string(),
   },
   handler: async (ctx, args) => {
-    await requireRoomPermission(ctx, args.roomId, "roomSettings");
+    await requireCan(ctx, args.roomId, { kind: "category", category: "roomSettings" });
     await ctx.db.patch(args.roomId, {
       name: args.name,
       lastActivityAt: Date.now(),

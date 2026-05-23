@@ -54,7 +54,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { usePermissions, getPermissionDeniedTooltip } from "@/hooks/usePermissions";
+import { usePermissions } from "@/hooks/usePermissions";
+import { denialMessage } from "@/convex/permissions";
 import { IntegrationSettingsSection } from "./integration-settings";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -281,6 +282,18 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
 
   const currentPermissions = getEffectivePermissions(roomData.room);
 
+  // Tooltip for the room-name controls, routed through the shared denial copy.
+  const roomSettingsTooltip = perms.roomSettings.allowed
+    ? undefined
+    : denialMessage(
+        {
+          kind: "category",
+          category: "roomSettings",
+          level: currentPermissions.roomSettings,
+        },
+        perms.roomSettings.reason
+      );
+
   return (
     <>
     <SidePanel isOpen={isOpen} onClose={onClose}>
@@ -336,27 +349,27 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
                 <Input
                   id="room-name"
                   value={roomName}
-                  onChange={(e) => !isDemoMode && perms.canChangeRoomSettings && setRoomName(e.target.value)}
+                  onChange={(e) => !isDemoMode && perms.roomSettings.allowed && setRoomName(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter" && !isDemoMode && perms.canChangeRoomSettings) handleSaveRoomName();
+                    if (e.key === "Enter" && !isDemoMode && perms.roomSettings.allowed) handleSaveRoomName();
                   }}
                   placeholder="Enter room name"
                   className="h-10 text-sm bg-gray-50 dark:bg-surface-2"
-                  readOnly={isDemoMode || !perms.canChangeRoomSettings}
-                  title={!perms.canChangeRoomSettings ? getPermissionDeniedTooltip(currentPermissions.roomSettings) : undefined}
+                  readOnly={isDemoMode || !perms.roomSettings.allowed}
+                  title={roomSettingsTooltip}
                 />
                 {!isDemoMode && (
                   <Button
                     size="default"
                     onClick={handleSaveRoomName}
                     disabled={
-                      !perms.canChangeRoomSettings ||
+                      !perms.roomSettings.allowed ||
                       isSaving ||
                       !roomName.trim() ||
                       roomName === roomData.room.name
                     }
                     className="h-10 px-4 whitespace-nowrap"
-                    title={!perms.canChangeRoomSettings ? getPermissionDeniedTooltip(currentPermissions.roomSettings) : undefined}
+                    title={roomSettingsTooltip}
                   >
                     {isSaving ? "Saving..." : "Save"}
                   </Button>
@@ -380,8 +393,8 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
               <Switch
                 id="auto-reveal"
                 checked={roomData.room.autoCompleteVoting}
-                onCheckedChange={isDemoMode || !perms.canChangeRoomSettings ? undefined : handleToggleAutoReveal}
-                disabled={isDemoMode || !perms.canChangeRoomSettings}
+                onCheckedChange={isDemoMode || !perms.roomSettings.allowed ? undefined : handleToggleAutoReveal}
+                disabled={isDemoMode || !perms.roomSettings.allowed}
                 className="data-[state=checked]:bg-primary"
               />
             </div>
@@ -478,7 +491,7 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
                       <div className="flex items-center gap-1.5 p-3 rounded-lg bg-gray-50 dark:bg-surface-3 border border-gray-100 dark:border-border/50">
                         <Info className="h-4 w-4 text-blue-500 shrink-0" />
                         <span className="text-xs text-gray-600 dark:text-gray-300">
-                          {perms.canChangePermissionsFlag ? "As the owner, you can control who can perform actions in this room." : "Only the room owner can change these permissions."}
+                          {perms.changePermissions.allowed ? "As the owner, you can control who can perform actions in this room." : "Only the room owner can change these permissions."}
                         </span>
                       </div>
                       <div className="space-y-2">
@@ -500,7 +513,7 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
                                 </div>
                               </div>
                               <div className="shrink-0">
-                                {perms.canChangePermissionsFlag ? (
+                                {perms.changePermissions.allowed ? (
                                   <Select
                                     value={currentPermissions[category]}
                                     onValueChange={(value) => handlePermissionChange(category, value as PermissionLevel)}
@@ -571,10 +584,10 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
                   sortedUsers.map((u) => {
                     const userRole = u.role ?? "participant";
                     const isMe = u._id === currentUserId;
-                    const canRemoveThis = perms.canRemoveTarget(userRole);
-                    const canPromoteThis = perms.canPromoteTarget(userRole);
-                    const canDemoteThis = perms.canDemoteFacilitatorFlag && userRole === "facilitator";
-                    const canTransfer = perms.canTransferOwnershipFlag;
+                    const canRemoveThis = perms.removeTarget(userRole).allowed;
+                    const canPromoteThis = perms.promoteTarget(userRole).allowed;
+                    const canDemoteThis = perms.demoteTarget(userRole).allowed;
+                    const canTransfer = perms.transfer.allowed;
 
                     return (
                       <div
