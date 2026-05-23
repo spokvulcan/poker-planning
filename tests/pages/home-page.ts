@@ -19,11 +19,11 @@ export class HomePage {
 
     // Hero section elements
     this.heroHeading = page.locator("h1");
-    this.heroDescription = page.locator("text=Join thousands of Scrum teams");
+    this.heroDescription = page.locator(
+      "text=A radically simple estimation tool"
+    );
     this.startGameButton = page.getByTestId("hero-start-button");
-    this.githubLink = page
-      .getByRole("link", { name: /view on github/i })
-      .first();
+    this.githubLink = page.getByTestId("hero-github-link").first();
     this.skipToMainLink = page.getByRole("link", {
       name: /skip to main content/i,
     });
@@ -38,7 +38,11 @@ export class HomePage {
 
   async goto(): Promise<void> {
     await this.page.goto("/");
-    await this.page.waitForLoadState("networkidle");
+    // Wait for the hero CTA instead of "networkidle": an authenticated user
+    // returning home keeps Convex/auth connections busy, so networkidle never
+    // settles. The hero button is server-rendered and always present.
+    await this.page.waitForLoadState("domcontentloaded");
+    await expect(this.startGameButton.first()).toBeVisible();
   }
 
   async verifyPageTitle(titlePattern: RegExp): Promise<void> {
@@ -47,12 +51,10 @@ export class HomePage {
 
   async verifyHeroSection(): Promise<void> {
     await expect(this.heroHeading).toBeVisible();
-    await expect(this.heroHeading).toContainText("Free Planning Poker Online");
+    await expect(this.heroHeading).toContainText("Planning poker");
 
     await expect(this.heroDescription).toBeVisible();
-    await expect(this.heroDescription).toContainText(
-      "story point estimation"
-    );
+    await expect(this.heroDescription).toContainText("estimation tool");
   }
 
   async verifyTrustIndicators(): Promise<void> {

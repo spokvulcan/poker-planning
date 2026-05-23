@@ -224,7 +224,7 @@ function AlignAnimation() {
 
 export function HowItWorks() {
   return (
-    <section className="py-24 sm:py-32 bg-surface-1 dark:bg-black overflow-hidden border-t border-b border-gray-100 dark:border-zinc-900">
+    <section id="how-it-works" className="py-24 sm:py-32 bg-surface-1 dark:bg-black overflow-hidden border-t border-b border-gray-100 dark:border-zinc-900">
       <div className="mx-auto max-w-7xl px-6 lg:px-8">
         <div className="mb-16 max-w-2xl">
           <h2 className="text-sm font-bold tracking-widest text-primary uppercase mb-6">

@@ -13,7 +13,7 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
-    "test:e2e:headless": "playwright test --reporter=line --workers=1"
+    "test:e2e:headless": "playwright test --reporter=line --workers=4"
   },
   "dependencies": {
     "@base-ui/react": "1.2.0",

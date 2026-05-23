@@ -19,12 +19,18 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   /* Retry on CI only */
   retries: process.env.CI ? 2 : 0,
-  /* Opt out of parallel tests on CI. */
-  workers: process.env.CI ? 1 : undefined,
+  /* Opt out of parallel tests on CI. Locally, cap workers: every test shares a
+     single Convex dev deployment + Next dev server, so the default (~half the
+     cores) overwhelms that backend and causes contention flakiness. */
+  workers: process.env.CI ? 1 : 4,
   /* Reporter to use. See https://playwright.dev/docs/test-reporters */
   reporter: process.env.CI ? 'line' : 'html',
-  /* Test timeout */
-  timeout: 30 * 1000,
+  /* Per-test timeout. Multi-user real-time tests need headroom. */
+  timeout: 60 * 1000,
+  /* Assertion timeout. Real-time Convex sync + canvas rendering can lag under
+     parallel load, so give web-first assertions room instead of sprinkling
+     per-call { timeout } overrides. */
+  expect: { timeout: 10 * 1000 },
   /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
   use: {
     /* Base URL to use in actions like `await page.goto('/')`. */
@@ -38,13 +44,15 @@ export default defineConfig({
     
     /* Video on failure */
     video: process.env.CI ? 'off' : 'retain-on-failure',
-    
-    /* Default action timeout */
-    actionTimeout: 10 * 1000,
-    
-    /* Default navigation timeout */
-    navigationTimeout: 15 * 1000,
-    
+
+    /* Action timeout (clicks, fills, waitForSelector). Generous enough to stay
+       reliable when several workers hammer the dev server at once. */
+    actionTimeout: 15 * 1000,
+
+    /* Navigation timeout. The Next.js dev server compiles routes on first hit,
+       which can exceed a few seconds under parallel load. */
+    navigationTimeout: 30 * 1000,
+
     /* Viewport size */
     viewport: { width: 1920, height: 1080 },
     

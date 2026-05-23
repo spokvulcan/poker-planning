@@ -2,7 +2,6 @@ import { test, expect } from "@playwright/test";
 import { RoomPage } from "../pages/room-page";
 import { JoinRoomPage } from "../pages/join-room-page";
 import {
-  createRoom,
   navigateToRoom,
   createAndJoinRoom,
 } from "../utils/room-helpers";
@@ -15,15 +14,13 @@ test.describe("Spectator Feature", () => {
     }) => {
       await mockClipboardAPI(page);
 
-      // Create a room
-      await createRoom(page);
-
-      // Join as spectator
-      const joinPage = new JoinRoomPage(page);
-      await joinPage.joinAsSpectator("Spectator User");
-
-      const roomPage = new RoomPage(page);
-      await roomPage.waitForRoomLoad();
+      // Create a room and become a spectator (auto-joined as a guest
+      // participant, renamed, then switched to spectator mode).
+      const { roomPage } = await createAndJoinRoom(
+        page,
+        "Spectator User",
+        "spectator"
+      );
 
       // Verify voting cards are not visible
       await roomPage.expectVotingCardsNotVisible();

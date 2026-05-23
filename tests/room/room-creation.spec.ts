@@ -30,8 +30,9 @@ test.describe("Room Creation Suite", () => {
       // Verify URL changed to room
       await expect(page).toHaveURL(new RegExp(`/room/${roomId}`));
 
-      // Should see join dialog for new room
-      await expect(page.getByRole("heading", { name: "Join Room" })).toBeVisible({ timeout: 10000 });
+      // Creating a room signs the user in anonymously and auto-joins them as a
+      // guest, so the canvas loads directly (no join dialog for the creator).
+      await expect(page.locator(".react-flow")).toBeVisible();
     });
 
     test("should generate unique room IDs for each creation", async ({
@@ -81,7 +82,7 @@ test.describe("Room Creation Suite", () => {
       await createAndJoinRoom(page, "Test User");
 
       // Verify we successfully joined the room and canvas is visible
-      await expect(page.locator(".react-flow")).toBeVisible({ timeout: 10000 });
+      await expect(page.locator(".react-flow")).toBeVisible();
     });
   });
 
@@ -98,16 +99,9 @@ test.describe("Room Creation Suite", () => {
       await page.goto("/");
       await waitForNetworkIdle(page);
 
-      // Navigate directly to room URL
+      // Navigate directly to room URL — returning to a room you already belong
+      // to loads straight to the canvas (auto-rejoin, no dialog).
       await navigateToRoom(page, roomId);
-
-      // Should see join dialog
-      const joinPage = new JoinRoomPage(page);
-      await expect(page.getByRole("heading", { name: "Join Room" })).toBeVisible({ timeout: 10000 });
-
-      // Join and verify room loads
-      await joinPage.joinAsParticipant("Direct Navigator");
-      await joinPage.expectDialogClosed();
 
       const roomPage = new RoomPage(page);
       await roomPage.waitForRoomLoad();
@@ -127,9 +121,9 @@ test.describe("Room Creation Suite", () => {
       await page.goto(`/room/${roomId}/`);
       await waitForNetworkIdle(page);
 
-      // Should still load the room
+      // Should still load the room (creator auto-rejoins to the canvas)
       await expect(page).toHaveURL(new RegExp(`/room/${roomId}`));
-      await expect(page.getByRole("heading", { name: "Join Room" })).toBeVisible({ timeout: 10000 });
+      await expect(page.locator(".react-flow")).toBeVisible();
     });
 
     test("should handle URL with query parameters", async ({ page }) => {
@@ -142,8 +136,8 @@ test.describe("Room Creation Suite", () => {
       await page.goto(`/room/${roomId}?ref=test&utm_source=test`);
       await waitForNetworkIdle(page);
 
-      // Should load the room
-      await expect(page.getByRole("heading", { name: "Join Room" })).toBeVisible({ timeout: 10000 });
+      // Should load the room (creator auto-rejoins to the canvas)
+      await expect(page.locator(".react-flow")).toBeVisible();
 
       // Verify room ID is preserved
       const currentRoomId = extractRoomIdFromUrl(page.url());
@@ -372,22 +366,31 @@ test.describe("Room Creation Suite", () => {
 
   test.describe("Room creation edge cases", () => {
     test("should handle rapid room creation attempts", async ({ page }) => {
-      const homePage = new HomePage(page);
       await mockClipboardAPI(page);
-      await homePage.goto();
 
-      // Click the button multiple times rapidly
-      const button = page.getByTestId("hero-start-button");
+      // Go straight to the creation form (the hero CTA is just a link there).
+      await page.goto("/room/new");
 
-      // Click 3 times without waiting
-      await Promise.all([button.click(), button.click(), button.click()]);
+      const createButton = page.getByRole("button", { name: /create game/i });
+      await expect(createButton).toBeVisible();
+      await expect(createButton).toBeEnabled();
 
-      // Should end up in a room (only one)
-      await page.waitForURL(/\/room\/[a-z0-9]+/, { timeout: 10000 });
+      // Click "Create Game" 3 times without waiting. force:true skips the
+      // actionability wait — the first click disables the button while creating,
+      // so the burst exercises the idempotency guard rather than the form link.
+      await Promise.all([
+        createButton.click({ force: true }),
+        createButton.click({ force: true }),
+        createButton.click({ force: true }),
+      ]);
 
-      // Verify we're in a valid room
+      // Should navigate to an actual room, not stay on /room/new.
+      await page.waitForURL(/\/room\/(?!new)[a-z0-9]+/);
+
+      // Verify we're in a valid, non-"new" room
       const roomId = extractRoomIdFromUrl(page.url());
       expect(roomId).toBeTruthy();
+      expect(roomId).not.toBe("new");
       expect(roomId).toMatch(/^[a-z0-9]+$/);
     });
 

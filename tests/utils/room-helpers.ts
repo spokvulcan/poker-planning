@@ -1,4 +1,4 @@
-import { Page, Browser, BrowserContext } from "@playwright/test";
+import { Page, Browser, BrowserContext, expect } from "@playwright/test";
 import { HomePage } from "../pages/home-page";
 import { RoomPage } from "../pages/room-page";
 import { JoinRoomPage } from "../pages/join-room-page";
@@ -41,7 +41,36 @@ export async function navigateToRoom(
 }
 
 /**
- * Create a room and join it with a specific user
+ * Rename the current user via the UserMenu ("Edit name" dialog).
+ *
+ * Names live on the single global `users.name` field, so this propagates to the
+ * player node and every other view through Convex reactivity.
+ */
+export async function renameSelf(page: Page, newName: string): Promise<void> {
+  const trigger = page.getByTestId("user-menu-trigger");
+  await expect(trigger).toBeVisible();
+  await trigger.click();
+
+  await page.getByRole("menuitem", { name: "Edit name" }).click();
+
+  const dialog = page.getByRole("dialog").filter({ hasText: "Edit your name" });
+  const input = dialog.getByPlaceholder("Enter your name");
+  await input.fill(newName);
+  await dialog.getByRole("button", { name: "Save" }).click();
+
+  // Dialog closes and the new name appears in the menu trigger once the
+  // mutation round-trips.
+  await expect(dialog).not.toBeVisible();
+  await expect(trigger).toContainText(newName);
+}
+
+/**
+ * Create a room and end up in it as `userName`.
+ *
+ * Creating a room signs the user in anonymously and auto-joins them as a guest
+ * (e.g. "Guest 4829") — no join dialog is shown to the creator. We then rename
+ * the guest to the requested name, and optionally switch to spectator mode
+ * (auto-join always lands as a participant).
  */
 export async function createAndJoinRoom(
   page: Page,
@@ -52,20 +81,12 @@ export async function createAndJoinRoom(
   const roomPage = new RoomPage(page);
   const joinPage = new JoinRoomPage(page);
 
-  // Check if join dialog appears
-  try {
-    await page.waitForSelector('h2:has-text("Join Room")', { timeout: 5000 });
-    // Join dialog is visible, join the room
-    if (role === "participant") {
-      await joinPage.joinAsParticipant(userName);
-    } else {
-      await joinPage.joinAsSpectator(userName);
-    }
-    // Wait for canvas to appear after joining
-    await page.waitForSelector('.react-flow', { timeout: 10000 });
-  } catch {
-    // No join dialog, user might already be in the room
-    await page.waitForSelector('.react-flow', { timeout: 10000 });
+  // Creator is auto-joined as a guest — wait for the canvas, then take the name.
+  await page.waitForSelector(".react-flow");
+  await renameSelf(page, userName);
+
+  if (role === "spectator") {
+    await roomPage.toggleSpectatorMode();
   }
 
   return { roomId, roomPage, joinPage };
@@ -85,17 +106,22 @@ export async function joinExistingRoom(
   const roomPage = new RoomPage(page);
   const joinPage = new JoinRoomPage(page);
 
-  // Wait for join dialog to appear
-  await page.waitForSelector('h2:has-text("Join Room")', { timeout: 10000 });
-
-  if (role === "participant") {
-    await joinPage.joinAsParticipant(userName);
-  } else {
-    await joinPage.joinAsSpectator(userName);
+  // A fresh context (no session) gets the join dialog and the chosen name is
+  // honored. A context that is already a member auto-rejoins straight to the
+  // canvas, so the dialog is optional.
+  try {
+    await page.waitForSelector('h2:has-text("Join Room")');
+    if (role === "participant") {
+      await joinPage.joinAsParticipant(userName);
+    } else {
+      await joinPage.joinAsSpectator(userName);
+    }
+  } catch {
+    // No dialog — already a member of this room.
   }
 
   // Wait for canvas to appear after joining
-  await page.waitForSelector('.react-flow', { timeout: 10000 });
+  await page.waitForSelector('.react-flow');
 
   return { roomPage, joinPage };
 }

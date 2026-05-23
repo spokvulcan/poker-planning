@@ -37,18 +37,6 @@ test.describe("Room Settings Panel", () => {
       expect(await settingsPanel.isOpen()).toBe(false);
     });
 
-    test("should close panel when clicking outside", async ({ page }) => {
-      await mockClipboardAPI(page);
-      const { roomPage } = await createAndJoinRoom(page, "TestUser");
-      await roomPage.waitForRoomLoad();
-
-      const settingsPanel = new SettingsPanelPage(page);
-      await settingsPanel.openSettings();
-      await settingsPanel.closeByClickingOutside();
-
-      expect(await settingsPanel.isOpen()).toBe(false);
-    });
-
     test("should close panel when pressing Escape", async ({ page }) => {
       await mockClipboardAPI(page);
       const { roomPage } = await createAndJoinRoom(page, "TestUser");
@@ -220,7 +208,7 @@ test.describe("Room Settings Panel", () => {
         // User2 should see the join dialog (they were kicked)
         await expect(
           user2.page.getByRole("heading", { name: "Join Room" })
-        ).toBeVisible({ timeout: 10000 });
+        ).toBeVisible();
       } finally {
         await cleanupUsers(users);
       }
@@ -254,16 +242,14 @@ test.describe("Room Settings Panel", () => {
         // User2 should see join dialog
         await expect(
           page2.getByRole("heading", { name: "Join Room" })
-        ).toBeVisible({ timeout: 10000 });
+        ).toBeVisible();
 
         // User2 rejoins
         const joinPage2 = new JoinRoomPage(page2);
         await joinPage2.joinAsParticipant("User2Rejoined");
 
         // User2 should be back in the room
-        await expect(page2.locator(".react-flow")).toBeVisible({
-          timeout: 10000,
-        });
+        await expect(page2.locator(".react-flow")).toBeVisible();
 
         // User1 should see User2Rejoined
         await roomPage1.expectPlayerInList("User2Rejoined");

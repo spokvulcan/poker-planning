@@ -296,7 +296,7 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
 
   return (
     <>
-    <SidePanel isOpen={isOpen} onClose={onClose}>
+    <SidePanel isOpen={isOpen} onClose={onClose} data-testid="room-settings-panel">
         {/* Header */}
         <div className="flex items-center justify-between px-6 h-14 border-b border-gray-200/50 dark:border-border shrink-0 bg-white dark:bg-surface-1">
           <div className="flex items-center gap-2.5">
@@ -569,7 +569,7 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
                 </Badge>
               </div>
               
-              <div className="space-y-2 mt-3">
+              <div className="space-y-2 mt-3" data-testid="participant-list">
                 {sortedUsers.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-10 px-4 rounded-xl border-2 border-dashed border-gray-200 dark:border-border bg-white/50 dark:bg-surface-2/10">
                     <Users className="h-8 w-8 text-gray-300 dark:text-gray-600 mb-3" />
@@ -592,6 +592,8 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
                     return (
                       <div
                         key={u._id}
+                        data-testid="participant-row"
+                        data-user-name={u.name}
                         className={cn(
                           "flex items-center justify-between py-3 px-4 rounded-xl border shadow-sm transition-all group",
                           isMe 

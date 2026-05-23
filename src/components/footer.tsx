@@ -89,6 +89,7 @@ export const Footer = () => {
                 <a
                   key={item.name}
                   href={item.href}
+                  data-testid={item.name === "GitHub" ? "hero-github-link" : undefined}
                   className="text-gray-400 hover:text-gray-500 dark:text-gray-500 dark:hover:text-gray-400"
                   target="_blank"
                   rel="noopener noreferrer"

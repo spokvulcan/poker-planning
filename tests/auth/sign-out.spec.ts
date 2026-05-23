@@ -2,7 +2,7 @@ import { test, expect } from "@playwright/test";
 import { RoomPage } from "../pages/room-page";
 import { JoinRoomPage } from "../pages/join-room-page";
 import {
-  createRoom,
+  createAndJoinRoom,
   navigateToRoom,
   joinExistingRoom,
 } from "../utils/room-helpers";
@@ -15,14 +15,10 @@ test.describe("Sign Out Flow", () => {
     const page1 = await context1.newPage();
     await mockClipboardAPI(page1);
 
-    const roomId = await createRoom(page1);
-    const joinPage1 = new JoinRoomPage(page1);
-    await joinPage1.waitForDialog();
-    await joinPage1.joinAsParticipant("User1");
-    await joinPage1.expectDialogClosed();
-
-    const roomPage1 = new RoomPage(page1);
-    await roomPage1.waitForRoomLoad();
+    const { roomId, roomPage: roomPage1 } = await createAndJoinRoom(
+      page1,
+      "User1"
+    );
     await roomPage1.expectPlayerInList("User1");
 
     // User 2 joins the same room (to observe User1 leaving)
@@ -39,13 +35,13 @@ test.describe("Sign Out Flow", () => {
     await roomPage2.expectPlayerInList("User2");
 
     // User 1 signs out
-    await page1.getByRole("button", { name: /User1/i }).click();
+    await page1.getByTestId("user-menu-trigger").click();
     await page1.getByRole("menuitem", { name: /sign out/i }).click();
 
     // User 2 should no longer see User 1 in the room
     await expect(
       page2.locator(".react-flow__node-player").filter({ hasText: "User1" })
-    ).not.toBeVisible({ timeout: 10000 });
+    ).not.toBeVisible();
 
     // User 2 should still be in the room
     await roomPage2.expectPlayerInList("User2");
@@ -61,22 +57,12 @@ test.describe("Sign Out Flow", () => {
     const page = await context.newPage();
     await mockClipboardAPI(page);
 
-    // Create a room
-    const roomId = await createRoom(page);
-
-    // Join the room
-    const joinPage = new JoinRoomPage(page);
-    await joinPage.waitForDialog();
-    await joinPage.joinAsParticipant("TestUser");
-    await joinPage.expectDialogClosed();
-
-    // Wait for room to load
-    const roomPage = new RoomPage(page);
-    await roomPage.waitForRoomLoad();
+    // Create and join the room (auto-joined as a guest, then renamed)
+    const { roomId, roomPage } = await createAndJoinRoom(page, "TestUser");
     await roomPage.expectPlayerInList("TestUser");
 
     // Sign out
-    await page.getByRole("button", { name: /TestUser/i }).click();
+    await page.getByTestId("user-menu-trigger").click();
     await page.getByRole("menuitem", { name: /sign out/i }).click();
 
     // Wait for sign out to complete
@@ -85,7 +71,8 @@ test.describe("Sign Out Flow", () => {
     // Navigate to the room again (or refresh)
     await navigateToRoom(page, roomId);
 
-    // Should see join dialog again (user was deleted)
+    // Should see join dialog again (user was deleted, session cleared)
+    const joinPage = new JoinRoomPage(page);
     await joinPage.waitForDialog();
 
     // Name field should be empty (session was cleared)
@@ -99,30 +86,20 @@ test.describe("Sign Out Flow", () => {
     const page = await context.newPage();
     await mockClipboardAPI(page);
 
-    // Create a room
-    await createRoom(page);
-
-    // Join the room
-    const joinPage = new JoinRoomPage(page);
-    await joinPage.waitForDialog();
-    await joinPage.joinAsParticipant("DeleteMe");
-    await joinPage.expectDialogClosed();
-
-    // Wait for room to load
-    const roomPage = new RoomPage(page);
-    await roomPage.waitForRoomLoad();
+    // Create and join the room (auto-joined as a guest, then renamed)
+    const { roomPage } = await createAndJoinRoom(page, "DeleteMe");
     await roomPage.expectPlayerInList("DeleteMe");
 
     // Sign out
-    await page.getByRole("button", { name: /DeleteMe/i }).click();
+    await page.getByTestId("user-menu-trigger").click();
     await page.getByRole("menuitem", { name: /sign out/i }).click();
 
     // Wait for sign out to complete
     await page.waitForTimeout(1000);
 
-    // The UserMenu should no longer be visible (user is signed out)
-    // Instead, we should see "Get Started" button or similar
-    await expect(page.getByRole("button", { name: /DeleteMe/i })).not.toBeVisible({ timeout: 5000 });
+    // After sign-out the session is cleared and the room falls back to the join
+    // dialog, so the user menu (which showed the name) is gone.
+    await expect(page.getByTestId("user-menu-trigger")).not.toBeVisible();
 
     await context.close();
   });

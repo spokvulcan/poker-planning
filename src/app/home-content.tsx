@@ -71,6 +71,7 @@ export function HomeContent({ versionInfo }: HomeContentProps) {
                 <div className="mt-12 flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                   <Link
                     href="/room/new"
+                    data-testid="hero-start-button"
                     className="inline-flex h-16 items-center justify-center gap-2 bg-black dark:bg-white px-12 text-lg font-bold tracking-tight text-white dark:text-black hover:scale-105 transition-transform duration-200 rounded-2xl w-full sm:w-auto"
                   >
                     Start Session

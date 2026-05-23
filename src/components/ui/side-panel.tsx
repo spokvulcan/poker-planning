@@ -11,15 +11,17 @@ interface SidePanelProps {
   children: React.ReactNode;
   className?: string;
   side?: "left" | "right";
+  "data-testid"?: string;
 }
 
-export function SidePanel({ isOpen, onClose, children, className, side = "right" }: SidePanelProps) {
+export function SidePanel({ isOpen, onClose, children, className, side = "right", "data-testid": dataTestId }: SidePanelProps) {
   const isMobile = useIsMobile();
 
   if (isMobile) {
     return (
       <Sheet open={isOpen} onOpenChange={(open) => !open && onClose()}>
-        <SheetContent 
+        <SheetContent
+          data-testid={dataTestId}
           side={side}
           className={cn(
             "w-[100vw] sm:w-[420px] sm:max-w-md p-0 gap-0 bg-white! dark:bg-surface-1! flex flex-col",
@@ -39,6 +41,7 @@ export function SidePanel({ isOpen, onClose, children, className, side = "right"
   // Desktop docked panel
   return (
     <div
+      data-testid={dataTestId}
       className={cn(
         "hidden md:flex flex-col border-gray-200/50 dark:border-border bg-white dark:bg-surface-1 overflow-hidden h-full z-40 relative shrink-0",
         "transition-[width] duration-300 ease-in-out",

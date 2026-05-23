@@ -25,10 +25,11 @@ export class SettingsPanelPage {
       name: "Room settings",
     });
 
-    // The floating settings panel
-    this.settingsPanel = page.getByRole("dialog", {
-      name: "Room settings",
-    });
+    // The settings panel. On desktop this is a docked panel (a plain div that
+    // animates from w-0 to w-[380px]); on mobile it's a Sheet dialog. Both
+    // carry data-testid="room-settings-panel". When closed the desktop panel
+    // has zero width, so toBeVisible() reflects the open/closed state.
+    this.settingsPanel = page.getByTestId("room-settings-panel");
 
     // Close button
     this.closeButton = page.getByRole("button", { name: "Close settings" });
@@ -48,10 +49,9 @@ export class SettingsPanelPage {
       system: this.settingsPanel.getByRole("button", { name: "System" }),
     };
 
-    // User list
-    this.userList = this.settingsPanel.locator(
-      ".space-y-1.max-h-32.overflow-y-auto"
-    );
+    // Participant list. Each row carries data-testid="participant-row" and a
+    // data-user-name attribute; the current user is listed too (no remove ctrl).
+    this.userList = this.settingsPanel.getByTestId("participant-list");
 
     // Participant count in settings header
     this.participantCount = this.settingsPanel.locator(
@@ -66,12 +66,6 @@ export class SettingsPanelPage {
 
   async closeSettings(): Promise<void> {
     await safeClick(this.closeButton);
-    await expect(this.settingsPanel).not.toBeVisible({ timeout: 5000 });
-  }
-
-  async closeByClickingOutside(): Promise<void> {
-    // Click on the canvas area outside the panel
-    await this.page.locator(".react-flow").click({ position: { x: 50, y: 300 } });
     await expect(this.settingsPanel).not.toBeVisible({ timeout: 5000 });
   }
 
@@ -142,15 +136,12 @@ export class SettingsPanelPage {
   }
 
   async getUserNames(): Promise<string[]> {
-    const userItems = this.userList.locator(
-      ".flex.items-center.justify-between"
-    );
-    const count = await userItems.count();
+    const rows = this.settingsPanel.getByTestId("participant-row");
+    const count = await rows.count();
     const names: string[] = [];
 
     for (let i = 0; i < count; i++) {
-      const nameEl = userItems.nth(i).locator("span.truncate");
-      const name = await nameEl.textContent();
+      const name = await rows.nth(i).getAttribute("data-user-name");
       if (name) names.push(name.trim());
     }
 
@@ -158,12 +149,26 @@ export class SettingsPanelPage {
   }
 
   async removeUser(userName: string): Promise<void> {
-    const removeButton = this.settingsPanel.getByRole("button", {
-      name: `Remove ${userName}`,
-    });
-    await safeClick(removeButton);
-    // Wait for user to be removed from the list
-    await expect(removeButton).not.toBeVisible({ timeout: 5000 });
+    const row = this.settingsPanel.locator(
+      `[data-testid="participant-row"][data-user-name="${userName}"]`
+    );
+    await expect(row).toBeVisible();
+    const confirmDialog = this.page.getByRole("alertdialog");
+
+    // The remove control is only revealed on hover (desktop). Retry hover+click
+    // until the confirmation dialog actually opens — the opacity reveal can race
+    // with the click, especially under parallel load.
+    await expect(async () => {
+      await row.hover();
+      await row
+        .getByRole("button", { name: `Remove ${userName}` })
+        .click({ force: true });
+      await expect(confirmDialog).toBeVisible({ timeout: 2000 });
+    }).toPass({ timeout: 10000 });
+
+    await confirmDialog.getByRole("button", { name: "Remove" }).click();
+    // Row disappears once the membership is deleted
+    await expect(row).not.toBeVisible();
   }
 
   async getParticipantCountText(): Promise<string> {
@@ -171,19 +176,27 @@ export class SettingsPanelPage {
   }
 
   async expectUserInList(userName: string): Promise<void> {
-    const userItem = this.userList.locator(`text="${userName}"`);
-    await expect(userItem).toBeVisible({ timeout: 5000 });
+    await expect(
+      this.settingsPanel.locator(
+        `[data-testid="participant-row"][data-user-name="${userName}"]`
+      )
+    ).toBeVisible();
   }
 
   async expectUserNotInList(userName: string): Promise<void> {
-    const userItem = this.userList.locator(`text="${userName}"`);
-    await expect(userItem).not.toBeVisible({ timeout: 5000 });
+    await expect(
+      this.settingsPanel.locator(
+        `[data-testid="participant-row"][data-user-name="${userName}"]`
+      )
+    ).not.toBeVisible();
   }
 
   async expectNoOtherParticipants(): Promise<void> {
-    const noParticipantsText = this.settingsPanel.locator(
-      'text="No other participants"'
-    );
-    await expect(noParticipantsText).toBeVisible({ timeout: 5000 });
+    // Assert on participant rows, not Remove buttons: a participant the viewer
+    // can't remove renders no "Remove <name>" button, so a button-count check
+    // would false-pass. Exactly one row means only the current user remains.
+    await expect(
+      this.settingsPanel.locator('[data-testid="participant-row"]')
+    ).toHaveCount(1);
   }
 }

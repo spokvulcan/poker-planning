@@ -37,12 +37,24 @@ export async function waitForRoomNavigation(
 }
 
 /**
- * Mock clipboard API with proper error handling
+ * Mock clipboard API with proper error handling.
+ *
+ * Also pre-sets the `analytics_consent` cookie so the consent banner (a fixed,
+ * z-50 card pinned to the bottom-right) never renders during tests. Left
+ * visible it can overlap the canvas / voting cards and intercept clicks.
  */
 export async function mockClipboardAPI(
   page: Page,
   shouldFail: boolean = false
 ): Promise<void> {
+  await page.context().addCookies([
+    {
+      name: "analytics_consent",
+      value: "denied",
+      url: "http://localhost:3000",
+    },
+  ]);
+
   await page.addInitScript((fail) => {
     if (fail) {
       Object.defineProperty(navigator, "clipboard", {
@@ -95,13 +107,18 @@ export async function retryAction<T>(
 }
 
 /**
- * Wait for network idle state
+ * Best-effort wait for the network to settle.
+ *
+ * With Convex's live websocket/poll traffic "networkidle" frequently never
+ * fires (especially for authenticated users), so this is a soft settle — it
+ * swallows the timeout and lets the subsequent web-first assertions do the real
+ * synchronization rather than failing the test here.
  */
 export async function waitForNetworkIdle(
   page: Page,
   timeout: number = 5000
 ): Promise<void> {
-  await page.waitForLoadState("networkidle", { timeout });
+  await page.waitForLoadState("networkidle", { timeout }).catch(() => {});
 }
 
 /**

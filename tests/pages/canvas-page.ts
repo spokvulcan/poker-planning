@@ -29,7 +29,7 @@ export class CanvasPage {
   }
 
   async waitForCanvasReady(): Promise<void> {
-    await expect(this.canvas).toBeVisible({ timeout: 10000 });
+    await expect(this.canvas).toBeVisible();
     // Wait for initial render to complete
     await this.page.waitForTimeout(500);
   }

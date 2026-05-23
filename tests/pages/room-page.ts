@@ -43,8 +43,11 @@ export class RoomPage {
     this.roomNameInHeaderMobile = page.locator('[data-testid="mobile-room-name"]');
     this.userCountInHeaderMobile = page.locator('[data-testid="mobile-user-avatars"]');
 
-    // Auto-reveal countdown display in session node
-    this.autoRevealCountdown = page.locator('.react-flow__node-session').locator('text=/Revealing.../');
+    // Auto-reveal countdown display in session node. While counting down the
+    // session node shows a cancel button labelled "Auto-revealing in N seconds…".
+    this.autoRevealCountdown = page
+      .locator('.react-flow__node-session')
+      .getByRole('button', { name: /Auto-revealing in/i });
 
     // Player elements - these are React Flow nodes
     this.playerList = page.locator(".react-flow__node-player");
@@ -67,7 +70,7 @@ export class RoomPage {
     // Wait for the canvas or main room container to be visible
     await expect(
       this.canvasContainer.or(this.page.locator(".react-flow"))
-    ).toBeVisible({ timeout: 10000 });
+    ).toBeVisible();
   }
 
   async selectCard(value: string): Promise<void> {
@@ -94,7 +97,7 @@ export class RoomPage {
   async expectPlayerInList(playerName: string): Promise<void> {
     // Players are shown in React Flow nodes with class react-flow__node-player
     const player = this.page.locator(".react-flow__node-player").filter({ hasText: playerName });
-    await expect(player).toBeVisible({ timeout: 10000 });
+    await expect(player).toBeVisible();
   }
 
   async expectVoteIndicator(
@@ -246,6 +249,9 @@ export class RoomPage {
   async expectParticipantCount(count: number): Promise<void> {
     // Wait for the avatar group to reflect the expected count
     // Use longer timeout for real-time database updates to propagate
+    // Explicit timeout: expect.timeout does not apply to toPass(), so without
+    // it a mismatch retries until the 60s per-test timeout and fails with a
+    // generic timeout instead of "expected N, got M".
     await expect(async () => {
       const actualCount = await this.getParticipantCount();
       expect(actualCount).toBe(count);
@@ -349,11 +355,11 @@ export class RoomPage {
   }
 
   async expectVotingCardsVisible(): Promise<void> {
-    await expect(this.votingCards.first()).toBeVisible({ timeout: 10000 });
+    await expect(this.votingCards.first()).toBeVisible();
   }
 
   async expectVotingCardsNotVisible(): Promise<void> {
-    await expect(this.votingCards.first()).not.toBeVisible({ timeout: 10000 });
+    await expect(this.votingCards.first()).not.toBeVisible();
   }
 
   async getVotingCardsCount(): Promise<number> {

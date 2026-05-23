@@ -20,9 +20,11 @@ test.describe("Home Page - Basic Elements", () => {
   });
 
   test("should display description text", async ({ page }) => {
-    const description = page.locator("text=Join thousands of Scrum teams");
+    const description = page.locator(
+      "text=A radically simple estimation tool"
+    );
     await expect(description).toBeVisible();
-    await expect(description).toContainText("story point estimation");
+    await expect(description).toContainText("estimation tool");
   });
 
   test("should display key action buttons", async ({ page }) => {
@@ -39,14 +41,16 @@ test.describe("Home Page - Basic Elements", () => {
 
   test("should display trust indicators", async ({ page }) => {
     // Verify key trust messaging exists on the page
-    // Hero section has "No sign-up, no fees" messaging
-    await expect(page.locator("text=No sign-up, no fees")).toBeVisible();
+    // Hero section has "No accounts required" messaging
+    await expect(
+      page.locator("text=No accounts required").first()
+    ).toBeVisible();
 
     // Scroll to features section to find feature-related content
     await page.locator("#how-it-works").scrollIntoViewIfNeeded();
 
-    // Verify the "No registration required" message is visible
-    await expect(page.locator("text=No registration required")).toBeVisible();
+    // Verify the "No sign-up required" message is visible
+    await expect(page.locator("text=No sign-up required")).toBeVisible();
   });
 
   test("should display all major sections", async () => {
