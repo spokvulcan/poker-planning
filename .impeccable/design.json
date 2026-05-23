@@ -1,0 +1,438 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-04-29T00:00:00Z",
+  "title": "Design System: AgileKit",
+  "extensions": {
+    "colorMeta": {
+      "ink": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "canonical": "oklch(0.145 0 0)",
+        "tonalRamp": [
+          "oklch(0.05 0 0)",
+          "oklch(0.145 0 0)",
+          "oklch(0.25 0 0)",
+          "oklch(0.4 0 0)",
+          "oklch(0.55 0 0)",
+          "oklch(0.7 0 0)",
+          "oklch(0.85 0 0)",
+          "oklch(0.95 0 0)"
+        ]
+      },
+      "paper": {
+        "role": "neutral",
+        "displayName": "Paper",
+        "canonical": "oklch(1 0 0)",
+        "tonalRamp": [
+          "oklch(0.05 0 0)",
+          "oklch(0.145 0 0)",
+          "oklch(0.205 0 0)",
+          "oklch(0.4 0 0)",
+          "oklch(0.6 0 0)",
+          "oklch(0.85 0 0)",
+          "oklch(0.97 0 0)",
+          "oklch(1 0 0)"
+        ]
+      },
+      "pencil-gray": {
+        "role": "neutral",
+        "displayName": "Pencil Gray",
+        "canonical": "oklch(0.205 0 0)",
+        "tonalRamp": [
+          "oklch(0.1 0 0)",
+          "oklch(0.205 0 0)",
+          "oklch(0.3 0 0)",
+          "oklch(0.45 0 0)",
+          "oklch(0.6 0 0)",
+          "oklch(0.75 0 0)",
+          "oklch(0.88 0 0)",
+          "oklch(0.96 0 0)"
+        ]
+      },
+      "muted-fg": {
+        "role": "neutral",
+        "displayName": "Muted Foreground",
+        "canonical": "oklch(0.556 0 0)",
+        "tonalRamp": [
+          "oklch(0.2 0 0)",
+          "oklch(0.3 0 0)",
+          "oklch(0.4 0 0)",
+          "oklch(0.5 0 0)",
+          "oklch(0.6 0 0)",
+          "oklch(0.7 0 0)",
+          "oklch(0.8 0 0)",
+          "oklch(0.9 0 0)"
+        ]
+      },
+      "border": {
+        "role": "neutral",
+        "displayName": "Hairline Border",
+        "canonical": "oklch(0.922 0 0)",
+        "tonalRamp": [
+          "oklch(0.4 0 0)",
+          "oklch(0.55 0 0)",
+          "oklch(0.7 0 0)",
+          "oklch(0.8 0 0)",
+          "oklch(0.88 0 0)",
+          "oklch(0.922 0 0)",
+          "oklch(0.95 0 0)",
+          "oklch(0.98 0 0)"
+        ]
+      },
+      "surface-1": {
+        "role": "neutral",
+        "displayName": "Surface 1 (Base)",
+        "canonical": "oklch(1 0 0)",
+        "tonalRamp": [
+          "oklch(0.145 0 0)",
+          "oklch(0.16 0 0)",
+          "oklch(0.18 0 0)",
+          "oklch(0.4 0 0)",
+          "oklch(0.7 0 0)",
+          "oklch(0.967 0.001 286.375)",
+          "oklch(0.985 0 0)",
+          "oklch(1 0 0)"
+        ]
+      },
+      "surface-2": {
+        "role": "neutral",
+        "displayName": "Surface 2 (Elevated)",
+        "canonical": "oklch(0.985 0 0)"
+      },
+      "surface-3": {
+        "role": "neutral",
+        "displayName": "Surface 3 (Highest)",
+        "canonical": "oklch(0.967 0.001 286.375)"
+      },
+      "blueprint-blue": {
+        "role": "primary",
+        "displayName": "Blueprint Blue",
+        "canonical": "oklch(0.55 0.22 250)",
+        "tonalRamp": [
+          "oklch(0.15 0.06 250)",
+          "oklch(0.25 0.12 250)",
+          "oklch(0.35 0.18 250)",
+          "oklch(0.45 0.22 250)",
+          "oklch(0.55 0.22 250)",
+          "oklch(0.65 0.18 250)",
+          "oklch(0.78 0.12 250)",
+          "oklch(0.92 0.04 250)"
+        ]
+      },
+      "blueprint-blue-deep": {
+        "role": "primary",
+        "displayName": "Blueprint Blue Deep",
+        "canonical": "oklch(0.45 0.22 250)"
+      },
+      "status-info-fg": {
+        "role": "status",
+        "displayName": "Info Foreground",
+        "canonical": "oklch(0.45 0.15 250)",
+        "tonalRamp": [
+          "oklch(0.2 0.08 250)",
+          "oklch(0.3 0.12 250)",
+          "oklch(0.45 0.15 250)",
+          "oklch(0.55 0.18 250)",
+          "oklch(0.7 0.15 250)",
+          "oklch(0.8 0.12 250)",
+          "oklch(0.9 0.06 250)",
+          "oklch(0.95 0.02 250)"
+        ]
+      },
+      "status-success-fg": {
+        "role": "status",
+        "displayName": "Success Foreground",
+        "canonical": "oklch(0.45 0.15 150)",
+        "tonalRamp": [
+          "oklch(0.2 0.08 150)",
+          "oklch(0.3 0.12 150)",
+          "oklch(0.45 0.15 150)",
+          "oklch(0.55 0.18 150)",
+          "oklch(0.7 0.15 150)",
+          "oklch(0.8 0.12 150)",
+          "oklch(0.9 0.06 150)",
+          "oklch(0.95 0.02 150)"
+        ]
+      },
+      "status-warning-fg": {
+        "role": "status",
+        "displayName": "Warning Foreground",
+        "canonical": "oklch(0.45 0.15 85)",
+        "tonalRamp": [
+          "oklch(0.2 0.08 85)",
+          "oklch(0.3 0.12 85)",
+          "oklch(0.45 0.15 85)",
+          "oklch(0.6 0.18 85)",
+          "oklch(0.75 0.18 85)",
+          "oklch(0.85 0.15 85)",
+          "oklch(0.92 0.08 85)",
+          "oklch(0.96 0.03 85)"
+        ]
+      },
+      "status-error-fg": {
+        "role": "status",
+        "displayName": "Error Foreground",
+        "canonical": "oklch(0.50 0.20 25)",
+        "tonalRamp": [
+          "oklch(0.2 0.1 25)",
+          "oklch(0.3 0.15 25)",
+          "oklch(0.4 0.2 25)",
+          "oklch(0.5 0.2 25)",
+          "oklch(0.65 0.2 25)",
+          "oklch(0.78 0.16 25)",
+          "oklch(0.9 0.08 25)",
+          "oklch(0.96 0.03 25)"
+        ]
+      },
+      "destructive": {
+        "role": "status",
+        "displayName": "Destructive Red",
+        "canonical": "oklch(0.577 0.245 27.325)"
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "Hero headlines on marketing surfaces only. Two-Tone Headline pattern: load-bearing phrase in foreground ink, qualifier in muted gray."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Section titles on the marketing site, dialog and sheet headers in the app."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Card titles, session names, issue headlines."
+      },
+      "body-large": {
+        "displayName": "Body Large",
+        "purpose": "Hero subtitles only. Light weight, roomy leading. Cap at 65–75ch."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Default paragraph text and form labels. Cap at 65–75ch."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Captions, vote counts, badge text, button-internal text at xs/sm sizes."
+      },
+      "mono": {
+        "displayName": "Mono",
+        "purpose": "Countdown timers, result averages, any digit that changes under animation. Always paired with tabular-nums to prevent layout twitch."
+      }
+    },
+    "shadows": [
+      {
+        "name": "shadow-sm",
+        "value": "0 1px 2px 0 rgb(0 0 0 / 0.05)",
+        "purpose": "Default state of small CTAs in the session node. Almost imperceptible."
+      },
+      {
+        "name": "shadow-md",
+        "value": "0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)",
+        "purpose": "Voting cards and player cards at rest."
+      },
+      {
+        "name": "shadow-lg",
+        "value": "0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)",
+        "purpose": "Hover state on interactive cards. Session node default. Primary CTA hover."
+      },
+      {
+        "name": "shadow-2xl",
+        "value": "0 25px 50px -12px rgb(0 0 0 / 0.25)",
+        "purpose": "Hero demo iframe frame on marketing surfaces only. Forbidden inside the room."
+      },
+      {
+        "name": "shadow-blueprint",
+        "value": "0 10px 15px -3px oklch(0.55 0.22 250 / 0.3), 0 4px 6px -4px oklch(0.55 0.22 250 / 0.3)",
+        "purpose": "The system's only colored shadow. Applied exclusively to the selected voting card."
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease-out-quart",
+        "value": "cubic-bezier(0.22, 1, 0.36, 1)",
+        "purpose": "Default exponential ease-out for state transitions, card lift, hover. Resolves quickly, feels deliberate."
+      },
+      {
+        "name": "duration-fast",
+        "value": "200ms",
+        "purpose": "Card hover, click compression, button hover. Most state changes."
+      },
+      {
+        "name": "duration-base",
+        "value": "300ms",
+        "purpose": "React Flow node repositioning, larger transforms."
+      },
+      {
+        "name": "shimmer",
+        "value": "shimmer 2s infinite",
+        "purpose": "Diagonal light sweep across the selected voting card surface. Signature affordance."
+      },
+      {
+        "name": "fadeIn",
+        "value": "fadeIn 200ms ease-in-out",
+        "purpose": "Hover glow appearance on selectable voting cards."
+      },
+      {
+        "name": "pulse",
+        "value": "pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite",
+        "purpose": "Active session status dot, countdown CTA. Reserved for in-progress/urgent state indication."
+      }
+    ],
+    "breakpoints": [
+      { "name": "sm", "value": "640px" },
+      { "name": "md", "value": "768px" },
+      { "name": "lg", "value": "1024px" },
+      { "name": "xl", "value": "1280px" },
+      { "name": "2xl", "value": "1536px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Default solid button. Pencil Gray on Paper, inverts on dark. Used for most user-initiated actions across the app.",
+      "html": "<button class=\"ds-btn-primary\">Reveal Votes</button>",
+      "css": ".ds-btn-primary { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 32px; padding: 0 10px; background: oklch(0.205 0 0); color: oklch(0.985 0 0); font-family: 'Outfit', ui-sans-serif, system-ui, sans-serif; font-size: 14px; font-weight: 500; letter-spacing: -0.005em; border: 1px solid transparent; border-radius: 8px; cursor: pointer; outline: none; transition: background 200ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 200ms cubic-bezier(0.22, 1, 0.36, 1); user-select: none; } .ds-btn-primary:hover { background: oklch(0.145 0 0); box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); } .ds-btn-primary:focus-visible { outline: 3px solid oklch(0.708 0 0 / 0.5); outline-offset: 0; } .ds-btn-primary:active { transform: scale(0.98); }"
+    },
+    {
+      "name": "Outline Button",
+      "kind": "button",
+      "refersTo": "button-outline",
+      "description": "Secondary action button. Hairline border on paper. Used for dialog dismissals and tertiary CTAs.",
+      "html": "<button class=\"ds-btn-outline\">Cancel</button>",
+      "css": ".ds-btn-outline { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 32px; padding: 0 10px; background: oklch(1 0 0); color: oklch(0.145 0 0); font-family: 'Outfit', ui-sans-serif, system-ui, sans-serif; font-size: 14px; font-weight: 500; letter-spacing: -0.005em; border: 1px solid oklch(0.922 0 0); border-radius: 8px; cursor: pointer; outline: none; transition: background 200ms cubic-bezier(0.22, 1, 0.36, 1); } .ds-btn-outline:hover { background: oklch(0.97 0 0); } .ds-btn-outline:focus-visible { outline: 3px solid oklch(0.708 0 0 / 0.5); outline-offset: 0; }"
+    },
+    {
+      "name": "Hero CTA",
+      "kind": "button",
+      "refersTo": "button-cta-hero",
+      "description": "Marketing-only oversized invitation button. 64px tall, padding 48px, weight 700. Used for the landing page primary action ('Start Session'). Never used inside the room.",
+      "html": "<a class=\"ds-cta-hero\" href=\"#\">Start Session<svg viewBox=\"0 0 24 24\" width=\"20\" height=\"20\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M5 12h14M13 6l6 6-6 6\"/></svg></a>",
+      "css": ".ds-cta-hero { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 64px; padding: 0 48px; background: oklch(0.145 0 0); color: oklch(1 0 0); font-family: 'Outfit', ui-sans-serif, system-ui, sans-serif; font-size: 18px; font-weight: 700; letter-spacing: -0.02em; border-radius: 16px; text-decoration: none; cursor: pointer; outline: none; transition: transform 200ms cubic-bezier(0.22, 1, 0.36, 1); } .ds-cta-hero:hover { transform: scale(1.05); } .ds-cta-hero:focus-visible { outline: 3px solid oklch(0.55 0.22 250 / 0.5); outline-offset: 2px; }"
+    },
+    {
+      "name": "Voting Card (Default)",
+      "kind": "custom",
+      "refersTo": "voting-card",
+      "description": "The signature room component. 96 × 64 vertical card with 2px border. Lifts 4px on hover with a subtle blue floor glow.",
+      "html": "<button class=\"ds-voting-card\" aria-label=\"Vote 5\"><span>5</span></button>",
+      "css": ".ds-voting-card { position: relative; width: 64px; height: 96px; padding: 0; background: oklch(1 0 0); color: oklch(0.145 0 0); border: 2px solid oklch(0.85 0 0); border-radius: 12px; font-family: 'Outfit', ui-sans-serif, system-ui, sans-serif; font-size: 24px; font-weight: 700; display: flex; align-items: center; justify-content: center; cursor: pointer; outline: none; user-select: none; overflow: hidden; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1); transition: transform 200ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 200ms cubic-bezier(0.22, 1, 0.36, 1), border-color 200ms cubic-bezier(0.22, 1, 0.36, 1); } .ds-voting-card::after { content: ''; position: absolute; inset: 0; background: linear-gradient(to top, oklch(0.55 0.22 250 / 0.1), transparent); opacity: 0; transition: opacity 200ms cubic-bezier(0.22, 1, 0.36, 1); pointer-events: none; } .ds-voting-card:hover { transform: translateY(-4px); border-color: oklch(0.7 0 0); box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1); } .ds-voting-card:hover::after { opacity: 1; } .ds-voting-card:focus-visible { outline: 3px solid oklch(0.55 0.22 250 / 0.5); outline-offset: 2px; } .ds-voting-card:active { transform: scale(0.95); } .ds-voting-card > span { position: relative; z-index: 1; }"
+    },
+    {
+      "name": "Voting Card (Selected)",
+      "kind": "custom",
+      "refersTo": "voting-card-selected",
+      "description": "The system's signature gesture. Lifts 12px above the deck, fills with Blueprint Blue, casts the only colored shadow in the system, and hosts a slow diagonal shimmer.",
+      "html": "<button class=\"ds-voting-card-selected\" aria-pressed=\"true\" aria-label=\"Selected vote 5\"><span>5</span></button>",
+      "css": ".ds-voting-card-selected { position: relative; width: 64px; height: 96px; padding: 0; background: oklch(0.55 0.22 250); color: oklch(1 0 0); border: 2px solid oklch(0.55 0.22 250); border-radius: 12px; font-family: 'Outfit', ui-sans-serif, system-ui, sans-serif; font-size: 24px; font-weight: 700; display: flex; align-items: center; justify-content: center; cursor: pointer; outline: none; user-select: none; overflow: hidden; transform: translateY(-12px); box-shadow: 0 10px 15px -3px oklch(0.55 0.22 250 / 0.3), 0 4px 6px -4px oklch(0.55 0.22 250 / 0.3); transition: transform 200ms cubic-bezier(0.22, 1, 0.36, 1); } .ds-voting-card-selected::before { content: ''; position: absolute; inset: 0; background: linear-gradient(110deg, transparent 30%, rgb(255 255 255 / 0.2) 50%, transparent 70%); transform: translateX(-100%) skewX(-12deg); animation: ds-shimmer 2s infinite linear; pointer-events: none; } .ds-voting-card-selected > span { position: relative; z-index: 1; } .ds-voting-card-selected:focus-visible { outline: 3px solid oklch(0.55 0.22 250 / 0.5); outline-offset: 2px; } @keyframes ds-shimmer { 0% { transform: translateX(-100%) skewX(-12deg); } 100% { transform: translateX(200%) skewX(-12deg); } }"
+    },
+    {
+      "name": "Card Container",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "Default surface container. Paper background, 12px corners, hairline ring instead of solid border. No shadow at rest; depth comes from tonal layering.",
+      "html": "<div class=\"ds-card\"><div class=\"ds-card-title\">Sprint 12 estimation</div><div class=\"ds-card-content\">3 issues remaining. Average so far: 5 points.</div></div>",
+      "css": ".ds-card { display: flex; flex-direction: column; gap: 16px; padding: 16px; background: oklch(1 0 0); color: oklch(0.145 0 0); border-radius: 12px; box-shadow: inset 0 0 0 1px oklch(0.145 0 0 / 0.1); font-family: 'Outfit', ui-sans-serif, system-ui, sans-serif; font-size: 14px; line-height: 1.5; } .ds-card-title { font-size: 16px; font-weight: 500; line-height: 1.4; letter-spacing: -0.01em; } .ds-card-content { color: oklch(0.556 0 0); }"
+    },
+    {
+      "name": "Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Default form input. Transparent fill, hairline border, 8px corners. Focus uses 3px ring (no border thickening).",
+      "html": "<input class=\"ds-input\" type=\"text\" placeholder=\"Room name\" />",
+      "css": ".ds-input { display: block; width: 100%; height: 32px; padding: 4px 10px; background: transparent; color: oklch(0.145 0 0); font-family: 'Outfit', ui-sans-serif, system-ui, sans-serif; font-size: 14px; line-height: 1.4; border: 1px solid oklch(0.922 0 0); border-radius: 8px; outline: none; transition: border-color 200ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 200ms cubic-bezier(0.22, 1, 0.36, 1); } .ds-input::placeholder { color: oklch(0.556 0 0); } .ds-input:focus-visible { border-color: oklch(0.708 0 0); box-shadow: 0 0 0 3px oklch(0.708 0 0 / 0.5); } .ds-input:disabled { opacity: 0.5; cursor: not-allowed; background: oklch(0.97 0 0); }"
+    },
+    {
+      "name": "Hero Announcement Pill",
+      "kind": "custom",
+      "refersTo": "hero-pill",
+      "description": "Marketing signature: pill-shaped link above the hero headline carrying a version chip and a 'what's new' message. Reserved for marketing surfaces only. The version and message in the snippet are illustrative.",
+      "html": "<a class=\"ds-pill-announcement\" href=\"#\"><span class=\"ds-pill-chip\">v2.7.3</span><span class=\"ds-pill-text\">Jira Cloud integration is here</span><svg viewBox=\"0 0 24 24\" width=\"14\" height=\"14\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M5 12h14M13 6l6 6-6 6\"/></svg></a>",
+      "css": ".ds-pill-announcement { display: inline-flex; align-items: center; gap: 8px; padding: 6px 16px; background: oklch(1 0 0 / 0.6); color: oklch(0.205 0 0); font-family: 'Outfit', ui-sans-serif, system-ui, sans-serif; font-size: 14px; font-weight: 500; line-height: 1; border-radius: 9999px; text-decoration: none; box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05); transition: background 200ms cubic-bezier(0.22, 1, 0.36, 1); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); } .ds-pill-announcement:hover { background: oklch(1 0 0 / 0.85); } .ds-pill-chip { display: inline-flex; align-items: center; padding: 2px 8px; background: oklch(0.205 0 0); color: oklch(0.985 0 0); font-size: 11px; font-weight: 700; line-height: 1; border-radius: 9999px; } .ds-pill-text { white-space: nowrap; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Architect's Desk",
+    "overview": "AgileKit's visual system is the surface of a precise, well-lit drafting table. Black ink on warm paper. A faint grid in the background. One accent color, a strong blueprint blue, used the way a draftsman uses a colored pencil: rare, deliberate, and only where it carries meaning. The system is monochrome by default and lifts a single hue to mean 'here, attend to this': a vote selected, an action primary, a status changing.\n\nEvery layout is a planned drawing, not a printed brochure. Generous whitespace, tight tracking on display type, restrained motion that snaps rather than springs. The marketing surface and the room share this vocabulary so users feel the same hand from landing page through canvas. We reject the SaaS reflex: no gradient text, no glass surfaces by default, no smiling testimonial walls, no decorative bounce.",
+    "keyCharacteristics": [
+      "Monochrome canvas, single blue accent at ≤10% surface coverage.",
+      "Precise typography. Display weight 700, tracking-tighter, line-height 0.95.",
+      "Flat-by-default surfaces; elevation only as a response to state.",
+      "Motion uses exponential ease-out, never elastic. Selection lifts; hover hints; click compresses.",
+      "Both light and dark themes are first-class; neither is the 'default.'",
+      "Status communicates through a four-color quartet (info / success / warning / error), reserved strictly for semantic feedback."
+    ],
+    "rules": [
+      {
+        "name": "The One Mark Rule",
+        "body": "Blueprint Blue carries no more than 10% of any screen. If a layout has two or more saturated blue surfaces fighting for attention, one of them is wrong. Audit by squinting at a screenshot: the blue should read as a single point of focus.",
+        "section": "colors"
+      },
+      {
+        "name": "The Tinted-Zero Rule",
+        "body": "Every neutral is OKLCH with chroma at or near zero. Hex #000 and #fff are forbidden. They look harsh on real displays and break theme inversion. The Surface 3 token's 0.001 286.375 chroma is the maximum drift permitted in any neutral.",
+        "section": "colors"
+      },
+      {
+        "name": "The Status-Only Rule",
+        "body": "Info, success, warning, and error colors appear only when the UI is reporting a state. Never as decorative tints, never as brand accents, never on the marketing site outside genuine feedback contexts.",
+        "section": "colors"
+      },
+      {
+        "name": "The Tracking-Tighter Rule",
+        "body": "Display and headline type always use negative letter-spacing (≥-0.02em for headline, ≥-0.04em for display). Default tracking on large type is the SaaS reflex; correct it. Body copy uses tracking-normal. Never tighten body.",
+        "section": "typography"
+      },
+      {
+        "name": "The Two-Tone Headline Rule",
+        "body": "Display headlines split into two tones: the load-bearing phrase in foreground ink, the predicate or qualifier in text-gray-300 dark:text-zinc-700. ('Planning poker, without the noise.') This is the only acceptable typographic flourish at hero scale. No gradient text, no italics, no underlines, no decorative pulls.",
+        "section": "typography"
+      },
+      {
+        "name": "The Mono-For-Numerals Rule",
+        "body": "Any digit that changes (countdowns, averages, vote counts in motion) uses Geist Mono with tabular-nums. Stops the layout from twitching as numbers tick.",
+        "section": "typography"
+      },
+      {
+        "name": "The Lift, Don't Bounce Rule",
+        "body": "State changes translate vertically and resolve to a stable position with ease-out (200–300ms). Selected voting card: -translate-y-3 (12px). Hovered voting card: -translate-y-1 (4px). Pressed: scale-95 for ~200ms. Never use spring physics, never rotate, never animate-bounce on interactive elements. The card behaves like a real card on a real desk: deliberately picked up, not flicked.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Colored-Shadow-Once Rule",
+        "body": "Blueprint Blue is the only hue allowed in a shadow, and only on the selected voting card. Status colors never tint shadows. Black shadows everywhere else.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Ring-Over-Border Rule",
+        "body": "Component edges prefer ring-1 ring-foreground/10 to a colored border. Solid border-2 is reserved for elements that are literally edges (the stroke around a voting card, the chassis of the session node). Don't use a thick colored border to imply emphasis. Use background fill, lift, or selection state instead.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do keep Blueprint Blue at ≤10% surface coverage. Selection, primary CTA, progress, facilitator marker. That's the list.",
+      "Do prefer tonal layering (Surface 1 → 2 → 3) over shadow for depth. Shadows respond to interaction; surfaces describe hierarchy.",
+      "Do lift selected voting cards 12px and apply the blue-tinted shadow. This is the system's signature gesture; do it confidently.",
+      "Do use tracking-tighter (≤-0.02em) on every headline ≥1.25rem. Display type at default tracking is the SaaS reflex.",
+      "Do use Geist Mono with tabular-nums for any digit in motion (countdowns, averages, vote tallies).",
+      "Do keep both light and dark themes first-class. Test every new component in both before shipping.",
+      "Do match-and-refuse against the Don'ts below. When a layout feels safe, it's likely the training-data answer; pick the harder, more specific direction."
+    ],
+    "donts": [
+      "Don't use gradient text. background-clip: text combined with a gradient background is forbidden. Hierarchy comes from weight, scale, and the Two-Tone Headline pattern.",
+      "Don't use glassmorphism as a default surface. The single permitted use is the canvas-overlay top-bar in the room. Outside that, frosted backdrops are decorative noise.",
+      "Don't ship the hero-metric template (giant number, small label, supporting stats). It is the canonical SaaS cliché and AgileKit explicitly rejects it.",
+      "Don't ship 'Trusted by 10,000 teams' + grayscale logo wall. Anywhere. Ever.",
+      "Don't ship 3×3 icon-and-heading feature grids. If a feature can't justify its own row, cut it.",
+      "Don't tint colors with brand hue when they should be semantic. The status quartet is for status only; never decorative.",
+      "Don't use solid colored borders >1px as decorative emphasis. border-l-4 border-amber-500 callouts are forbidden. Use background tint or a leading icon instead.",
+      "Don't spring, bounce, rotate, or elastic-ease any state change. ease-out exponential curves only. The card lifts; it does not jiggle.",
+      "Don't ship Atlassian-blue chrome, dense settings panels, or 'configured by IT' affordances. AgileKit is the deliberate opposite of Jira.",
+      "Don't drop ads, 'Upgrade to Pro' banners, donation prompts, or unrelated promo into /room/*. The room is sacred.",
+      "Don't use em dashes or -- in UI copy. Use commas, colons, semicolons, periods, or parentheses.",
+      "Don't use exclamation marks in UI copy or toast messages. AgileKit's voice is terse and dry, never SaaS-cheerful."
+    ]
+  }
+}
