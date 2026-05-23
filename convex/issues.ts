@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import * as Issues from "./model/issues";
+import * as VotingRound from "./model/votingRound";
 import { requireRoomMember, requireCan } from "./model/auth";
 
 /**
@@ -114,7 +115,7 @@ export const startVoting = mutation({
   },
   handler: async (ctx, args) => {
     await requireCan(ctx, args.roomId, { kind: "category", category: "gameFlow" });
-    await Issues.startVotingOnIssue(ctx, args);
+    await VotingRound.start(ctx, args);
   },
 });
 
@@ -133,12 +134,13 @@ export const reorder = mutation({
 });
 
 /**
- * Clear current issue (switch to Quick Vote mode)
+ * Clear current issue (switch to Quick Vote mode). This is an abandon of the
+ * current round, owned by the voting-round module.
  */
 export const clearCurrentIssue = mutation({
   args: { roomId: v.id("rooms") },
   handler: async (ctx, args) => {
     await requireCan(ctx, args.roomId, { kind: "category", category: "gameFlow" });
-    await Issues.clearCurrentIssue(ctx, args.roomId);
+    await VotingRound.abandon(ctx, args.roomId);
   },
 });

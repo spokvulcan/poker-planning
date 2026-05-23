@@ -55,6 +55,7 @@
   },
   "devDependencies": {
     "@convex-dev/eslint-plugin": "1.1.1",
+    "@edge-runtime/vm": "5.0.0",
     "@eslint/eslintrc": "3.3.3",
     "@playwright/test": "1.58.2",
     "@tailwindcss/postcss": "4.2.0",
@@ -64,6 +65,7 @@
     "@types/react-dom": "19.2.3",
     "@types/three": "0.183.1",
     "@vitest/coverage-v8": "4.0.18",
+    "convex-test": "0.0.53",
     "eslint": "9.39.3",
     "eslint-config-next": "16.2.6",
     "tailwindcss": "4.2.0",
