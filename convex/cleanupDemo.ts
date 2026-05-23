@@ -22,9 +22,14 @@ import type { Id } from "./_generated/dataModel";
  * for the @convex-dev/migrations component's batching.
  *
  * Identifies the room by NAME (not the to-be-dropped `isDemoRoom` field) so it
- * runs against either schema. Preview, then run for real:
- *   npx convex run cleanupDemo:purgeDemoRoom '{"dryRun": true}'
- *   npx convex run cleanupDemo:purgeDemoRoom
+ * runs against either schema. Preview, then run for real — `convex run` targets
+ * your configured DEV deployment by default; add `--prod` for production. (An
+ * internalMutation is callable via `convex run` with the deploy/admin
+ * credentials the operator already has — it is NOT publicly invokable.)
+ *   npx convex run cleanupDemo:purgeDemoRoom '{"dryRun": true}'         # dev preview
+ *   npx convex run cleanupDemo:purgeDemoRoom                            # dev, for real
+ *   npx convex run --prod cleanupDemo:purgeDemoRoom '{"dryRun": true}'  # prod preview
+ *   npx convex run --prod cleanupDemo:purgeDemoRoom                     # prod, for real
  * Re-running with {"dryRun": true} afterwards should report all-zero counts —
  * that is the migration's completeness check.
  */

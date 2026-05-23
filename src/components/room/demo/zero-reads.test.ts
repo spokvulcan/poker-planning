@@ -48,7 +48,15 @@ import { useTimerSync } from "../hooks/use-timer-sync";
 import { useRoomPresence } from "@/hooks/useRoomPresence";
 import { DEMO_VIEWER_ID } from "../types";
 
-// Calls every Convex-subscribing hook reachable from the demo canvas.
+// Calls every always-mounted Convex-subscribing hook reachable from the demo
+// canvas. The other demo-reachable subscriptions are guarded at their own site,
+// so they are deliberately outside this Probe's scope (audited 2026-05-24):
+//   - RoomCanvas/PlayerNode/StoryNode read `roomData` (a prop) — api.rooms.get
+//     is never called in demo mode.
+//   - issues-panel skips its integration queries in demo (`isDemoMode ? "skip"`).
+//   - integration-settings (getConnections/getRoomMapping, both un-skipped) only
+//     mounts behind `{!isDemoMode && …}` in room-settings-panel.
+// If one of those gates regresses this Probe won't catch it — re-audit on change.
 function Probe(): ReactNode {
   const demo = useDemoSimulation();
   if (!demo) throw new Error("Probe must render inside DemoSimulationProvider");

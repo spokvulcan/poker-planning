@@ -27,12 +27,17 @@ export function useRoomPresence(
 ): UserWithPresence[] {
   const demo = useDemoSimulation();
 
-  // Zero-reads (ADR-0003): the Demo simulation must not open a presence
-  // subscription. The demo flag comes from context and is constant for a
-  // mount's lifetime, so branching the hook here is safe — a given mount calls
-  // exactly one of these sub-hooks for its whole life. Guarding centrally here
-  // covers every caller (canvas-navigation, room-settings-panel) at once, which
-  // is what the zero-reads guard backstops.
+  // Zero-reads (ADR-0003): the Demo must open NO presence subscription, and
+  // `usePresence` has no "skip" option (unlike `useQuery`) — so the only way to
+  // not subscribe is to not call it. Hence the conditional hook + lint-disable.
+  // This does not actually risk the Rules-of-Hooks invariant: `demo` is the
+  // presence of a context provider, which is structurally fixed for a component
+  // instance (a mount is either under DemoSimulationProvider for its whole life
+  // or never), so the branch — and thus the hook-call order — can never change
+  // between renders, including under StrictMode/concurrent re-renders. The
+  // zero-reads guard test backstops this by asserting `usePresence` is never
+  // called in demo mode. Centralizing here covers every caller
+  // (canvas-navigation, room-settings-panel) at once.
   // eslint-disable-next-line react-hooks/rules-of-hooks
   return demo ? useDemoPresence(users) : useConvexPresence(roomId, userId, users);
 }

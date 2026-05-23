@@ -115,7 +115,7 @@ function playerRowPositions(count: number): { x: number; y: number }[] {
  * Builds the canvas node set in the shape `useCanvasNodes` consumes from
  * `api.canvas.getCanvasNodes`. Constant for the page's lifetime.
  */
-export function buildDemoCanvasNodes(): CanvasNode[] {
+function buildDemoCanvasNodes(): CanvasNode[] {
   const positions = playerRowPositions(DEMO_BOTS.length);
   const playerNodes: CanvasNode[] = DEMO_BOTS.map((bot, i) => ({
     roomId: DEMO_ROOM_ID,
