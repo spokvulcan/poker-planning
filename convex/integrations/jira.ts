@@ -814,11 +814,8 @@ export const getAllJiraMappings = internalQuery({
   handler: async (ctx) => {
     return await ctx.db
       .query("integrationMappings")
-      .filter((q) =>
-        q.and(
-          q.eq(q.field("provider"), "jira"),
-          q.eq(q.field("autoPushEstimates"), true)
-        )
+      .withIndex("by_provider_autopush", (q) =>
+        q.eq("provider", "jira").eq("autoPushEstimates", true)
       )
       .collect();
   },

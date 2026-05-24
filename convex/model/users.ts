@@ -503,10 +503,12 @@ export async function linkAnonymousToPermanent(
     for (const iv of anonIndividualVotes) {
       const existingIv = await ctx.db
         .query("individualVotes")
-        .withIndex("by_room_user", (q) =>
-          q.eq("roomId", iv.roomId).eq("userId", existingPermanent._id)
+        .withIndex("by_room_user_issue", (q) =>
+          q
+            .eq("roomId", iv.roomId)
+            .eq("userId", existingPermanent._id)
+            .eq("issueId", iv.issueId)
         )
-        .filter((q) => q.eq(q.field("issueId"), iv.issueId))
         .first();
 
       if (existingIv) {
@@ -552,7 +554,7 @@ export async function linkAnonymousToPermanent(
     // Transfer room ownership from anonymous user to permanent user
     const ownedRooms = await ctx.db
       .query("rooms")
-      .filter((q) => q.eq(q.field("ownerId"), user._id))
+      .withIndex("by_owner", (q) => q.eq("ownerId", user._id))
       .collect();
 
     for (const room of ownedRooms) {
