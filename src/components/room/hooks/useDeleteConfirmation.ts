@@ -62,19 +62,17 @@ export function useDeleteConfirmation({
     [],
   );
 
+  // State updaters must stay pure, so fire the mutation here (not inside a
+  // setState updater) then clear the pending value.
   const confirmNote = useCallback(() => {
-    setPendingNote((current) => {
-      if (current) deleteNote(current);
-      return null;
-    });
-  }, [deleteNote]);
+    if (pendingNote) deleteNote(pendingNote);
+    setPendingNote(null);
+  }, [pendingNote, deleteNote]);
 
   const confirmPlayer = useCallback(() => {
-    setPendingPlayer((current) => {
-      if (current) removeUser(current.id);
-      return null;
-    });
-  }, [removeUser]);
+    if (pendingPlayer) removeUser(pendingPlayer.id);
+    setPendingPlayer(null);
+  }, [pendingPlayer, removeUser]);
 
   const dismissNote = useCallback(() => setPendingNote(null), []);
   const dismissPlayer = useCallback(() => setPendingPlayer(null), []);

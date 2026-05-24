@@ -102,7 +102,12 @@ function RoomCanvasInner({ roomData, currentUserId, isDemoMode = false, isEmbedd
 
   // All backend writes, behind one frozen-identity object. Demo-vs-real is
   // resolved internally via the demo context — under /demo every method no-ops.
-  const actions = useCanvasActions({ roomId, currentUserId, setSelectedCardValue });
+  const actions = useCanvasActions({
+    roomId,
+    currentUserId,
+    selectedCardValue,
+    setSelectedCardValue,
+  });
 
   // Docked-panel state: mutual exclusion + Escape-to-close.
   const { isIssuesPanelOpen, isSettingsOpen, openIssues, openSettings, closeAll } =
@@ -142,7 +147,8 @@ function RoomCanvasInner({ roomData, currentUserId, isDemoMode = false, isEmbedd
     onCancelAutoReveal: actions.cancelAutoReveal,
     onOpenIssuesPanel: openIssues,
     onUpdateNoteContent: actions.updateNoteContent,
-    onDeleteNote: requestDeleteNote,
+    // Demo never deletes, so don't even surface the confirm dialog there.
+    onDeleteNote: isDemoMode ? undefined : requestDeleteNote,
   });
 
   // Update nodes and edges when layout changes

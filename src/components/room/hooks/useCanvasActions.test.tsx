@@ -16,12 +16,18 @@ import type { Id } from "@/convex/_generated/dataModel";
 
 // Hoisted recorder shared with the (hoisted) vi.mock factory below. Every
 // useMutation returns a recording function, so any backend write is observable.
-const writes = vi.hoisted(() => ({ calls: [] as { args: unknown }[] }));
+// `reject` flips every mutation to a rejected promise (for failure-path tests).
+const writes = vi.hoisted(() => ({
+  calls: [] as { args: unknown }[],
+  reject: false,
+}));
 
 vi.mock("convex/react", () => ({
   useMutation: () => (args: unknown) => {
     writes.calls.push({ args });
-    return Promise.resolve(undefined);
+    return writes.reject
+      ? Promise.reject(new Error("mutation failed"))
+      : Promise.resolve(undefined);
   },
   useQuery: () => undefined,
 }));
@@ -50,6 +56,7 @@ function invokeAll(actions: ReturnType<typeof useCanvasActions>) {
 
 beforeEach(() => {
   writes.calls = [];
+  writes.reject = false;
 });
 
 describe("useCanvasActions — demo no-op", () => {
@@ -63,6 +70,7 @@ describe("useCanvasActions — demo no-op", () => {
         useCanvasActions({
           roomId: DEMO_ROOM_ID,
           currentUserId: undefined,
+          selectedCardValue: null,
           setSelectedCardValue,
         }),
       { wrapper },
@@ -85,6 +93,7 @@ describe("useCanvasActions — identity stability", () => {
         useCanvasActions({
           roomId: ROOM_ID,
           currentUserId: userId,
+          selectedCardValue: null,
           setSelectedCardValue,
         }),
       { initialProps: { userId: USER_ID as Id<"users"> | undefined } },
@@ -110,6 +119,7 @@ describe("useCanvasActions — identity stability", () => {
         useCanvasActions({
           roomId: ROOM_ID,
           currentUserId: userId,
+          selectedCardValue: null,
           setSelectedCardValue,
         }),
       { initialProps: { userId: undefined as Id<"users"> | undefined } },
@@ -124,5 +134,46 @@ describe("useCanvasActions — identity stability", () => {
     await act(async () => result.current.selectCard("8"));
     expect(setSelectedCardValue).toHaveBeenCalledWith("8");
     expect(writes.calls.length).toBe(1);
+  });
+});
+
+describe("useCanvasActions — selectCard value handling", () => {
+  it("sends the fractional value for a non-integer card (parseFloat, not parseInt)", async () => {
+    const setSelectedCardValue = vi.fn();
+    const { result } = renderHook(() =>
+      useCanvasActions({
+        roomId: ROOM_ID,
+        currentUserId: USER_ID,
+        selectedCardValue: null,
+        setSelectedCardValue,
+      }),
+    );
+
+    await act(async () => result.current.selectCard("0.5"));
+
+    expect(writes.calls).toHaveLength(1);
+    expect(writes.calls[0].args).toMatchObject({
+      cardLabel: "0.5",
+      cardValue: 0.5,
+    });
+  });
+
+  it("rolls back to the prior card value when the pick mutation fails", async () => {
+    writes.reject = true;
+    const setSelectedCardValue = vi.fn();
+    const { result } = renderHook(() =>
+      useCanvasActions({
+        roomId: ROOM_ID,
+        currentUserId: USER_ID,
+        // The user already has "5" highlighted.
+        selectedCardValue: "5",
+        setSelectedCardValue,
+      }),
+    );
+
+    await act(async () => result.current.selectCard("8"));
+
+    // Optimistic write to "8", then rollback to the prior "5" — never to null.
+    expect(setSelectedCardValue.mock.calls).toEqual([["8"], ["5"]]);
   });
 });

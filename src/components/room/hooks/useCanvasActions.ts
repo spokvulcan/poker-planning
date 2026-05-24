@@ -30,6 +30,8 @@ export interface CanvasActions {
 interface UseCanvasActionsProps {
   roomId: Id<"rooms">;
   currentUserId?: Id<"users">;
+  /** The currently-highlighted card, so a failed pick can roll back to it. */
+  selectedCardValue: string | null;
   setSelectedCardValue: (value: string | null) => void;
 }
 
@@ -44,6 +46,7 @@ interface UseCanvasActionsProps {
 export function useCanvasActions({
   roomId,
   currentUserId,
+  selectedCardValue,
   setSelectedCardValue,
 }: UseCanvasActionsProps): CanvasActions {
   // Reading the demo context here folds the action side of the `isDemoMode`
@@ -98,17 +101,24 @@ export function useCanvasActions({
     },
     selectCard: async (cardValue: string) => {
       if (isDemo || !currentUserId) return;
+      // Snapshot the prior highlight so a failed write rolls back to it rather
+      // than to `null` (which would flash "no selection" over an existing vote
+      // until the next server tick re-applies it).
+      const previous = selectedCardValue;
       setSelectedCardValue(cardValue);
       try {
         await pickCard({
           roomId,
           userId: currentUserId,
           cardLabel: cardValue,
-          cardValue: parseInt(cardValue) || 0,
+          // parseFloat, not parseInt — fractional scale cards like "0.5" must
+          // keep their value; parseInt("0.5") truncates to 0. Special cards
+          // ("?", "☕") are non-numeric and intentionally fall back to 0.
+          cardValue: parseFloat(cardValue) || 0,
         });
       } catch (error) {
         console.error("Failed to pick card:", error);
-        setSelectedCardValue(null);
+        setSelectedCardValue(previous);
       }
     },
     updateNoteContent: async (nodeId: string, content: string) => {
@@ -163,6 +173,9 @@ export function useCanvasActions({
   // so its methods keep a frozen identity for the canvas's lifetime while always
   // invoking the latest closure.
   const implRef = useRef(impl);
+  // No dependency array is intentional: this runs after every commit so the ref
+  // always points at the latest closures (the "latest ref" pattern), not a
+  // forgotten dep list.
   useEffect(() => {
     implRef.current = impl;
   });
