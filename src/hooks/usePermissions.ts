@@ -6,11 +6,11 @@ import {
   type RoomPermissions,
   type ResolvedDecision,
   type PermissionCategory,
+  type DecisionContext,
   DEFAULT_PERMISSIONS,
   RESOLVED_ALLOWED,
   getEffectivePermissions,
   resolve,
-  denialMessage,
 } from "@/convex/permissions";
 
 /**
@@ -53,17 +53,18 @@ export interface UsePermissionsReturn {
 }
 
 /**
- * Fixed denied resolved decision for the optimistic-defaults branch's
- * relationship actions (before room data loads). Relationship controls are
- * hidden when denied, so the copy is rarely shown; it derives from
- * `denialMessage` rather than embedding a literal.
+ * Decision context for the optimistic-defaults branch (before room data loads):
+ * a participant actor with default permissions and no lockdown. Every
+ * relationship action is denied for a participant, and routing each verb
+ * through `resolve` with this context keeps the denial copy single-sourced —
+ * owner-only verbs (transfer/changePerms/demote) read "Only the owner…" and
+ * facilitator-level verbs (remove/promote) read "Only facilitators and the
+ * owner…", rather than one blanket message standing in for all five.
  */
-const RESOLVED_DENIED: ResolvedDecision = {
-  allowed: false,
-  message: denialMessage(
-    { kind: "relationship", verb: "promote", targetRole: "participant" },
-    "insufficient-role"
-  ),
+const OPTIMISTIC_CTX: DecisionContext = {
+  actorRole: "participant",
+  permissions: DEFAULT_PERMISSIONS,
+  ownerAbsent: false,
 };
 
 /**
@@ -87,11 +88,17 @@ export function computePermissions(
       gameFlow: RESOLVED_ALLOWED,
       issueManagement: RESOLVED_ALLOWED,
       roomSettings: RESOLVED_ALLOWED,
-      removeTarget: () => RESOLVED_DENIED,
-      promoteTarget: () => RESOLVED_DENIED,
-      demoteTarget: () => RESOLVED_DENIED,
-      transfer: RESOLVED_DENIED,
-      changePermissions: RESOLVED_DENIED,
+      removeTarget: (targetRole) =>
+        resolve({ kind: "relationship", verb: "remove", targetRole }, OPTIMISTIC_CTX),
+      promoteTarget: (targetRole) =>
+        resolve({ kind: "relationship", verb: "promote", targetRole }, OPTIMISTIC_CTX),
+      demoteTarget: (targetRole) =>
+        resolve({ kind: "relationship", verb: "demote", targetRole }, OPTIMISTIC_CTX),
+      transfer: resolve({ kind: "relationship", verb: "transfer" }, OPTIMISTIC_CTX),
+      changePermissions: resolve(
+        { kind: "relationship", verb: "changePerms" },
+        OPTIMISTIC_CTX
+      ),
       permissions: DEFAULT_PERMISSIONS,
     };
   }

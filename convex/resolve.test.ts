@@ -24,6 +24,12 @@ function ctx(over: Partial<DecisionContext> = {}): DecisionContext {
   };
 }
 
+describe("RESOLVED_ALLOWED — shared immutable singleton", () => {
+  it("is frozen so a consumer cannot corrupt the process-wide allow value", () => {
+    expect(Object.isFrozen(RESOLVED_ALLOWED)).toBe(true);
+  });
+});
+
 describe("resolve — allow", () => {
   it("returns the shared RESOLVED_ALLOWED value when the action is allowed", () => {
     const action: Action = {

@@ -207,9 +207,12 @@ export type ResolvedDecision =
 /**
  * The shared allowed value `resolve` returns on every allow. A module-level
  * singleton so an allow that stays an allow keeps a stable identity across
- * recomputes (protects downstream memoization).
+ * recomputes (protects downstream memoization). Frozen so a stray mutation
+ * can't corrupt the value every allow across the backend and browser shares.
  */
-export const RESOLVED_ALLOWED: ResolvedDecision = { allowed: true };
+export const RESOLVED_ALLOWED: ResolvedDecision = Object.freeze({
+  allowed: true,
+});
 
 /**
  * The single combiner of `evaluate` and `denialMessage`: resolves an action to

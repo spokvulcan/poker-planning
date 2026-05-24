@@ -70,4 +70,39 @@ describe("computePermissions — optimistic defaults before data loads", () => {
     expect(result.transfer.allowed).toBe(false);
     expect(result.removeTarget("participant").allowed).toBe(false);
   });
+
+  it("carries each verb's own denial copy — owner-only verbs read the owner-only message", () => {
+    const result = computePermissions(null, undefined);
+    const ownerOnly = denialMessage(
+      { kind: "relationship", verb: "transfer" },
+      "insufficient-role"
+    );
+
+    expect(result.transfer).toEqual({ allowed: false, message: ownerOnly });
+    expect(result.changePermissions).toEqual({
+      allowed: false,
+      message: ownerOnly,
+    });
+    expect(result.demoteTarget("facilitator")).toEqual({
+      allowed: false,
+      message: ownerOnly,
+    });
+  });
+
+  it("carries the facilitator-level message for verbs allowed to facilitators", () => {
+    const result = computePermissions(null, undefined);
+    const facilitatorLevel = denialMessage(
+      { kind: "relationship", verb: "promote", targetRole: "participant" },
+      "insufficient-role"
+    );
+
+    expect(result.removeTarget("participant")).toEqual({
+      allowed: false,
+      message: facilitatorLevel,
+    });
+    expect(result.promoteTarget("participant")).toEqual({
+      allowed: false,
+      message: facilitatorLevel,
+    });
+  });
 });
