@@ -3,8 +3,7 @@ import { Id, Doc } from "../_generated/dataModel";
 import {
   PermissionCategory,
   Action,
-  evaluate,
-  denialMessage,
+  resolve,
   requiresOwnerLevel,
   getEffectivePermissions,
   getEffectiveRole,
@@ -184,9 +183,9 @@ export async function requireCan(
     ? await isRoomOwnerAbsent(ctx, room)
     : false;
 
-  const decision = evaluate(action, { actorRole, permissions, ownerAbsent });
+  const decision = resolve(action, { actorRole, permissions, ownerAbsent });
   if (!decision.allowed) {
-    throw new Error(denialMessage(action, decision.reason));
+    throw new Error(decision.message);
   }
 
   return { identity, user, membership, room, target };

@@ -16,8 +16,7 @@ import { ActionCtx } from "../_generated/server";
 import { encryptToken, decryptToken } from "../lib/encryption";
 import {
   Action,
-  evaluate,
-  denialMessage,
+  resolve,
   getEffectivePermissions,
   getEffectiveRole,
 } from "../permissions";
@@ -892,13 +891,13 @@ export const verifyRoomAccess = internalQuery({
       category: "issueManagement",
       level: permissions.issueManagement,
     };
-    const decision = evaluate(action, {
+    const decision = resolve(action, {
       actorRole: getEffectiveRole(membership),
       permissions,
       ownerAbsent: await isRoomOwnerAbsent(ctx, room),
     });
     if (!decision.allowed) {
-      throw new Error(denialMessage(action, decision.reason));
+      throw new Error(decision.message);
     }
 
     return { userId: user._id };

@@ -8,7 +8,11 @@ import { useMemo, useRef, useEffect } from "react";
 import { DEMO_VIEWER_ID, type CustomNodeType } from "../types";
 import type { RoomWithRelatedData, SanitizedVote } from "@/convex/model/rooms";
 import type { RoomUserData } from "@/convex/model/users";
-import type { MemberRole } from "@/convex/permissions";
+import {
+  type MemberRole,
+  type ResolvedDecision,
+  RESOLVED_ALLOWED,
+} from "@/convex/permissions";
 import { DEFAULT_SCALE } from "@/convex/scales";
 import { useDemoSimulation } from "../demo/DemoSimulationProvider";
 
@@ -23,9 +27,9 @@ interface UseCanvasNodesProps {
   currentUserId?: string;
   selectedCardValue: string | null;
   isDemoMode?: boolean;
-  canRevealCards?: boolean;
-  canControlGameFlow?: boolean;
-  canChangeRoomSettings?: boolean;
+  canRevealCards?: ResolvedDecision;
+  canControlGameFlow?: ResolvedDecision;
+  canChangeRoomSettings?: ResolvedDecision;
   canRemoveTarget?: (targetRole: MemberRole) => boolean;
   onRevealCards?: () => void;
   onResetGame?: () => void;
@@ -50,9 +54,9 @@ export function useCanvasNodes({
   currentUserId,
   selectedCardValue,
   isDemoMode = false,
-  canRevealCards = true,
-  canControlGameFlow = true,
-  canChangeRoomSettings = true,
+  canRevealCards = RESOLVED_ALLOWED,
+  canControlGameFlow = RESOLVED_ALLOWED,
+  canChangeRoomSettings = RESOLVED_ALLOWED,
   canRemoveTarget,
   onRevealCards,
   onResetGame,

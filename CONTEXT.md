@@ -26,6 +26,10 @@ _Avoid_: middleware, interceptor, auth wrapper
 Why a **Decision** was `allowed: false` — `insufficient-role`, `owner-absent`, or `target-rank` (acting on a target whose role forbids it). One reason maps to one message via a shared pure function used by both backend throws and frontend tooltips.
 _Avoid_: error code, status
 
+**Resolved decision**:
+A **Decision** whose **denial reason** has been resolved to its user-facing message: `{ allowed: true }` or `{ allowed: false, message }`. Produced by the pure `resolve(action, ctx)` — the one combiner of `evaluate` and `denialMessage` — so the copy is derived in exactly one place and a caller (a frontend control, a backend throw) reads the message without reconstructing the **Action** or re-deriving the reason. The bare **Decision** carries the reason for classification; the **resolved decision** carries the rendered copy for display. A control disables on `!allowed` and shows `message` as its denial tooltip; it never embeds its own copy.
+_Avoid_: gate (an outcome-changing branch, per [ADR-0001](docs/adr/0001-lockdown-is-a-denial-reason-not-a-gate.md)); resolved permission; can-do
+
 ### Roles & permissions
 
 **Role**:

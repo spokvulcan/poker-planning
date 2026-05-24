@@ -13,6 +13,7 @@ import {
 
 import { cn } from "@/lib/utils";
 import { COUNTDOWN_DURATION_MS } from "@/convex/constants";
+import { permissionProps } from "@/hooks/usePermissions";
 
 import type { SessionNodeType } from "../types";
 
@@ -27,15 +28,23 @@ export const SessionNode = memo(
       autoCompleteVoting,
       autoRevealCountdownStartedAt,
       currentIssue,
-      canRevealCards,
-      canControlGameFlow,
-      canChangeRoomSettings,
+      canRevealCards: canRevealCardsDecision,
+      canControlGameFlow: canControlGameFlowDecision,
+      canChangeRoomSettings: canChangeRoomSettingsDecision,
       onRevealCards,
       onResetGame,
       onToggleAutoComplete,
       onCancelAutoReveal,
       onOpenIssuesPanel,
     } = data;
+
+    // Resolved decisions in; booleans drive each control's own onClick,
+    // className, and non-permission disabled state. The denial copy and the
+    // disabled-when-denied state are layered on via permissionProps, spread
+    // after each button's own attributes so they compose rather than replace.
+    const canRevealCards = canRevealCardsDecision.allowed;
+    const canControlGameFlow = canControlGameFlowDecision.allowed;
+    const canChangeRoomSettings = canChangeRoomSettingsDecision.allowed;
 
     const isActive = !isVotingComplete;
 
@@ -188,14 +197,12 @@ export const SessionNode = memo(
                   : "bg-gray-100 dark:bg-surface-1 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-surface-3",
             )}
             aria-label={
-              !canChangeRoomSettings
-                ? "You don't have permission to change auto-reveal"
-                : autoCompleteVoting
-                  ? "Disable auto-reveal when all vote"
-                  : "Enable auto-reveal when all vote"
+              autoCompleteVoting
+                ? "Disable auto-reveal when all vote"
+                : "Enable auto-reveal when all vote"
             }
             aria-pressed={autoCompleteVoting}
-            title={!canChangeRoomSettings ? "You don't have permission to change this setting" : undefined}
+            {...permissionProps(canChangeRoomSettingsDecision)}
           >
             <Zap
               className={cn(
@@ -264,13 +271,11 @@ export const SessionNode = memo(
                     : "bg-emerald-500 hover:bg-emerald-600 active:bg-emerald-700 text-white shadow-sm hover:shadow-md",
                 )}
                 aria-label={
-                  !canControlGameFlow
-                    ? "You don't have permission to start a new round"
-                    : resetCooldown > 0
-                      ? `Please wait ${resetCooldown} seconds`
-                      : "Start a new voting round"
+                  resetCooldown > 0
+                    ? `Please wait ${resetCooldown} seconds`
+                    : "Start a new voting round"
                 }
-                title={!canControlGameFlow ? "You don't have permission to start a new round" : undefined}
+                {...permissionProps(canControlGameFlowDecision)}
               >
                 <RotateCcw
                   className={cn("h-5 w-5", resetCooldown > 0 && "animate-spin")}
@@ -292,11 +297,8 @@ export const SessionNode = memo(
                     ? "bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-white shadow-sm hover:shadow-md animate-pulse"
                     : "bg-gray-100 dark:bg-surface-2 text-gray-400 dark:text-gray-500 cursor-not-allowed",
                 )}
-                aria-label={
-                  canRevealCards
-                    ? `Auto-revealing in ${countdownSeconds} seconds. Tap to cancel.`
-                    : "You don't have permission to cancel auto-reveal"
-                }
+                aria-label={`Auto-revealing in ${countdownSeconds} seconds. Tap to cancel.`}
+                {...permissionProps(canRevealCardsDecision)}
               >
                 <span className="flex items-center gap-2">
                   <span className="font-mono text-lg font-bold tabular-nums">
@@ -318,13 +320,9 @@ export const SessionNode = memo(
                     : "bg-blue-500 hover:bg-blue-600 active:bg-blue-700 text-white shadow-sm hover:shadow-md",
                 )}
                 aria-label={
-                  !canRevealCards
-                    ? "You don't have permission to reveal votes"
-                    : hasVotes
-                      ? "Reveal all votes"
-                      : "Waiting for votes to reveal"
+                  hasVotes ? "Reveal all votes" : "Waiting for votes to reveal"
                 }
-                title={!canRevealCards ? "You don't have permission to reveal votes" : undefined}
+                {...permissionProps(canRevealCardsDecision)}
               >
                 <Play className="h-5 w-5" />
                 <span>

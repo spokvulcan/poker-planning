@@ -194,6 +194,42 @@ export function denialMessage(action: Action, reason: DenialReason): string {
 }
 
 /**
+ * A Decision whose denial reason has already been resolved to its user-facing
+ * message. The allowed branch carries no message (and `message?: never` makes
+ * `message` narrow to `string` after an `!allowed` check, so callers need no
+ * fallback). The machine-readable reason is intentionally NOT exposed — callers
+ * needing it call `evaluate` directly.
+ */
+export type ResolvedDecision =
+  | { allowed: true; message?: never }
+  | { allowed: false; message: string };
+
+/**
+ * The shared allowed value `resolve` returns on every allow. A module-level
+ * singleton so an allow that stays an allow keeps a stable identity across
+ * recomputes (protects downstream memoization). Frozen so a stray mutation
+ * can't corrupt the value every allow across the backend and browser shares.
+ */
+export const RESOLVED_ALLOWED: ResolvedDecision = Object.freeze({
+  allowed: true,
+});
+
+/**
+ * The single combiner of `evaluate` and `denialMessage`: resolves an action to
+ * an allowed value or a denied value carrying its user-facing message. Pure —
+ * no IO, no React — so it runs unchanged in a Convex function and the browser.
+ * Shared by the backend guard's throw, the Jira push, and the frontend tooltip.
+ */
+export function resolve(
+  action: Action,
+  ctx: DecisionContext
+): ResolvedDecision {
+  const decision = evaluate(action, ctx);
+  if (decision.allowed) return RESOLVED_ALLOWED;
+  return { allowed: false, message: denialMessage(action, decision.reason) };
+}
+
+/**
  * Builds a Decision from a role check, refining the denial reason to
  * "owner-absent" when an owner-level requirement fails under lockdown.
  */

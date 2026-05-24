@@ -331,9 +331,9 @@ function RoomCanvasInner({ roomData, currentUserId, isDemoMode = false, isEmbedd
     currentUserId,
     selectedCardValue,
     isDemoMode,
-    canRevealCards: permissions.revealCards.allowed,
-    canControlGameFlow: permissions.gameFlow.allowed,
-    canChangeRoomSettings: permissions.roomSettings.allowed,
+    canRevealCards: permissions.revealCards,
+    canControlGameFlow: permissions.gameFlow,
+    canChangeRoomSettings: permissions.roomSettings,
     canRemoveTarget,
     onRevealCards: handleRevealCards,
     onResetGame: handleResetGame,
@@ -581,8 +581,8 @@ function RoomCanvasInner({ roomData, currentUserId, isDemoMode = false, isEmbedd
         isOpen={isIssuesPanelOpen}
         onClose={() => setIsIssuesPanelOpen(false)}
         isDemoMode={isDemoMode}
-        canManageIssues={permissions.issueManagement.allowed}
-        canControlGameFlow={permissions.gameFlow.allowed}
+        canManageIssues={permissions.issueManagement}
+        canControlGameFlow={permissions.gameFlow}
       />
     </div>
   );
