@@ -55,7 +55,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { usePermissions } from "@/hooks/usePermissions";
-import { denialMessage } from "@/convex/permissions";
 import { IntegrationSettingsSection } from "./integration-settings";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -282,17 +281,10 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
 
   const currentPermissions = getEffectivePermissions(roomData.room);
 
-  // Tooltip for the room-name controls, routed through the shared denial copy.
+  // Tooltip for the room-name controls, read straight from the resolved decision.
   const roomSettingsTooltip = perms.roomSettings.allowed
     ? undefined
-    : denialMessage(
-        {
-          kind: "category",
-          category: "roomSettings",
-          level: currentPermissions.roomSettings,
-        },
-        perms.roomSettings.reason
-      );
+    : perms.roomSettings.message;
 
   return (
     <>
@@ -584,7 +576,8 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
                   sortedUsers.map((u) => {
                     const userRole = u.role ?? "participant";
                     const isMe = u._id === currentUserId;
-                    const canRemoveThis = perms.removeTarget(userRole).allowed;
+                    const removeDecision = perms.removeTarget(userRole);
+                    const canRemoveThis = removeDecision.allowed;
                     const canPromoteThis = perms.promoteTarget(userRole).allowed;
                     const canDemoteThis = perms.demoteTarget(userRole).allowed;
                     const canTransfer = perms.transfer.allowed;
@@ -720,7 +713,7 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
                                   aria-label={
                                     canRemoveThis
                                       ? `Remove ${u.name}`
-                                      : "You don't have permission to remove this user"
+                                      : removeDecision.message
                                   }
                                 >
                                   <UserMinus className="h-4 w-4" />
@@ -728,9 +721,7 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
                               } />
                               <TooltipContent>
                                 <p>
-                                  {canRemoveThis
-                                    ? "Remove user"
-                                    : "Only facilitators and the owner can remove members"}
+                                  {canRemoveThis ? "Remove user" : removeDecision.message}
                                 </p>
                               </TooltipContent>
                             </Tooltip>

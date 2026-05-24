@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
+import { type ResolvedDecision, RESOLVED_ALLOWED } from "@/convex/permissions";
 
 interface IssueLink {
   _id: string;
@@ -29,8 +30,8 @@ interface IssueItemProps {
   onUpdateEstimate: (issueId: Id<"issues">, estimate: string) => void;
   onDelete: (issueId: Id<"issues">) => void;
   isDemoMode?: boolean;
-  canManageIssues?: boolean;
-  canControlGameFlow?: boolean;
+  canManageIssues?: ResolvedDecision;
+  canControlGameFlow?: ResolvedDecision;
   issueLink?: IssueLink;
 }
 
@@ -42,10 +43,17 @@ export const IssueItem: FC<IssueItemProps> = ({
   onUpdateEstimate,
   onDelete,
   isDemoMode = false,
-  canManageIssues = true,
-  canControlGameFlow = true,
+  canManageIssues: canManageIssuesDecision = RESOLVED_ALLOWED,
+  canControlGameFlow: canControlGameFlowDecision = RESOLVED_ALLOWED,
   issueLink,
 }) => {
+  // Resolved decisions in, booleans out for the existing gating logic; the
+  // denial copy comes from the resolved decision's message (single source).
+  const canManageIssues = canManageIssuesDecision.allowed;
+  const canControlGameFlow = canControlGameFlowDecision.allowed;
+  const manageIssuesDenial = canManageIssuesDecision.allowed
+    ? undefined
+    : canManageIssuesDecision.message;
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [isEditingEstimate, setIsEditingEstimate] = useState(false);
   const [editedTitle, setEditedTitle] = useState(issue.title);
@@ -212,7 +220,7 @@ export const IssueItem: FC<IssueItemProps> = ({
               size="icon-sm"
               disabled={true}
               className="opacity-40 cursor-not-allowed text-gray-400"
-              title="You don't have permission to manage issues"
+              title={manageIssuesDenial}
             >
               <MoreHorizontal className="h-4 w-4" />
               <span className="sr-only">Issue actions unavailable</span>

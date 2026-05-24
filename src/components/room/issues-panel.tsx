@@ -29,6 +29,7 @@ import { JiraImportModal } from "./jira-import-modal";
 import { exportIssuesToCSV } from "@/utils/export-issues-csv";
 import { exportIssuesToJSON } from "@/utils/export-issues-json";
 import type { Id } from "@/convex/_generated/dataModel";
+import { type ResolvedDecision, RESOLVED_ALLOWED } from "@/convex/permissions";
 
 interface IssuesPanelProps {
   roomId: Id<"rooms">;
@@ -36,8 +37,8 @@ interface IssuesPanelProps {
   isOpen: boolean;
   onClose: () => void;
   isDemoMode?: boolean;
-  canManageIssues?: boolean;
-  canControlGameFlow?: boolean;
+  canManageIssues?: ResolvedDecision;
+  canControlGameFlow?: ResolvedDecision;
 }
 
 export const IssuesPanel: FC<IssuesPanelProps> = ({
@@ -46,9 +47,14 @@ export const IssuesPanel: FC<IssuesPanelProps> = ({
   isOpen,
   onClose,
   isDemoMode = false,
-  canManageIssues = true,
-  canControlGameFlow = true,
+  canManageIssues: canManageIssuesDecision = RESOLVED_ALLOWED,
+  canControlGameFlow: canControlGameFlowDecision = RESOLVED_ALLOWED,
 }) => {
+  // Resolved decisions in; booleans for gating and a message for denial copy.
+  const canManageIssues = canManageIssuesDecision.allowed;
+  const manageIssuesDenial = canManageIssuesDecision.allowed
+    ? undefined
+    : canManageIssuesDecision.message;
   const { toast } = useToast();
 
   const [newIssueTitle, setNewIssueTitle] = useState("");
@@ -348,7 +354,7 @@ export const IssuesPanel: FC<IssuesPanelProps> = ({
                     placeholder="Add new issue..."
                     className="h-10 w-full pr-12 text-sm bg-white dark:bg-surface-2 border-gray-200/80 dark:border-border rounded-lg shadow-sm focus-visible:ring-1 focus-visible:ring-blue-500 focus-visible:border-blue-500 transition-all placeholder:text-gray-400"
                     disabled={isAddingIssue || !canManageIssues}
-                    title={!canManageIssues ? "You don't have permission to manage issues" : undefined}
+                    title={manageIssuesDenial}
                   />
                   {newIssueTitle.trim() && (
                     <div className="absolute inset-y-0 right-1 flex items-center">
@@ -389,8 +395,8 @@ export const IssuesPanel: FC<IssuesPanelProps> = ({
                         onUpdateEstimate={handleUpdateEstimate}
                         onDelete={handleDeleteIssue}
                         isDemoMode={isDemoMode}
-                        canManageIssues={canManageIssues}
-                        canControlGameFlow={canControlGameFlow}
+                        canManageIssues={canManageIssuesDecision}
+                        canControlGameFlow={canControlGameFlowDecision}
                         issueLink={issueLinksMap?.[issue._id] ?? undefined}
                       />
                     ))}
