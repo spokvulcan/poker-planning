@@ -25,7 +25,6 @@ interface UseCanvasNodesProps {
   roomData: RoomWithRelatedData;
   currentUserId?: string;
   selectedCardValue: string | null;
-  isDemoMode?: boolean;
   canRevealCards?: ResolvedDecision;
   canControlGameFlow?: ResolvedDecision;
   canChangeRoomSettings?: ResolvedDecision;
@@ -51,7 +50,6 @@ export function useCanvasNodes({
   roomData,
   currentUserId,
   selectedCardValue,
-  isDemoMode = false,
   canRevealCards = RESOLVED_ALLOWED,
   canControlGameFlow = RESOLVED_ALLOWED,
   canChangeRoomSettings = RESOLVED_ALLOWED,
@@ -67,7 +65,10 @@ export function useCanvasNodes({
   // In the Demo simulation, the persisted nodes and the current issue come from
   // context — never from Convex (zero reads, ADR-0003). Real rooms subscribe as
   // before. `"skip"` keeps the hook call unconditional (rules of hooks).
+  // The demo signal is derived from the same context that supplies the bypass
+  // data (#214), so the two can never disagree.
   const demo = useDemoSimulation();
+  const isDemoMode = !!demo;
 
   const canvasNodesQuery = useQuery(
     api.canvas.getCanvasNodes,

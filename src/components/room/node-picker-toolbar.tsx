@@ -11,20 +11,21 @@ import {
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { Id } from "@/convex/_generated/dataModel";
+import { useIsDemoMode } from "./demo/DemoSimulationProvider";
 
 interface NodePickerToolbarProps {
   currentIssueId: Id<"issues"> | null;
   hasNoteForCurrentIssue: boolean;
   onCreateNote: () => void;
-  isDemoMode?: boolean;
 }
 
 export function NodePickerToolbar({
   currentIssueId,
   hasNoteForCurrentIssue,
   onCreateNote,
-  isDemoMode = false,
 }: NodePickerToolbarProps): ReactElement | null {
+  const isDemoMode = useIsDemoMode();
+
   // Only show toolbar when there's an issue selected and no note exists
   if (!currentIssueId || hasNoteForCurrentIssue || isDemoMode) {
     return null;

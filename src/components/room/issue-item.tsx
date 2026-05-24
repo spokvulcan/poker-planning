@@ -14,6 +14,7 @@ import {
 import { cn } from "@/lib/utils";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
 import { type ResolvedDecision, RESOLVED_ALLOWED } from "@/convex/permissions";
+import { useIsDemoMode } from "./demo/DemoSimulationProvider";
 
 interface IssueLink {
   _id: string;
@@ -29,7 +30,6 @@ interface IssueItemProps {
   onUpdateTitle: (issueId: Id<"issues">, title: string) => void;
   onUpdateEstimate: (issueId: Id<"issues">, estimate: string) => void;
   onDelete: (issueId: Id<"issues">) => void;
-  isDemoMode?: boolean;
   canManageIssues?: ResolvedDecision;
   canControlGameFlow?: ResolvedDecision;
   issueLink?: IssueLink;
@@ -42,11 +42,11 @@ export const IssueItem: FC<IssueItemProps> = ({
   onUpdateTitle,
   onUpdateEstimate,
   onDelete,
-  isDemoMode = false,
   canManageIssues: canManageIssuesDecision = RESOLVED_ALLOWED,
   canControlGameFlow: canControlGameFlowDecision = RESOLVED_ALLOWED,
   issueLink,
 }) => {
+  const isDemoMode = useIsDemoMode();
   // Resolved decisions in, booleans out for the existing gating logic; the
   // denial copy comes from the resolved decision's message (single source).
   const canManageIssues = canManageIssuesDecision.allowed;
