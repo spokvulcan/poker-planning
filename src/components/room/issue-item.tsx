@@ -46,7 +46,6 @@ export const IssueItem: FC<IssueItemProps> = ({
   canControlGameFlow: canControlGameFlowDecision = RESOLVED_ALLOWED,
   issueLink,
 }) => {
-  // The demo signal comes from the provider seam (#214), not a threaded prop.
   const isDemoMode = useIsDemoMode();
   // Resolved decisions in, booleans out for the existing gating logic; the
   // denial copy comes from the resolved decision's message (single source).

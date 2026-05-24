@@ -49,8 +49,6 @@ export const IssuesPanel: FC<IssuesPanelProps> = ({
   canManageIssues: canManageIssuesDecision = RESOLVED_ALLOWED,
   canControlGameFlow: canControlGameFlowDecision = RESOLVED_ALLOWED,
 }) => {
-  // The demo signal comes from the provider seam (#214), not a threaded prop;
-  // it gates the integration queries below and the child issue rows.
   const isDemoMode = useIsDemoMode();
   // Resolved decisions in; booleans for gating and a message for denial copy.
   const canManageIssues = canManageIssuesDecision.allowed;

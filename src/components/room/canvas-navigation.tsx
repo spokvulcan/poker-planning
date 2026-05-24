@@ -79,7 +79,6 @@ export const CanvasNavigation: FC<CanvasNavigationProps> = ({
   isSettingsOpen,
   onSettingsPanelChange,
 }) => {
-  // The demo signal comes from the provider seam (#214), not a threaded prop.
   const isDemoMode = useIsDemoMode();
   const { zoomIn, zoomOut, fitView } = useReactFlow();
   const router = useRouter();

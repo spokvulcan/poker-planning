@@ -24,8 +24,6 @@ export function NodePickerToolbar({
   hasNoteForCurrentIssue,
   onCreateNote,
 }: NodePickerToolbarProps): ReactElement | null {
-  // The demo never creates notes, so the toolbar self-guards via the provider
-  // seam (#214) rather than a threaded prop.
   const isDemoMode = useIsDemoMode();
 
   // Only show toolbar when there's an issue selected and no note exists

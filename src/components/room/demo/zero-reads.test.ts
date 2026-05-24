@@ -112,8 +112,10 @@ function DemoProbe(): ReactNode {
 }
 
 // A real room: no provider mounted, so `useDemoSimulation()` is null and the
-// hooks must subscribe. The exact data is irrelevant — the queries fire during
-// render regardless — so a minimal room shape is enough.
+// hooks must subscribe. The exact data is irrelevant — `useQuery` fires
+// synchronously during `renderToStaticMarkup`, before any data round-trip — so
+// the double-cast to a minimal room shape is safe: nothing ever reads the
+// fields we omitted.
 function RealRoomProbe(): ReactNode {
   const roomId = "real-room-id" as Id<"rooms">;
   const roomData = {

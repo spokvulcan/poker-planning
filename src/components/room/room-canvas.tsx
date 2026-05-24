@@ -301,7 +301,6 @@ function RoomCanvasInner({ roomData, currentUserId, isEmbedded = false }: RoomCa
           className="*:stroke-gray-300 dark:*:stroke-surface-3"
         />
       </ReactFlow>
-      {/* The toolbar self-guards in demo via the provider seam (#214). */}
       <NodePickerToolbar
         currentIssueId={currentIssue?._id ?? null}
         hasNoteForCurrentIssue={hasNoteForCurrentIssue}

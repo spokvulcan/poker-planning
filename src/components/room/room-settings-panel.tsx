@@ -110,7 +110,6 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
   isOpen,
   onClose,
 }) => {
-  // The demo signal comes from the provider seam (#214), not a threaded prop.
   const isDemoMode = useIsDemoMode();
   const { toast } = useToast();
   const { theme, setTheme } = useTheme();
