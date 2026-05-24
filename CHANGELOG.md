@@ -1,5 +1,31 @@
 # Changelog
 
+## [2.9.0](https://github.com/spokvulcan/poker-planning/compare/agilekit-v2.8.0...agilekit-v2.9.0) (2026-05-24)
+
+
+### Features
+
+* **permissions:** single-source denial copy via resolved decisions ([#211](https://github.com/spokvulcan/poker-planning/issues/211)) ([861aee7](https://github.com/spokvulcan/poker-planning/commit/861aee729b9acb2ba47bc64ec4f2143f32da4243))
+
+
+### Bug Fixes
+
+* **voting-round:** keep the auto-reveal countdown correct across roster and spectator changes ([#209](https://github.com/spokvulcan/poker-planning/issues/209)) ([1799036](https://github.com/spokvulcan/poker-planning/commit/1799036e2ab1da756a61e6c8b23ede4660b09a82))
+
+
+### Miscellaneous
+
+* add Convex agent AI files and guidelines ([ae6263e](https://github.com/spokvulcan/poker-planning/commit/ae6263e2792f6a0b436f2662c932e6d73cc8f93d))
+
+
+### Code Refactoring
+
+* **canvas:** own action wiring in frozen-identity modules ([#215](https://github.com/spokvulcan/poker-planning/issues/215)) ([f88e976](https://github.com/spokvulcan/poker-planning/commit/f88e97620bc9e04471a4c03c90526aa298a7fc23))
+* **canvas:** single resolved-decision contract for player removal ([#213](https://github.com/spokvulcan/poker-planning/issues/213)) ([#216](https://github.com/spokvulcan/poker-planning/issues/216)) ([d7d924d](https://github.com/spokvulcan/poker-planning/commit/d7d924d420898cd07219bc9d461f1d0508ab41cb))
+* **convex:** resolve no-filter-in-query warnings and type canvas node data ([#218](https://github.com/spokvulcan/poker-planning/issues/218)) ([8d41e94](https://github.com/spokvulcan/poker-planning/commit/8d41e94a1ddcb7b410fbe3f8d5bf20306158bdb7))
+* **demo:** drop deprecated isDemoRoom/isBot fields (deploy 2) ([#207](https://github.com/spokvulcan/poker-planning/issues/207)) ([1847d14](https://github.com/spokvulcan/poker-planning/commit/1847d14ae2f919c7feaa51cf4ceb7621ca112e7c)), closes [#204](https://github.com/spokvulcan/poker-planning/issues/204)
+* **demo:** route the demo signal through the provider seam; drop the isDemoMode prop-drill ([#214](https://github.com/spokvulcan/poker-planning/issues/214)) ([#217](https://github.com/spokvulcan/poker-planning/issues/217)) ([d95f36c](https://github.com/spokvulcan/poker-planning/commit/d95f36ca128e69a9e2a61cd1e2ddc8c3ca4fc3ad))
+
 ## [2.8.0](https://github.com/spokvulcan/poker-planning/compare/agilekit-v2.7.8...agilekit-v2.8.0) (2026-05-23)
 
 
