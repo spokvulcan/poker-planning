@@ -23,7 +23,7 @@ const VOTING_CARD_SPACING = 70;
 interface UseCanvasNodesProps {
   roomId: Id<"rooms">;
   roomData: RoomWithRelatedData;
-  currentUserId?: string;
+  currentUserId?: Id<"users">;
   selectedCardValue: string | null;
   canRevealCards?: ResolvedDecision;
   canControlGameFlow?: ResolvedDecision;
@@ -133,6 +133,7 @@ export function useCanvasNodes({
           position: node.position,
           data: {
             ...node.data,
+            isRunning: node.data.isRunning ?? false,
             roomId,
             userId: currentUserId,
             nodeId: node.nodeId,

@@ -54,7 +54,8 @@ export default defineSchema({
     ),
   })
     .index("by_activity", ["lastActivityAt"])
-    .index("by_created", ["createdAt"]), // For querying recent rooms
+    .index("by_created", ["createdAt"]) // For querying recent rooms
+    .index("by_owner", ["ownerId"]), // For transferring ownership on account linking
 
   issues: defineTable({
     roomId: v.id("rooms"),
@@ -174,7 +175,7 @@ export default defineSchema({
   })
     .index("by_issue", ["issueId"])
     .index("by_user", ["userId"])
-    .index("by_room_user", ["roomId", "userId"])
+    .index("by_room_user_issue", ["roomId", "userId", "issueId"])
     .index("by_room", ["roomId"]),
 
   // Integration connections (user-level OAuth tokens, encrypted)
@@ -223,7 +224,8 @@ export default defineSchema({
     createdAt: v.number(),
   })
     .index("by_room", ["roomId"])
-    .index("by_connection", ["connectionId"]),
+    .index("by_connection", ["connectionId"])
+    .index("by_provider_autopush", ["provider", "autoPushEstimates"]), // For webhook-refresh sweep
 
   // Bidirectional links between AgileKit issues and external issues
   issueLinks: defineTable({

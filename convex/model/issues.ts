@@ -263,8 +263,7 @@ export async function getIssuesForExport(
   // Fetch all notes for room in a single query (avoid N+1)
   const noteNodes = await ctx.db
     .query("canvasNodes")
-    .withIndex("by_room", (q) => q.eq("roomId", roomId))
-    .filter((q) => q.eq(q.field("type"), "note"))
+    .withIndex("by_room_type", (q) => q.eq("roomId", roomId).eq("type", "note"))
     .collect();
 
   // Build lookup map: issueId -> note content

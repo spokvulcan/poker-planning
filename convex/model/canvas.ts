@@ -26,17 +26,48 @@ export interface Position {
   y: number;
 }
 
-export interface CanvasNode {
+/**
+ * Persisted `data` payload for each canvas node `type`. The column is stored as
+ * `v.any()` in the schema (node shapes evolve independently of migrations), so
+ * this discriminated union is the read-side contract asserted by
+ * {@link getCanvasNodes} — it lets callers narrow `data` by `type`.
+ */
+export type CanvasNodeData =
+  | { type: "player"; data: { userId: Id<"users"> } }
+  | {
+      type: "timer";
+      data: {
+        startedAt: number | null;
+        pausedAt: number | null;
+        elapsedSeconds: number;
+        isRunning?: boolean;
+        lastUpdatedBy: Id<"users"> | null;
+        lastAction: "start" | "pause" | "reset" | null;
+      };
+    }
+  | {
+      type: "note";
+      data: {
+        issueId: Id<"issues">;
+        issueTitle: string;
+        content: string;
+        lastUpdatedBy?: string;
+        lastUpdatedAt?: number;
+      };
+    }
+  // session / results / story carry no persisted payload
+  | { type: "session"; data: Record<string, never> }
+  | { type: "results"; data: Record<string, never> }
+  | { type: "story"; data: Record<string, never> };
+
+export type CanvasNode = {
   roomId: Id<"rooms">;
   nodeId: string;
-  type: "player" | "timer" | "session" | "results" | "story" | "note";
   position: Position;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO: Create proper type union for node data
-  data: any;
   isLocked?: boolean;
   lastUpdatedBy?: Id<"users">;
   lastUpdatedAt: number;
-}
+} & CanvasNodeData;
 
 interface NodePosition {
   nodeId: string;
@@ -215,10 +246,12 @@ export async function getCanvasNodes(
   ctx: QueryCtx,
   roomId: Id<"rooms">
 ): Promise<CanvasNode[]> {
-  return await ctx.db
+  const nodes = await ctx.db
     .query("canvasNodes")
     .withIndex("by_room", (q) => q.eq("roomId", roomId))
     .collect();
+  // `data` is persisted as `v.any()`; assert the per-`type` read contract.
+  return nodes as CanvasNode[];
 }
 
 /**
