@@ -6,6 +6,7 @@ import type { Id } from "./_generated/dataModel";
 import * as Countdown from "./model/countdown";
 import * as VotingRound from "./model/votingRound";
 import * as Issues from "./model/issues";
+import * as Users from "./model/users";
 
 const modules = import.meta.glob("./**/*.*s");
 
@@ -240,8 +241,9 @@ describe("Countdown.evaluate", () => {
 
   it("does not arm a room with no non-spectator members (empty is not all-in)", async () => {
     // `[].every()` is vacuously true, so a spectator-only room would otherwise
-    // report "all in" and auto-reveal a round nobody really voted in. A stray
-    // spectator ballot (the backend doesn't block it) must not arm.
+    // report "all in" and auto-reveal a round nobody really voted in. castVote
+    // now refuses spectator ballots (ADR-0004), but evaluate stays defensive: a
+    // stray spectator vote row inserted directly (e.g. legacy data) must not arm.
     const t = convexTest(schema, modules);
     const roomId = await seedRoom(t, { autoCompleteVoting: true });
     const s = await addMember(t, roomId, { isSpectator: true });
@@ -271,6 +273,133 @@ describe("Countdown.evaluate", () => {
     expect(room?.autoRevealCountdownStartedAt).toBeUndefined();
     expect(room?.autoRevealScheduledId).toBeUndefined();
     expect(scheduled[0].state.kind).toBe("canceled");
+  });
+});
+
+describe("dropVoter — a roster exit reconciles the round", () => {
+  // Remove a member's roomMembership the way the users module does, so the
+  // non-spectator roster has already shrunk when dropVoter re-checks completion.
+  async function removeMembership(t: T, roomId: Id<"rooms">, userId: Id<"users">) {
+    await t.run(async (ctx) => {
+      const members = await ctx.db
+        .query("roomMemberships")
+        .withIndex("by_room", (q) => q.eq("roomId", roomId))
+        .collect();
+      const m = members.find((x) => x.userId === userId);
+      if (m) await ctx.db.delete(m._id);
+    });
+  }
+
+  it("arms the countdown once the dropped member was the last non-voter", async () => {
+    const t = convexTest(schema, modules);
+    const roomId = await seedRoom(t, { autoCompleteVoting: true });
+    const a = await addMember(t, roomId);
+    const b = await addMember(t, roomId); // never votes — the lone blocker
+    await rawVote(t, roomId, a);
+
+    await removeMembership(t, roomId, b); // caller shrinks the roster first
+    await t.run((ctx) => VotingRound.dropVoter(ctx, roomId, b));
+
+    const room = await readRoom(t, roomId);
+    expect(room?.autoRevealCountdownStartedAt).toEqual(expect.any(Number));
+    expect(room?.autoRevealScheduledId).toBeDefined();
+  });
+
+  it("deletes the dropped member's own votes (round is sole writer of the votes table)", async () => {
+    const t = convexTest(schema, modules);
+    const roomId = await seedRoom(t, { autoCompleteVoting: true });
+    const a = await addMember(t, roomId);
+    const b = await addMember(t, roomId);
+    await rawVote(t, roomId, a);
+    await rawVote(t, roomId, b);
+
+    await removeMembership(t, roomId, b);
+    await t.run((ctx) => VotingRound.dropVoter(ctx, roomId, b));
+
+    const remaining = await t.run((ctx) =>
+      ctx.db
+        .query("votes")
+        .withIndex("by_room", (q) => q.eq("roomId", roomId))
+        .collect()
+    );
+    expect(remaining.map((v) => v.userId)).toEqual([a]);
+  });
+
+  it("becoming a spectator arms the countdown when it completes the round", async () => {
+    const t = convexTest(schema, modules);
+    const roomId = await seedRoom(t, { autoCompleteVoting: true });
+    const a = await addMember(t, roomId);
+    const b = await addMember(t, roomId); // hasn't voted
+    await rawVote(t, roomId, a);
+
+    // The last non-voter switches to spectator — the room is now fully voted.
+    await t.run((ctx) =>
+      Users.editUser(ctx, { roomId, userId: b, isSpectator: true })
+    );
+
+    const room = await readRoom(t, roomId);
+    expect(room?.autoRevealCountdownStartedAt).toEqual(expect.any(Number));
+  });
+
+  it("becoming a spectator via editUser deletes the member's existing vote", async () => {
+    const t = convexTest(schema, modules);
+    const roomId = await seedRoom(t, { autoCompleteVoting: true });
+    const a = await addMember(t, roomId);
+    const b = await addMember(t, roomId);
+    await rawVote(t, roomId, a);
+    await rawVote(t, roomId, b); // b has voted, then spectates
+
+    await t.run((ctx) =>
+      Users.editUser(ctx, { roomId, userId: b, isSpectator: true })
+    );
+
+    // The round drops a spectating member's votes, so only a's vote remains —
+    // a spectator never keeps a vote row (ADR-0004).
+    const remaining = await t.run((ctx) =>
+      ctx.db
+        .query("votes")
+        .withIndex("by_room", (q) => q.eq("roomId", roomId))
+        .collect()
+    );
+    expect(remaining.map((v) => v.userId)).toEqual([a]);
+  });
+
+  it("leaving the room arms the countdown when it completes the round", async () => {
+    const t = convexTest(schema, modules);
+    const roomId = await seedRoom(t, { autoCompleteVoting: true });
+    const a = await addMember(t, roomId);
+    const b = await addMember(t, roomId); // hasn't voted
+    await rawVote(t, roomId, a);
+
+    await t.run((ctx) => Users.leaveRoom(ctx, b, roomId)); // also the remove/kick path
+
+    const room = await readRoom(t, roomId);
+    expect(room?.autoRevealCountdownStartedAt).toEqual(expect.any(Number));
+  });
+
+  it("a never-voted latecomer does not prevent the armed reveal from firing (let it reveal — ADR-0004)", async () => {
+    const t = convexTest(schema, modules);
+    const roomId = await seedRoom(t, { autoCompleteVoting: true });
+    const a = await addMember(t, roomId);
+    const b = await addMember(t, roomId);
+    await rawVote(t, roomId, a);
+    await rawVote(t, roomId, b);
+    await t.run((ctx) => Countdown.evaluate(ctx, roomId)); // all in -> armed
+    const token = (await readRoom(t, roomId))!.autoRevealCountdownStartedAt!;
+    expect(token).toEqual(expect.any(Number));
+
+    // A latecomer joins as a participant after the countdown is armed: the room
+    // is no longer all-in, but admission deliberately does not reconcile.
+    await t.run((ctx) =>
+      Users.joinRoom(ctx, { roomId, name: "C", authUserId: "auth-latecomer" })
+    );
+    expect((await readRoom(t, roomId))?.autoRevealCountdownStartedAt).toBe(token);
+
+    // When the armed reveal fires, it still reveals — the latecomer who never
+    // voted does not hold it back. (Re-checking all-in at fire time would wrongly
+    // no-op here; this asserts we don't.)
+    await t.run((ctx) => VotingRound.autoReveal(ctx, { roomId, token }));
+    expect((await readRoom(t, roomId))?.isGameOver).toBe(true);
   });
 });
 
@@ -838,6 +967,25 @@ describe("VotingRound.castVote", () => {
       expect.any(Number)
     );
   });
+
+  it("refuses a spectator's ballot — spectators are voteless (ADR-0004)", async () => {
+    const t = convexTest(schema, modules);
+    const roomId = await seedRoom(t, { autoCompleteVoting: false });
+    const s = await addMember(t, roomId, { isSpectator: true });
+
+    await expect(
+      t.run((ctx) =>
+        VotingRound.castVote(ctx, {
+          roomId,
+          userId: s,
+          cardLabel: "5",
+          cardValue: 5,
+        })
+      )
+    ).rejects.toThrow(/spectator/i);
+
+    expect(await votesFor(t, roomId)).toHaveLength(0);
+  });
 });
 
 describe("VotingRound.retractVote", () => {
@@ -871,5 +1019,129 @@ describe("VotingRound.retractVote", () => {
     const room = await readRoom(t, roomId);
     expect(room?.autoRevealCountdownStartedAt).toBeUndefined();
     expect(room?.autoRevealScheduledId).toBeUndefined();
+  });
+});
+
+describe("linkAnonymousToPermanent — identity merge keeps spectators voteless (ADR-0004)", () => {
+  it("drops the merged vote rather than leaving it on a spectator destination", async () => {
+    const t = convexTest(schema, modules);
+    const roomId = await seedRoom(t);
+
+    // Destination: a PERMANENT user who is a spectator in the room (no vote).
+    const permanentId = await t.run((ctx) =>
+      ctx.db.insert("users", {
+        authUserId: "auth-permanent",
+        name: "P",
+        accountType: "permanent" as const,
+        createdAt: Date.now(),
+      })
+    );
+    await t.run((ctx) =>
+      ctx.db.insert("roomMemberships", {
+        roomId,
+        userId: permanentId,
+        isSpectator: true,
+        joinedAt: Date.now(),
+      })
+    );
+
+    // Source: an ANONYMOUS user who voted in the room as a non-spectator.
+    const anonId = await t.run((ctx) =>
+      ctx.db.insert("users", {
+        authUserId: "auth-anon",
+        name: "A",
+        createdAt: Date.now(),
+      })
+    );
+    await t.run((ctx) =>
+      ctx.db.insert("roomMemberships", {
+        roomId,
+        userId: anonId,
+        isSpectator: false,
+        joinedAt: Date.now(),
+      })
+    );
+    await rawVote(t, roomId, anonId);
+
+    await t.run((ctx) =>
+      Users.linkAnonymousToPermanent(ctx, {
+        oldAuthUserId: "auth-anon",
+        newAuthUserId: "auth-permanent",
+        email: "p@example.com",
+      })
+    );
+
+    // The spectator destination must not inherit the vote; transferring it would
+    // recreate the "spectator holds a vote row" state that strands the countdown.
+    const permVotes = await t.run((ctx) =>
+      ctx.db
+        .query("votes")
+        .withIndex("by_room_user", (q) =>
+          q.eq("roomId", roomId).eq("userId", permanentId)
+        )
+        .collect()
+    );
+    expect(permVotes).toHaveLength(0);
+    expect(await votesFor(t, roomId)).toHaveLength(0);
+  });
+
+  it("transfers the vote to a non-spectator destination", async () => {
+    const t = convexTest(schema, modules);
+    const roomId = await seedRoom(t);
+
+    // Destination: a PERMANENT, non-spectator user who has not voted.
+    const permanentId = await t.run((ctx) =>
+      ctx.db.insert("users", {
+        authUserId: "auth-permanent",
+        name: "P",
+        accountType: "permanent" as const,
+        createdAt: Date.now(),
+      })
+    );
+    await t.run((ctx) =>
+      ctx.db.insert("roomMemberships", {
+        roomId,
+        userId: permanentId,
+        isSpectator: false,
+        joinedAt: Date.now(),
+      })
+    );
+
+    // Source: an ANONYMOUS user who voted as a non-spectator.
+    const anonId = await t.run((ctx) =>
+      ctx.db.insert("users", {
+        authUserId: "auth-anon",
+        name: "A",
+        createdAt: Date.now(),
+      })
+    );
+    await t.run((ctx) =>
+      ctx.db.insert("roomMemberships", {
+        roomId,
+        userId: anonId,
+        isSpectator: false,
+        joinedAt: Date.now(),
+      })
+    );
+    await rawVote(t, roomId, anonId);
+
+    await t.run((ctx) =>
+      Users.linkAnonymousToPermanent(ctx, {
+        oldAuthUserId: "auth-anon",
+        newAuthUserId: "auth-permanent",
+        email: "p@example.com",
+      })
+    );
+
+    // The vote survives, now owned by the permanent (non-spectator) user.
+    const permVotes = await t.run((ctx) =>
+      ctx.db
+        .query("votes")
+        .withIndex("by_room_user", (q) =>
+          q.eq("roomId", roomId).eq("userId", permanentId)
+        )
+        .collect()
+    );
+    expect(permVotes).toHaveLength(1);
   });
 });

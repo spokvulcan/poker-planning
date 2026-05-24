@@ -369,6 +369,21 @@ export interface CastVoteArgs {
  * auto-reveal countdown once every non-spectator has voted.
  */
 export async function castVote(ctx: MutationCtx, args: CastVoteArgs): Promise<void> {
+  // Spectators are voteless: the round refuses a spectator's ballot at its sole
+  // write site rather than recording a vote that `areAllVotesIn` would ignore.
+  // This keeps the votes table free of spectator rows, so a member admitted
+  // mid-countdown (un-spectated, or joining) can never already hold a vote — the
+  // premise that lets admission skip reconciliation (ADR-0004).
+  const membership = await ctx.db
+    .query("roomMemberships")
+    .withIndex("by_room_user", (q) =>
+      q.eq("roomId", args.roomId).eq("userId", args.userId)
+    )
+    .first();
+  if (membership?.isSpectator) {
+    throw new Error("Spectators cannot vote");
+  }
+
   await Rooms.updateRoomActivity(ctx, args.roomId);
 
   const existing = await ctx.db
@@ -418,6 +433,33 @@ export async function retractVote(
     await ctx.db.delete(vote._id);
     await Countdown.evaluate(ctx, args.roomId);
   }
+}
+
+/**
+ * dropVoter — a member stops counting toward the current round: they left the
+ * room (or were removed), or switched to spectator. Deletes their votes — the
+ * round is the sole writer of the votes table (ADR-0002) — and reconciles the
+ * auto-reveal countdown. Because the non-spectator roster only shrinks here, the
+ * re-evaluation can complete the round and ARM the countdown (it cancels only in
+ * the degenerate case where the last voter is now gone). Never a phase transition.
+ *
+ * Call AFTER the caller has written the membership change (the spectator flip or
+ * the membership delete), so `areAllVotesIn` reads the new roster. The inverse —
+ * admitting a member mid-countdown — deliberately does NOT reconcile: a latecomer
+ * never cancels a running countdown (ADR-0004).
+ */
+export async function dropVoter(
+  ctx: MutationCtx,
+  roomId: Id<"rooms">,
+  userId: Id<"users">
+): Promise<void> {
+  const votes = await ctx.db
+    .query("votes")
+    .withIndex("by_room_user", (q) => q.eq("roomId", roomId).eq("userId", userId))
+    .collect();
+  await Promise.all(votes.map((vote) => ctx.db.delete(vote._id)));
+
+  await Countdown.evaluate(ctx, roomId);
 }
 
 /**

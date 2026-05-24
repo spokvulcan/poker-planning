@@ -2,6 +2,7 @@ import { MutationCtx, QueryCtx } from "../_generated/server";
 import { Id, Doc } from "../_generated/dataModel";
 import * as Canvas from "./canvas";
 import * as Rooms from "./rooms";
+import * as VotingRound from "./votingRound";
 import type { MemberRole } from "../permissions";
 
 export interface JoinRoomArgs {
@@ -182,31 +183,20 @@ export async function editUser(
     await ctx.db.patch(args.userId, { name: args.name });
   }
 
-  // Handle spectator status transitions
+  // Handle spectator status transitions. Flip the roster bit first (membership is
+  // this module's to write), then hand the round its due: becoming a spectator
+  // drops this voter, so the round deletes their votes and re-checks completion —
+  // it may now arm the auto-reveal countdown. Un-spectating needs no reconcile:
+  // a spectator is voteless (castVote refuses them; this branch dropped any vote
+  // on the way in), so un-spectating adds a fresh non-voter that can't silently
+  // complete the round, and a latecomer never cancels a running countdown (ADR-0004).
   if (args.isSpectator !== undefined && args.isSpectator !== membership.isSpectator) {
-    if (args.isSpectator) {
-      // Becoming spectator: remove votes
-      await deleteUserVotesInRoom(ctx, args.roomId, args.userId);
-    }
-
     await ctx.db.patch(membership._id, { isSpectator: args.isSpectator });
+
+    if (args.isSpectator) {
+      await VotingRound.dropVoter(ctx, args.roomId, args.userId);
+    }
   }
-}
-
-/**
- * Deletes all votes for a user in a room
- */
-async function deleteUserVotesInRoom(
-  ctx: MutationCtx,
-  roomId: Id<"rooms">,
-  userId: Id<"users">
-): Promise<void> {
-  const votes = await ctx.db
-    .query("votes")
-    .withIndex("by_room_user", (q) => q.eq("roomId", roomId).eq("userId", userId))
-    .collect();
-
-  await Promise.all(votes.map((vote) => ctx.db.delete(vote._id)));
 }
 
 /**
@@ -220,33 +210,21 @@ export async function leaveRoom(
   const membership = await getMembership(ctx, roomId, userId);
   if (!membership) return;
 
-  // Perform all cleanup operations in parallel for better performance
-  const cleanupPromises: Promise<void>[] = [];
+  // Membership and any canvas player node are this module's to remove. Delete the
+  // membership FIRST so the non-spectator roster reflects the departure before the
+  // round re-checks completion.
+  await ctx.db.delete(membership._id);
 
-  // Delete user's votes in this room
-  const votes = await ctx.db
-    .query("votes")
-    .withIndex("by_room_user", (q) =>
-      q.eq("roomId", roomId).eq("userId", userId)
-    )
-    .collect();
-
-  cleanupPromises.push(...votes.map((vote) => ctx.db.delete(vote._id)));
-
-  // Check if this is a canvas room and remove nodes
   const room = await ctx.db.get(roomId);
   if (room && room.roomType === "canvas") {
-    // Remove player node
-    cleanupPromises.push(
-      Canvas.removePlayerNode(ctx, { roomId, userId })
-    );
+    await Canvas.removePlayerNode(ctx, { roomId, userId });
   }
 
-  // Wait for all cleanup operations to complete
-  await Promise.all(cleanupPromises);
-
-  // Delete membership (keep global user)
-  await ctx.db.delete(membership._id);
+  // Hand off to the round: drop the leaver's votes (the round is the sole writer
+  // of the votes table — ADR-0002) and reconcile the auto-reveal countdown, which
+  // may now arm if the leaver was the last non-voter. The remove/kick path funnels
+  // through here too, so it is covered.
+  await VotingRound.dropVoter(ctx, roomId, userId);
 
   // Update room activity
   await Rooms.updateRoomActivity(ctx, roomId);
@@ -475,9 +453,15 @@ export async function linkAnonymousToPermanent(
       }
     }
 
-    // Transfer votes
-    // Rule: If both permanent and anonymous users have voted in the same room,
-    // keep the permanent user's vote and delete the anonymous vote.
+    // Transfer votes.
+    // Sole-writer exception (ADR-0004): this re-points vote *ownership* during a
+    // sign-in identity merge — not a round action — so it writes the votes table
+    // directly and does NOT reconcile the auto-reveal countdown. Accepted because
+    // the merge is a cold sign-in path; a merge that happens to complete a live
+    // round won't auto-arm until the next vote or roster change.
+    // Rule: keep at most one vote per (room, user). If the permanent user already
+    // voted in a room, or is a spectator there (spectators are voteless), drop the
+    // anonymous vote; otherwise re-point it to the permanent user.
     const votes = await ctx.db
       .query("votes")
       .withIndex("by_user", (q) => q.eq("userId", user._id))
@@ -491,8 +475,17 @@ export async function linkAnonymousToPermanent(
         )
         .first();
 
-      if (existingVote) {
-        // Permanent user already voted in this room
+      // Drop the anonymous vote (rather than transfer it) when the permanent
+      // user already voted in this room, OR is a spectator there. Spectators are
+      // voteless (ADR-0004): re-pointing a vote onto a spectator would recreate
+      // the "spectator holds a vote row" state that strands the auto-reveal
+      // countdown when that member is later un-spectated.
+      const destMembership = await getMembership(
+        ctx,
+        vote.roomId,
+        existingPermanent._id
+      );
+      if (existingVote || destMembership?.isSpectator) {
         await ctx.db.delete(vote._id);
       } else {
         await ctx.db.patch(vote._id, { userId: existingPermanent._id });
