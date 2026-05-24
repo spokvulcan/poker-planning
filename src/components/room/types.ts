@@ -15,7 +15,6 @@ export type PlayerNodeData = {
   card: string | null;
   isGameOver: boolean;
   role: MemberRole;
-  canRemove: boolean;
 };
 
 export type StoryNodeData = {

@@ -2,6 +2,7 @@
 
 import { useCallback, useState } from "react";
 import type { Id } from "@/convex/_generated/dataModel";
+import type { ResolvedDecision } from "@/convex/permissions";
 
 interface PendingPlayer {
   id: Id<"users">;
@@ -23,6 +24,7 @@ interface UseDeleteConfirmationReturn {
     userId: Id<"users">,
     name: string,
     isSelf: boolean,
+    removeDecision: ResolvedDecision,
   ) => void;
   confirmNote: () => void;
   confirmPlayer: () => void;
@@ -35,6 +37,10 @@ interface UseDeleteConfirmationReturn {
  * the canvas (user stories 3/15/20). Built on the canvas-actions primitives:
  * an empty note is deleted immediately; a note with content opens a confirm
  * dialog; removing another player always confirms first; self-removal is a no-op.
+ *
+ * The player-removal gate consumes the full resolved decision (the same shape
+ * every permission-gated control uses) and refuses when it is denied, so the
+ * canvas and the settings-panel roster never disagree about who can be removed.
  */
 export function useDeleteConfirmation({
   deleteNote,
@@ -55,8 +61,13 @@ export function useDeleteConfirmation({
   );
 
   const requestDeletePlayer = useCallback(
-    (userId: Id<"users">, name: string, isSelf: boolean) => {
-      if (isSelf) return;
+    (
+      userId: Id<"users">,
+      name: string,
+      isSelf: boolean,
+      removeDecision: ResolvedDecision,
+    ) => {
+      if (isSelf || !removeDecision.allowed) return;
       setPendingPlayer({ id: userId, name });
     },
     [],
