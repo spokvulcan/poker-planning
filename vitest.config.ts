@@ -1,12 +1,15 @@
 import { defineConfig } from "vitest/config";
 import path from "path";
 
-// Two projects, split by environment:
-//   - node:         pure unit tests in src/ (some mock node built-ins, e.g. fs)
+// Three projects, split by environment:
+//   - node:         pure unit tests in src/ (*.test.ts; some mock node built-ins)
+//   - jsdom:        client hook tests in src/ (*.test.tsx) that need a real DOM
+//                   plus effects/re-renders via @testing-library/react.
 //   - convex:       convex/ tests, including convex-test integration tests which
 //                   require the edge-runtime environment.
 // Pure convex unit tests (e.g. permissions, summarize) run fine under
-// edge-runtime too, so the whole convex/ tree lives in one project.
+// edge-runtime too, so the whole convex/ tree lives in one project. The node and
+// jsdom src globs split by extension (.test.ts vs .test.tsx) so never overlap.
 export default defineConfig({
   resolve: {
     // Mirror tsconfig's `paths`: `@/convex/*` resolves into the convex/ tree
@@ -29,6 +32,14 @@ export default defineConfig({
           name: "node",
           environment: "node",
           include: ["src/**/*.test.ts"],
+        },
+      },
+      {
+        extends: true,
+        test: {
+          name: "jsdom",
+          environment: "jsdom",
+          include: ["src/**/*.test.tsx"],
         },
       },
       {
