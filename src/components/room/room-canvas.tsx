@@ -41,7 +41,6 @@ import {
 import { DEMO_VIEWER_ID, type CustomNodeType, type PlayerNodeData } from "./types";
 import type { RoomWithRelatedData } from "@/convex/model/rooms";
 import { usePermissions } from "@/hooks/usePermissions";
-import type { MemberRole } from "@/convex/permissions";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -82,13 +81,6 @@ function RoomCanvasInner({ roomData, currentUserId, isDemoMode = false, isEmbedd
 
   // Permission flags for the current user
   const permissions = usePermissions(roomData, currentUserId);
-
-  // Stable wrapper so passing it into useCanvasNodes doesn't change identity on
-  // every render. `permissions` is memoized, so this only changes when it does.
-  const canRemoveTarget = useCallback(
-    (targetRole: MemberRole) => permissions.removeTarget(targetRole).allowed,
-    [permissions]
-  );
 
   const roomId = roomData.room._id as Id<"rooms">;
 
@@ -139,7 +131,6 @@ function RoomCanvasInner({ roomData, currentUserId, isDemoMode = false, isEmbedd
     canRevealCards: permissions.revealCards,
     canControlGameFlow: permissions.gameFlow,
     canChangeRoomSettings: permissions.roomSettings,
-    canRemoveTarget,
     onRevealCards: actions.reveal,
     onResetGame: actions.reset,
     onCardSelect: actions.selectCard,
@@ -190,11 +181,15 @@ function RoomCanvasInner({ roomData, currentUserId, isDemoMode = false, isEmbedd
             requestDeleteNote(change.id, !!node.data.content);
           } else if (node?.type === "player") {
             const playerData = node.data as PlayerNodeData;
-            // `canRemove` was resolved when the node was built; honor it here
-            // too so the delete key can't bypass the permission gate.
-            if (playerData.canRemove) {
-              requestDeletePlayer(playerData.user._id, playerData.user.name, playerData.isCurrentUser);
-            }
+            // Read the resolved remove decision directly — the same shape and
+            // verdict the settings-panel roster uses — and let the confirmation
+            // hook's gate refuse a denied removal.
+            requestDeletePlayer(
+              playerData.user._id,
+              playerData.user.name,
+              playerData.isCurrentUser,
+              permissions.removeTarget(playerData.role),
+            );
           }
           // Block all removals - deletions go through confirmation handlers
           return false;
@@ -212,7 +207,7 @@ function RoomCanvasInner({ roomData, currentUserId, isDemoMode = false, isEmbedd
         }
       });
     },
-    [onNodesChange, debouncedPositionUpdate, nodesRef, requestDeleteNote, requestDeletePlayer]
+    [onNodesChange, debouncedPositionUpdate, nodesRef, requestDeleteNote, requestDeletePlayer, permissions]
   );
 
   // Handle edge changes - block all edge deletions

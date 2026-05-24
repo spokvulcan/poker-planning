@@ -9,7 +9,6 @@ import { DEMO_VIEWER_ID, type CustomNodeType } from "../types";
 import type { RoomWithRelatedData, SanitizedVote } from "@/convex/model/rooms";
 import type { RoomUserData } from "@/convex/model/users";
 import {
-  type MemberRole,
   type ResolvedDecision,
   RESOLVED_ALLOWED,
 } from "@/convex/permissions";
@@ -30,7 +29,6 @@ interface UseCanvasNodesProps {
   canRevealCards?: ResolvedDecision;
   canControlGameFlow?: ResolvedDecision;
   canChangeRoomSettings?: ResolvedDecision;
-  canRemoveTarget?: (targetRole: MemberRole) => boolean;
   onRevealCards?: () => void;
   onResetGame?: () => void;
   onCardSelect?: (cardValue: string) => void;
@@ -57,7 +55,6 @@ export function useCanvasNodes({
   canRevealCards = RESOLVED_ALLOWED,
   canControlGameFlow = RESOLVED_ALLOWED,
   canChangeRoomSettings = RESOLVED_ALLOWED,
-  canRemoveTarget,
   onRevealCards,
   onResetGame,
   onCardSelect,
@@ -124,7 +121,6 @@ export function useCanvasNodes({
             card: room.isGameOver ? userVote?.cardLabel || null : null,
             isGameOver: room.isGameOver,
             role: userRole,
-            canRemove: canRemoveTarget ? canRemoveTarget(userRole) : true,
           },
           draggable: !node.isLocked,
         };
@@ -262,7 +258,6 @@ export function useCanvasNodes({
     canRevealCards,
     canControlGameFlow,
     canChangeRoomSettings,
-    canRemoveTarget,
     onRevealCards,
     onResetGame,
     onCardSelect,

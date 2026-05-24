@@ -7,9 +7,15 @@
 import { describe, it, expect, vi } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import type { Id } from "@/convex/_generated/dataModel";
+import type { ResolvedDecision } from "@/convex/permissions";
 import { useDeleteConfirmation } from "./useDeleteConfirmation";
 
 const USER_ID = "user-1" as Id<"users">;
+const ALLOWED: ResolvedDecision = { allowed: true };
+const DENIED: ResolvedDecision = {
+  allowed: false,
+  message: "Only facilitators and the owner can remove members.",
+};
 
 function setup() {
   const deleteNote = vi.fn();
@@ -64,7 +70,7 @@ describe("useDeleteConfirmation — player branch", () => {
   it("opens the dialog for another player without removing", () => {
     const { removeUser, result } = setup();
 
-    act(() => result.current.requestDeletePlayer(USER_ID, "Ada", false));
+    act(() => result.current.requestDeletePlayer(USER_ID, "Ada", false, ALLOWED));
 
     expect(removeUser).not.toHaveBeenCalled();
     expect(result.current.pendingPlayer).toEqual({ id: USER_ID, name: "Ada" });
@@ -73,7 +79,16 @@ describe("useDeleteConfirmation — player branch", () => {
   it("is a no-op for self-removal", () => {
     const { removeUser, result } = setup();
 
-    act(() => result.current.requestDeletePlayer(USER_ID, "Ada", true));
+    act(() => result.current.requestDeletePlayer(USER_ID, "Ada", true, ALLOWED));
+
+    expect(removeUser).not.toHaveBeenCalled();
+    expect(result.current.pendingPlayer).toBeNull();
+  });
+
+  it("refuses removal when the remove decision is denied", () => {
+    const { removeUser, result } = setup();
+
+    act(() => result.current.requestDeletePlayer(USER_ID, "Ada", false, DENIED));
 
     expect(removeUser).not.toHaveBeenCalled();
     expect(result.current.pendingPlayer).toBeNull();
@@ -81,7 +96,7 @@ describe("useDeleteConfirmation — player branch", () => {
 
   it("confirmPlayer removes the pending player and clears it", () => {
     const { removeUser, result } = setup();
-    act(() => result.current.requestDeletePlayer(USER_ID, "Ada", false));
+    act(() => result.current.requestDeletePlayer(USER_ID, "Ada", false, ALLOWED));
 
     act(() => result.current.confirmPlayer());
 
@@ -91,7 +106,7 @@ describe("useDeleteConfirmation — player branch", () => {
 
   it("dismissPlayer clears pending state without removing", () => {
     const { removeUser, result } = setup();
-    act(() => result.current.requestDeletePlayer(USER_ID, "Ada", false));
+    act(() => result.current.requestDeletePlayer(USER_ID, "Ada", false, ALLOWED));
 
     act(() => result.current.dismissPlayer());
 
