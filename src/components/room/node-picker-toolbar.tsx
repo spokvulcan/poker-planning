@@ -11,20 +11,23 @@ import {
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { Id } from "@/convex/_generated/dataModel";
+import { useIsDemoMode } from "./demo/DemoSimulationProvider";
 
 interface NodePickerToolbarProps {
   currentIssueId: Id<"issues"> | null;
   hasNoteForCurrentIssue: boolean;
   onCreateNote: () => void;
-  isDemoMode?: boolean;
 }
 
 export function NodePickerToolbar({
   currentIssueId,
   hasNoteForCurrentIssue,
   onCreateNote,
-  isDemoMode = false,
 }: NodePickerToolbarProps): ReactElement | null {
+  // The demo never creates notes, so the toolbar self-guards via the provider
+  // seam (#214) rather than a threaded prop.
+  const isDemoMode = useIsDemoMode();
+
   // Only show toolbar when there's an issue selected and no note exists
   if (!currentIssueId || hasNoteForCurrentIssue || isDemoMode) {
     return null;

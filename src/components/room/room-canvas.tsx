@@ -22,6 +22,7 @@ import { CanvasNavigation } from "./canvas-navigation";
 import { RoomSettingsPanel } from "./room-settings-panel";
 import { IssuesPanel } from "./issues-panel";
 import { DemoExplainer } from "./demo-explainer";
+import { useIsDemoMode } from "./demo/DemoSimulationProvider";
 import { useCanvasNodes } from "./hooks/useCanvasNodes";
 import { useCanvasActions } from "./hooks/useCanvasActions";
 import { useCardSelection } from "./hooks/useCardSelection";
@@ -55,7 +56,6 @@ import {
 interface RoomCanvasProps {
   roomData: RoomWithRelatedData;
   currentUserId?: Id<"users">;
-  isDemoMode?: boolean;
   isEmbedded?: boolean;
 }
 
@@ -70,7 +70,11 @@ const nodeTypes: NodeTypes = {
   timer: TimerNode,
 } as const;
 
-function RoomCanvasInner({ roomData, currentUserId, isDemoMode = false, isEmbedded = false }: RoomCanvasProps): ReactElement {
+function RoomCanvasInner({ roomData, currentUserId, isEmbedded = false }: RoomCanvasProps): ReactElement {
+  // The demo signal is derived once from the provider seam (#214), matching how
+  // the children and hooks below now obtain it; the demo route mounts the
+  // provider and is the sole place that decides demo-vs-real.
+  const isDemoMode = useIsDemoMode();
   const [nodes, setNodes, onNodesChange] = useNodesState<CustomNodeType>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const { fitView } = useReactFlow();
@@ -127,7 +131,6 @@ function RoomCanvasInner({ roomData, currentUserId, isDemoMode = false, isEmbedd
     roomData,
     currentUserId,
     selectedCardValue,
-    isDemoMode,
     canRevealCards: permissions.revealCards,
     canControlGameFlow: permissions.gameFlow,
     canChangeRoomSettings: permissions.roomSettings,
@@ -261,7 +264,6 @@ function RoomCanvasInner({ roomData, currentUserId, isDemoMode = false, isEmbedd
             onIssuesPanelChange={(open) => (open ? openIssues() : closeAll())}
             isSettingsOpen={isSettingsOpen}
             onSettingsPanelChange={(open) => (open ? openSettings() : closeAll())}
-            isDemoMode={isDemoMode}
           />
         )}
         <ReactFlow
@@ -299,14 +301,12 @@ function RoomCanvasInner({ roomData, currentUserId, isDemoMode = false, isEmbedd
           className="*:stroke-gray-300 dark:*:stroke-surface-3"
         />
       </ReactFlow>
-      {!isDemoMode && (
-        <NodePickerToolbar
-          currentIssueId={currentIssue?._id ?? null}
-          hasNoteForCurrentIssue={hasNoteForCurrentIssue}
-          onCreateNote={() => currentIssue && actions.createNote(currentIssue._id)}
-          isDemoMode={isDemoMode}
-        />
-      )}
+      {/* The toolbar self-guards in demo via the provider seam (#214). */}
+      <NodePickerToolbar
+        currentIssueId={currentIssue?._id ?? null}
+        hasNoteForCurrentIssue={hasNoteForCurrentIssue}
+        onCreateNote={() => currentIssue && actions.createNote(currentIssue._id)}
+      />
 
       {/* Demo explainer - only shown in demo mode, not when embedded */}
       {isDemoMode && !isEmbedded && <DemoExplainer />}
@@ -360,7 +360,6 @@ function RoomCanvasInner({ roomData, currentUserId, isDemoMode = false, isEmbedd
         currentUserId={isDemoMode ? undefined : (currentUserId as Id<"users">)}
         isOpen={isSettingsOpen}
         onClose={closeAll}
-        isDemoMode={isDemoMode}
       />
 
       {/* Issues Panel */}
@@ -369,7 +368,6 @@ function RoomCanvasInner({ roomData, currentUserId, isDemoMode = false, isEmbedd
         roomName={roomData.room.name}
         isOpen={isIssuesPanelOpen}
         onClose={closeAll}
-        isDemoMode={isDemoMode}
         canManageIssues={permissions.issueManagement}
         canControlGameFlow={permissions.gameFlow}
       />

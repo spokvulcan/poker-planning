@@ -24,6 +24,7 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { useIssues } from "./hooks/useIssues";
+import { useIsDemoMode } from "./demo/DemoSimulationProvider";
 import { IssueItem } from "./issue-item";
 import { JiraImportModal } from "./jira-import-modal";
 import { exportIssuesToCSV } from "@/utils/export-issues-csv";
@@ -36,7 +37,6 @@ interface IssuesPanelProps {
   roomName: string;
   isOpen: boolean;
   onClose: () => void;
-  isDemoMode?: boolean;
   canManageIssues?: ResolvedDecision;
   canControlGameFlow?: ResolvedDecision;
 }
@@ -46,10 +46,12 @@ export const IssuesPanel: FC<IssuesPanelProps> = ({
   roomName,
   isOpen,
   onClose,
-  isDemoMode = false,
   canManageIssues: canManageIssuesDecision = RESOLVED_ALLOWED,
   canControlGameFlow: canControlGameFlowDecision = RESOLVED_ALLOWED,
 }) => {
+  // The demo signal comes from the provider seam (#214), not a threaded prop;
+  // it gates the integration queries below and the child issue rows.
+  const isDemoMode = useIsDemoMode();
   // Resolved decisions in; booleans for gating and a message for denial copy.
   const canManageIssues = canManageIssuesDecision.allowed;
   const manageIssuesDenial = canManageIssuesDecision.allowed
@@ -77,7 +79,7 @@ export const IssuesPanel: FC<IssuesPanelProps> = ({
     updateEstimate,
     deleteIssue,
     exportData,
-  } = useIssues({ roomId, isDemoMode });
+  } = useIssues({ roomId });
 
   const handleAddIssue = async () => {
     if (!newIssueTitle.trim()) return;
@@ -394,7 +396,6 @@ export const IssuesPanel: FC<IssuesPanelProps> = ({
                         onUpdateTitle={handleUpdateTitle}
                         onUpdateEstimate={handleUpdateEstimate}
                         onDelete={handleDeleteIssue}
-                        isDemoMode={isDemoMode}
                         canManageIssues={canManageIssuesDecision}
                         canControlGameFlow={canControlGameFlowDecision}
                         issueLink={issueLinksMap?.[issue._id] ?? undefined}

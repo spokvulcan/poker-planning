@@ -9,7 +9,6 @@ import { useDemoSimulation } from "../demo/DemoSimulationProvider";
 
 interface UseIssuesProps {
   roomId: Id<"rooms">;
-  isDemoMode?: boolean;
 }
 
 interface UseIssuesReturn {
@@ -27,9 +26,10 @@ interface UseIssuesReturn {
   exportData: EnhancedExportableIssue[] | undefined;
 }
 
-export function useIssues({ roomId, isDemoMode = false }: UseIssuesProps): UseIssuesReturn {
+export function useIssues({ roomId }: UseIssuesProps): UseIssuesReturn {
   // In the Demo simulation, the issues list and current issue come from context
   // — never from Convex (zero reads, ADR-0003). Real rooms subscribe as before.
+  // The demo signal is derived from that same context (#214), not a prop.
   const demo = useDemoSimulation();
 
   // Queries (skipped in demo mode; data is served from context below)
@@ -40,7 +40,7 @@ export function useIssues({ roomId, isDemoMode = false }: UseIssuesProps): UseIs
   );
   const exportData = useQuery(
     api.issues.getForEnhancedExport,
-    demo || isDemoMode ? "skip" : { roomId },
+    demo ? "skip" : { roomId },
   );
 
   const issues = demo ? demo.issues : (issuesQuery ?? []);

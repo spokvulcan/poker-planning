@@ -58,6 +58,20 @@ export function useDemoSimulation(): DemoSimulationContextValue | null {
   return useContext(DemoSimulationContext);
 }
 
+/**
+ * The single source for "are we in the demo?" (#214). Derives the answer from
+ * the provider seam — the same fact the data-bypass branches on — so the signal
+ * never travels a parallel `isDemoMode` prop channel that could disagree.
+ *
+ * Load-bearing invariant: `DemoSimulationProvider` is mounted iff the page is
+ * the demo simulation. Real-room pages must not mount it, which is what makes
+ * this return `false` in live rooms and `true` under `/demo`. Any consumer
+ * rendered inside the provider gets the correct signal for free.
+ */
+export function useIsDemoMode(): boolean {
+  return !!useDemoSimulation();
+}
+
 const CURRENT_ISSUE = {
   _id: DEMO_CURRENT_ISSUE._id,
   title: DEMO_CURRENT_ISSUE.title,

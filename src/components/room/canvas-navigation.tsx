@@ -45,6 +45,7 @@ import {
 import type { RoomWithRelatedData } from "@/convex/model/rooms";
 import { copyTextToClipboard } from "@/utils/copy-text-to-clipboard";
 import { UserPresenceAvatars } from "./user-presence-avatars";
+import { useIsDemoMode } from "./demo/DemoSimulationProvider";
 
 // `document.fullscreenEnabled` is a client-only capability. Reading it through
 // useSyncExternalStore — with a `false` server snapshot — keeps SSR and the
@@ -66,7 +67,6 @@ interface CanvasNavigationProps {
   onIssuesPanelChange: (open: boolean) => void;
   isSettingsOpen: boolean;
   onSettingsPanelChange: (open: boolean) => void;
-  isDemoMode?: boolean;
 }
 
 export const CanvasNavigation: FC<CanvasNavigationProps> = ({
@@ -78,8 +78,9 @@ export const CanvasNavigation: FC<CanvasNavigationProps> = ({
   onIssuesPanelChange,
   isSettingsOpen,
   onSettingsPanelChange,
-  isDemoMode = false,
 }) => {
+  // The demo signal comes from the provider seam (#214), not a threaded prop.
+  const isDemoMode = useIsDemoMode();
   const { zoomIn, zoomOut, fitView } = useReactFlow();
   const router = useRouter();
 

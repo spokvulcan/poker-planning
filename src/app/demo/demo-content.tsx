@@ -29,7 +29,7 @@ function DemoCanvas({ isEmbedded }: { isEmbedded: boolean }) {
 
   return (
     <div className="relative h-screen bg-white dark:bg-black">
-      <RoomCanvas roomData={demo.roomData} isDemoMode={true} isEmbedded={isEmbedded} />
+      <RoomCanvas roomData={demo.roomData} isEmbedded={isEmbedded} />
     </div>
   );
 }

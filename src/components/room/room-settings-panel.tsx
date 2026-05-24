@@ -66,13 +66,13 @@ import { UserAvatar } from "@/components/user-menu/user-avatar";
 import { formatLastSeen } from "./user-presence-avatars";
 
 import { useRoomPresence } from "@/hooks/useRoomPresence";
+import { useIsDemoMode } from "./demo/DemoSimulationProvider";
 
 interface RoomSettingsPanelProps {
   roomData: RoomWithRelatedData;
   currentUserId?: Id<"users">;
   isOpen: boolean;
   onClose: () => void;
-  isDemoMode?: boolean;
 }
 
 const PERMISSION_CONFIG: Record<PermissionCategory, { label: string; description: string; tooltip: string }> = {
@@ -109,8 +109,9 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
   currentUserId,
   isOpen,
   onClose,
-  isDemoMode = false,
 }) => {
+  // The demo signal comes from the provider seam (#214), not a threaded prop.
+  const isDemoMode = useIsDemoMode();
   const { toast } = useToast();
   const { theme, setTheme } = useTheme();
 
