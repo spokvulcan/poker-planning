@@ -51,7 +51,7 @@ export type CanvasNodeData =
         issueId: Id<"issues">;
         issueTitle: string;
         content: string;
-        lastUpdatedBy?: string;
+        lastUpdatedBy?: string; // display name (user.name), not an Id — see writes in this file
         lastUpdatedAt?: number;
       };
     }
