@@ -278,6 +278,27 @@ describe("dropVoter — a roster exit reconciles the round", () => {
     expect(room?.autoRevealCountdownStartedAt).toEqual(expect.any(Number));
   });
 
+  it("does not arm the countdown when the last non-spectator leaves and only stray spectator votes remain", async () => {
+    // `[].every()` is vacuously true, so a spectator-only room would otherwise
+    // report "all in" — the length guard in areAllVotesIn prevents that. Verify
+    // through the public interface: dropVoter on the last non-spectator with a
+    // stray spectator vote row left behind must not arm anything.
+    const t = convexTest(schema, modules);
+    const roomId = await seedRoom(t, { autoCompleteVoting: true });
+    const a = await addMember(t, roomId);
+    await rawVote(t, roomId, a);
+
+    // Insert a stray spectator vote (simulating legacy data / direct insert).
+    const s = await addMember(t, roomId, { isSpectator: true });
+    await rawVote(t, roomId, s);
+
+    await removeMembership(t, roomId, a);
+    await t.run((ctx) => VotingRound.dropVoter(ctx, roomId, a));
+
+    const room = await readRoom(t, roomId);
+    expect(room?.autoRevealCountdownStartedAt).toBeUndefined();
+  });
+
   it("a never-voted latecomer does not prevent the armed reveal from firing (let it reveal — ADR-0004)", async () => {
     const t = convexTest(schema, modules);
     const roomId = await seedRoom(t, { autoCompleteVoting: true });

@@ -430,8 +430,8 @@ export interface CastVoteArgs {
 
 /**
  * castVote — record (or change) a participant's card. A participant action, not
- * a transition; it asks the Countdown seam to re-evaluate, which arms the
- * auto-reveal countdown once every non-spectator has voted.
+ * a transition; it calls the private evaluate helper, which arms the auto-reveal
+ * countdown once every non-spectator has voted.
  */
 export async function castVote(ctx: MutationCtx, args: CastVoteArgs): Promise<void> {
   // Spectators are voteless: the round refuses a spectator's ballot at its sole
@@ -478,8 +478,9 @@ export async function castVote(ctx: MutationCtx, args: CastVoteArgs): Promise<vo
 }
 
 /**
- * retractVote — remove a participant's card. Re-evaluates the Countdown seam,
- * which cancels the countdown when the room is no longer fully voted.
+ * retractVote — remove a participant's card. Re-evaluates the countdown state
+ * via the private helper, cancelling the countdown when the room is no longer
+ * fully voted.
  */
 export async function retractVote(
   ctx: MutationCtx,
