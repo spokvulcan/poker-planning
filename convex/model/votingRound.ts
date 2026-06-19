@@ -3,11 +3,11 @@ import { Id } from "../_generated/dataModel";
 import { internal } from "../_generated/api";
 import * as Rooms from "./rooms";
 import * as Issues from "./issues";
-import * as Countdown from "./countdown";
 import * as Canvas from "./canvas";
 import * as Votes from "./votes";
 import { summarize } from "../summarize";
 import { SPECIAL_CARDS, VotingScale } from "../scales";
+import { COUNTDOWN_DURATION_MS } from "../constants";
 
 /**
  * VotingRound — the module that owns the round's lifecycle (ADR-0002).
@@ -47,7 +47,7 @@ export async function start(
   }
 
   // Cancel any countdown left over from the previous round.
-  await Countdown.cancel(ctx, args.roomId);
+  await cancel(ctx, args.roomId);
 
   // Move to a fresh `voting` phase on the new target.
   await ctx.db.patch(args.roomId, {
@@ -87,7 +87,7 @@ export async function reset(ctx: MutationCtx, roomId: Id<"rooms">): Promise<void
     }
   }
 
-  await Countdown.cancel(ctx, roomId);
+  await cancel(ctx, roomId);
   await ctx.db.patch(roomId, { isGameOver: false, lastActivityAt: Date.now() });
   await clearRoomVotes(ctx, roomId);
 }
@@ -104,7 +104,7 @@ export async function reveal(ctx: MutationCtx, roomId: Id<"rooms">): Promise<voi
   if (!room) throw new Error("Room not found");
 
   // Cancel the countdown as one unit, then settle to `revealed`.
-  await Countdown.cancel(ctx, roomId);
+  await cancel(ctx, roomId);
   await ctx.db.patch(roomId, { isGameOver: true, lastActivityAt: Date.now() });
 
   // Reveal effect: results node on canvas rooms.
@@ -270,7 +270,7 @@ export async function abandon(ctx: MutationCtx, roomId: Id<"rooms">): Promise<vo
   }
 
   // Cancel the auto-reveal countdown as one unit (fields + scheduled reveal).
-  await Countdown.cancel(ctx, roomId);
+  await cancel(ctx, roomId);
 
   // Fall back to a target-less Quick Vote, still in `voting`.
   await ctx.db.patch(roomId, {
@@ -284,18 +284,83 @@ export async function abandon(ctx: MutationCtx, roomId: Id<"rooms">): Promise<vo
 }
 
 /**
- * cancelCountdown — manually stop an active auto-reveal countdown (story 13),
- * returning the round from `countingDown` to `voting`. A facilitator action;
- * delegates to the one countdown seam so the teardown stays consistent.
+ * cancelCountdown — manually stop an active auto-reveal countdown,
+ * returning the round from `countingDown` to `voting`. A facilitator action.
  */
 export async function cancelCountdown(
   ctx: MutationCtx,
   roomId: Id<"rooms">
 ): Promise<void> {
-  await Countdown.cancel(ctx, roomId);
+  await cancel(ctx, roomId);
 }
 
 // --- internal round helpers ---------------------------------------------
+
+/**
+ * arm — stamps the countdown token and schedules the auto-reveal. The token
+ * is carried into the scheduled reveal so a stale job (countdown since cleared
+ * or replaced) is inert even if cancel is missed. Idempotent: no-ops when a
+ * countdown is already running.
+ */
+async function arm(ctx: MutationCtx, roomId: Id<"rooms">): Promise<void> {
+  const room = await ctx.db.get(roomId);
+  if (!room) throw new Error("Room not found");
+  if (room.autoRevealCountdownStartedAt) return; // already counting down
+
+  const token = Date.now();
+  const scheduledId = await ctx.scheduler.runAfter(
+    COUNTDOWN_DURATION_MS,
+    internal.votingRound.autoReveal,
+    { roomId, token }
+  );
+  await ctx.db.patch(roomId, {
+    autoRevealCountdownStartedAt: token,
+    autoRevealScheduledId: scheduledId,
+  });
+}
+
+/**
+ * cancel — tears down the countdown as one unit: cancels the scheduled
+ * reveal and clears both room fields. Safe to call when no countdown is
+ * active (no-ops on missing fields).
+ */
+async function cancel(ctx: MutationCtx, roomId: Id<"rooms">): Promise<void> {
+  const room = await ctx.db.get(roomId);
+  if (!room) return;
+
+  if (room.autoRevealScheduledId) {
+    try {
+      await ctx.scheduler.cancel(room.autoRevealScheduledId);
+    } catch {
+      // Job may have already executed or been cancelled — that's fine.
+    }
+  }
+
+  if (room.autoRevealCountdownStartedAt || room.autoRevealScheduledId) {
+    await ctx.db.patch(roomId, {
+      autoRevealCountdownStartedAt: undefined,
+      autoRevealScheduledId: undefined,
+    });
+  }
+}
+
+/**
+ * evaluate — re-checks the all-voted predicate and arms or cancels the
+ * auto-reveal countdown accordingly. The entry point for every vote-change
+ * and roster-shrink path so the countdown stays in sync.
+ */
+async function evaluate(ctx: MutationCtx, roomId: Id<"rooms">): Promise<void> {
+  const room = await ctx.db.get(roomId);
+  if (!room) return;
+  if (!room.autoCompleteVoting || room.isGameOver) return;
+
+  const allIn = await Votes.areAllVotesIn(ctx, roomId);
+  if (allIn && !room.autoRevealCountdownStartedAt) {
+    await arm(ctx, roomId);
+  } else if (!allIn && room.autoRevealCountdownStartedAt) {
+    await cancel(ctx, roomId);
+  }
+}
 
 /** Deletes every vote in the room (start / reset / abandon clear prior votes). */
 async function clearRoomVotes(ctx: MutationCtx, roomId: Id<"rooms">): Promise<void> {
@@ -365,8 +430,8 @@ export interface CastVoteArgs {
 
 /**
  * castVote — record (or change) a participant's card. A participant action, not
- * a transition; it asks the Countdown seam to re-evaluate, which arms the
- * auto-reveal countdown once every non-spectator has voted.
+ * a transition; it calls the private evaluate helper, which arms the auto-reveal
+ * countdown once every non-spectator has voted.
  */
 export async function castVote(ctx: MutationCtx, args: CastVoteArgs): Promise<void> {
   // Spectators are voteless: the round refuses a spectator's ballot at its sole
@@ -409,12 +474,13 @@ export async function castVote(ctx: MutationCtx, args: CastVoteArgs): Promise<vo
     });
   }
 
-  await Countdown.evaluate(ctx, args.roomId);
+  await evaluate(ctx, args.roomId);
 }
 
 /**
- * retractVote — remove a participant's card. Re-evaluates the Countdown seam,
- * which cancels the countdown when the room is no longer fully voted.
+ * retractVote — remove a participant's card. Re-evaluates the countdown state
+ * via the private helper, cancelling the countdown when the room is no longer
+ * fully voted.
  */
 export async function retractVote(
   ctx: MutationCtx,
@@ -431,7 +497,7 @@ export async function retractVote(
 
   if (vote) {
     await ctx.db.delete(vote._id);
-    await Countdown.evaluate(ctx, args.roomId);
+    await evaluate(ctx, args.roomId);
   }
 }
 
@@ -459,7 +525,7 @@ export async function dropVoter(
     .collect();
   await Promise.all(votes.map((vote) => ctx.db.delete(vote._id)));
 
-  await Countdown.evaluate(ctx, roomId);
+  await evaluate(ctx, roomId);
 }
 
 /**
