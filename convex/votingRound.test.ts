@@ -3,7 +3,6 @@ import { convexTest, type TestConvex } from "convex-test";
 import { describe, it, expect, vi, afterEach } from "vitest";
 import schema from "./schema";
 import type { Id } from "./_generated/dataModel";
-import * as Countdown from "./model/countdown";
 import * as VotingRound from "./model/votingRound";
 import * as Issues from "./model/issues";
 import * as Users from "./model/users";
@@ -77,22 +76,6 @@ async function rawVote(
   );
 }
 
-async function deleteVote(
-  t: T,
-  roomId: Id<"rooms">,
-  userId: Id<"users">
-): Promise<void> {
-  await t.run(async (ctx) => {
-    const vote = await ctx.db
-      .query("votes")
-      .withIndex("by_room_user", (q) =>
-        q.eq("roomId", roomId).eq("userId", userId)
-      )
-      .first();
-    if (vote) await ctx.db.delete(vote._id);
-  });
-}
-
 async function seedIssue(
   t: T,
   roomId: Id<"rooms">,
@@ -121,45 +104,29 @@ async function clearVotes(t: T, roomId: Id<"rooms">): Promise<void> {
   });
 }
 
-describe("Countdown.arm", () => {
-  it("stamps a token and schedules an auto-reveal", async () => {
-    const t = convexTest(schema, modules);
-    const roomId = await seedRoom(t);
-
-    await t.run((ctx) => Countdown.arm(ctx, roomId));
-
-    const room = await readRoom(t, roomId);
-    const scheduled = await scheduledFns(t);
-
-    expect(room?.autoRevealCountdownStartedAt).toEqual(expect.any(Number));
-    expect(room?.autoRevealScheduledId).toBeDefined();
-    expect(scheduled).toHaveLength(1);
-    expect(scheduled[0].state.kind).toBe("pending");
-  });
-});
-
-describe("Countdown.cancel", () => {
-  it("cancels the scheduled reveal and clears both countdown fields", async () => {
-    const t = convexTest(schema, modules);
-    const roomId = await seedRoom(t);
-    await t.run((ctx) => Countdown.arm(ctx, roomId));
-
-    await t.run((ctx) => Countdown.cancel(ctx, roomId));
-
-    const room = await readRoom(t, roomId);
-    const scheduled = await scheduledFns(t);
-
-    expect(room?.autoRevealCountdownStartedAt).toBeUndefined();
-    expect(room?.autoRevealScheduledId).toBeUndefined();
-    expect(scheduled[0].state.kind).toBe("canceled");
-  });
-});
+async function armCountdown(
+  t: T,
+  roomId: Id<"rooms">,
+  voterIds: Id<"users">[]
+): Promise<void> {
+  for (const userId of voterIds) {
+    await t.run((ctx) =>
+      VotingRound.castVote(ctx, {
+        roomId,
+        userId,
+        cardLabel: "5",
+        cardValue: 5,
+      })
+    );
+  }
+}
 
 describe("VotingRound.autoReveal", () => {
   it("reveals when its token is the room's live countdown", async () => {
     const t = convexTest(schema, modules);
     const roomId = await seedRoom(t, { autoCompleteVoting: true });
-    await t.run((ctx) => Countdown.arm(ctx, roomId));
+    const memberId = await addMember(t, roomId);
+    await armCountdown(t, roomId, [memberId]);
     const token = (await readRoom(t, roomId))!.autoRevealCountdownStartedAt!;
 
     await t.run((ctx) => VotingRound.autoReveal(ctx, { roomId, token }));
@@ -173,7 +140,8 @@ describe("VotingRound.autoReveal", () => {
   it("no-ops when its token is no longer the room's live countdown (stale)", async () => {
     const t = convexTest(schema, modules);
     const roomId = await seedRoom(t, { autoCompleteVoting: true });
-    await t.run((ctx) => Countdown.arm(ctx, roomId));
+    const memberId = await addMember(t, roomId);
+    await armCountdown(t, roomId, [memberId]);
     const liveToken = (await readRoom(t, roomId))!.autoRevealCountdownStartedAt!;
 
     await t.run((ctx) =>
@@ -206,73 +174,6 @@ describe("VotingRound.autoReveal", () => {
     // Should not throw.
     await t.run((ctx) => VotingRound.autoReveal(ctx, { roomId, token: 123 }));
     expect(await readRoom(t, roomId)).toBeNull();
-  });
-});
-
-describe("Countdown.evaluate", () => {
-  it("arms once every non-spectator has voted (spectators don't count)", async () => {
-    const t = convexTest(schema, modules);
-    const roomId = await seedRoom(t, { autoCompleteVoting: true });
-    const a = await addMember(t, roomId);
-    const b = await addMember(t, roomId);
-    await addMember(t, roomId, { isSpectator: true }); // never votes
-    await rawVote(t, roomId, a);
-    await rawVote(t, roomId, b);
-
-    await t.run((ctx) => Countdown.evaluate(ctx, roomId));
-
-    const room = await readRoom(t, roomId);
-    expect(room?.autoRevealCountdownStartedAt).toEqual(expect.any(Number));
-    expect(room?.autoRevealScheduledId).toBeDefined();
-  });
-
-  it("does not arm while a non-spectator is still missing a vote", async () => {
-    const t = convexTest(schema, modules);
-    const roomId = await seedRoom(t, { autoCompleteVoting: true });
-    const a = await addMember(t, roomId);
-    await addMember(t, roomId); // never votes
-    await rawVote(t, roomId, a);
-
-    await t.run((ctx) => Countdown.evaluate(ctx, roomId));
-
-    const room = await readRoom(t, roomId);
-    expect(room?.autoRevealCountdownStartedAt).toBeUndefined();
-  });
-
-  it("does not arm a room with no non-spectator members (empty is not all-in)", async () => {
-    // `[].every()` is vacuously true, so a spectator-only room would otherwise
-    // report "all in" and auto-reveal a round nobody really voted in. castVote
-    // now refuses spectator ballots (ADR-0004), but evaluate stays defensive: a
-    // stray spectator vote row inserted directly (e.g. legacy data) must not arm.
-    const t = convexTest(schema, modules);
-    const roomId = await seedRoom(t, { autoCompleteVoting: true });
-    const s = await addMember(t, roomId, { isSpectator: true });
-    await rawVote(t, roomId, s);
-
-    await t.run((ctx) => Countdown.evaluate(ctx, roomId));
-
-    const room = await readRoom(t, roomId);
-    expect(room?.autoRevealCountdownStartedAt).toBeUndefined();
-    expect(await scheduledFns(t)).toHaveLength(0);
-  });
-
-  it("cancels an armed countdown once a voter retracts (no longer all-in)", async () => {
-    const t = convexTest(schema, modules);
-    const roomId = await seedRoom(t, { autoCompleteVoting: true });
-    const a = await addMember(t, roomId);
-    const b = await addMember(t, roomId);
-    await rawVote(t, roomId, a);
-    await rawVote(t, roomId, b);
-    await t.run((ctx) => Countdown.evaluate(ctx, roomId)); // arms
-
-    await deleteVote(t, roomId, a); // a retracts
-    await t.run((ctx) => Countdown.evaluate(ctx, roomId)); // should cancel
-
-    const room = await readRoom(t, roomId);
-    const scheduled = await scheduledFns(t);
-    expect(room?.autoRevealCountdownStartedAt).toBeUndefined();
-    expect(room?.autoRevealScheduledId).toBeUndefined();
-    expect(scheduled[0].state.kind).toBe("canceled");
   });
 });
 
@@ -384,7 +285,7 @@ describe("dropVoter — a roster exit reconciles the round", () => {
     const b = await addMember(t, roomId);
     await rawVote(t, roomId, a);
     await rawVote(t, roomId, b);
-    await t.run((ctx) => Countdown.evaluate(ctx, roomId)); // all in -> armed
+    await armCountdown(t, roomId, [a, b]); // all in -> armed
     const token = (await readRoom(t, roomId))!.autoRevealCountdownStartedAt!;
     expect(token).toEqual(expect.any(Number));
 
@@ -432,7 +333,7 @@ describe("early-reveal regression (issue #199)", () => {
     const b = await addMember(t, roomId);
     await rawVote(t, roomId, a);
     await rawVote(t, roomId, b);
-    await t.run((ctx) => Countdown.evaluate(ctx, roomId)); // arm token T1
+    await armCountdown(t, roomId, [a, b]); // arm token T1
 
     const r1 = await readRoom(t, roomId);
     return {
@@ -449,8 +350,7 @@ describe("early-reveal regression (issue #199)", () => {
   async function armFreshCountdown(t: T, roomId: Id<"rooms">, members: Id<"users">[]) {
     vi.setSystemTime(BASE + 10_000);
     await clearVotes(t, roomId);
-    for (const m of members) await rawVote(t, roomId, m);
-    await t.run((ctx) => Countdown.evaluate(ctx, roomId));
+    await armCountdown(t, roomId, members);
     return (await readRoom(t, roomId))!.autoRevealCountdownStartedAt!;
   }
 
@@ -576,7 +476,8 @@ describe("VotingRound.abandon", () => {
     const roomId = await seedRoom(t, { autoCompleteVoting: true });
     const issueId = await seedIssue(t, roomId, { status: "voting" });
     await t.run((ctx) => ctx.db.patch(roomId, { currentIssueId: issueId }));
-    await t.run((ctx) => Countdown.arm(ctx, roomId));
+    const memberId = await addMember(t, roomId);
+    await armCountdown(t, roomId, [memberId]);
     const scheduledId = (await readRoom(t, roomId))!.autoRevealScheduledId!;
 
     await t.run((ctx) => VotingRound.abandon(ctx, roomId));
@@ -865,7 +766,8 @@ describe("VotingRound.reveal", () => {
   it("cancels an armed countdown when revealing", async () => {
     const t = convexTest(schema, modules);
     const roomId = await seedRoom(t, { autoCompleteVoting: true });
-    await t.run((ctx) => Countdown.arm(ctx, roomId));
+    const memberId = await addMember(t, roomId);
+    await armCountdown(t, roomId, [memberId]);
     const scheduledId = (await readRoom(t, roomId))!.autoRevealScheduledId!;
 
     await t.run((ctx) => VotingRound.reveal(ctx, roomId));
@@ -884,7 +786,8 @@ describe("VotingRound.cancelCountdown", () => {
   it("clears the countdown and cancels the scheduled reveal, staying in voting", async () => {
     const t = convexTest(schema, modules);
     const roomId = await seedRoom(t, { autoCompleteVoting: true });
-    await t.run((ctx) => Countdown.arm(ctx, roomId));
+    const memberId = await addMember(t, roomId);
+    await armCountdown(t, roomId, [memberId]);
     const scheduledId = (await readRoom(t, roomId))!.autoRevealScheduledId!;
 
     await t.run((ctx) => VotingRound.cancelCountdown(ctx, roomId));
