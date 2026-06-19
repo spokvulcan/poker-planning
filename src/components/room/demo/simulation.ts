@@ -116,7 +116,7 @@ function advanceVoting(
 
   if (everyBotVoted(votes, config.bots)) {
     // The full table arms the local auto-reveal countdown (auto-complete is
-    // always on in the demo) — exactly the seam `Countdown.evaluate` hits.
+    // always on in the demo) — mirroring the round's private evaluate helper.
     return { phase: "countingDown", votes, phaseElapsedMs: 0, sinceVoteCycleMs: 0 };
   }
   return { ...state, votes, sinceVoteCycleMs };
