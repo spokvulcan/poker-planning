@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.9.3](https://github.com/spokvulcan/poker-planning/compare/agilekit-v2.9.2...agilekit-v2.9.3) (2026-07-04)
+
+
+### Code Refactoring
+
+* **canvas:** extract pure buildCanvasNodes module from the canvas hook ([#233](https://github.com/spokvulcan/poker-planning/issues/233)) ([ff603e9](https://github.com/spokvulcan/poker-planning/commit/ff603e98df871f47639c827a741a26546a2f63f0)), closes [#229](https://github.com/spokvulcan/poker-planning/issues/229)
+* **canvas:** extract pure buildCanvasNodes module from the canvas hook ([#233](https://github.com/spokvulcan/poker-planning/issues/233)) ([6039064](https://github.com/spokvulcan/poker-planning/commit/60390643b10af42a8062b1e94594de19e5859fe1)), closes [#229](https://github.com/spokvulcan/poker-planning/issues/229)
+
 ## [2.9.2](https://github.com/spokvulcan/poker-planning/compare/agilekit-v2.9.1...agilekit-v2.9.2) (2026-07-04)
 
 
