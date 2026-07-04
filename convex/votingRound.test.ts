@@ -824,28 +824,6 @@ describe("VotingRound.cancelCountdown", () => {
   });
 });
 
-describe("VotingRound.phaseOf", () => {
-  it("is `voting` for an unrevealed round with no countdown", () => {
-    expect(VotingRound.phaseOf({ isGameOver: false })).toBe("voting");
-  });
-
-  it("is `countingDown` while the auto-reveal countdown is armed", () => {
-    expect(
-      VotingRound.phaseOf({ isGameOver: false, autoRevealCountdownStartedAt: 123 })
-    ).toBe("countingDown");
-  });
-
-  it("is `revealed` once the round is settled", () => {
-    expect(VotingRound.phaseOf({ isGameOver: true })).toBe("revealed");
-  });
-
-  it("is `revealed` even if a countdown field lingers (revealed wins)", () => {
-    expect(
-      VotingRound.phaseOf({ isGameOver: true, autoRevealCountdownStartedAt: 123 })
-    ).toBe("revealed");
-  });
-});
-
 describe("VotingRound.castVote", () => {
   it("records a participant's card", async () => {
     const t = convexTest(schema, modules);

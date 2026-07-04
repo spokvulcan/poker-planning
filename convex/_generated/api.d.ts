@@ -36,6 +36,7 @@ import type * as model_users from "../model/users.js";
 import type * as model_votes from "../model/votes.js";
 import type * as model_votingRound from "../model/votingRound.js";
 import type * as permissions from "../permissions.js";
+import type * as phase from "../phase.js";
 import type * as presence from "../presence.js";
 import type * as roles from "../roles.js";
 import type * as rooms from "../rooms.js";
@@ -81,6 +82,7 @@ declare const fullApi: ApiFromModules<{
   "model/votes": typeof model_votes;
   "model/votingRound": typeof model_votingRound;
   permissions: typeof permissions;
+  phase: typeof phase;
   presence: typeof presence;
   roles: typeof roles;
   rooms: typeof rooms;
