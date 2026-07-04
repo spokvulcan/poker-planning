@@ -101,11 +101,19 @@ export default defineConfig({
     // },
   ],
 
-  /* Run your local dev server before starting the tests */
+  /* Run your local dev servers before starting the tests. Entries start
+     sequentially, and each must signal readiness before the next launches —
+     so the Convex entry must NOT gate on the Next.js URL (it would deadlock:
+     nothing serves :3000 until the second entry runs). It waits on its own
+     stdout instead. */
   webServer: [
     {
       command: "npx convex dev",
-      url: "http://localhost:3000",
+      wait: {
+        // Convex CLI logs its status lines to stderr
+        stderr: /Convex functions ready/,
+        stdout: /Convex functions ready/,
+      },
       reuseExistingServer: !process.env.CI,
       timeout: 120 * 1000,
     },
