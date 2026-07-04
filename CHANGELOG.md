@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.9.1](https://github.com/spokvulcan/poker-planning/compare/agilekit-v2.9.0...agilekit-v2.9.1) (2026-07-04)
+
+
+### Miscellaneous
+
+* **deps-dev:** bump vite from 7.3.3 to 8.0.16 ([#221](https://github.com/spokvulcan/poker-planning/issues/221)) ([2390fba](https://github.com/spokvulcan/poker-planning/commit/2390fba1095bd97f29eb8312e64b8337b07f9407))
+* **deps:** bump hono from 4.12.22 to 4.12.26 ([#223](https://github.com/spokvulcan/poker-planning/issues/223)) ([63d18a1](https://github.com/spokvulcan/poker-planning/commit/63d18a11b7b4d87449747c499739b7c81fd5d116))
+* **deps:** bump undici from 7.25.0 to 7.28.0 ([#224](https://github.com/spokvulcan/poker-planning/issues/224)) ([c6a0d6b](https://github.com/spokvulcan/poker-planning/commit/c6a0d6b109ad2d3adf784b7b6a39987727bcac9b))
+
 ## [2.9.0](https://github.com/spokvulcan/poker-planning/compare/agilekit-v2.8.0...agilekit-v2.9.0) (2026-05-24)
 
 
