@@ -23,7 +23,7 @@ export const SessionNode = memo(
       sessionName,
       participantCount,
       voteCount,
-      isVotingComplete,
+      phase,
       hasVotes,
       autoCompleteVoting,
       autoRevealCountdownStartedAt,
@@ -46,7 +46,8 @@ export const SessionNode = memo(
     const canControlGameFlow = canControlGameFlowDecision.allowed;
     const canChangeRoomSettings = canChangeRoomSettingsDecision.allowed;
 
-    const isActive = !isVotingComplete;
+    const isRevealed = phase === "revealed";
+    const isActive = !isRevealed;
 
     // Cooldown state for reset button
     const [resetCooldown, setResetCooldown] = useState(0);
@@ -67,7 +68,10 @@ export const SessionNode = memo(
     );
 
     useEffect(() => {
-      if (!autoRevealCountdownStartedAt) {
+      // The timestamp is only a rendering anchor; the phase decides whether a
+      // countdown is running at all, so a stale timestamp can never animate a
+      // countdown after reveal.
+      if (phase !== "countingDown" || !autoRevealCountdownStartedAt) {
         // Reset countdown when no longer active - this is intentional state sync with props
         // eslint-disable-next-line react-hooks/set-state-in-effect
         setCountdownSeconds(null);
@@ -88,9 +92,11 @@ export const SessionNode = memo(
       // Then update every 100ms for smooth countdown
       const interval = setInterval(updateCountdown, 100);
       return () => clearInterval(interval);
-    }, [autoRevealCountdownStartedAt, countdownDurationSeconds]);
+    }, [phase, autoRevealCountdownStartedAt, countdownDurationSeconds]);
 
-    const isCountdownActive = countdownSeconds !== null && countdownSeconds > 0;
+    // The ticking effect only lands after the first paint, so a just-armed
+    // countdown briefly has no computed value — show the full duration.
+    const displayCountdownSeconds = countdownSeconds ?? countdownDurationSeconds;
 
     const handleResetClick = useCallback(() => {
       if (resetCooldown === 0 && onResetGame) {
@@ -220,7 +226,7 @@ export const SessionNode = memo(
               <div
                 className={cn(
                   "flex-1 rounded-full h-2 overflow-hidden",
-                  isVotingComplete
+                  isRevealed
                     ? "bg-green-200 dark:bg-status-success-bg"
                     : "bg-blue-200 dark:bg-status-info-bg",
                 )}
@@ -233,7 +239,7 @@ export const SessionNode = memo(
                 <div
                   className={cn(
                     "h-2 transition-all duration-300",
-                    isVotingComplete
+                    isRevealed
                       ? "bg-green-500 dark:bg-status-success-fg"
                       : "bg-blue-500 dark:bg-status-info-fg",
                   )}
@@ -249,7 +255,7 @@ export const SessionNode = memo(
               <span
                 className={cn(
                   "text-xs font-medium whitespace-nowrap",
-                  isVotingComplete
+                  isRevealed
                     ? "text-green-700 dark:text-status-success-fg"
                     : "text-blue-700 dark:text-status-info-fg",
                 )}
@@ -259,8 +265,8 @@ export const SessionNode = memo(
             </div>
 
             {/* Single Unified Action Button - Mobile-friendly 48px touch target */}
-            {isVotingComplete ? (
-              /* STATE: Voting Complete → New Round */
+            {phase === "revealed" ? (
+              /* PHASE: revealed → New Round */
               <button
                 onClick={canControlGameFlow ? handleResetClick : undefined}
                 disabled={resetCooldown > 0 || !canControlGameFlow}
@@ -286,8 +292,8 @@ export const SessionNode = memo(
                     : "New Round"}
                 </span>
               </button>
-            ) : isCountdownActive ? (
-              /* STATE: Countdown Active → Cancel */
+            ) : phase === "countingDown" ? (
+              /* PHASE: countingDown → Cancel */
               <button
                 onClick={canRevealCards ? onCancelAutoReveal : undefined}
                 disabled={!canRevealCards}
@@ -297,19 +303,19 @@ export const SessionNode = memo(
                     ? "bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-white shadow-sm hover:shadow-md animate-pulse"
                     : "bg-gray-100 dark:bg-surface-2 text-gray-400 dark:text-gray-500 cursor-not-allowed",
                 )}
-                aria-label={`Auto-revealing in ${countdownSeconds} seconds. Tap to cancel.`}
+                aria-label={`Auto-revealing in ${displayCountdownSeconds} seconds. Tap to cancel.`}
                 {...permissionProps(canRevealCardsDecision)}
               >
                 <span className="flex items-center gap-2">
                   <span className="font-mono text-lg font-bold tabular-nums">
-                    {countdownSeconds}s
+                    {displayCountdownSeconds}s
                   </span>
                   <span className="text-amber-100">·</span>
                   <span>Tap to Cancel</span>
                 </span>
               </button>
             ) : (
-              /* STATE: Voting In Progress → Reveal */
+              /* PHASE: voting → Reveal */
               <button
                 onClick={canRevealCards ? onRevealCards : undefined}
                 disabled={!hasVotes || !canRevealCards}

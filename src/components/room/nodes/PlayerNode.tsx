@@ -10,7 +10,7 @@ import type { PlayerNodeType } from "../types";
 
 export const PlayerNode = memo(
   ({ data, selected }: NodeProps<PlayerNodeType>): ReactElement => {
-    const { user, isCurrentUser, isCardPicked, card, isGameOver, role } = data;
+    const { user, isCurrentUser, isCardPicked, card, phase, role } = data;
 
     // Match VotingCardNode card style
     const cardClasses = cn(
@@ -20,15 +20,15 @@ export const PlayerNode = memo(
 
     // Vote status emoji logic:
     // - 👀 spectator (spectator mode, not voting)
-    // - 🤔 thinking (voting in progress, hasn't voted)
-    // - ✅ voted (voting in progress, vote hidden)
-    // - 😴 didn't vote (game over, no vote)
-    // - card value (game over, voted)
+    // - 🤔 thinking (round not revealed, hasn't voted)
+    // - ✅ voted (round not revealed, vote hidden)
+    // - 😴 didn't vote (revealed, no vote)
+    // - card value (revealed, voted)
     const getVoteDisplay = () => {
       if (user.isSpectator) {
         return "👀";
       }
-      if (isGameOver) {
+      if (phase === "revealed") {
         return isCardPicked ? card : "😴";
       }
       return isCardPicked ? "✅" : "🤔";

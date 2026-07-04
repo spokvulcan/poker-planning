@@ -12,6 +12,7 @@ import {
   type ResolvedDecision,
   RESOLVED_ALLOWED,
 } from "@/convex/permissions";
+import { phaseOf, type Phase } from "@/convex/phase";
 import { DEFAULT_SCALE } from "@/convex/scales";
 import { useDemoSimulation } from "../demo/DemoSimulationProvider";
 
@@ -95,8 +96,12 @@ export function useCanvasNodes({
     );
   }, [currentIssueId, canvasNodes]);
 
+  // The ONE client-side phase derivation (issue #227): node data and edges
+  // must branch on this, never on the raw `isGameOver` / countdown fields.
+  const phase: Phase | null = roomData ? phaseOf(roomData.room) : null;
+
   const nodes = useMemo(() => {
-    if (!canvasNodes || !roomData) return [];
+    if (!canvasNodes || !roomData || !phase) return [];
 
     const { room, users, votes } = roomData;
     const allNodes: CustomNodeType[] = [];
@@ -119,8 +124,8 @@ export function useCanvasNodes({
             user,
             isCurrentUser: userId === currentUserId,
             isCardPicked: userVote?.hasVoted || false,
-            card: room.isGameOver ? userVote?.cardLabel || null : null,
-            isGameOver: room.isGameOver,
+            card: phase === "revealed" ? userVote?.cardLabel || null : null,
+            phase,
             role: userRole,
           },
           draggable: !node.isLocked,
@@ -150,7 +155,7 @@ export function useCanvasNodes({
             sessionName: room.name || "Planning Session",
             participantCount: users.filter((u) => !u.isSpectator).length,
             voteCount: votes.filter((v: SanitizedVote) => v.hasVoted).length,
-            isVotingComplete: room.isGameOver,
+            phase,
             hasVotes: votes.some((v: SanitizedVote) => v.hasVoted),
             autoCompleteVoting: room.autoCompleteVoting,
             autoRevealCountdownStartedAt: room.autoRevealCountdownStartedAt ?? null,
@@ -169,7 +174,7 @@ export function useCanvasNodes({
           draggable: !node.isLocked,
         };
         allNodes.push(sessionNode);
-      } else if (node.type === "results" && room.isGameOver) {
+      } else if (node.type === "results" && phase === "revealed") {
         const resultsNode: CustomNodeType = {
           id: node.nodeId,
           type: "results",
@@ -233,7 +238,7 @@ export function useCanvasNodes({
             card: { value: cardValue },
             userId: effectiveUserId,
             roomId,
-            isSelectable: !room.isGameOver && !isDemoMode,
+            isSelectable: phase !== "revealed" && !isDemoMode,
             isSelected: cardValue === selectedCardValue,
             onCardSelect: isDemoMode ? undefined : onCardSelect,
           },
@@ -251,6 +256,7 @@ export function useCanvasNodes({
   }, [
     canvasNodes,
     roomData,
+    phase,
     currentUserId,
     selectedCardValue,
     roomId,
@@ -273,7 +279,7 @@ export function useCanvasNodes({
   const edges = useMemo(() => {
     if (!canvasNodes || !roomData) return [];
 
-    const { room, users } = roomData;
+    const { users } = roomData;
     const allEdges: Edge[] = [];
 
     // Session to Players edges (subtle, consistent with timer edge)
@@ -294,8 +300,8 @@ export function useCanvasNodes({
       });
     });
 
-    // Session to Results edge (when game is over)
-    if (room.isGameOver) {
+    // Session to Results edge (once the round is revealed)
+    if (phase === "revealed") {
       allEdges.push({
         id: "session-to-results",
         source: "session-current",
@@ -355,7 +361,7 @@ export function useCanvasNodes({
     }
 
     return allEdges;
-  }, [canvasNodes, roomData, currentIssueId]);
+  }, [canvasNodes, roomData, phase, currentIssueId]);
 
   return {
     nodes,

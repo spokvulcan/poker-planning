@@ -3,6 +3,7 @@ import type { Id } from "@/convex/_generated/dataModel";
 import type { SanitizedVote } from "@/convex/model/rooms";
 import type { RoomUserData } from "@/convex/model/users";
 import type { MemberRole, ResolvedDecision } from "@/convex/permissions";
+import type { Phase } from "@/convex/phase";
 
 // Demo mode constants
 export const DEMO_VIEWER_ID = "demo-viewer" as const;
@@ -13,7 +14,7 @@ export type PlayerNodeData = {
   isCurrentUser: boolean;
   isCardPicked: boolean;
   card: string | null;
-  isGameOver: boolean;
+  phase: Phase;
   role: MemberRole;
 };
 
@@ -31,9 +32,14 @@ export type SessionNodeData = {
   sessionName: string;
   participantCount: number;
   voteCount: number;
-  isVotingComplete: boolean;
+  phase: Phase;
   hasVotes: boolean;
   autoCompleteVoting: boolean;
+  /**
+   * Rendering anchor for the ticking countdown display only — never a phase
+   * branch. The ticking effect is additionally gated on `phase` being
+   * `countingDown`, so a stale timestamp can never animate after reveal.
+   */
   autoRevealCountdownStartedAt: number | null;
   currentIssue?: {
     id: Id<"issues">;
