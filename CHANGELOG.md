@@ -1,5 +1,28 @@
 # Changelog
 
+## [2.9.2](https://github.com/spokvulcan/poker-planning/compare/agilekit-v2.9.1...agilekit-v2.9.2) (2026-07-04)
+
+
+### Bug Fixes
+
+* **canvas:** make phaseOf the load-bearing phase seam for the live client ([75ab4fb](https://github.com/spokvulcan/poker-planning/commit/75ab4fb4c36a89898d4dbcdfa0753a788d971957))
+
+
+### Miscellaneous
+
+* **deps:** upgrade all dependencies to latest ([e844b80](https://github.com/spokvulcan/poker-planning/commit/e844b80788640cf458d29da708a7a51a5c4a0777))
+
+
+### Code Refactoring
+
+* **canvas:** extract shared pure canvas-layout module ([197efbe](https://github.com/spokvulcan/poker-planning/commit/197efbee41f2a9745b130339a3e009e29e286c99)), closes [#228](https://github.com/spokvulcan/poker-planning/issues/228)
+* **round:** relocate Phase/phaseOf to shared pure module convex/phase.ts ([085c7e1](https://github.com/spokvulcan/poker-planning/commit/085c7e17a97d1af7e367ad73dc39752885b73eac))
+
+
+### Tests
+
+* **e2e:** fix webServer cold-start deadlock in Playwright config ([ab99708](https://github.com/spokvulcan/poker-planning/commit/ab9970820c0c8b0d93073ea49121b69079b53a83))
+
 ## [2.9.1](https://github.com/spokvulcan/poker-planning/compare/agilekit-v2.9.0...agilekit-v2.9.1) (2026-07-04)
 
 
