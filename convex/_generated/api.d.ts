@@ -12,6 +12,7 @@ import type * as admin from "../admin.js";
 import type * as analytics from "../analytics.js";
 import type * as auth from "../auth.js";
 import type * as canvas from "../canvas.js";
+import type * as canvasLayout from "../canvasLayout.js";
 import type * as cleanup from "../cleanup.js";
 import type * as constants from "../constants.js";
 import type * as crons from "../crons.js";
@@ -58,6 +59,7 @@ declare const fullApi: ApiFromModules<{
   analytics: typeof analytics;
   auth: typeof auth;
   canvas: typeof canvas;
+  canvasLayout: typeof canvasLayout;
   cleanup: typeof cleanup;
   constants: typeof constants;
   crons: typeof crons;

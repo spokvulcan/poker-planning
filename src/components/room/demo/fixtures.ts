@@ -14,6 +14,11 @@ import type { Doc, Id } from "@/convex/_generated/dataModel";
 import type { CanvasNode } from "@/convex/model/canvas";
 import type { RoomUserData } from "@/convex/model/users";
 import { COUNTDOWN_DURATION_MS } from "@/convex/constants";
+import {
+  computeHorizontalLayout,
+  RESULTS_POSITION,
+  TIMER_POSITION,
+} from "@/convex/canvasLayout";
 import type { DemoReducerConfig } from "./simulation";
 
 /**
@@ -87,41 +92,29 @@ export const DEMO_ISSUES: Doc<"issues">[] = [
 export const DEMO_CURRENT_ISSUE = DEMO_ISSUES[0];
 
 // --- Canvas layout -------------------------------------------------------
-// Mirrors the backend default layout (`convex/model/canvas.ts`) so the demo
-// canvas matches a real room's: a stopped timer node, the session node, one
-// player node per bot in a centered row, and a results node (rendered only on
-// reveal). Positions are static — the canvas is locked in demo mode.
-const SESSION_Y = -300;
-const SESSION_W = 280;
-const SESSION_H = 150;
-const PLAYER_W = 80;
-const PLAYER_H = 130;
-const NODE_SEP = 150; // horizontal spacing between players
-const RANK_SEP = 400; // vertical spacing between session and players
-const TIMER_POS = { x: -500, y: -250 };
-const RESULTS_POS = { x: 400, y: SESSION_Y + 100 };
-
-function playerRowPositions(count: number): { x: number; y: number }[] {
-  const totalWidth = (count - 1) * NODE_SEP;
-  const startX = -totalWidth / 2;
-  const y = SESSION_Y + SESSION_H / 2 + RANK_SEP - PLAYER_H / 2;
-  return Array.from({ length: count }, (_, i) => ({
-    x: startX + i * NODE_SEP - PLAYER_W / 2,
-    y,
-  }));
-}
+// Built with the same layout module the backend uses (`convex/canvasLayout.ts`),
+// so the demo canvas is geometrically identical to a real room's by
+// construction: a stopped timer node, the session node, one player node per
+// bot in a centered row, and a results node (rendered only on reveal).
+// Positions are static — the canvas is locked in demo mode.
 
 /**
  * Builds the canvas node set in the shape `useCanvasNodes` consumes from
  * `api.canvas.getCanvasNodes`. Constant for the page's lifetime.
  */
 function buildDemoCanvasNodes(): CanvasNode[] {
-  const positions = playerRowPositions(DEMO_BOTS.length);
+  // computeHorizontalLayout guarantees session first, then players in input
+  // order — so the tail zips back to DEMO_BOTS by index.
+  const [sessionLayout, ...playerLayouts] = computeHorizontalLayout(
+    "session-current",
+    DEMO_BOTS.map((bot) => `player-${bot.id}`),
+  );
+
   const playerNodes: CanvasNode[] = DEMO_BOTS.map((bot, i) => ({
     roomId: DEMO_ROOM_ID,
-    nodeId: `player-${bot.id}`,
+    nodeId: playerLayouts[i].nodeId,
     type: "player",
-    position: positions[i],
+    position: playerLayouts[i].position,
     data: { userId: bot.id },
     lastUpdatedAt: 0,
   }));
@@ -131,7 +124,7 @@ function buildDemoCanvasNodes(): CanvasNode[] {
       roomId: DEMO_ROOM_ID,
       nodeId: "timer",
       type: "timer",
-      position: TIMER_POS,
+      position: { ...TIMER_POSITION },
       data: {
         startedAt: null,
         pausedAt: null,
@@ -145,7 +138,7 @@ function buildDemoCanvasNodes(): CanvasNode[] {
       roomId: DEMO_ROOM_ID,
       nodeId: "session-current",
       type: "session",
-      position: { x: -SESSION_W / 2, y: SESSION_Y },
+      position: sessionLayout.position,
       data: {},
       lastUpdatedAt: 0,
     },
@@ -154,7 +147,7 @@ function buildDemoCanvasNodes(): CanvasNode[] {
       roomId: DEMO_ROOM_ID,
       nodeId: "results",
       type: "results",
-      position: RESULTS_POS,
+      position: { ...RESULTS_POSITION },
       data: {},
       lastUpdatedAt: 0,
     },

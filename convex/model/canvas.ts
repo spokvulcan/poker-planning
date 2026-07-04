@@ -1,30 +1,16 @@
 import { QueryCtx, MutationCtx } from "../_generated/server";
 import { Id } from "../_generated/dataModel";
+import {
+  computeHorizontalLayout,
+  NOTE_POSITION,
+  RESULTS_POSITION,
+  SESSION_INITIAL_POSITION,
+  TIMER_POSITION,
+  type Position,
+} from "../canvasLayout";
 
-// Layout constants for default positions
-const CANVAS_CENTER = { x: 0, y: 0 };
-const TIMER_X = -500;
-const TIMER_Y = -250;
-const SESSION_Y = -300;
-const NOTE_X = 400;
-const NOTE_Y = -200;
-
-// Layout configuration for session + player node positioning
-const LAYOUT_CONFIG = {
-  nodesep: 150, // Horizontal spacing between players
-  ranksep: 400, // Vertical spacing between session and players
-};
-
-// Node dimensions for layout calculations
-const NODE_DIMENSIONS = {
-  session: { width: 280, height: 150 },
-  player: { width: 80, height: 130 },
-};
-
-export interface Position {
-  x: number;
-  y: number;
-}
+// Re-exported for compatibility — the geometry now lives in canvasLayout.ts.
+export type { Position } from "../canvasLayout";
 
 /**
  * Persisted `data` payload for each canvas node `type`. The column is stored as
@@ -69,11 +55,6 @@ export type CanvasNode = {
   lastUpdatedAt: number;
 } & CanvasNodeData;
 
-interface NodePosition {
-  nodeId: string;
-  position: Position;
-}
-
 // Maximum length for note content (10KB)
 const MAX_NOTE_CONTENT_LENGTH = 10000;
 
@@ -93,50 +74,6 @@ async function verifyUserInRoom(
   if (!membership) {
     throw new Error("User not found in room");
   }
-}
-
-/**
- * Computes horizontal layout for session and player nodes.
- * Places session node centered at (0, SESSION_Y) and player nodes
- * in a horizontal row below, evenly spaced.
- * Returns positions as top-left coordinates (React Flow format).
- */
-function computeHorizontalLayout(
-  sessionNodeId: string,
-  playerNodeIds: string[]
-): NodePosition[] {
-  const positions: NodePosition[] = [];
-
-  // Session node: centered horizontally at CANVAS_CENTER.x
-  positions.push({
-    nodeId: sessionNodeId,
-    position: {
-      x: CANVAS_CENTER.x - NODE_DIMENSIONS.session.width / 2,
-      y: SESSION_Y,
-    },
-  });
-
-  // Player nodes: horizontally distributed below session
-  if (playerNodeIds.length > 0) {
-    const spacing = LAYOUT_CONFIG.nodesep;
-    const totalWidth = (playerNodeIds.length - 1) * spacing;
-    const startX = CANVAS_CENTER.x - totalWidth / 2;
-    const playerY =
-      SESSION_Y + NODE_DIMENSIONS.session.height / 2 + LAYOUT_CONFIG.ranksep;
-
-    playerNodeIds.forEach((playerId, index) => {
-      const centerX = startX + index * spacing;
-      positions.push({
-        nodeId: playerId,
-        position: {
-          x: centerX - NODE_DIMENSIONS.player.width / 2,
-          y: playerY - NODE_DIMENSIONS.player.height / 2,
-        },
-      });
-    });
-  }
-
-  return positions;
 }
 
 /**
@@ -217,7 +154,7 @@ export async function initializeCanvasNodes(
       roomId: args.roomId,
       nodeId: "timer",
       type: "timer",
-      position: { x: TIMER_X, y: TIMER_Y },
+      position: { ...TIMER_POSITION },
       data: {
         startedAt: null,
         pausedAt: null,
@@ -232,7 +169,7 @@ export async function initializeCanvasNodes(
       roomId: args.roomId,
       nodeId: "session-current",
       type: "session",
-      position: { x: CANVAS_CENTER.x - 140, y: SESSION_Y },
+      position: { ...SESSION_INITIAL_POSITION },
       data: {},
       lastUpdatedAt: now,
     }),
@@ -355,7 +292,7 @@ export async function upsertResultsNode(
     roomId: args.roomId,
     nodeId,
     type: "results",
-    position: { x: CANVAS_CENTER.x + 400, y: SESSION_Y + 100 },
+    position: { ...RESULTS_POSITION },
     data: {},
     lastUpdatedAt: Date.now(),
   });
@@ -455,7 +392,7 @@ export async function createNoteNode(
     roomId: args.roomId,
     nodeId,
     type: "note",
-    position: { x: NOTE_X, y: NOTE_Y },
+    position: { ...NOTE_POSITION },
     data: {
       issueId: args.issueId,
       issueTitle: issue.title,

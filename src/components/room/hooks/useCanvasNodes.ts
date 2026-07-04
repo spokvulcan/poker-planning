@@ -14,12 +14,8 @@ import {
 } from "@/convex/permissions";
 import { phaseOf, type Phase } from "@/convex/phase";
 import { DEFAULT_SCALE } from "@/convex/scales";
+import { computeVotingCardRow } from "@/convex/canvasLayout";
 import { useDemoSimulation } from "../demo/DemoSimulationProvider";
-
-// Layout constants for voting cards (matching backend canvas.ts)
-const CANVAS_CENTER_X = 0;
-const VOTING_CARD_Y = 450;
-const VOTING_CARD_SPACING = 70;
 
 interface UseCanvasNodesProps {
   roomId: Id<"rooms">;
@@ -224,16 +220,14 @@ export function useCanvasNodes({
 
     if (shouldShowVotingCards) {
       const cards = room.votingScale?.cards ?? DEFAULT_SCALE.cards;
-      const cardCount = cards.length;
-      const totalWidth = (cardCount - 1) * VOTING_CARD_SPACING;
-      const startX = CANVAS_CENTER_X - totalWidth / 2;
+      const cardPositions = computeVotingCardRow(cards.length);
       const effectiveUserId = currentUserId ?? DEMO_VIEWER_ID;
 
       cards.forEach((cardValue, index) => {
         const votingCardNode: CustomNodeType = {
           id: `card-${effectiveUserId}-${index}`,
           type: "votingCard",
-          position: { x: startX + index * VOTING_CARD_SPACING, y: VOTING_CARD_Y },
+          position: cardPositions[index],
           data: {
             card: { value: cardValue },
             userId: effectiveUserId,
