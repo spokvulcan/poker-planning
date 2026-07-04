@@ -5,17 +5,19 @@ import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { Edge } from "@xyflow/react";
 import { useMemo } from "react";
-import { DEMO_VIEWER_ID, type CustomNodeType } from "../types";
-import type { RoomWithRelatedData, SanitizedVote } from "@/convex/model/rooms";
-import type { RoomUserData } from "@/convex/model/users";
+import { type CustomNodeType } from "../types";
+import type { RoomWithRelatedData } from "@/convex/model/rooms";
 import {
   type ResolvedDecision,
   RESOLVED_ALLOWED,
 } from "@/convex/permissions";
 import { phaseOf, type Phase } from "@/convex/phase";
-import { DEFAULT_SCALE } from "@/convex/scales";
-import { computeVotingCardRow } from "@/convex/canvasLayout";
 import { useDemoSimulation } from "../demo/DemoSimulationProvider";
+import {
+  buildCanvasEdges,
+  buildCanvasNodes,
+  isNoteForIssue,
+} from "./buildCanvasNodes";
 
 interface UseCanvasNodesProps {
   roomId: Id<"rooms">;
@@ -42,6 +44,17 @@ interface UseCanvasNodesReturn {
   hasNoteForCurrentIssue: boolean;
 }
 
+/**
+ * The adapter over the pure canvas derivation (#229): selects the data source
+ * (Convex vs demo context), derives the phase once per room snapshot, and
+ * memoizes the two builder calls. All derivation policy lives in
+ * `buildCanvasNodes.ts` — this hook adds nothing but React glue.
+ *
+ * The input objects are assembled fresh inside each memo body, so the
+ * dependency arrays MUST list the individual fields, never the freshly built
+ * wrappers — the exhaustive-deps lint cannot catch that mistake; reviewers
+ * must.
+ */
 export function useCanvasNodes({
   roomId,
   roomData,
@@ -83,13 +96,18 @@ export function useCanvasNodes({
   const currentIssueTitle = demo
     ? demo.currentIssue.title
     : currentIssueQuery?.title;
+  const currentIssue = useMemo(
+    () =>
+      currentIssueId
+        ? { _id: currentIssueId, title: currentIssueTitle ?? "" }
+        : null,
+    [currentIssueId, currentIssueTitle],
+  );
 
   // Check if a note exists for the current issue
   const hasNoteForCurrentIssue = useMemo(() => {
-    if (!currentIssueId || !canvasNodes) return false;
-    return canvasNodes.some(
-      (n) => n.type === "note" && n.data.issueId === currentIssueId
-    );
+    if (!canvasNodes) return false;
+    return canvasNodes.some((n) => isNoteForIssue(n, currentIssueId));
   }, [currentIssueId, canvasNodes]);
 
   // The ONE client-side phase derivation (issue #227): node data and edges
@@ -100,150 +118,36 @@ export function useCanvasNodes({
     if (!canvasNodes || !roomData || !phase) return [];
 
     const { room, users, votes } = roomData;
-    const allNodes: CustomNodeType[] = [];
-
-    // Process each canvas node
-    canvasNodes.forEach((node) => {
-      if (node.type === "player") {
-        const userId = node.data.userId;
-        const user = users.find((u: RoomUserData) => u._id === userId);
-        if (!user) return;
-
-        const userVote = votes.find((v: SanitizedVote) => v.userId === userId);
-
-        const userRole = user.role ?? "participant";
-        const playerNode: CustomNodeType = {
-          id: node.nodeId,
-          type: "player",
-          position: node.position,
-          data: {
-            user,
-            isCurrentUser: userId === currentUserId,
-            isCardPicked: userVote?.hasVoted || false,
-            card: phase === "revealed" ? userVote?.cardLabel || null : null,
-            phase,
-            role: userRole,
-          },
-          draggable: !node.isLocked,
-        };
-        allNodes.push(playerNode);
-      } else if (node.type === "timer") {
-        const timerNode: CustomNodeType = {
-          id: node.nodeId,
-          type: "timer",
-          position: node.position,
-          data: {
-            ...node.data,
-            isRunning: node.data.isRunning ?? false,
-            roomId,
-            userId: currentUserId,
-            nodeId: node.nodeId,
-          },
-          draggable: !node.isLocked,
-        };
-        allNodes.push(timerNode);
-      } else if (node.type === "session") {
-        const sessionNode: CustomNodeType = {
-          id: node.nodeId,
-          type: "session",
-          position: node.position,
-          data: {
-            sessionName: room.name || "Planning Session",
-            participantCount: users.filter((u) => !u.isSpectator).length,
-            voteCount: votes.filter((v: SanitizedVote) => v.hasVoted).length,
-            phase,
-            hasVotes: votes.some((v: SanitizedVote) => v.hasVoted),
-            autoCompleteVoting: room.autoCompleteVoting,
-            autoRevealCountdownStartedAt: room.autoRevealCountdownStartedAt ?? null,
-            currentIssue: currentIssueId
-              ? { id: currentIssueId, title: currentIssueTitle ?? "" }
-              : null,
-            canRevealCards,
-            canControlGameFlow,
-            canChangeRoomSettings,
-            onRevealCards,
-            onResetGame,
-            onToggleAutoComplete,
-            onCancelAutoReveal,
-            onOpenIssuesPanel,
-          },
-          draggable: !node.isLocked,
-        };
-        allNodes.push(sessionNode);
-      } else if (node.type === "results" && phase === "revealed") {
-        const resultsNode: CustomNodeType = {
-          id: node.nodeId,
-          type: "results",
-          position: node.position,
-          data: {
-            votes: votes.filter((v: SanitizedVote) => v.hasVoted),
-            users: users,
-            isNumericScale: room.votingScale?.isNumeric ?? true,
-          },
-          draggable: !node.isLocked,
-        };
-        allNodes.push(resultsNode);
-      } else if (node.type === "note") {
-        // Only show note if it belongs to the current issue
-        const noteIssueId = node.data.issueId;
-        if (currentIssueId && noteIssueId === currentIssueId) {
-          const noteContent = node.data.content || "";
-          const nodeId = node.nodeId;
-          const noteNode: CustomNodeType = {
-            id: nodeId,
-            type: "note",
-            position: node.position,
-            data: {
-              issueId: noteIssueId,
-              issueTitle: node.data.issueTitle || currentIssueTitle || "",
-              content: noteContent,
-              lastUpdatedBy: node.data.lastUpdatedBy,
-              lastUpdatedAt: node.data.lastUpdatedAt,
-              onUpdateContent: (content: string) => {
-                onUpdateNoteContent?.(nodeId, content);
-              },
-              onDelete: () => {
-                onDeleteNote?.(nodeId, !!noteContent);
-              },
-            },
-            draggable: !node.isLocked,
-          };
-          allNodes.push(noteNode);
-        }
-      }
+    return buildCanvasNodes({
+      phase,
+      roomId,
+      room: {
+        name: room.name,
+        autoCompleteVoting: room.autoCompleteVoting,
+        autoRevealCountdownStartedAt: room.autoRevealCountdownStartedAt ?? null,
+        votingScale: room.votingScale,
+      },
+      members: users,
+      votes,
+      canvasNodes,
+      currentIssue,
+      viewerId: currentUserId,
+      selectedCardValue,
+      isDemoMode,
+      canRevealCards,
+      canControlGameFlow,
+      canChangeRoomSettings,
+      callbacks: {
+        onRevealCards,
+        onResetGame,
+        onCardSelect,
+        onToggleAutoComplete,
+        onCancelAutoReveal,
+        onOpenIssuesPanel,
+        onUpdateNoteContent,
+        onDeleteNote,
+      },
     });
-
-    // Generate voting cards client-side for non-spectator users or demo mode
-    const shouldShowVotingCards = currentUserId
-      ? !users.find((u: RoomUserData) => u._id === currentUserId)?.isSpectator
-      : isDemoMode;
-
-    if (shouldShowVotingCards) {
-      const cards = room.votingScale?.cards ?? DEFAULT_SCALE.cards;
-      const cardPositions = computeVotingCardRow(cards.length);
-      const effectiveUserId = currentUserId ?? DEMO_VIEWER_ID;
-
-      cards.forEach((cardValue, index) => {
-        const votingCardNode: CustomNodeType = {
-          id: `card-${effectiveUserId}-${index}`,
-          type: "votingCard",
-          position: cardPositions[index],
-          data: {
-            card: { value: cardValue },
-            userId: effectiveUserId,
-            roomId,
-            isSelectable: phase !== "revealed" && !isDemoMode,
-            isSelected: cardValue === selectedCardValue,
-            onCardSelect: isDemoMode ? undefined : onCardSelect,
-          },
-          selected: cardValue === selectedCardValue,
-          draggable: false,
-        };
-        allNodes.push(votingCardNode);
-      });
-    }
-
-    return allNodes;
     // Every handler arrives with a frozen identity from the canvas-actions
     // module (and the panel/confirmation hooks), so listing them as memo
     // dependencies is safe — they never churn and the node list never rebuilds.
@@ -254,8 +158,7 @@ export function useCanvasNodes({
     currentUserId,
     selectedCardValue,
     roomId,
-    currentIssueId,
-    currentIssueTitle,
+    currentIssue,
     isDemoMode,
     canRevealCards,
     canControlGameFlow,
@@ -270,97 +173,25 @@ export function useCanvasNodes({
     onDeleteNote,
   ]);
 
+  // The edges builder reads a strict subset of the nodes input, so this memo
+  // depends on `users` rather than all of `roomData` — edges stop recomputing
+  // on unrelated room-data changes.
+  const users = roomData?.users;
   const edges = useMemo(() => {
-    if (!canvasNodes || !roomData) return [];
+    if (!canvasNodes || !users || !phase) return [];
 
-    const { users } = roomData;
-    const allEdges: Edge[] = [];
-
-    // Session to Players edges (subtle, consistent with timer edge)
-    users.forEach((user: RoomUserData) => {
-      allEdges.push({
-        id: `session-to-player-${user._id}`,
-        source: "session-current",
-        sourceHandle: "bottom",
-        target: `player-${user._id}`,
-        targetHandle: "top",
-        type: "default",
-        animated: false,
-        style: {
-          stroke: "#64748b",
-          strokeWidth: 2,
-          strokeOpacity: 0.6,
-        },
-      });
+    return buildCanvasEdges({
+      phase,
+      members: users,
+      canvasNodes,
+      currentIssue: currentIssueId ? { _id: currentIssueId } : null,
     });
-
-    // Session to Results edge (once the round is revealed)
-    if (phase === "revealed") {
-      allEdges.push({
-        id: "session-to-results",
-        source: "session-current",
-        sourceHandle: "right",
-        target: "results",
-        targetHandle: "left",
-        type: "straight",
-        animated: false,
-        style: {
-          stroke: "#10b981",
-          strokeWidth: 2,
-          strokeDasharray: "5,5",
-          strokeOpacity: 0.6,
-        },
-      });
-    }
-
-    // Timer to Session edge
-    allEdges.push({
-      id: "timer-to-session",
-      source: "timer",
-      sourceHandle: "right",
-      target: "session-current",
-      targetHandle: "left",
-      type: "straight",
-      animated: false,
-      style: {
-        stroke: "#64748b",
-        strokeWidth: 2,
-        strokeDasharray: "5,5",
-        strokeOpacity: 0.6,
-      },
-    });
-
-    // Session to Note edge (when current issue has a note)
-    if (currentIssueId) {
-      const noteNode = canvasNodes.find(
-        (n) => n.type === "note" && n.data.issueId === currentIssueId
-      );
-      if (noteNode) {
-        allEdges.push({
-          id: "session-to-note",
-          source: "session-current",
-          sourceHandle: "right",
-          target: noteNode.nodeId,
-          targetHandle: "left",
-          type: "straight",
-          animated: false,
-          style: {
-            stroke: "#f59e0b", // Amber color matching note node
-            strokeWidth: 2,
-            strokeDasharray: "5,5",
-            strokeOpacity: 0.6,
-          },
-        });
-      }
-    }
-
-    return allEdges;
-  }, [canvasNodes, roomData, phase, currentIssueId]);
+  }, [canvasNodes, users, phase, currentIssueId]);
 
   return {
     nodes,
     edges,
-    currentIssue: currentIssueId ? { _id: currentIssueId, title: currentIssueTitle ?? "" } : null,
+    currentIssue,
     hasNoteForCurrentIssue,
   };
 }
