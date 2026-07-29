@@ -88,6 +88,7 @@
     "postcss": "^8.5.24",
     "sharp": "^0.35.3",
     "minimatch@3": "^10.2.6",
-    "eslint-plugin-react-hooks": "7.0.1"
+    "eslint-plugin-react-hooks": "7.0.1",
+    "@napi-rs/wasm-runtime": "1.1.6"
   }
 }
