@@ -5,7 +5,9 @@
  * Fetch orchestration (OAuth token exchange/refresh, Jira REST calls through
  * JiraClient, webhook registration) lives here; the db-side invariants
  * (connection upsert, mapping writes, webhook event dedup/apply) live in
- * model/integrations.ts and the handlers below delegate to it.
+ * model/integrations.ts and the handlers below delegate to it. The
+ * token-field contract (key validation, encrypt-on-write, decrypt-on-read,
+ * expiry rule) lives in model/tokenVault.ts.
  */
 
 import {
@@ -18,27 +20,12 @@ import { internal } from "../_generated/api";
 import { v } from "convex/values";
 import { Doc, Id } from "../_generated/dataModel";
 import { ActionCtx } from "../_generated/server";
-import { encryptToken, decryptToken } from "../lib/encryption";
 import { requireAuth, requireCanForUser } from "../model/auth";
 import { JiraClient } from "./jiraClient";
 import { createIssueInRoom } from "../model/issues";
 import * as Integrations from "../model/integrations";
+import * as TokenVault from "../model/tokenVault";
 import { MAX_ISSUES_PER_ROOM } from "../constants";
-
-function getTokenEncryptionKey(): string {
-  const key = process.env.TOKEN_ENCRYPTION_KEY;
-  if (!key) {
-    throw new Error(
-      "Missing TOKEN_ENCRYPTION_KEY environment variable. Set a 32-byte hex key."
-    );
-  }
-  if (!/^[0-9a-fA-F]{64}$/.test(key)) {
-    throw new Error(
-      "Invalid TOKEN_ENCRYPTION_KEY. Expected 64 hex characters (32 bytes)."
-    );
-  }
-  return key;
-}
 
 // ---------------------------------------------------------------------------
 // Token helpers (used within actions)
@@ -48,16 +35,9 @@ export async function getValidAccessToken(
   ctx: ActionCtx,
   connection: Doc<"integrationConnections">
 ): Promise<string> {
-  const encKey = getTokenEncryptionKey();
-
   // If token is valid for >1 minute, decrypt and return
-  if (connection.expiresAt > Date.now() + 60_000) {
-    return decryptToken(
-      connection.encryptedAccessToken,
-      connection.accessTokenIv,
-      connection.accessTokenAuthTag,
-      encKey
-    );
+  if (TokenVault.isAccessTokenFresh(connection.expiresAt)) {
+    return TokenVault.decryptAccessToken(connection);
   }
 
   // Token expired or about to expire — refresh
@@ -68,22 +48,7 @@ export async function refreshJiraToken(
   ctx: ActionCtx,
   connection: Doc<"integrationConnections">
 ): Promise<string> {
-  const encKey = getTokenEncryptionKey();
-
-  if (
-    !connection.encryptedRefreshToken ||
-    !connection.refreshTokenIv ||
-    !connection.refreshTokenAuthTag
-  ) {
-    throw new Error("No refresh token available for this connection");
-  }
-
-  const refreshToken = await decryptToken(
-    connection.encryptedRefreshToken,
-    connection.refreshTokenIv,
-    connection.refreshTokenAuthTag,
-    encKey
-  );
+  const refreshToken = await TokenVault.decryptRefreshToken(connection);
 
   const response = await fetch("https://auth.atlassian.com/oauth/token", {
     method: "POST",
@@ -104,17 +69,14 @@ export async function refreshJiraToken(
   const tokens = await response.json();
 
   // Atlassian uses rotating refresh tokens — encrypt both new tokens
-  const encAccess = await encryptToken(tokens.access_token, encKey);
-  const encRefresh = await encryptToken(tokens.refresh_token, encKey);
+  const enc = await TokenVault.encryptTokens({
+    accessToken: tokens.access_token,
+    refreshToken: tokens.refresh_token,
+  });
 
   await ctx.runMutation(internal.integrations.jira.updateTokens, {
     connectionId: connection._id,
-    encryptedAccessToken: encAccess.ciphertext,
-    accessTokenIv: encAccess.iv,
-    accessTokenAuthTag: encAccess.authTag,
-    encryptedRefreshToken: encRefresh.ciphertext,
-    refreshTokenIv: encRefresh.iv,
-    refreshTokenAuthTag: encRefresh.authTag,
+    ...enc,
     expiresAt: Date.now() + tokens.expires_in * 1000,
   });
 
@@ -170,16 +132,7 @@ export const updateTokens = internalMutation({
     expiresAt: v.number(),
   },
   handler: async (ctx, args) => {
-    await ctx.db.patch(args.connectionId, {
-      encryptedAccessToken: args.encryptedAccessToken,
-      accessTokenIv: args.accessTokenIv,
-      accessTokenAuthTag: args.accessTokenAuthTag,
-      encryptedRefreshToken: args.encryptedRefreshToken,
-      refreshTokenIv: args.refreshTokenIv,
-      refreshTokenAuthTag: args.refreshTokenAuthTag,
-      expiresAt: args.expiresAt,
-      lastRefreshedAt: Date.now(),
-    });
+    await Integrations.updateConnectionTokens(ctx, args);
   },
 });
 
@@ -345,20 +298,15 @@ export const storeConnection = internalAction({
     providerUserEmail: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const encKey = getTokenEncryptionKey();
-
-    const encAccess = await encryptToken(args.accessToken, encKey);
-    const encRefresh = await encryptToken(args.refreshToken, encKey);
+    const enc = await TokenVault.encryptTokens({
+      accessToken: args.accessToken,
+      refreshToken: args.refreshToken,
+    });
 
     await ctx.runMutation(internal.integrations.jira.saveConnection, {
       userId: args.userId,
       provider: "jira",
-      encryptedAccessToken: encAccess.ciphertext,
-      accessTokenIv: encAccess.iv,
-      accessTokenAuthTag: encAccess.authTag,
-      encryptedRefreshToken: encRefresh.ciphertext,
-      refreshTokenIv: encRefresh.iv,
-      refreshTokenAuthTag: encRefresh.authTag,
+      ...enc,
       expiresAt: Date.now() + args.expiresIn * 1000,
       cloudId: args.cloudId,
       siteUrl: args.siteUrl,

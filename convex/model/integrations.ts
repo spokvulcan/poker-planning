@@ -1,6 +1,10 @@
 import { MutationCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { Doc, Id } from "../_generated/dataModel";
+import {
+  EncryptedTokenFields,
+  assertEncryptedTokenFields,
+} from "./tokenVault";
 
 /**
  * The integrations model: the one owner of the db-side invariants for
@@ -17,15 +21,9 @@ import { Doc, Id } from "../_generated/dataModel";
 // Connections
 // ---------------------------------------------------------------------------
 
-export interface ConnectionArgs {
+export interface ConnectionArgs extends EncryptedTokenFields {
   userId: Id<"users">;
   provider: Doc<"integrationConnections">["provider"];
-  encryptedAccessToken: string;
-  accessTokenIv: string;
-  accessTokenAuthTag: string;
-  encryptedRefreshToken?: string;
-  refreshTokenIv?: string;
-  refreshTokenAuthTag?: string;
   expiresAt: number;
   cloudId?: string;
   siteUrl?: string;
@@ -36,13 +34,16 @@ export interface ConnectionArgs {
 
 /**
  * Upserts a user's provider connection: one row per (userId, provider).
- * Token material is always re-encrypted by the caller and re-written here;
- * `connectedAt` survives re-connects, `lastRefreshedAt` always advances.
+ * Token material is always re-encrypted by the caller (through the token
+ * vault) and re-written here; the vault tripwire runs first so only
+ * ciphertext can ever reach the token columns. `connectedAt` survives
+ * re-connects, `lastRefreshedAt` always advances.
  */
 export async function saveConnection(
   ctx: MutationCtx,
   args: ConnectionArgs
 ): Promise<Id<"integrationConnections">> {
+  assertEncryptedTokenFields(args);
   // Check for existing connection
   const existing = await ctx.db
     .query("integrationConnections")
@@ -89,6 +90,33 @@ export async function saveConnection(
     scopes: args.scopes,
     connectedAt: now,
     lastRefreshedAt: now,
+  });
+}
+
+export interface TokenUpdateArgs extends EncryptedTokenFields {
+  connectionId: Id<"integrationConnections">;
+  expiresAt: number;
+}
+
+/**
+ * Re-writes the token fields after a provider refresh. Like saveConnection,
+ * only vault-produced ciphertext is accepted; `lastRefreshedAt` always
+ * advances with the tokens.
+ */
+export async function updateConnectionTokens(
+  ctx: MutationCtx,
+  args: TokenUpdateArgs
+): Promise<void> {
+  assertEncryptedTokenFields(args);
+  await ctx.db.patch(args.connectionId, {
+    encryptedAccessToken: args.encryptedAccessToken,
+    accessTokenIv: args.accessTokenIv,
+    accessTokenAuthTag: args.accessTokenAuthTag,
+    encryptedRefreshToken: args.encryptedRefreshToken,
+    refreshTokenIv: args.refreshTokenIv,
+    refreshTokenAuthTag: args.refreshTokenAuthTag,
+    expiresAt: args.expiresAt,
+    lastRefreshedAt: Date.now(),
   });
 }
 
