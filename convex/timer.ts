@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import * as Timer from "./model/timer";
-import { requireRoomMember } from "./model/auth";
+import { requireRoomMember, requireActingUser } from "./model/auth";
 
 // Start the timer
 export const startTimer = mutation({
@@ -11,10 +11,7 @@ export const startTimer = mutation({
     userId: v.id("users"),
   },
   handler: async (ctx, args) => {
-    const { user } = await requireRoomMember(ctx, args.roomId);
-    if (user._id !== args.userId) {
-      throw new Error("Cannot act as another user");
-    }
+    await requireActingUser(ctx, args.roomId, args.userId);
     await Timer.updateTimerState(ctx, {
       roomId: args.roomId,
       nodeId: args.nodeId,
@@ -32,10 +29,7 @@ export const pauseTimer = mutation({
     userId: v.id("users"),
   },
   handler: async (ctx, args) => {
-    const { user } = await requireRoomMember(ctx, args.roomId);
-    if (user._id !== args.userId) {
-      throw new Error("Cannot act as another user");
-    }
+    await requireActingUser(ctx, args.roomId, args.userId);
     await Timer.updateTimerState(ctx, {
       roomId: args.roomId,
       nodeId: args.nodeId,
@@ -53,10 +47,7 @@ export const resetTimer = mutation({
     userId: v.id("users"),
   },
   handler: async (ctx, args) => {
-    const { user } = await requireRoomMember(ctx, args.roomId);
-    if (user._id !== args.userId) {
-      throw new Error("Cannot act as another user");
-    }
+    await requireActingUser(ctx, args.roomId, args.userId);
     await Timer.updateTimerState(ctx, {
       roomId: args.roomId,
       nodeId: args.nodeId,
@@ -67,12 +58,14 @@ export const resetTimer = mutation({
 });
 
 // Get current timer state
+// Requires room membership: timer state is private to the room.
 export const getTimerState = query({
   args: {
     roomId: v.id("rooms"),
     nodeId: v.string(),
   },
   handler: async (ctx, args) => {
+    await requireRoomMember(ctx, args.roomId);
     return await Timer.getTimerState(ctx, args);
   },
 });

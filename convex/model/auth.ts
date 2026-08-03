@@ -92,6 +92,31 @@ export async function requireRoomMember(
 }
 
 /**
+ * Requires authentication and room membership, and verifies the authenticated
+ * user IS `userId` — handlers that accept a userId argument must not let one
+ * member act as another. Returns the verified identity, user, and membership.
+ *
+ * `message` preserves each handler's existing denial copy; it is thrown only
+ * on the acting-user mismatch (membership failures throw from requireRoomMember).
+ */
+export async function requireActingUser(
+  ctx: QueryCtx | MutationCtx,
+  roomId: Id<"rooms">,
+  userId: Id<"users">,
+  message = "Cannot act as another user"
+): Promise<{
+  identity: AuthIdentity;
+  user: Doc<"users">;
+  membership: Doc<"roomMemberships">;
+}> {
+  const { identity, user, membership } = await requireRoomMember(ctx, roomId);
+  if (user._id !== userId) {
+    throw new Error(message);
+  }
+  return { identity, user, membership };
+}
+
+/**
  * What an authorization guard is being asked to permit. The caller names the
  * category or relationship verb; it cannot know the target's role, so the
  * guard fills targetRole itself for target-constrained verbs.

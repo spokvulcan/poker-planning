@@ -3,7 +3,7 @@ import { components } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
 import { v } from "convex/values";
 import { Presence } from "@convex-dev/presence";
-import { requireRoomMember } from "./model/auth";
+import { requireActingUser } from "./model/auth";
 
 export const presence = new Presence(components.presence);
 
@@ -19,10 +19,12 @@ export const heartbeat = mutation({
     // actually this room member before heartbeating as them — otherwise any
     // client could spoof another user's online status or inject phantom
     // presence into arbitrary rooms.
-    const { user } = await requireRoomMember(ctx, roomId as Id<"rooms">);
-    if (user._id !== userId) {
-      throw new Error("Cannot heartbeat as another user");
-    }
+    await requireActingUser(
+      ctx,
+      roomId as Id<"rooms">,
+      userId as Id<"users">,
+      "Cannot heartbeat as another user"
+    );
     return await presence.heartbeat(ctx, roomId, userId, sessionId, interval);
   },
 });
