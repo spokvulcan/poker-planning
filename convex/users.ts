@@ -3,7 +3,7 @@ import { v } from "convex/values";
 import * as Users from "./model/users";
 import {
   requireAuth,
-  requireAuthUser,
+  requireActingUser,
   requireCan,
   getOptionalAuthUser,
 } from "./model/auth";
@@ -111,11 +111,8 @@ export const edit = mutation({
     isSpectator: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
-    // Verify the caller owns this user
-    const { user } = await requireAuthUser(ctx);
-    if (user._id !== args.userId) {
-      throw new Error("Cannot edit another user");
-    }
+    // Authenticated, in-room, and acting as this userId — the one guard.
+    await requireActingUser(ctx, args.roomId, args.userId, "Cannot edit another user");
 
     await Users.editUser(ctx, {
       userId: args.userId,
@@ -132,11 +129,8 @@ export const leave = mutation({
     roomId: v.id("rooms"),
   },
   handler: async (ctx, args) => {
-    // Verify the caller owns this user
-    const { user } = await requireAuthUser(ctx);
-    if (user._id !== args.userId) {
-      throw new Error("Cannot remove another user");
-    }
+    // Authenticated, in-room, and acting as this userId — the one guard.
+    await requireActingUser(ctx, args.roomId, args.userId, "Cannot remove another user");
 
     await Users.leaveRoom(ctx, args.userId, args.roomId);
   },
