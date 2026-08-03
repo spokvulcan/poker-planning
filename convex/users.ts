@@ -64,10 +64,33 @@ export const join = mutation({
     authUserId: v.string(), // Kept for post-sign-in race condition
   },
   handler: async (ctx, args) => {
-    // If auth is available, verify the caller owns this authUserId
+    // Verify the caller owns this authUserId. When the session token hasn't
+    // propagated to Convex yet (post-sign-in race), an unauthenticated caller
+    // may only create a brand-new user record or rejoin a room they already
+    // belong to — anything else would let someone rename another user's
+    // account or forge a membership in their name.
     const identity = await ctx.auth.getUserIdentity();
-    if (identity && identity.subject !== args.authUserId) {
-      throw new Error("Auth identity mismatch");
+    let allowRename = true;
+    if (identity) {
+      if (identity.subject !== args.authUserId) {
+        throw new Error("Auth identity mismatch");
+      }
+    } else {
+      allowRename = false;
+      const existingUser = await Users.getGlobalUserByAuthUserId(
+        ctx,
+        args.authUserId
+      );
+      if (existingUser) {
+        const membership = await Users.getMembership(
+          ctx,
+          args.roomId,
+          existingUser._id
+        );
+        if (!membership) {
+          throw new Error("Authentication required");
+        }
+      }
     }
 
     return await Users.joinRoom(ctx, {
@@ -75,6 +98,7 @@ export const join = mutation({
       name: validateName(args.name),
       isSpectator: args.isSpectator,
       authUserId: args.authUserId,
+      allowRename,
     });
   },
 });
@@ -191,10 +215,24 @@ export const ensureGlobalUser = mutation({
     name: v.string(),
   },
   handler: async (ctx, args) => {
-    // If auth is available, verify the caller owns this authUserId
+    // Verify the caller owns this authUserId. When the session token hasn't
+    // propagated to Convex yet (post-sign-in race), an unauthenticated caller
+    // may only create a brand-new user record — never rename an existing one.
     const identity = await ctx.auth.getUserIdentity();
-    if (identity && identity.subject !== args.authUserId) {
-      throw new Error("Auth identity mismatch");
+    if (identity) {
+      if (identity.subject !== args.authUserId) {
+        throw new Error("Auth identity mismatch");
+      }
+    } else {
+      const existingUser = await Users.getGlobalUserByAuthUserId(
+        ctx,
+        args.authUserId
+      );
+      if (existingUser) {
+        // Record already exists and there's no identity to prove ownership:
+        // no-op rather than apply an unverified name change.
+        return;
+      }
     }
 
     await Users.findOrCreateGlobalUser(ctx, {
