@@ -6,6 +6,7 @@ import {
   requireAuth,
   requireAuthUser,
   requireCan,
+  requireRoomMember,
 } from "./model/auth";
 
 // Create a new room
@@ -66,7 +67,9 @@ export const getUserRooms = query({
 export const updateActivity = mutation({
   args: { roomId: v.id("rooms") },
   handler: async (ctx, args) => {
-    await requireAuth(ctx);
+    // Membership, not just auth: otherwise any signed-in user could keep
+    // arbitrary rooms alive forever, defeating the inactivity cleanup cron.
+    await requireRoomMember(ctx, args.roomId);
     await Rooms.updateRoomActivity(ctx, args.roomId);
   },
 });
