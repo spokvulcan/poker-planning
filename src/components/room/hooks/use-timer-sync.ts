@@ -1,15 +1,20 @@
 "use client";
 
-import { useQuery, useMutation } from "convex/react";
+import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
-import { useCallback, useEffect, useState, useRef } from "react";
+import { useCallback, useEffect, useState } from "react";
+import {
+  calculateCurrentTime,
+  type TimerState,
+} from "@/convex/timerState";
 import { useDemoSimulation } from "../demo/DemoSimulationProvider";
 
 interface UseTimerSyncProps {
   roomId: Id<"rooms">;
   nodeId: string;
   userId?: Id<"users">;
+  timerState: TimerState;
 }
 
 interface UseTimerSyncReturn {
@@ -17,80 +22,48 @@ interface UseTimerSyncReturn {
   currentSeconds: number;
   isRunning: boolean;
   displayTime: string;
-  
+
   // Control functions
   onStart: () => void;
   onPause: () => void;
   onReset: () => void;
-  
-  // Loading states
-  isLoading: boolean;
+
+  // Error state
   error: string | null;
 }
 
+/**
+ * The timer's display derives entirely from the persisted state delivered with
+ * the canvas node (`api.canvas.getCanvasNodes` via buildCanvasNodes) — there is
+ * no second subscription. While the timer runs, a 100ms local interval re-reads
+ * the clock through the shared math (`@/convex/timerState`) so the display ticks
+ * smoothly between server snapshots; paused/reset states are static and re-derive
+ * whenever the node data changes.
+ */
 export function useTimerSync({
   roomId,
   nodeId,
   userId,
+  timerState,
 }: UseTimerSyncProps): UseTimerSyncReturn {
-  // In the Demo simulation the timer is local and stopped — never subscribe to
-  // `api.timer.getTimerState` (zero reads, ADR-0003). Real rooms subscribe.
+  // In the Demo simulation the timer is local and stopped — it renders 0:00
+  // from the demo provider and never touches Convex (zero reads, ADR-0003).
   const demo = useDemoSimulation();
 
   // Convex hooks
-  const serverTimerState = useQuery(
-    api.timer.getTimerState,
-    demo ? "skip" : { roomId, nodeId },
-  );
   const startTimerMutation = useMutation(api.timer.startTimer);
   const pauseTimerMutation = useMutation(api.timer.pauseTimer);
   const resetTimerMutation = useMutation(api.timer.resetTimer);
 
-  // Local state for smooth timer display
-  const [localSeconds, setLocalSeconds] = useState(0);
-  const [lastSyncTime, setLastSyncTime] = useState(() => Date.now());
+  // Local clock for smooth ticking while running
+  const [now, setNow] = useState(() => Date.now());
   const [error, setError] = useState<string | null>(null);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Sync local state with server state - intentional state sync pattern
   useEffect(() => {
-    if (serverTimerState) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setLocalSeconds(serverTimerState.currentSeconds);
-      setLastSyncTime(Date.now());
-      setError(null);
-    }
-  }, [serverTimerState]);
-
-  // Handle local timer ticking for smooth display
-  useEffect(() => {
-    if (serverTimerState?.isRunning) {
-      intervalRef.current = setInterval(() => {
-        const now = Date.now();
-        const elapsedSinceSync = (now - lastSyncTime) / 1000;
-        setLocalSeconds(serverTimerState.currentSeconds + elapsedSinceSync);
-      }, 100); // Update more frequently for smooth display
-    } else {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
-    }
-
-    return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-      }
-    };
-  }, [serverTimerState?.isRunning, serverTimerState?.currentSeconds, lastSyncTime]);
-
-  // Format time display
-  const formatTime = useCallback((totalSeconds: number): string => {
-    const seconds = Math.floor(totalSeconds);
-    const minutes = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${minutes}:${secs.toString().padStart(2, "0")}`;
-  }, []);
+    if (demo || !timerState.isRunning) return;
+    const interval = setInterval(() => setNow(Date.now()), 100);
+    return () => clearInterval(interval);
+  }, [demo, timerState.isRunning]);
 
   // Control functions
   const onStart = useCallback(async () => {
@@ -138,12 +111,11 @@ export function useTimerSync({
     }
   }, [resetTimerMutation, roomId, nodeId, userId]);
 
-  // Calculate current display values. In demo mode the timer is a local,
-  // stopped 0:00 (no server state, never loading).
-  const currentSeconds = demo ? 0 : Math.floor(localSeconds);
-  const isRunning = demo ? false : (serverTimerState?.isRunning ?? false);
-  const displayTime = demo ? "0:00" : formatTime(localSeconds);
-  const isLoading = demo ? false : serverTimerState === undefined;
+  // Current display values, computed via the shared math. In demo mode the
+  // timer is a local, stopped 0:00 regardless of the fixture state.
+  const { currentSeconds, isRunning, displayTime } = demo
+    ? { currentSeconds: 0, isRunning: false, displayTime: "0:00" }
+    : calculateCurrentTime(timerState, now);
 
   return {
     currentSeconds,
@@ -152,7 +124,6 @@ export function useTimerSync({
     onStart,
     onPause,
     onReset,
-    isLoading,
     error,
   };
 }

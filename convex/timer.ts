@@ -1,7 +1,7 @@
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { mutation } from "./_generated/server";
 import * as Timer from "./model/timer";
-import { requireRoomMember, requireActingUser } from "./model/auth";
+import { requireActingUser } from "./model/auth";
 
 // Start the timer
 export const startTimer = mutation({
@@ -54,18 +54,5 @@ export const resetTimer = mutation({
       action: "reset",
       userId: args.userId,
     });
-  },
-});
-
-// Get current timer state
-// Requires room membership: timer state is private to the room.
-export const getTimerState = query({
-  args: {
-    roomId: v.id("rooms"),
-    nodeId: v.string(),
-  },
-  handler: async (ctx, args) => {
-    await requireRoomMember(ctx, args.roomId);
-    return await Timer.getTimerState(ctx, args);
   },
 });

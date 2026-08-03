@@ -10,6 +10,7 @@
 
 import type * as admin from "../admin.js";
 import type * as analytics from "../analytics.js";
+import type * as analyticsMath from "../analyticsMath.js";
 import type * as auth from "../auth.js";
 import type * as canvas from "../canvas.js";
 import type * as canvasLayout from "../canvasLayout.js";
@@ -31,6 +32,7 @@ import type * as model_cleanup from "../model/cleanup.js";
 import type * as model_issues from "../model/issues.js";
 import type * as model_permissions from "../model/permissions.js";
 import type * as model_roles from "../model/roles.js";
+import type * as model_roomAggregate from "../model/roomAggregate.js";
 import type * as model_rooms from "../model/rooms.js";
 import type * as model_timer from "../model/timer.js";
 import type * as model_users from "../model/users.js";
@@ -44,6 +46,7 @@ import type * as rooms from "../rooms.js";
 import type * as scales from "../scales.js";
 import type * as summarize from "../summarize.js";
 import type * as timer from "../timer.js";
+import type * as timerState from "../timerState.js";
 import type * as users from "../users.js";
 import type * as votes from "../votes.js";
 import type * as votingRound from "../votingRound.js";
@@ -57,6 +60,7 @@ import type {
 declare const fullApi: ApiFromModules<{
   admin: typeof admin;
   analytics: typeof analytics;
+  analyticsMath: typeof analyticsMath;
   auth: typeof auth;
   canvas: typeof canvas;
   canvasLayout: typeof canvasLayout;
@@ -78,6 +82,7 @@ declare const fullApi: ApiFromModules<{
   "model/issues": typeof model_issues;
   "model/permissions": typeof model_permissions;
   "model/roles": typeof model_roles;
+  "model/roomAggregate": typeof model_roomAggregate;
   "model/rooms": typeof model_rooms;
   "model/timer": typeof model_timer;
   "model/users": typeof model_users;
@@ -91,6 +96,7 @@ declare const fullApi: ApiFromModules<{
   scales: typeof scales;
   summarize: typeof summarize;
   timer: typeof timer;
+  timerState: typeof timerState;
   users: typeof users;
   votes: typeof votes;
   votingRound: typeof votingRound;

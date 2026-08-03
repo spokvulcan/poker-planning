@@ -4,8 +4,10 @@
  * Reducer unit tests cannot catch a subscription leaking through a hook or
  * component, so this guard renders the demo's canvas hooks inside the
  * DemoSimulationProvider with a mocked Convex client and asserts that none of
- * the demo/canvas/issues/timer/presence subscriptions are opened: every such
+ * the demo/canvas/issues/presence subscriptions are opened: every such
  * `useQuery` is passed `"skip"`, and `usePresence` is never called at all.
+ * (The timer opens no subscription at all anymore — its state arrives with the
+ * canvas node data — so it is probed for regressions but lists no query.)
  * Directly protects user stories 12/14/17 (ADR-0003).
  *
  * Single-channel sourcing (#214): the demo signal travels only through the
@@ -65,7 +67,6 @@ const SUBSCRIPTIONS = [
   getFunctionName(api.issues.getCurrent),
   getFunctionName(api.issues.list),
   getFunctionName(api.issues.getForEnhancedExport),
-  getFunctionName(api.timer.getTimerState),
 ];
 
 // Names + args of the captured subscription calls (ignoring queries we don't
@@ -89,6 +90,18 @@ function capturedSubscriptions(): { name: string; args: unknown }[] {
 //   - integration-settings (getConnections/getRoomMapping, both un-skipped) only
 //     mounts behind `{!isDemoMode && …}` in room-settings-panel.
 // If one of those gates regresses this Probe won't catch it — re-audit on change.
+// A stopped persisted timer, as a freshly created canvas node delivers it.
+// useTimerSync opens no subscription in either mode — it is probed so a
+// regression that reintroduces one fails the leak assertion above.
+const STOPPED_TIMER_STATE = {
+  startedAt: null,
+  pausedAt: null,
+  elapsedSeconds: 0,
+  isRunning: false,
+  lastUpdatedBy: null,
+  lastAction: null,
+};
+
 function useProbeHooks(roomId: Id<"rooms">, roomData: RoomWithRelatedData): void {
   // The hooks take no `isDemoMode` prop: they read the demo signal from the
   // provider seam, so what differs between the two cases is only whether the
@@ -101,7 +114,12 @@ function useProbeHooks(roomId: Id<"rooms">, roomData: RoomWithRelatedData): void
   });
   useIssues({ roomId });
   useRoomPresence(roomId, DEMO_VIEWER_ID, roomData.users);
-  useTimerSync({ roomId, nodeId: "timer", userId: undefined });
+  useTimerSync({
+    roomId,
+    nodeId: "timer",
+    userId: undefined,
+    timerState: STOPPED_TIMER_STATE,
+  });
 }
 
 function DemoProbe(): ReactNode {
@@ -134,7 +152,7 @@ describe("zero-reads guard: the demo signal is sourced from the provider seam", 
     spy.presenceCalled = false;
   });
 
-  it("skips every demo/canvas/issues/timer query and never subscribes to presence inside the provider", () => {
+  it("skips every demo/canvas/issues query and never subscribes to presence inside the provider", () => {
     renderToStaticMarkup(
       createElement(DemoSimulationProvider, null, createElement(DemoProbe)),
     );

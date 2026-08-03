@@ -8,6 +8,7 @@ import {
   TIMER_POSITION,
   type Position,
 } from "../canvasLayout";
+import type { TimerState } from "../timerState";
 
 // Re-exported for compatibility — the geometry now lives in canvasLayout.ts.
 export type { Position } from "../canvasLayout";
@@ -20,17 +21,7 @@ export type { Position } from "../canvasLayout";
  */
 export type CanvasNodeData =
   | { type: "player"; data: { userId: Id<"users"> } }
-  | {
-      type: "timer";
-      data: {
-        startedAt: number | null;
-        pausedAt: number | null;
-        elapsedSeconds: number;
-        isRunning?: boolean;
-        lastUpdatedBy: Id<"users"> | null;
-        lastAction: "start" | "pause" | "reset" | null;
-      };
-    }
+  | { type: "timer"; data: TimerState }
   | {
       type: "note";
       data: {

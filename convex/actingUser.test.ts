@@ -108,16 +108,6 @@ describe("acting-user guard (requireActingUser)", () => {
     ).rejects.toThrow("Not a member of this room");
   });
 
-  it("non-member cannot read timer state", async () => {
-    const t = convexTest(schema, modules);
-    const roomId = await seedRoom(t);
-    await addUser(t, "auth-outsider");
-    const asOutsider = t.withIdentity({ subject: "auth-outsider" });
-    await expect(
-      asOutsider.query(api.timer.getTimerState, { roomId, nodeId: "timer" })
-    ).rejects.toThrow("Not a member of this room");
-  });
-
   it("actor mismatch throws on updateNodePosition", async () => {
     const t = convexTest(schema, modules);
     const roomId = await seedRoom(t);
