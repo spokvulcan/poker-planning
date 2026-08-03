@@ -1,5 +1,10 @@
 import { MutationCtx } from "../_generated/server";
-import { Id } from "../_generated/dataModel";
+import { Doc, Id } from "../_generated/dataModel";
+import {
+  ROOM_OWNED_TABLES,
+  RoomOwnedTable,
+  deleteRoomAggregate,
+} from "./roomAggregate";
 
 export interface CleanupResult {
   roomsDeleted: number;
@@ -50,89 +55,19 @@ export async function removeInactiveRooms(
 }
 
 /**
- * Cleans up all data associated with a single room
+ * Cleans up all data associated with a single room.
+ * The table set comes from the one room-aggregate inventory
+ * (convex/model/roomAggregate.ts) — including issues, which used to leak.
  */
 export async function cleanupRoom(
   ctx: MutationCtx,
   roomId: Id<"rooms">
 ): Promise<Omit<CleanupResult, "roomsDeleted">> {
-  // Get all related data in parallel
-  const [votes, memberships, canvasNodes, votingTimestamps, individualVotes, issues, integrationMappings] = await Promise.all([
-    ctx.db
-      .query("votes")
-      .withIndex("by_room", (q) => q.eq("roomId", roomId))
-      .collect(),
-    ctx.db
-      .query("roomMemberships")
-      .withIndex("by_room", (q) => q.eq("roomId", roomId))
-      .collect(),
-    ctx.db
-      .query("canvasNodes")
-      .withIndex("by_room", (q) => q.eq("roomId", roomId))
-      .collect(),
-    ctx.db
-      .query("votingTimestamps")
-      .withIndex("by_room", (q) => q.eq("roomId", roomId))
-      .collect(),
-    ctx.db
-      .query("individualVotes")
-      .withIndex("by_room", (q) => q.eq("roomId", roomId))
-      .collect(),
-    ctx.db
-      .query("issues")
-      .withIndex("by_room", (q) => q.eq("roomId", roomId))
-      .collect(),
-    ctx.db
-      .query("integrationMappings")
-      .withIndex("by_room", (q) => q.eq("roomId", roomId))
-      .collect(),
-  ]);
-
-  // Batch-query issueLinks for all issues in this room
-  const allIssueLinks = await Promise.all(
-    issues.map((issue) =>
-      ctx.db
-        .query("issueLinks")
-        .withIndex("by_issue", (q) => q.eq("issueId", issue._id))
-        .collect()
-    )
-  );
-  const issueLinks = allIssueLinks.flat();
-
-  // Delete all related data in parallel
-  const deletePromises: Promise<void>[] = [];
-
-  // Delete votes
-  deletePromises.push(...votes.map((vote) => ctx.db.delete(vote._id)));
-
-  // Delete memberships (not global users - they persist)
-  deletePromises.push(...memberships.map((m) => ctx.db.delete(m._id)));
-
-  // Delete canvas nodes
-  deletePromises.push(...canvasNodes.map((node) => ctx.db.delete(node._id)));
-
-  // Delete voting timestamps
-  deletePromises.push(...votingTimestamps.map((ts) => ctx.db.delete(ts._id)));
-
-  // Delete individual vote snapshots
-  deletePromises.push(...individualVotes.map((iv) => ctx.db.delete(iv._id)));
-
-  // Delete integration mappings
-  deletePromises.push(...integrationMappings.map((m) => ctx.db.delete(m._id)));
-
-  // Delete issue links
-  deletePromises.push(...issueLinks.map((link) => ctx.db.delete(link._id)));
-
-  // Wait for all deletions to complete
-  await Promise.all(deletePromises);
-
-  // Delete the room itself
-  await ctx.db.delete(roomId);
-
+  const deleted = await deleteRoomAggregate(ctx, roomId);
   return {
-    votesDeleted: votes.length,
-    membershipsDeleted: memberships.length,
-    canvasNodesDeleted: canvasNodes.length,
+    votesDeleted: deleted.votes,
+    membershipsDeleted: deleted.roomMemberships,
+    canvasNodesDeleted: deleted.canvasNodes,
   };
 }
 
@@ -147,116 +82,72 @@ export async function cleanupOrphanedData(ctx: MutationCtx): Promise<{
   orphanedVotingTimestamps: number;
   orphanedIndividualVotes: number;
   orphanedIntegrationMappings: number;
+  orphanedIssues: number;
+  orphanedIssueLinks: number;
 }> {
   // Get all existing room IDs once
   const allRooms = await ctx.db.query("rooms").collect();
   const existingRoomIds = new Set(allRooms.map(room => room._id));
 
-  // Process each table in parallel
-  const [
-    orphanedVotes,
-    orphanedMemberships,
-    orphanedCanvasNodes,
-    orphanedVotingTimestamps,
-    orphanedIndividualVotes,
-    orphanedIntegrationMappings,
-  ] = await Promise.all([
-    // Clean orphaned votes
-    cleanupOrphanedRecords(ctx, "votes", existingRoomIds),
-    // Clean orphaned memberships
-    cleanupOrphanedRecords(ctx, "roomMemberships", existingRoomIds),
-    // Clean orphaned canvas nodes
-    cleanupOrphanedRecords(ctx, "canvasNodes", existingRoomIds),
-    // Clean orphaned voting timestamps
-    cleanupOrphanedRecords(ctx, "votingTimestamps", existingRoomIds),
-    // Clean orphaned individual votes
-    cleanupOrphanedRecords(ctx, "individualVotes", existingRoomIds),
-    // Clean orphaned integration mappings
-    cleanupOrphanedRecords(ctx, "integrationMappings", existingRoomIds),
-  ]);
+  // Sweep every room-owned table — the same inventory the room cascade uses.
+  const swept = {} as Record<RoomOwnedTable, number>;
+  await Promise.all(
+    ROOM_OWNED_TABLES.map(async (table) => {
+      swept[table] = await cleanupOrphanedRecords(
+        ctx,
+        table,
+        (doc) => !existingRoomIds.has(doc.roomId)
+      );
+    })
+  );
+
+  // issueLinks are room-owned through their issue: a link is orphaned once its
+  // issue is gone. Runs after the issue sweep above, so links left behind by
+  // just-swept issues are collected too.
+  const remainingIssues = await ctx.db.query("issues").collect();
+  const existingIssueIds = new Set(remainingIssues.map((issue) => issue._id));
+  const orphanedIssueLinks = await cleanupOrphanedRecords(
+    ctx,
+    "issueLinks",
+    (doc) => !existingIssueIds.has(doc.issueId)
+  );
 
   return {
-    orphanedVotes,
-    orphanedMemberships,
-    orphanedCanvasNodes,
-    orphanedVotingTimestamps,
-    orphanedIndividualVotes,
-    orphanedIntegrationMappings,
+    orphanedVotes: swept.votes,
+    orphanedMemberships: swept.roomMemberships,
+    orphanedCanvasNodes: swept.canvasNodes,
+    orphanedVotingTimestamps: swept.votingTimestamps,
+    orphanedIndividualVotes: swept.individualVotes,
+    orphanedIntegrationMappings: swept.integrationMappings,
+    orphanedIssues: swept.issues,
+    orphanedIssueLinks,
   };
 }
 
 /**
- * Helper function to clean orphaned records from a specific table
- * Processes records in batches to avoid overwhelming the system
+ * Helper function to clean orphaned records from a specific table.
+ * One full scan per table: the old loop re-collected the entire table once
+ * per 100-row batch (O(n²)), and batching buys nothing inside a single
+ * transaction anyway. Carrying a `.paginate()` cursor instead is not an
+ * option — Convex allows only one paginated query per function execution,
+ * and the sweep touches several tables per run.
  */
-async function cleanupOrphanedRecords(
+async function cleanupOrphanedRecords<Table extends RoomOwnedTable | "issueLinks">(
   ctx: MutationCtx,
-  tableName: "votes" | "roomMemberships" | "canvasNodes" | "votingTimestamps" | "individualVotes" | "integrationMappings",
-  existingRoomIds: Set<Id<"rooms">>
+  tableName: Table,
+  isOrphan: (doc: Doc<Table>) => boolean
 ): Promise<number> {
-  const BATCH_SIZE = 100;
-  let orphanedCount = 0;
-  let hasMore = true;
-  let lastId: string | undefined;
+  const docs = await ctx.db.query(tableName).collect();
 
-  while (hasMore) {
-    // Query a batch of records
-    const query = ctx.db.query(tableName);
-
-    // For pagination, we'll use the ID as a cursor
-    // This is more efficient than using skip/take
-    if (lastId) {
-      // Get records after the last processed ID
-      const records = await query.collect();
-      const startIndex = records.findIndex(r => r._id > lastId!) + 1;
-      const batch = records.slice(startIndex, startIndex + BATCH_SIZE);
-
-      if (batch.length === 0) {
-        hasMore = false;
-        break;
-      }
-
-      // Process the batch
-      const deletePromises: Promise<void>[] = [];
-      for (const record of batch) {
-        if (!existingRoomIds.has(record.roomId)) {
-          deletePromises.push(ctx.db.delete(record._id));
-          orphanedCount++;
-        }
-      }
-
-      // Execute deletions in parallel
-      await Promise.all(deletePromises);
-
-      // Update cursor
-      lastId = batch[batch.length - 1]._id;
-      hasMore = batch.length === BATCH_SIZE;
-    } else {
-      // First batch
-      const batch = await query.take(BATCH_SIZE);
-
-      if (batch.length === 0) {
-        hasMore = false;
-        break;
-      }
-
-      // Process the batch
-      const deletePromises: Promise<void>[] = [];
-      for (const record of batch) {
-        if (!existingRoomIds.has(record.roomId)) {
-          deletePromises.push(ctx.db.delete(record._id));
-          orphanedCount++;
-        }
-      }
-
-      // Execute deletions in parallel
-      await Promise.all(deletePromises);
-
-      // Update cursor
-      lastId = batch[batch.length - 1]._id;
-      hasMore = batch.length === BATCH_SIZE;
+  const deletePromises: Promise<void>[] = [];
+  for (const doc of docs) {
+    if (isOrphan(doc)) {
+      deletePromises.push(ctx.db.delete(doc._id));
     }
   }
 
-  return orphanedCount;
+  // Execute deletions in parallel
+  await Promise.all(deletePromises);
+
+  return deletePromises.length;
 }
