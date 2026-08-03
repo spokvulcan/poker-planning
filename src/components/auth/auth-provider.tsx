@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext, useMemo, ReactNode } from "react";
+import { usePathname } from "next/navigation";
 import { useConvexAuth, useQuery } from "convex/react";
 import { authClient } from "@/lib/auth-client";
 import { api } from "@/convex/_generated/api";
@@ -38,9 +39,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const { data: session } = authClient.useSession();
   const authUserId = session?.user?.id;
 
+  // Zero reads on /demo (ADR-0003): the demo is a client-side simulation with
+  // no backend participation, so even this root subscription must not open for a
+  // returning visitor with a live session. Route-based (not the
+  // DemoSimulationProvider seam) because AuthProvider sits at the root, above
+  // the provider. On /demo the session fallbacks below already supply email and
+  // accountType, so context consumers see the same values.
+  const pathname = usePathname();
+  const isDemoRoute = pathname === "/demo" || pathname.startsWith("/demo/");
+
   const globalUser = useQuery(
     api.users.getGlobalUser,
-    isAuthenticated ? {} : "skip"
+    isAuthenticated && !isDemoRoute ? {} : "skip"
   );
 
   // Memoize context value to prevent cascading re-renders in consumers

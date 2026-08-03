@@ -22,7 +22,6 @@ import {
   Settings,
 } from "lucide-react";
 import { useTheme } from "next-themes";
-import { useMutation } from "convex/react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -56,7 +55,7 @@ import {
 } from "@/components/ui/select";
 import { usePermissions } from "@/hooks/usePermissions";
 import { IntegrationSettingsSection } from "./integration-settings";
-import { api } from "@/convex/_generated/api";
+import { useRoomSettingsActions } from "./hooks/useRoomSettingsActions";
 import type { Id } from "@/convex/_generated/dataModel";
 import { cn } from "@/lib/utils";
 import type { RoomWithRelatedData } from "@/convex/model/rooms";
@@ -127,13 +126,10 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
   const [pendingTransferUser, setPendingTransferUser] = useState<{id: Id<"users">, name: string} | null>(null);
   const openSelectCountRef = useRef(0);
 
-  const renameRoom = useMutation(api.rooms.rename);
-  const toggleAutoComplete = useMutation(api.rooms.toggleAutoComplete);
-  const removeUser = useMutation(api.users.remove);
-  const promoteFacilitator = useMutation(api.roles.promoteFacilitator);
-  const demoteFacilitator = useMutation(api.roles.demoteFacilitator);
-  const transferOwnership = useMutation(api.roles.transferOwnership);
-  const updatePermissions = useMutation(api.roles.updatePermissions);
+  // Writes come from the action seam, which no-ops internally in demo mode
+  // (ADR-0003) — the remaining `isDemoMode` branches below are presentation only
+  // (hide/disable/read-only controls), never write guards.
+  const settingsActions = useRoomSettingsActions({ roomId: roomData.room._id });
 
   const perms = usePermissions(roomData, currentUserId);
 
@@ -155,7 +151,7 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
 
     setIsSaving(true);
     try {
-      await renameRoom({ roomId: roomData.room._id, name: roomName.trim() });
+      await settingsActions.rename(roomName.trim());
       toast({
         title: "Room renamed",
         description: `Room is now called "${roomName.trim()}"`,
@@ -174,7 +170,7 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
 
   const handleToggleAutoReveal = async () => {
     try {
-      await toggleAutoComplete({ roomId: roomData.room._id });
+      await settingsActions.toggleAutoComplete();
     } catch (error) {
       console.error("Failed to toggle auto-reveal:", error);
       toast({
@@ -192,7 +188,7 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
     if (!pendingDeleteUser) return;
     setRemovingUserId(pendingDeleteUser.id);
     try {
-      await removeUser({ userId: pendingDeleteUser.id, roomId: roomData.room._id });
+      await settingsActions.removeUser(pendingDeleteUser.id);
       toast({
         title: "User removed",
         description: `${pendingDeleteUser.name} has been removed from the room.`,
@@ -211,7 +207,7 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
 
   const handlePromote = async (userId: Id<"users">, userName: string) => {
     try {
-      await promoteFacilitator({ roomId: roomData.room._id, targetUserId: userId });
+      await settingsActions.promoteFacilitator(userId);
       toast({
         title: "User promoted",
         description: `${userName} is now a facilitator.`,
@@ -224,7 +220,7 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
 
   const handleDemote = async (userId: Id<"users">, userName: string) => {
     try {
-      await demoteFacilitator({ roomId: roomData.room._id, targetUserId: userId });
+      await settingsActions.demoteFacilitator(userId);
       toast({
         title: "User demoted",
         description: `${userName} is now a participant.`,
@@ -238,7 +234,7 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
   const handleConfirmTransfer = async () => {
     if (!pendingTransferUser) return;
     try {
-      await transferOwnership({ roomId: roomData.room._id, targetUserId: pendingTransferUser.id });
+      await settingsActions.transferOwnership(pendingTransferUser.id);
       toast({
         title: "Ownership transferred",
         description: `${pendingTransferUser.name} is now the room owner.`,
@@ -258,7 +254,7 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
       [category]: value,
     };
     try {
-      await updatePermissions({ roomId: roomData.room._id, permissions: newPermissions });
+      await settingsActions.updatePermissions(newPermissions);
     } catch (error) {
       console.error("Failed to update permissions:", error);
       toast({ title: "Failed to update permissions", variant: "destructive" });
@@ -341,9 +337,9 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
                 <Input
                   id="room-name"
                   value={roomName}
-                  onChange={(e) => !isDemoMode && perms.roomSettings.allowed && setRoomName(e.target.value)}
+                  onChange={(e) => perms.roomSettings.allowed && setRoomName(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter" && !isDemoMode && perms.roomSettings.allowed) handleSaveRoomName();
+                    if (e.key === "Enter" && perms.roomSettings.allowed) handleSaveRoomName();
                   }}
                   placeholder="Enter room name"
                   className="h-10 text-sm bg-gray-50 dark:bg-surface-2"
@@ -385,7 +381,7 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
               <Switch
                 id="auto-reveal"
                 checked={roomData.room.autoCompleteVoting}
-                onCheckedChange={isDemoMode || !perms.roomSettings.allowed ? undefined : handleToggleAutoReveal}
+                onCheckedChange={perms.roomSettings.allowed ? handleToggleAutoReveal : undefined}
                 disabled={isDemoMode || !perms.roomSettings.allowed}
                 className="data-[state=checked]:bg-primary"
               />

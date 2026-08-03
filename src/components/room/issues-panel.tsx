@@ -24,6 +24,7 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { useIssues } from "./hooks/useIssues";
+import { useIssueActions } from "./hooks/useIssueActions";
 import { useIsDemoMode } from "./demo/DemoSimulationProvider";
 import { IssueItem } from "./issue-item";
 import { JiraImportModal } from "./jira-import-modal";
@@ -70,14 +71,19 @@ export const IssuesPanel: FC<IssuesPanelProps> = ({
     currentIssue,
     isQuickVoteMode,
     isLoading,
+    exportData,
+  } = useIssues({ roomId });
+  // Writes come from the action seam, which no-ops internally in demo mode
+  // (ADR-0003) — the remaining `isDemoMode` branches below are presentation only
+  // (hide/disable controls), never write guards.
+  const {
     createIssue,
     startVoting,
     switchToQuickVote,
     updateTitle,
     updateEstimate,
     deleteIssue,
-    exportData,
-  } = useIssues({ roomId });
+  } = useIssueActions({ roomId });
 
   const handleAddIssue = async () => {
     if (!newIssueTitle.trim()) return;
@@ -291,7 +297,7 @@ export const IssuesPanel: FC<IssuesPanelProps> = ({
           {/* Quick Vote Section - Always pinned to top of scroll */}
           <div className="p-6 pb-2 shrink-0">
             <button
-              onClick={isDemoMode ? undefined : handleSwitchToQuickVote}
+              onClick={handleSwitchToQuickVote}
               disabled={isDemoMode}
               className={cn(
                 "w-full flex items-center justify-between p-4 rounded-xl border bg-white dark:bg-surface-2 transition-all group shadow-sm",

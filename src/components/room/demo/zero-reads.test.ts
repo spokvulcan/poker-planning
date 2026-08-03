@@ -10,6 +10,12 @@
  * canvas node data — so it is probed for regressions but lists no query.)
  * Directly protects user stories 12/14/17 (ADR-0003).
  *
+ * The root-subscription case is covered too: the root AuthProvider subscribes
+ * `api.users.getGlobalUser` whenever a session is live, and AuthProvider sits
+ * above DemoSimulationProvider, so the provider seam cannot gate it. The probe
+ * renders AuthProvider over the demo tree with a live session and asserts the
+ * subscription is skipped on the /demo route — and opened on a non-demo route.
+ *
  * Single-channel sourcing (#214): the demo signal travels only through the
  * provider seam — the hooks take no `isDemoMode` prop and derive it from
  * context. So this guard renders them with NO `isDemoMode` prop and asserts the
@@ -27,6 +33,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const spy = vi.hoisted(() => ({
   queries: [] as { query: unknown; args: unknown }[],
   presenceCalled: false,
+  pathname: "/demo",
 }));
 
 vi.mock("convex/react", () => ({
@@ -35,12 +42,26 @@ vi.mock("convex/react", () => ({
     return undefined; // demo data comes from context, not from Convex
   },
   useMutation: () => async () => undefined,
+  // A live session, so the AuthProvider probe exercises the authenticated case.
+  useConvexAuth: () => ({ isAuthenticated: true, isLoading: false }),
 }));
 
 vi.mock("@convex-dev/presence/react", () => ({
   default: () => {
     spy.presenceCalled = true;
     return undefined;
+  },
+}));
+
+vi.mock("next/navigation", () => ({
+  usePathname: () => spy.pathname,
+}));
+
+vi.mock("@/lib/auth-client", () => ({
+  authClient: {
+    useSession: () => ({
+      data: { user: { id: "user-1", isAnonymous: false, email: "u@example.com" } },
+    }),
   },
 }));
 
@@ -54,6 +75,7 @@ import {
   DemoSimulationProvider,
   useDemoSimulation,
 } from "./DemoSimulationProvider";
+import { AuthProvider } from "@/components/auth/auth-provider";
 import { useCanvasNodes } from "../hooks/useCanvasNodes";
 import { useIssues } from "../hooks/useIssues";
 import { useTimerSync } from "../hooks/use-timer-sync";
@@ -69,6 +91,10 @@ const SUBSCRIPTIONS = [
   getFunctionName(api.issues.getForEnhancedExport),
 ];
 
+// The root subscription mounted above the demo tree (AuthProvider). It is
+// route-gated, not provider-gated, so it gets its own probe below.
+const ROOT_SUBSCRIPTIONS = [getFunctionName(api.users.getGlobalUser)];
+
 // Names + args of the captured subscription calls (ignoring queries we don't
 // guard here, e.g. the integration queries owned by their own sites).
 function capturedSubscriptions(): { name: string; args: unknown }[] {
@@ -80,13 +106,24 @@ function capturedSubscriptions(): { name: string; args: unknown }[] {
     .filter((c) => SUBSCRIPTIONS.includes(c.name));
 }
 
+// Same, for the root AuthProvider subscription.
+function capturedRootSubscriptions(): { name: string; args: unknown }[] {
+  return spy.queries
+    .map((c) => ({
+      name: getFunctionName(c.query as Parameters<typeof getFunctionName>[0]),
+      args: c.args,
+    }))
+    .filter((c) => ROOT_SUBSCRIPTIONS.includes(c.name));
+}
+
 // Calls every always-mounted Convex-subscribing hook reachable from the demo
 // canvas. The other demo-reachable subscriptions are guarded at their own site,
-// so they are deliberately outside this Probe's scope (audited 2026-05-24):
+// so they are deliberately outside this Probe's scope (audited 2026-08-03):
 //   - RoomCanvas/PlayerNode/StoryNode read `roomData` (a prop) — api.rooms.get
 //     is never called in demo mode.
 //   - issues-panel skips its integration queries in demo (derives the signal
-//     from `useIsDemoMode()`).
+//     from `useIsDemoMode()`); its writes go through useIssueActions, which
+//     no-ops in demo (covered by useIssueActions.test.tsx).
 //   - integration-settings (getConnections/getRoomMapping, both un-skipped) only
 //     mounts behind `{!isDemoMode && …}` in room-settings-panel.
 // If one of those gates regresses this Probe won't catch it — re-audit on change.
@@ -150,6 +187,7 @@ describe("zero-reads guard: the demo signal is sourced from the provider seam", 
   beforeEach(() => {
     spy.queries.length = 0;
     spy.presenceCalled = false;
+    spy.pathname = "/demo";
   });
 
   it("skips every demo/canvas/issues query and never subscribes to presence inside the provider", () => {
@@ -174,5 +212,37 @@ describe("zero-reads guard: the demo signal is sourced from the provider seam", 
       expect(calls.every((c) => c.args !== "skip")).toBe(true);
     }
     expect(spy.presenceCalled).toBe(true);
+  });
+});
+
+describe("zero-reads guard: the root AuthProvider subscription is bypassed under /demo", () => {
+  beforeEach(() => {
+    spy.queries.length = 0;
+    spy.presenceCalled = false;
+  });
+
+  it("skips getGlobalUser on /demo even with a live session", () => {
+    spy.pathname = "/demo";
+    renderToStaticMarkup(
+      createElement(
+        AuthProvider,
+        null,
+        createElement(DemoSimulationProvider, null, createElement(DemoProbe)),
+      ),
+    );
+
+    const leaked = capturedRootSubscriptions().filter((c) => c.args !== "skip");
+    expect(leaked).toEqual([]);
+  });
+
+  it("opens getGlobalUser on a non-demo route with a live session", () => {
+    spy.pathname = "/room/real-room-id";
+    renderToStaticMarkup(
+      createElement(AuthProvider, null, createElement(RealRoomProbe)),
+    );
+
+    const opened = capturedRootSubscriptions();
+    expect(opened.length).toBeGreaterThan(0);
+    expect(opened.every((c) => c.args !== "skip")).toBe(true);
   });
 });
