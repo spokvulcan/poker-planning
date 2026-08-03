@@ -291,6 +291,19 @@ export async function reorderIssues(
   ctx: MutationCtx,
   args: { roomId: Id<"rooms">; issueIds: Id<"issues">[] }
 ): Promise<void> {
+  // Authorization was checked against args.roomId, so every reordered issue
+  // must belong to that room — otherwise issue IDs from another room could be
+  // smuggled into the array to scramble its ordering.
+  const issues = await Promise.all(
+    args.issueIds.map((issueId) => ctx.db.get(issueId))
+  );
+  for (const issue of issues) {
+    if (!issue) throw new Error("Issue not found");
+    if (issue.roomId !== args.roomId) {
+      throw new Error("Issue does not belong to this room");
+    }
+  }
+
   // Update order for each issue
   await Promise.all(
     args.issueIds.map((issueId, index) =>
