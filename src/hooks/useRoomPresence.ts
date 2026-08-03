@@ -12,6 +12,27 @@ export interface UserWithPresence extends RoomUserData {
 }
 
 /**
+ * The one roster ordering rule: online first, then by join time (earliest
+ * first). Pass `currentUserId` for the settings-panel variant, which pins the
+ * current user to the top before the online-first rule applies to the rest.
+ */
+export function orderUsersByPresence(
+  users: UserWithPresence[],
+  currentUserId?: string,
+): UserWithPresence[] {
+  return [...users].sort((a, b) => {
+    if (currentUserId) {
+      if (a._id === currentUserId) return -1;
+      if (b._id === currentUserId) return 1;
+    }
+    if (a.isOnline !== b.isOnline) {
+      return a.isOnline ? -1 : 1;
+    }
+    return a.joinedAt - b.joinedAt;
+  });
+}
+
+/**
  * Hook that combines room user data with presence information.
  * Returns users with their online status and last seen timestamp.
  *
@@ -36,8 +57,9 @@ export function useRoomPresence(
   // or never), so the branch — and thus the hook-call order — can never change
   // between renders, including under StrictMode/concurrent re-renders. The
   // zero-reads guard test backstops this by asserting `usePresence` is never
-  // called in demo mode. Centralizing here covers every caller
-  // (canvas-navigation, room-settings-panel) at once.
+  // called in demo mode. Centralizing here covers the one caller,
+  // `RoomPresenceProvider` — which is mounted once per room tree, so each
+  // viewer holds exactly one presence subscription.
   // eslint-disable-next-line react-hooks/rules-of-hooks
   return demo ? useDemoPresence(users) : useConvexPresence(roomId, userId, users);
 }

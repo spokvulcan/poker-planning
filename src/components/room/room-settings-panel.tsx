@@ -69,7 +69,7 @@ import { getEffectivePermissions } from "@/convex/permissions";
 import { UserAvatar } from "@/components/user-menu/user-avatar";
 import { formatLastSeen } from "./user-presence-avatars";
 
-import { useRoomPresence } from "@/hooks/useRoomPresence";
+import { usePresenceRoster } from "./room-presence";
 import { useIsDemoMode } from "./demo/DemoSimulationProvider";
 
 interface RoomSettingsPanelProps {
@@ -118,11 +118,9 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
   const { toast } = useToast();
   const { theme, setTheme } = useTheme();
 
-  const usersWithPresence = useRoomPresence(
-    roomData.room._id,
-    currentUserId ?? "",
-    roomData.users
-  );
+  // Roster from the single presence module, ordered current-user-first, then
+  // online-first, then by join time.
+  const sortedUsers = usePresenceRoster(currentUserId);
 
   const [roomName, setRoomName] = useState(roomData.room.name);
   const [isSaving, setIsSaving] = useState(false);
@@ -265,20 +263,6 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
       toast({ title: "Failed to update permissions", variant: "destructive" });
     }
   };
-
-  // Filter users: sort online first, then by join time
-  const sortedUsers = [...usersWithPresence].sort((a, b) => {
-    // Current user always first
-    if (a._id === currentUserId) return -1;
-    if (b._id === currentUserId) return 1;
-    
-    // Online users next
-    if (a.isOnline !== b.isOnline) {
-      return a.isOnline ? -1 : 1;
-    }
-    // Then by join time (earliest first)
-    return a.joinedAt - b.joinedAt;
-  });
 
   const currentPermissions = getEffectivePermissions(roomData.room);
 
@@ -553,7 +537,7 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
                   Participants
                 </h3>
                 <Badge variant="secondary" className="bg-white dark:bg-surface-2 text-xs font-medium px-2.5 py-0.5 rounded-full border border-gray-200 dark:border-border">
-                  {usersWithPresence.length} Total
+                  {sortedUsers.length} Total
                 </Badge>
               </div>
               

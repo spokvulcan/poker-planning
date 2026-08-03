@@ -19,6 +19,7 @@ import type { NodeChange, EdgeChange } from "@xyflow/react";
 
 import { useLatest } from "@/hooks/use-latest";
 import { CanvasNavigation } from "./canvas-navigation";
+import { RoomPresenceProvider } from "./room-presence";
 import { RoomSettingsPanel } from "./room-settings-panel";
 import { IssuesPanel } from "./issues-panel";
 import { DemoExplainer } from "./demo-explainer";
@@ -259,7 +260,6 @@ function RoomCanvasInner({ roomData, currentUserId, isEmbedded = false }: RoomCa
         {(isDemoMode || currentUserId) && !(isDemoMode && isEmbedded) && (
           <CanvasNavigation
             roomData={roomData}
-            currentUserId={currentUserId ?? DEMO_VIEWER_ID}
             isIssuesPanelOpen={isIssuesPanelOpen}
             onIssuesPanelChange={(open) => (open ? openIssues() : closeAll())}
             isSettingsOpen={isSettingsOpen}
@@ -375,9 +375,30 @@ function RoomCanvasInner({ roomData, currentUserId, isEmbedded = false }: RoomCa
 }
 
 export function RoomCanvas(props: RoomCanvasProps): ReactElement {
+  const isDemoMode = useIsDemoMode();
+  const { roomData, currentUserId } = props;
+  // One presence subscription per viewer: RoomPresenceProvider owns the single
+  // usePresence instance for both consumers (nav avatars + settings roster).
+  // It wraps RoomCanvasInner from out here — RoomCanvas does not re-render on
+  // presence ticks, so the RoomCanvasInner element stays reference-identical
+  // and a tick re-renders only the context consumers, never the ReactFlow
+  // subtree (see room-presence.tsx). Mount it only when a consumer can exist:
+  // in real rooms that needs a resolved currentUserId (matching
+  // RoomCanvasInner's loading gate); in demo it subscribes to nothing anyway.
+  const withPresence = roomData && (isDemoMode || currentUserId);
   return (
     <ReactFlowProvider>
-      <RoomCanvasInner {...props} />
+      {withPresence ? (
+        <RoomPresenceProvider
+          roomId={roomData.room._id}
+          userId={currentUserId ?? DEMO_VIEWER_ID}
+          users={roomData.users}
+        >
+          <RoomCanvasInner {...props} />
+        </RoomPresenceProvider>
+      ) : (
+        <RoomCanvasInner {...props} />
+      )}
     </ReactFlowProvider>
   );
 }
