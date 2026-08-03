@@ -1,5 +1,18 @@
 # Changelog
 
+## [2.9.4](https://github.com/spokvulcan/poker-planning/compare/agilekit-v2.9.3...agilekit-v2.9.4) (2026-08-03)
+
+
+### Bug Fixes
+
+* **deps:** patch all advisories and upgrade dependencies to latest ([#240](https://github.com/spokvulcan/poker-planning/issues/240)) ([376c687](https://github.com/spokvulcan/poker-planning/commit/376c68726487e3e22a739c43b4246a9eb9981252))
+* **security:** security audit — 12 fixes (webhook auth, authz gaps, XSS, injection, headers) ([#242](https://github.com/spokvulcan/poker-planning/issues/242)) ([9340be5](https://github.com/spokvulcan/poker-planning/commit/9340be5104471b7a0b8e2cf0a2203dfc4b5e47e2))
+
+
+### Code Refactoring
+
+* architecture deepening — 12 candidates from the architecture review ([#243](https://github.com/spokvulcan/poker-planning/issues/243)) ([c7cb83d](https://github.com/spokvulcan/poker-planning/commit/c7cb83db690f7d96c78f716635adb170bc37bb80))
+
 ## [2.9.3](https://github.com/spokvulcan/poker-planning/compare/agilekit-v2.9.2...agilekit-v2.9.3) (2026-07-04)
 
 
