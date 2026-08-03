@@ -31,7 +31,6 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
-import { useRoomPresence } from "@/hooks/useRoomPresence";
 import { UserMenu } from "@/components/user-menu";
 import { ShinyButton } from "@/components/ui/shiny-button";
 import { cn } from "@/lib/utils";
@@ -60,7 +59,6 @@ const getFullscreenSupportedServer = () => false;
 
 interface CanvasNavigationProps {
   roomData: RoomWithRelatedData;
-  currentUserId: string;
   onToggleFullscreen?: () => void;
   isFullscreen?: boolean;
   isIssuesPanelOpen: boolean;
@@ -71,7 +69,6 @@ interface CanvasNavigationProps {
 
 export const CanvasNavigation: FC<CanvasNavigationProps> = ({
   roomData,
-  currentUserId,
   onToggleFullscreen,
   isFullscreen = false,
   isIssuesPanelOpen,
@@ -83,12 +80,6 @@ export const CanvasNavigation: FC<CanvasNavigationProps> = ({
   const { zoomIn, zoomOut, fitView } = useReactFlow();
   const router = useRouter();
 
-  // Track user presence inside navigation to avoid canvas re-renders
-  const usersWithPresence = useRoomPresence(
-    roomData.room._id,
-    currentUserId,
-    roomData.users,
-  );
   const { toast } = useToast();
   // Fullscreen support is a client-only capability resolved via the store
   // callbacks defined above — no hydration mismatch, no setState-in-effect.
@@ -189,13 +180,9 @@ export const CanvasNavigation: FC<CanvasNavigationProps> = ({
             </span>
           </div>
 
-          {/* User Presence Avatars */}
+          {/* User Presence Avatars (roster from RoomPresenceProvider) */}
           <div data-testid="mobile-user-avatars">
-            <UserPresenceAvatars
-              users={usersWithPresence}
-              maxVisible={3}
-              size="sm"
-            />
+            <UserPresenceAvatars maxVisible={3} size="sm" />
           </div>
 
           {/* Hamburger Menu */}
@@ -405,11 +392,7 @@ export const CanvasNavigation: FC<CanvasNavigationProps> = ({
             className="flex items-center gap-2 px-2"
             data-testid="desktop-user-avatars"
           >
-            <UserPresenceAvatars
-              users={usersWithPresence}
-              maxVisible={4}
-              size="sm"
-            />
+            <UserPresenceAvatars maxVisible={4} size="sm" />
           </div>
         </div>
       </div>

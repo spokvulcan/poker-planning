@@ -5,13 +5,18 @@
 
 import { internalMutation } from "./_generated/server";
 import { v } from "convex/values";
+import { ROOM_OWNED_TABLES } from "./model/roomAggregate";
 
 const DELETE_CONFIRMATION = "I understand this will delete all data permanently";
 
 /**
  * Permanently deletes ALL data from the database.
  *
- * Tables affected: rooms, issues, users, roomMemberships, votes, canvasNodes
+ * Tables affected: every room-owned table from the one inventory
+ * (convex/model/roomAggregate.ts — issues, roomMemberships, votes,
+ * canvasNodes, votingTimestamps, individualVotes, integrationMappings)
+ * plus issueLinks (room-owned via its issue), rooms, and the user-scoped /
+ * global tables (users, integrationConnections, webhookEvents).
  *
  * This action cannot be undone.
  *
@@ -35,15 +40,14 @@ export const dangerouslyDeleteAllData = internalMutation({
       );
     }
 
+    // Room-owned tables come from the one inventory; issueLinks are room-owned
+    // through their issues. The rest are user-scoped or global — this wipe's
+    // own concern, not the inventory's.
     const tables = [
-      "votes",
-      "canvasNodes",
-      "roomMemberships",
+      ...ROOM_OWNED_TABLES,
       "issueLinks",
-      "integrationMappings",
       "integrationConnections",
       "webhookEvents",
-      "issues",
       "rooms",
       "users",
     ] as const;

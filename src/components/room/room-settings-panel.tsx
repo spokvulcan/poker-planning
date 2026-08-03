@@ -22,7 +22,6 @@ import {
   Settings,
 } from "lucide-react";
 import { useTheme } from "next-themes";
-import { useMutation } from "convex/react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -54,9 +53,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { usePermissions } from "@/hooks/usePermissions";
+import {
+  usePermissions,
+  permissionProps,
+  permissionInputProps,
+  rosterControls,
+} from "@/hooks/usePermissions";
 import { IntegrationSettingsSection } from "./integration-settings";
-import { api } from "@/convex/_generated/api";
+import { useRoomSettingsActions } from "./hooks/useRoomSettingsActions";
 import type { Id } from "@/convex/_generated/dataModel";
 import { cn } from "@/lib/utils";
 import type { RoomWithRelatedData } from "@/convex/model/rooms";
@@ -65,7 +69,7 @@ import { getEffectivePermissions } from "@/convex/permissions";
 import { UserAvatar } from "@/components/user-menu/user-avatar";
 import { formatLastSeen } from "./user-presence-avatars";
 
-import { useRoomPresence } from "@/hooks/useRoomPresence";
+import { usePresenceRoster } from "./room-presence";
 import { useIsDemoMode } from "./demo/DemoSimulationProvider";
 
 interface RoomSettingsPanelProps {
@@ -114,11 +118,9 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
   const { toast } = useToast();
   const { theme, setTheme } = useTheme();
 
-  const usersWithPresence = useRoomPresence(
-    roomData.room._id,
-    currentUserId ?? "",
-    roomData.users
-  );
+  // Roster from the single presence module, ordered current-user-first, then
+  // online-first, then by join time.
+  const sortedUsers = usePresenceRoster(currentUserId);
 
   const [roomName, setRoomName] = useState(roomData.room.name);
   const [isSaving, setIsSaving] = useState(false);
@@ -127,13 +129,10 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
   const [pendingTransferUser, setPendingTransferUser] = useState<{id: Id<"users">, name: string} | null>(null);
   const openSelectCountRef = useRef(0);
 
-  const renameRoom = useMutation(api.rooms.rename);
-  const toggleAutoComplete = useMutation(api.rooms.toggleAutoComplete);
-  const removeUser = useMutation(api.users.remove);
-  const promoteFacilitator = useMutation(api.roles.promoteFacilitator);
-  const demoteFacilitator = useMutation(api.roles.demoteFacilitator);
-  const transferOwnership = useMutation(api.roles.transferOwnership);
-  const updatePermissions = useMutation(api.roles.updatePermissions);
+  // Writes come from the action seam, which no-ops internally in demo mode
+  // (ADR-0003) — the remaining `isDemoMode` branches below are presentation only
+  // (hide/disable/read-only controls), never write guards.
+  const settingsActions = useRoomSettingsActions({ roomId: roomData.room._id });
 
   const perms = usePermissions(roomData, currentUserId);
 
@@ -155,7 +154,7 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
 
     setIsSaving(true);
     try {
-      await renameRoom({ roomId: roomData.room._id, name: roomName.trim() });
+      await settingsActions.rename(roomName.trim());
       toast({
         title: "Room renamed",
         description: `Room is now called "${roomName.trim()}"`,
@@ -174,7 +173,7 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
 
   const handleToggleAutoReveal = async () => {
     try {
-      await toggleAutoComplete({ roomId: roomData.room._id });
+      await settingsActions.toggleAutoComplete();
     } catch (error) {
       console.error("Failed to toggle auto-reveal:", error);
       toast({
@@ -192,7 +191,7 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
     if (!pendingDeleteUser) return;
     setRemovingUserId(pendingDeleteUser.id);
     try {
-      await removeUser({ userId: pendingDeleteUser.id, roomId: roomData.room._id });
+      await settingsActions.removeUser(pendingDeleteUser.id);
       toast({
         title: "User removed",
         description: `${pendingDeleteUser.name} has been removed from the room.`,
@@ -211,7 +210,7 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
 
   const handlePromote = async (userId: Id<"users">, userName: string) => {
     try {
-      await promoteFacilitator({ roomId: roomData.room._id, targetUserId: userId });
+      await settingsActions.promoteFacilitator(userId);
       toast({
         title: "User promoted",
         description: `${userName} is now a facilitator.`,
@@ -224,7 +223,7 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
 
   const handleDemote = async (userId: Id<"users">, userName: string) => {
     try {
-      await demoteFacilitator({ roomId: roomData.room._id, targetUserId: userId });
+      await settingsActions.demoteFacilitator(userId);
       toast({
         title: "User demoted",
         description: `${userName} is now a participant.`,
@@ -238,7 +237,7 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
   const handleConfirmTransfer = async () => {
     if (!pendingTransferUser) return;
     try {
-      await transferOwnership({ roomId: roomData.room._id, targetUserId: pendingTransferUser.id });
+      await settingsActions.transferOwnership(pendingTransferUser.id);
       toast({
         title: "Ownership transferred",
         description: `${pendingTransferUser.name} is now the room owner.`,
@@ -258,33 +257,14 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
       [category]: value,
     };
     try {
-      await updatePermissions({ roomId: roomData.room._id, permissions: newPermissions });
+      await settingsActions.updatePermissions(newPermissions);
     } catch (error) {
       console.error("Failed to update permissions:", error);
       toast({ title: "Failed to update permissions", variant: "destructive" });
     }
   };
 
-  // Filter users: sort online first, then by join time
-  const sortedUsers = [...usersWithPresence].sort((a, b) => {
-    // Current user always first
-    if (a._id === currentUserId) return -1;
-    if (b._id === currentUserId) return 1;
-    
-    // Online users next
-    if (a.isOnline !== b.isOnline) {
-      return a.isOnline ? -1 : 1;
-    }
-    // Then by join time (earliest first)
-    return a.joinedAt - b.joinedAt;
-  });
-
   const currentPermissions = getEffectivePermissions(roomData.room);
-
-  // Tooltip for the room-name controls, read straight from the resolved decision.
-  const roomSettingsTooltip = perms.roomSettings.allowed
-    ? undefined
-    : perms.roomSettings.message;
 
   return (
     <>
@@ -341,27 +321,26 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
                 <Input
                   id="room-name"
                   value={roomName}
-                  onChange={(e) => !isDemoMode && perms.roomSettings.allowed && setRoomName(e.target.value)}
+                  onChange={(e) => perms.roomSettings.allowed && setRoomName(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter" && !isDemoMode && perms.roomSettings.allowed) handleSaveRoomName();
+                    if (e.key === "Enter" && perms.roomSettings.allowed) handleSaveRoomName();
                   }}
                   placeholder="Enter room name"
                   className="h-10 text-sm bg-gray-50 dark:bg-surface-2"
-                  readOnly={isDemoMode || !perms.roomSettings.allowed}
-                  title={roomSettingsTooltip}
+                  readOnly={isDemoMode}
+                  {...permissionInputProps(perms.roomSettings)}
                 />
                 {!isDemoMode && (
                   <Button
                     size="default"
                     onClick={handleSaveRoomName}
                     disabled={
-                      !perms.roomSettings.allowed ||
                       isSaving ||
                       !roomName.trim() ||
                       roomName === roomData.room.name
                     }
                     className="h-10 px-4 whitespace-nowrap"
-                    title={roomSettingsTooltip}
+                    {...permissionProps(perms.roomSettings)}
                   >
                     {isSaving ? "Saving..." : "Save"}
                   </Button>
@@ -385,9 +364,10 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
               <Switch
                 id="auto-reveal"
                 checked={roomData.room.autoCompleteVoting}
-                onCheckedChange={isDemoMode || !perms.roomSettings.allowed ? undefined : handleToggleAutoReveal}
-                disabled={isDemoMode || !perms.roomSettings.allowed}
+                onCheckedChange={perms.roomSettings.allowed ? handleToggleAutoReveal : undefined}
+                disabled={isDemoMode}
                 className="data-[state=checked]:bg-primary"
+                {...permissionProps(perms.roomSettings)}
               />
             </div>
 
@@ -557,7 +537,7 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
                   Participants
                 </h3>
                 <Badge variant="secondary" className="bg-white dark:bg-surface-2 text-xs font-medium px-2.5 py-0.5 rounded-full border border-gray-200 dark:border-border">
-                  {usersWithPresence.length} Total
+                  {sortedUsers.length} Total
                 </Badge>
               </div>
               
@@ -576,11 +556,15 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
                   sortedUsers.map((u) => {
                     const userRole = u.role ?? "participant";
                     const isMe = u._id === currentUserId;
-                    const removeDecision = perms.removeTarget(userRole);
-                    const canRemoveThis = removeDecision.allowed;
-                    const canPromoteThis = perms.promoteTarget(userRole).allowed;
-                    const canDemoteThis = perms.demoteTarget(userRole).allowed;
-                    const canTransfer = perms.transfer.allowed;
+                    // Per-action control state from the four relationship
+                    // decisions against this target — denied actions render
+                    // visible-but-disabled with the denial copy, never vanish.
+                    const roster = rosterControls({
+                      remove: perms.removeTarget(userRole),
+                      promote: perms.promoteTarget(userRole),
+                      demote: perms.demoteTarget(userRole),
+                      transfer: perms.transfer,
+                    });
 
                     return (
                       <div
@@ -637,65 +621,92 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
                         </div>
                         {!isDemoMode && !isMe && (
                           <div className="flex items-center gap-1 shrink-0 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 transition-opacity">
-                            {/* Promote button (for participants) */}
-                            {canPromoteThis && (
-                              <Tooltip>
-                                <TooltipTrigger render={
-                                  <Button
-                                    variant="ghost"
-                                    size="icon-sm"
-                                    onClick={() => handlePromote(u._id, u.name)}
-                                    className="hover:bg-blue-50 hover:text-blue-600 dark:hover:bg-blue-500/10 dark:hover:text-blue-400"
-                                    aria-label={`Promote ${u.name} to facilitator`}
-                                  >
-                                    <ChevronUp className="h-4 w-4" />
-                                  </Button>
-                                } />
-                                <TooltipContent>
-                                  <p>Promote to facilitator</p>
-                                </TooltipContent>
-                              </Tooltip>
-                            )}
+                            {/* Promote button */}
+                            <Tooltip>
+                              <TooltipTrigger render={
+                                <Button
+                                  variant="ghost"
+                                  size="icon-sm"
+                                  onClick={roster.promote.enabled ? () => handlePromote(u._id, u.name) : undefined}
+                                  disabled={!roster.promote.enabled}
+                                  className={cn(
+                                    roster.promote.enabled
+                                      ? "hover:bg-blue-50 hover:text-blue-600 dark:hover:bg-blue-500/10 dark:hover:text-blue-400"
+                                      : "opacity-40 cursor-not-allowed",
+                                  )}
+                                  aria-label={
+                                    roster.promote.enabled
+                                      ? `Promote ${u.name} to facilitator`
+                                      : roster.promote.denial
+                                  }
+                                >
+                                  <ChevronUp className="h-4 w-4" />
+                                </Button>
+                              } />
+                              <TooltipContent>
+                                <p>
+                                  {roster.promote.enabled ? "Promote to facilitator" : roster.promote.denial}
+                                </p>
+                              </TooltipContent>
+                            </Tooltip>
 
-                            {/* Demote button (for facilitators, owner only) */}
-                            {canDemoteThis && (
-                              <Tooltip>
-                                <TooltipTrigger render={
-                                  <Button
-                                    variant="ghost"
-                                    size="icon-sm"
-                                    onClick={() => handleDemote(u._id, u.name)}
-                                    className="hover:bg-amber-50 hover:text-amber-600 dark:hover:bg-amber-500/10 dark:hover:text-amber-400"
-                                    aria-label={`Demote ${u.name} to participant`}
-                                  >
-                                    <ChevronDown className="h-4 w-4" />
-                                  </Button>
-                                } />
-                                <TooltipContent>
-                                  <p>Demote to participant</p>
-                                </TooltipContent>
-                              </Tooltip>
-                            )}
+                            {/* Demote button */}
+                            <Tooltip>
+                              <TooltipTrigger render={
+                                <Button
+                                  variant="ghost"
+                                  size="icon-sm"
+                                  onClick={roster.demote.enabled ? () => handleDemote(u._id, u.name) : undefined}
+                                  disabled={!roster.demote.enabled}
+                                  className={cn(
+                                    roster.demote.enabled
+                                      ? "hover:bg-amber-50 hover:text-amber-600 dark:hover:bg-amber-500/10 dark:hover:text-amber-400"
+                                      : "opacity-40 cursor-not-allowed",
+                                  )}
+                                  aria-label={
+                                    roster.demote.enabled
+                                      ? `Demote ${u.name} to participant`
+                                      : roster.demote.denial
+                                  }
+                                >
+                                  <ChevronDown className="h-4 w-4" />
+                                </Button>
+                              } />
+                              <TooltipContent>
+                                <p>
+                                  {roster.demote.enabled ? "Demote to participant" : roster.demote.denial}
+                                </p>
+                              </TooltipContent>
+                            </Tooltip>
 
-                            {/* Transfer ownership button (owner only, on non-owners) */}
-                            {canTransfer && userRole !== "owner" && (
-                              <Tooltip>
-                                <TooltipTrigger render={
-                                  <Button
-                                    variant="ghost"
-                                    size="icon-sm"
-                                    onClick={() => setPendingTransferUser({ id: u._id, name: u.name })}
-                                    className="hover:bg-purple-50 hover:text-purple-600 dark:hover:bg-purple-500/10 dark:hover:text-purple-400"
-                                    aria-label={`Transfer ownership to ${u.name}`}
-                                  >
-                                    <ArrowRightLeft className="h-4 w-4" />
-                                  </Button>
-                                } />
-                                <TooltipContent>
-                                  <p>Transfer ownership</p>
-                                </TooltipContent>
-                              </Tooltip>
-                            )}
+                            {/* Transfer ownership button */}
+                            <Tooltip>
+                              <TooltipTrigger render={
+                                <Button
+                                  variant="ghost"
+                                  size="icon-sm"
+                                  onClick={roster.transfer.enabled ? () => setPendingTransferUser({ id: u._id, name: u.name }) : undefined}
+                                  disabled={!roster.transfer.enabled}
+                                  className={cn(
+                                    roster.transfer.enabled
+                                      ? "hover:bg-purple-50 hover:text-purple-600 dark:hover:bg-purple-500/10 dark:hover:text-purple-400"
+                                      : "opacity-40 cursor-not-allowed",
+                                  )}
+                                  aria-label={
+                                    roster.transfer.enabled
+                                      ? `Transfer ownership to ${u.name}`
+                                      : roster.transfer.denial
+                                  }
+                                >
+                                  <ArrowRightLeft className="h-4 w-4" />
+                                </Button>
+                              } />
+                              <TooltipContent>
+                                <p>
+                                  {roster.transfer.enabled ? "Transfer ownership" : roster.transfer.denial}
+                                </p>
+                              </TooltipContent>
+                            </Tooltip>
 
                             {/* Remove button */}
                             <Tooltip>
@@ -703,17 +714,17 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
                                 <Button
                                   variant="ghost"
                                   size="icon-sm"
-                                  onClick={canRemoveThis ? () => handleRemoveUser(u._id, u.name) : undefined}
-                                  disabled={removingUserId === u._id || !canRemoveThis}
+                                  onClick={roster.remove.enabled ? () => handleRemoveUser(u._id, u.name) : undefined}
+                                  disabled={removingUserId === u._id || !roster.remove.enabled}
                                   className={cn(
-                                    canRemoveThis
+                                    roster.remove.enabled
                                       ? "hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-500/10 dark:hover:text-red-400"
                                       : "opacity-40 cursor-not-allowed",
                                   )}
                                   aria-label={
-                                    canRemoveThis
+                                    roster.remove.enabled
                                       ? `Remove ${u.name}`
-                                      : removeDecision.message
+                                      : roster.remove.denial
                                   }
                                 >
                                   <UserMinus className="h-4 w-4" />
@@ -721,7 +732,7 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
                               } />
                               <TooltipContent>
                                 <p>
-                                  {canRemoveThis ? "Remove user" : removeDecision.message}
+                                  {roster.remove.enabled ? "Remove user" : roster.remove.denial}
                                 </p>
                               </TooltipContent>
                             </Tooltip>

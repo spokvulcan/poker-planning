@@ -8,6 +8,7 @@ import {
   TIMER_POSITION,
   type Position,
 } from "../canvasLayout";
+import type { TimerState } from "../timerState";
 
 // Re-exported for compatibility — the geometry now lives in canvasLayout.ts.
 export type { Position } from "../canvasLayout";
@@ -20,17 +21,7 @@ export type { Position } from "../canvasLayout";
  */
 export type CanvasNodeData =
   | { type: "player"; data: { userId: Id<"users"> } }
-  | {
-      type: "timer";
-      data: {
-        startedAt: number | null;
-        pausedAt: number | null;
-        elapsedSeconds: number;
-        isRunning?: boolean;
-        lastUpdatedBy: Id<"users"> | null;
-        lastAction: "start" | "pause" | "reset" | null;
-      };
-    }
+  | { type: "timer"; data: TimerState }
   | {
       type: "note";
       data: {
@@ -57,24 +48,6 @@ export type CanvasNode = {
 
 // Maximum length for note content (10KB)
 const MAX_NOTE_CONTENT_LENGTH = 10000;
-
-/**
- * Verifies that a user belongs to a room (via membership)
- */
-async function verifyUserInRoom(
-  ctx: MutationCtx,
-  roomId: Id<"rooms">,
-  userId: Id<"users">
-): Promise<void> {
-  const membership = await ctx.db
-    .query("roomMemberships")
-    .withIndex("by_room_user", (q) => q.eq("roomId", roomId).eq("userId", userId))
-    .first();
-
-  if (!membership) {
-    throw new Error("User not found in room");
-  }
-}
 
 /**
  * Recalculates layout for all session/player nodes.
@@ -362,9 +335,6 @@ export async function createNoteNode(
     userId: Id<"users">;
   }
 ): Promise<Id<"canvasNodes">> {
-  // Verify user belongs to the room
-  await verifyUserInRoom(ctx, args.roomId, args.userId);
-
   const nodeId = `note-${args.issueId}`;
 
   // Check if note already exists for this issue
@@ -416,9 +386,6 @@ export async function updateNoteContent(
     userId: Id<"users">;
   }
 ): Promise<void> {
-  // Verify user belongs to the room
-  await verifyUserInRoom(ctx, args.roomId, args.userId);
-
   // Validate content length
   if (args.content.length > MAX_NOTE_CONTENT_LENGTH) {
     throw new Error(`Note content too long (max ${MAX_NOTE_CONTENT_LENGTH} characters)`);
@@ -486,9 +453,6 @@ export async function deleteNoteNode(
   ctx: MutationCtx,
   args: { roomId: Id<"rooms">; nodeId: string; userId: Id<"users"> }
 ): Promise<void> {
-  // Verify user belongs to the room
-  await verifyUserInRoom(ctx, args.roomId, args.userId);
-
   const node = await ctx.db
     .query("canvasNodes")
     .withIndex("by_room_node", (q) =>

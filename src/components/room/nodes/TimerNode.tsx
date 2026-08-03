@@ -13,7 +13,8 @@ export const TimerNode = memo(
     // Extract required data for useTimerSync hook
     const { roomId, userId, nodeId } = data;
 
-    // Use the synchronized timer hook instead of local state
+    // Timer state comes from the node data itself (delivered by
+    // api.canvas.getCanvasNodes); the hook adds local ticking and controls.
     const {
       displayTime,
       isRunning,
@@ -21,12 +22,12 @@ export const TimerNode = memo(
       onStart,
       onPause,
       onReset,
-      isLoading,
       error,
     } = useTimerSync({
       roomId,
       nodeId: nodeId || "timer", // fallback to default timer nodeId
       userId,
+      timerState: data,
     });
 
     // Handle toggle between start and pause
@@ -42,43 +43,6 @@ export const TimerNode = memo(
     const handleReset = useCallback(() => {
       onReset();
     }, [onReset]);
-
-    // Show loading state if timer data is not yet available
-    if (isLoading) {
-      return (
-        <div className="relative">
-          <Handle
-            type="source"
-            position={Position.Right}
-            id="right"
-            className="bg-gray-400! dark:bg-surface-3!"
-            aria-hidden="true"
-          />
-          <div className={cn(
-            "p-3 bg-white dark:bg-surface-1 rounded-lg shadow-md border border-gray-200 dark:border-border",
-            selected && "ring-2 ring-blue-500 dark:ring-blue-400 ring-offset-2 ring-offset-white dark:ring-offset-surface-1"
-          )}>
-            <div className="flex items-center gap-3">
-              <div
-                className="w-2 h-2 rounded-full bg-gray-400 animate-pulse"
-                aria-hidden="true"
-              />
-              <span className="text-lg font-mono font-medium text-gray-400 min-w-16">
-                --:--
-              </span>
-              <div className="flex items-center gap-1">
-                <div className="p-1.5 rounded bg-gray-100 dark:bg-surface-3">
-                  <Play className="h-4 w-4 text-gray-400" />
-                </div>
-                <div className="p-1.5 rounded bg-gray-100 dark:bg-surface-3">
-                  <RotateCcw className="h-4 w-4 text-gray-400" />
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      );
-    }
 
     return (
       <div className="relative">

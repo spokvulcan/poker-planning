@@ -24,6 +24,7 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { useIssues } from "./hooks/useIssues";
+import { useIssueActions } from "./hooks/useIssueActions";
 import { useIsDemoMode } from "./demo/DemoSimulationProvider";
 import { IssueItem } from "./issue-item";
 import { JiraImportModal } from "./jira-import-modal";
@@ -31,6 +32,7 @@ import { exportIssuesToCSV } from "@/utils/export-issues-csv";
 import { exportIssuesToJSON } from "@/utils/export-issues-json";
 import type { Id } from "@/convex/_generated/dataModel";
 import { type ResolvedDecision, RESOLVED_ALLOWED } from "@/convex/permissions";
+import { denialTooltip, permissionProps } from "@/hooks/usePermissions";
 
 interface IssuesPanelProps {
   roomId: Id<"rooms">;
@@ -50,11 +52,10 @@ export const IssuesPanel: FC<IssuesPanelProps> = ({
   canControlGameFlow: canControlGameFlowDecision = RESOLVED_ALLOWED,
 }) => {
   const isDemoMode = useIsDemoMode();
-  // Resolved decisions in; booleans for gating and a message for denial copy.
+  // Resolved decisions in; booleans for gating and decision copy for denials.
   const canManageIssues = canManageIssuesDecision.allowed;
-  const manageIssuesDenial = canManageIssuesDecision.allowed
-    ? undefined
-    : canManageIssuesDecision.message;
+  const canControlGameFlow = canControlGameFlowDecision.allowed;
+  const manageIssuesDenial = denialTooltip(canManageIssuesDecision);
   const { toast } = useToast();
 
   const [newIssueTitle, setNewIssueTitle] = useState("");
@@ -70,14 +71,19 @@ export const IssuesPanel: FC<IssuesPanelProps> = ({
     currentIssue,
     isQuickVoteMode,
     isLoading,
+    exportData,
+  } = useIssues({ roomId });
+  // Writes come from the action seam, which no-ops internally in demo mode
+  // (ADR-0003) — the remaining `isDemoMode` branches below are presentation only
+  // (hide/disable controls), never write guards.
+  const {
     createIssue,
     startVoting,
     switchToQuickVote,
     updateTitle,
     updateEstimate,
     deleteIssue,
-    exportData,
-  } = useIssues({ roomId });
+  } = useIssueActions({ roomId });
 
   const handleAddIssue = async () => {
     if (!newIssueTitle.trim()) return;
@@ -291,15 +297,17 @@ export const IssuesPanel: FC<IssuesPanelProps> = ({
           {/* Quick Vote Section - Always pinned to top of scroll */}
           <div className="p-6 pb-2 shrink-0">
             <button
-              onClick={isDemoMode ? undefined : handleSwitchToQuickVote}
+              onClick={canControlGameFlow ? handleSwitchToQuickVote : undefined}
               disabled={isDemoMode}
               className={cn(
                 "w-full flex items-center justify-between p-4 rounded-xl border bg-white dark:bg-surface-2 transition-all group shadow-sm",
                 isQuickVoteMode
                   ? "border-blue-200 ring-1 ring-blue-500/20 bg-blue-50/50 dark:bg-blue-900/10 dark:border-blue-900/50"
                   : "border-gray-200/50 dark:border-border hover:border-gray-300 dark:hover:border-gray-600 hover:shadow-md",
-                isDemoMode && "cursor-default opacity-70"
+                isDemoMode && "cursor-default opacity-70",
+                !canControlGameFlow && "cursor-not-allowed opacity-70"
               )}
+              {...permissionProps(canControlGameFlowDecision)}
             >
               <div className="flex items-center gap-3">
                 <div className={cn(

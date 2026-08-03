@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { getColorFromName, getInitial } from "@/lib/avatar-utils";
-import type { UserWithPresence } from "@/hooks/useRoomPresence";
+import { usePresenceRoster } from "./room-presence";
 
 // Format relative time for "last seen" display
 export function formatLastSeen(timestamp: number | null): string {
@@ -36,23 +36,17 @@ export function formatLastSeen(timestamp: number | null): string {
 }
 
 interface UserPresenceAvatarsProps {
-  users: UserWithPresence[];
   maxVisible?: number;
   size?: "sm" | "default";
 }
 
 export const UserPresenceAvatars: FC<UserPresenceAvatarsProps> = ({
-  users,
   maxVisible = 4,
   size = "sm",
 }) => {
-  // Sort users: online first, then by join time
-  const sortedUsers = [...users].sort((a, b) => {
-    if (a.isOnline !== b.isOnline) {
-      return a.isOnline ? -1 : 1;
-    }
-    return a.joinedAt - b.joinedAt;
-  });
+  // Roster + ordering come from the single presence module (online first,
+  // then by join time) — no per-consumer sorting here.
+  const sortedUsers = usePresenceRoster();
 
   const visibleUsers = sortedUsers.slice(0, maxVisible);
   const remainingCount = sortedUsers.length - maxVisible;

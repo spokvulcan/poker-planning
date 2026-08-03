@@ -1,6 +1,13 @@
 /**
  * Jira integration - actions and internal mutations for OAuth,
  * token management, issue import, and estimate push-back.
+ *
+ * Fetch orchestration (OAuth token exchange/refresh, Jira REST calls through
+ * JiraClient, webhook registration) lives here; the db-side invariants
+ * (connection upsert, mapping writes, webhook event dedup/apply) live in
+ * model/integrations.ts and the handlers below delegate to it. The
+ * token-field contract (key validation, encrypt-on-write, decrypt-on-read,
+ * expiry rule) lives in model/tokenVault.ts.
  */
 
 import {
@@ -11,34 +18,14 @@ import {
 } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { v } from "convex/values";
-import { Doc } from "../_generated/dataModel";
+import { Doc, Id } from "../_generated/dataModel";
 import { ActionCtx } from "../_generated/server";
-import { encryptToken, decryptToken } from "../lib/encryption";
-import {
-  Action,
-  resolve,
-  getEffectivePermissions,
-  getEffectiveRole,
-} from "../permissions";
-import { isRoomOwnerAbsent } from "../model/permissions";
+import { requireAuth, requireCanForUser } from "../model/auth";
 import { JiraClient } from "./jiraClient";
-import { validateIssueTitle } from "../model/issues";
+import { createIssueInRoom } from "../model/issues";
+import * as Integrations from "../model/integrations";
+import * as TokenVault from "../model/tokenVault";
 import { MAX_ISSUES_PER_ROOM } from "../constants";
-
-function getTokenEncryptionKey(): string {
-  const key = process.env.TOKEN_ENCRYPTION_KEY;
-  if (!key) {
-    throw new Error(
-      "Missing TOKEN_ENCRYPTION_KEY environment variable. Set a 32-byte hex key."
-    );
-  }
-  if (!/^[0-9a-fA-F]{64}$/.test(key)) {
-    throw new Error(
-      "Invalid TOKEN_ENCRYPTION_KEY. Expected 64 hex characters (32 bytes)."
-    );
-  }
-  return key;
-}
 
 // ---------------------------------------------------------------------------
 // Token helpers (used within actions)
@@ -48,16 +35,9 @@ export async function getValidAccessToken(
   ctx: ActionCtx,
   connection: Doc<"integrationConnections">
 ): Promise<string> {
-  const encKey = getTokenEncryptionKey();
-
   // If token is valid for >1 minute, decrypt and return
-  if (connection.expiresAt > Date.now() + 60_000) {
-    return decryptToken(
-      connection.encryptedAccessToken,
-      connection.accessTokenIv,
-      connection.accessTokenAuthTag,
-      encKey
-    );
+  if (TokenVault.isAccessTokenFresh(connection.expiresAt)) {
+    return TokenVault.decryptAccessToken(connection);
   }
 
   // Token expired or about to expire — refresh
@@ -68,22 +48,7 @@ export async function refreshJiraToken(
   ctx: ActionCtx,
   connection: Doc<"integrationConnections">
 ): Promise<string> {
-  const encKey = getTokenEncryptionKey();
-
-  if (
-    !connection.encryptedRefreshToken ||
-    !connection.refreshTokenIv ||
-    !connection.refreshTokenAuthTag
-  ) {
-    throw new Error("No refresh token available for this connection");
-  }
-
-  const refreshToken = await decryptToken(
-    connection.encryptedRefreshToken,
-    connection.refreshTokenIv,
-    connection.refreshTokenAuthTag,
-    encKey
-  );
+  const refreshToken = await TokenVault.decryptRefreshToken(connection);
 
   const response = await fetch("https://auth.atlassian.com/oauth/token", {
     method: "POST",
@@ -104,17 +69,14 @@ export async function refreshJiraToken(
   const tokens = await response.json();
 
   // Atlassian uses rotating refresh tokens — encrypt both new tokens
-  const encAccess = await encryptToken(tokens.access_token, encKey);
-  const encRefresh = await encryptToken(tokens.refresh_token, encKey);
+  const enc = await TokenVault.encryptTokens({
+    accessToken: tokens.access_token,
+    refreshToken: tokens.refresh_token,
+  });
 
   await ctx.runMutation(internal.integrations.jira.updateTokens, {
     connectionId: connection._id,
-    encryptedAccessToken: encAccess.ciphertext,
-    accessTokenIv: encAccess.iv,
-    accessTokenAuthTag: encAccess.authTag,
-    encryptedRefreshToken: encRefresh.ciphertext,
-    refreshTokenIv: encRefresh.iv,
-    refreshTokenAuthTag: encRefresh.authTag,
+    ...enc,
     expiresAt: Date.now() + tokens.expires_in * 1000,
   });
 
@@ -154,53 +116,7 @@ export const saveConnection = internalMutation({
     scopes: v.array(v.string()),
   },
   handler: async (ctx, args) => {
-    // Check for existing connection
-    const existing = await ctx.db
-      .query("integrationConnections")
-      .withIndex("by_user_provider", (q) =>
-        q.eq("userId", args.userId).eq("provider", args.provider)
-      )
-      .first();
-
-    const now = Date.now();
-
-    if (existing) {
-      await ctx.db.patch(existing._id, {
-        encryptedAccessToken: args.encryptedAccessToken,
-        accessTokenIv: args.accessTokenIv,
-        accessTokenAuthTag: args.accessTokenAuthTag,
-        encryptedRefreshToken: args.encryptedRefreshToken,
-        refreshTokenIv: args.refreshTokenIv,
-        refreshTokenAuthTag: args.refreshTokenAuthTag,
-        expiresAt: args.expiresAt,
-        cloudId: args.cloudId,
-        siteUrl: args.siteUrl,
-        providerUserId: args.providerUserId,
-        providerUserEmail: args.providerUserEmail,
-        scopes: args.scopes,
-        lastRefreshedAt: now,
-      });
-      return existing._id;
-    }
-
-    return await ctx.db.insert("integrationConnections", {
-      userId: args.userId,
-      provider: args.provider,
-      encryptedAccessToken: args.encryptedAccessToken,
-      accessTokenIv: args.accessTokenIv,
-      accessTokenAuthTag: args.accessTokenAuthTag,
-      encryptedRefreshToken: args.encryptedRefreshToken,
-      refreshTokenIv: args.refreshTokenIv,
-      refreshTokenAuthTag: args.refreshTokenAuthTag,
-      expiresAt: args.expiresAt,
-      cloudId: args.cloudId,
-      siteUrl: args.siteUrl,
-      providerUserId: args.providerUserId,
-      providerUserEmail: args.providerUserEmail,
-      scopes: args.scopes,
-      connectedAt: now,
-      lastRefreshedAt: now,
-    });
+    return await Integrations.saveConnection(ctx, args);
   },
 });
 
@@ -216,16 +132,7 @@ export const updateTokens = internalMutation({
     expiresAt: v.number(),
   },
   handler: async (ctx, args) => {
-    await ctx.db.patch(args.connectionId, {
-      encryptedAccessToken: args.encryptedAccessToken,
-      accessTokenIv: args.accessTokenIv,
-      accessTokenAuthTag: args.accessTokenAuthTag,
-      encryptedRefreshToken: args.encryptedRefreshToken,
-      refreshTokenIv: args.refreshTokenIv,
-      refreshTokenAuthTag: args.refreshTokenAuthTag,
-      expiresAt: args.expiresAt,
-      lastRefreshedAt: Date.now(),
-    });
+    await Integrations.updateConnectionTokens(ctx, args);
   },
 });
 
@@ -252,6 +159,8 @@ export const createIssueWithLink = internalMutation({
       .withIndex("by_room", (q) => q.eq("roomId", args.roomId))
       .collect();
 
+    // Cap check stays ahead of dedup so a full room errors even when this key
+    // was already imported; createIssueInRoom re-enforces it on creation.
     if (roomIssues.length >= MAX_ISSUES_PER_ROOM) {
       throw new Error(`Rooms are limited to ${MAX_ISSUES_PER_ROOM} issues`);
     }
@@ -270,30 +179,9 @@ export const createIssueWithLink = internalMutation({
       }
     }
 
-    // Create issue (follows Issues.createIssue pattern)
-    const room = await ctx.db.get(args.roomId);
-    if (!room) throw new Error("Room not found");
-
-    const currentNumber = room.nextIssueNumber ?? 1;
-    await ctx.db.patch(args.roomId, { nextIssueNumber: currentNumber + 1 });
-
-    // Find current max order
-    const existingIssues = await ctx.db
-      .query("issues")
-      .withIndex("by_room_order", (q) => q.eq("roomId", args.roomId))
-      .collect();
-    const maxOrder =
-      existingIssues.length > 0
-        ? Math.max(...existingIssues.map((i) => i.order))
-        : 0;
-
-    const issueId = await ctx.db.insert("issues", {
+    const issueId = await createIssueInRoom(ctx, {
       roomId: args.roomId,
-      sequentialId: currentNumber,
-      title: validateIssueTitle(args.title),
-      status: "pending",
-      createdAt: Date.now(),
-      order: maxOrder + 1,
+      title: args.title,
     });
 
     // Create bidirectional link
@@ -315,10 +203,19 @@ export const setMappingWebhook = internalMutation({
     jiraWebhookId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    await ctx.db.patch(args.mappingId, {
-      jiraWebhookId: args.jiraWebhookId,
-      jiraWebhookRegisteredAt: args.jiraWebhookId ? Date.now() : undefined,
-    });
+    await Integrations.setMappingWebhook(
+      ctx,
+      args.mappingId,
+      args.jiraWebhookId
+    );
+  },
+});
+
+/** Scheduled tail of the disconnect cascade — see model/integrations.ts. */
+export const deleteConnection = internalMutation({
+  args: { connectionId: v.id("integrationConnections") },
+  handler: async (ctx, args) => {
+    await Integrations.deleteConnection(ctx, args.connectionId);
   },
 });
 
@@ -401,20 +298,15 @@ export const storeConnection = internalAction({
     providerUserEmail: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const encKey = getTokenEncryptionKey();
-
-    const encAccess = await encryptToken(args.accessToken, encKey);
-    const encRefresh = await encryptToken(args.refreshToken, encKey);
+    const enc = await TokenVault.encryptTokens({
+      accessToken: args.accessToken,
+      refreshToken: args.refreshToken,
+    });
 
     await ctx.runMutation(internal.integrations.jira.saveConnection, {
       userId: args.userId,
       provider: "jira",
-      encryptedAccessToken: encAccess.ciphertext,
-      accessTokenIv: encAccess.iv,
-      accessTokenAuthTag: encAccess.authTag,
-      encryptedRefreshToken: encRefresh.ciphertext,
-      refreshTokenIv: encRefresh.iv,
-      refreshTokenAuthTag: encRefresh.authTag,
+      ...enc,
       expiresAt: Date.now() + args.expiresIn * 1000,
       cloudId: args.cloudId,
       siteUrl: args.siteUrl,
@@ -468,8 +360,7 @@ export const connectJira = action({
     providerUserEmail: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Not authenticated");
+    const user = await requireActionUser(ctx);
 
     // The siteUrl is stored and later concatenated into issue browse links
     // rendered as anchor hrefs. This action is public, so a client could
@@ -486,13 +377,6 @@ export const connectJira = action({
     ) {
       throw new Error("Jira site URL must be an https://*.atlassian.net URL");
     }
-
-    // Resolve user from auth identity
-    const user: Doc<"users"> | null = await ctx.runQuery(
-      internal.integrations.jira.getUserByAuthId,
-      { authUserId: identity.subject }
-    );
-    if (!user) throw new Error("User not found");
 
     // Delegate to internal action that handles encryption + storage
     await ctx.runAction(internal.integrations.jira.storeConnection, {
@@ -512,10 +396,8 @@ export const connectJira = action({
 export const getJiraProjects = action({
   args: {},
   handler: async (ctx) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Not authenticated");
-
-    const connection = await getConnectionFromIdentity(ctx, identity.subject);
+    const user = await requireActionUser(ctx);
+    const connection = await getConnectionForUserId(ctx, user._id);
     const client = await buildJiraClient(ctx, connection);
     return await client.getProjects();
   },
@@ -524,10 +406,8 @@ export const getJiraProjects = action({
 export const getJiraBoards = action({
   args: { projectKey: v.string() },
   handler: async (ctx, { projectKey }) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Not authenticated");
-
-    const connection = await getConnectionFromIdentity(ctx, identity.subject);
+    const user = await requireActionUser(ctx);
+    const connection = await getConnectionForUserId(ctx, user._id);
     const client = await buildJiraClient(ctx, connection);
     return await client.getBoards(projectKey);
   },
@@ -536,10 +416,8 @@ export const getJiraBoards = action({
 export const getJiraSprints = action({
   args: { boardId: v.number() },
   handler: async (ctx, { boardId }) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Not authenticated");
-
-    const connection = await getConnectionFromIdentity(ctx, identity.subject);
+    const user = await requireActionUser(ctx);
+    const connection = await getConnectionForUserId(ctx, user._id);
     const client = await buildJiraClient(ctx, connection);
     return await client.getSprints(boardId);
   },
@@ -551,10 +429,8 @@ export const getJiraIssues = action({
     sprintId: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Not authenticated");
-
-    const connection = await getConnectionFromIdentity(ctx, identity.subject);
+    const user = await requireActionUser(ctx);
+    const connection = await getConnectionForUserId(ctx, user._id);
     const client = await buildJiraClient(ctx, connection);
 
     if (args.sprintId) {
@@ -570,16 +446,15 @@ export const importIssues = action({
     jiraIssueKeys: v.array(v.string()),
   },
   handler: async (ctx, { roomId, jiraIssueKeys }) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Not authenticated");
+    const user = await requireActionUser(ctx);
 
     // Verify the caller is a member of the room with issue management permission
-    await ctx.runQuery(internal.integrations.jira.verifyRoomAccess, {
-      authUserId: identity.subject,
+    await ctx.runQuery(internal.integrations.jira.verifyCanManageIssues, {
+      userId: user._id,
       roomId,
     });
 
-    const connection = await getConnectionFromIdentity(ctx, identity.subject);
+    const connection = await getConnectionForUserId(ctx, user._id);
     const client = await buildJiraClient(ctx, connection);
     const siteUrl = connection.siteUrl ?? "";
 
@@ -683,10 +558,8 @@ export const pushEstimateToJira = internalAction({
 export const detectStoryPointsField = action({
   args: {},
   handler: async (ctx) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Not authenticated");
-
-    const connection = await getConnectionFromIdentity(ctx, identity.subject);
+    const user = await requireActionUser(ctx);
+    const connection = await getConnectionForUserId(ctx, user._id);
     const client = await buildJiraClient(ctx, connection);
     return await client.findStoryPointsField();
   },
@@ -704,60 +577,126 @@ export const processJiraWebhook = internalMutation({
     issueSummary: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    // Atomic dedup: check + insert in the same mutation (no race window)
-    const existing = await ctx.db
-      .query("webhookEvents")
-      .withIndex("by_event_key", (q) => q.eq("eventKey", args.eventKey))
-      .first();
-    if (existing) return; // Already processed
-
-    await ctx.db.insert("webhookEvents", {
-      eventKey: args.eventKey,
-      provider: "jira",
-      processedAt: Date.now(),
-    });
-
-    // Find linked issue
-    const link = await ctx.db
-      .query("issueLinks")
-      .withIndex("by_external", (q) =>
-        q.eq("provider", "jira").eq("externalId", args.issueKey)
-      )
-      .first();
-
-    if (!link) return; // Not a tracked issue
-
-    if (args.eventType === "jira:issue_updated" && args.issueSummary) {
-      // Update issue title
-      const issue = await ctx.db.get(link.issueId);
-      if (issue) {
-        await ctx.db.patch(link.issueId, {
-          title: `${args.issueKey} - ${args.issueSummary}`,
-        });
-      }
-      await ctx.db.patch(link._id, { lastSyncedAt: Date.now() });
-    }
-
-    if (args.eventType === "jira:issue_deleted") {
-      // Remove the link (keep the AgileKit issue)
-      await ctx.db.delete(link._id);
-    }
+    await Integrations.processJiraWebhookEvent(ctx, args);
   },
 });
 
 export const cleanupOldWebhookEvents = internalMutation({
   args: {},
   handler: async (ctx) => {
-    const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
-    const oldEvents = await ctx.db
-      .query("webhookEvents")
-      .withIndex("by_processed", (q) => q.lt("processedAt", sevenDaysAgo))
-      .collect();
+    await Integrations.cleanupOldWebhookEvents(ctx);
+  },
+});
 
-    await Promise.all(oldEvents.map((e) => ctx.db.delete(e._id)));
-    if (oldEvents.length > 0) {
-      console.log(`Cleaned up ${oldEvents.length} old webhook events`);
+/**
+ * Best-effort remote deregistration of one Jira webhook. The model schedules
+ * this whenever a mapping or connection is torn down, so the remote webhook
+ * is deleted instead of being orphaned until its 30-day expiry. A failure is
+ * retried once after a delay (the connection row still exists at that point,
+ * so the retry can authenticate); a webhook that survives the retry is left
+ * to expire — logged here so the leak is tracked rather than silent.
+ */
+export const deregisterWebhook = internalAction({
+  args: {
+    connectionId: v.id("integrationConnections"),
+    jiraWebhookId: v.string(),
+    attemptsLeft: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const connection = await ctx.runQuery(
+      internal.integrations.jira.getConnectionById,
+      { connectionId: args.connectionId }
+    );
+    if (!connection) {
+      console.warn(
+        `Jira connection ${args.connectionId} already removed; webhook ${args.jiraWebhookId} left to expire remotely`
+      );
+      return;
     }
+
+    try {
+      const client = await buildJiraClient(ctx, connection);
+      await client.deleteWebhooks([args.jiraWebhookId]);
+      console.log(`Deregistered Jira webhook ${args.jiraWebhookId}`);
+    } catch (error) {
+      const attemptsLeft = args.attemptsLeft ?? 1;
+      if (attemptsLeft > 0) {
+        console.warn(
+          `Failed to deregister Jira webhook ${args.jiraWebhookId}; retrying in 5 minutes:`,
+          error
+        );
+        await ctx.scheduler.runAfter(
+          5 * 60 * 1000,
+          internal.integrations.jira.deregisterWebhook,
+          {
+            connectionId: args.connectionId,
+            jiraWebhookId: args.jiraWebhookId,
+            attemptsLeft: attemptsLeft - 1,
+          }
+        );
+        return;
+      }
+      console.warn(
+        `Failed to deregister Jira webhook ${args.jiraWebhookId} (no retries left); left to expire remotely:`,
+        error
+      );
+    }
+  },
+});
+
+/**
+ * The disconnect tail: deregisters every live webhook of a torn-down
+ * connection, then deletes the connection row. Scheduling deregistrations and
+ * the row deletion as independent same-tick jobs would race (the deletion
+ * could win, leaving the deregistrations unable to authenticate), so the
+ * ordering is enforced here by the action's own awaits. Deregistration is
+ * best-effort: a webhook that cannot be deleted remotely is logged and left
+ * to its 30-day expiry rather than blocking the disconnect.
+ */
+export const finalizeDisconnect = internalAction({
+  args: {
+    connectionId: v.id("integrationConnections"),
+    jiraWebhookIds: v.array(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const connection = await ctx.runQuery(
+      internal.integrations.jira.getConnectionById,
+      { connectionId: args.connectionId }
+    );
+
+    if (!connection) {
+      console.warn(
+        `Jira connection ${args.connectionId} already removed; ${args.jiraWebhookIds.length} webhook(s) left to expire remotely`
+      );
+    } else {
+      let client: JiraClient | null = null;
+      try {
+        client = await buildJiraClient(ctx, connection);
+      } catch (error) {
+        console.warn(
+          `Could not build a Jira client for connection ${args.connectionId}; ${args.jiraWebhookIds.length} webhook(s) left to expire remotely:`,
+          error
+        );
+      }
+      if (client) {
+        for (const jiraWebhookId of args.jiraWebhookIds) {
+          try {
+            await client.deleteWebhooks([jiraWebhookId]);
+            console.log(`Deregistered Jira webhook ${jiraWebhookId}`);
+          } catch (error) {
+            console.warn(
+              `Failed to deregister Jira webhook ${jiraWebhookId} during disconnect; left to expire remotely:`,
+              error
+            );
+          }
+        }
+      }
+    }
+
+    // The row goes only now — after every deregistration has had its turn.
+    await ctx.runMutation(internal.integrations.jira.deleteConnection, {
+      connectionId: args.connectionId,
+    });
   },
 });
 
@@ -863,20 +802,28 @@ export const getAllJiraMappings = internalQuery({
 // Helpers
 // ---------------------------------------------------------------------------
 
-async function getConnectionFromIdentity(
-  ctx: ActionCtx,
-  authSubject: string
-): Promise<Doc<"integrationConnections">> {
-  // Resolve user from auth identity
+/**
+ * ActionCtx-compatible identity→user resolution: actions have no db access,
+ * so the lookup goes through the internal query. Throws the same messages as
+ * requireAuthUser ("Not authenticated" / "User not found").
+ */
+async function requireActionUser(ctx: ActionCtx): Promise<Doc<"users">> {
+  const identity = await requireAuth(ctx);
   const user: Doc<"users"> | null = await ctx.runQuery(
     internal.integrations.jira.getUserByAuthId,
-    { authUserId: authSubject }
+    { authUserId: identity.subject }
   );
   if (!user) throw new Error("User not found");
+  return user;
+}
 
+async function getConnectionForUserId(
+  ctx: ActionCtx,
+  userId: Id<"users">
+): Promise<Doc<"integrationConnections">> {
   const connection: Doc<"integrationConnections"> | null = await ctx.runQuery(
     internal.integrations.jira.getConnectionForUser,
-    { userId: user._id, provider: "jira" }
+    { userId, provider: "jira" }
   );
   if (!connection) throw new Error("No Jira connection found. Please connect Jira first.");
 
@@ -893,47 +840,26 @@ export const getUserByAuthId = internalQuery({
   },
 });
 
-/** Verifies that the user is a room member with issueManagement permission. */
-export const verifyRoomAccess = internalQuery({
+/**
+ * Verifies that the user may manage issues in the room. The calling action
+ * resolves the user from its own auth identity (actions have no db access)
+ * and passes it through; this internal query routes the check through the
+ * permission guard's explicit-user entry point, so the decision and the
+ * thrown messages are the guard's own.
+ */
+export const verifyCanManageIssues = internalQuery({
   args: {
-    authUserId: v.string(),
+    userId: v.id("users"),
     roomId: v.id("rooms"),
   },
   handler: async (ctx, args) => {
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_auth_user", (q) => q.eq("authUserId", args.authUserId))
-      .first();
+    const user = await ctx.db.get(args.userId);
     if (!user) throw new Error("User not found");
 
-    const membership = await ctx.db
-      .query("roomMemberships")
-      .withIndex("by_room_user", (q) =>
-        q.eq("roomId", args.roomId).eq("userId", user._id)
-      )
-      .first();
-    if (!membership) throw new Error("Not a member of this room");
-
-    const room = await ctx.db.get(args.roomId);
-    if (!room) throw new Error("Room not found");
-
-    // This internal query authenticates via an explicit authUserId rather than
-    // ctx.auth, so it can't use requireCan; it reaches the permission decision
-    // directly with the room and membership already in hand.
-    const permissions = getEffectivePermissions(room);
-    const action: Action = {
+    await requireCanForUser(ctx, user, args.roomId, {
       kind: "category",
       category: "issueManagement",
-      level: permissions.issueManagement,
-    };
-    const decision = resolve(action, {
-      actorRole: getEffectiveRole(membership),
-      permissions,
-      ownerAbsent: await isRoomOwnerAbsent(ctx, room),
     });
-    if (!decision.allowed) {
-      throw new Error(decision.message);
-    }
 
     return { userId: user._id };
   },

@@ -1,4 +1,4 @@
-import { QueryCtx, MutationCtx } from "../_generated/server";
+import { QueryCtx, MutationCtx, ActionCtx } from "../_generated/server";
 import { Id, Doc } from "../_generated/dataModel";
 import {
   PermissionCategory,
@@ -22,9 +22,11 @@ interface AuthIdentity {
 /**
  * Requires authentication. Throws if the user is not authenticated.
  * Returns the auth identity (identity.subject = authUserId).
+ * Works in any function context — it only reads ctx.auth, which actions
+ * have too.
  */
 export async function requireAuth(
-  ctx: QueryCtx | MutationCtx
+  ctx: QueryCtx | MutationCtx | ActionCtx
 ): Promise<AuthIdentity> {
   const identity = await ctx.auth.getUserIdentity();
   if (!identity) {
@@ -92,6 +94,31 @@ export async function requireRoomMember(
 }
 
 /**
+ * Requires authentication and room membership, and verifies the authenticated
+ * user IS `userId` — handlers that accept a userId argument must not let one
+ * member act as another. Returns the verified identity, user, and membership.
+ *
+ * `message` preserves each handler's existing denial copy; it is thrown only
+ * on the acting-user mismatch (membership failures throw from requireRoomMember).
+ */
+export async function requireActingUser(
+  ctx: QueryCtx | MutationCtx,
+  roomId: Id<"rooms">,
+  userId: Id<"users">,
+  message = "Cannot act as another user"
+): Promise<{
+  identity: AuthIdentity;
+  user: Doc<"users">;
+  membership: Doc<"roomMemberships">;
+}> {
+  const { identity, user, membership } = await requireRoomMember(ctx, roomId);
+  if (user._id !== userId) {
+    throw new Error(message);
+  }
+  return { identity, user, membership };
+}
+
+/**
  * What an authorization guard is being asked to permit. The caller names the
  * category or relationship verb; it cannot know the target's role, so the
  * guard fills targetRole itself for target-constrained verbs.
@@ -104,11 +131,22 @@ export type RequireCanSpec =
     };
 
 /**
+ * The loaded bundle the guard returns: everything its IO assembly fetched
+ * while assembling the Action. `requireCan` adds the identity it
+ * authenticated with; the explicit-user entry point has none to add.
+ */
+export type GuardBundle = {
+  user: Doc<"users">;
+  membership: Doc<"roomMemberships">;
+  room: Doc<"rooms">;
+  target?: Doc<"roomMemberships">;
+};
+
+/**
  * The permission guard: the single authorization entry point for room
- * mutations. Does the IO — loads the room and memberships, computes owner
- * absence, fetches the target for target-constrained verbs — assembles the
- * precise Action, calls evaluate, and throws a reason-derived message on
- * denial. Returns the loaded bundle so callers stop re-fetching.
+ * mutations, authenticating via ctx.auth. Funnels into the shared assembly
+ * (guardRoomAction) and returns the loaded bundle plus the identity, so
+ * callers stop re-fetching.
  *
  * Identity rules (self-transfer, authoritative ownerId) are NOT enforced here;
  * they stay in the calling handler, after the guard.
@@ -118,14 +156,60 @@ export async function requireCan(
   roomId: Id<"rooms">,
   spec: RequireCanSpec,
   targetUserId?: Id<"users">
-): Promise<{
-  identity: AuthIdentity;
-  user: Doc<"users">;
-  membership: Doc<"roomMemberships">;
-  room: Doc<"rooms">;
-  target?: Doc<"roomMemberships">;
-}> {
+): Promise<GuardBundle & { identity: AuthIdentity }> {
   const { identity, user, membership } = await requireRoomMember(ctx, roomId);
+  const bundle = await guardRoomAction(
+    ctx,
+    user,
+    membership,
+    roomId,
+    spec,
+    targetUserId
+  );
+  return { identity, ...bundle };
+}
+
+/**
+ * The explicit-user entry point to the same permission guard, for callers
+ * that resolved the user outside ctx.auth (e.g. an action that authenticated
+ * via an explicit authUserId and called in through an internal query).
+ * Resolves the actor's membership, then funnels into the same shared assembly
+ * as requireCan — same Action, same decision, same thrown messages.
+ */
+export async function requireCanForUser(
+  ctx: QueryCtx | MutationCtx,
+  user: Doc<"users">,
+  roomId: Id<"rooms">,
+  spec: RequireCanSpec,
+  targetUserId?: Id<"users">
+): Promise<GuardBundle> {
+  const membership = await ctx.db
+    .query("roomMemberships")
+    .withIndex("by_room_user", (q) =>
+      q.eq("roomId", roomId).eq("userId", user._id)
+    )
+    .first();
+  if (!membership) {
+    throw new Error("Not a member of this room");
+  }
+  return guardRoomAction(ctx, user, membership, roomId, spec, targetUserId);
+}
+
+/**
+ * The guard's shared IO assembly, given the actor's user and membership from
+ * either authentication mode. Loads the room, assembles the precise Action,
+ * fetches the target for target-constrained verbs, reads owner absence only
+ * when an owner-level outcome could depend on it, calls resolve, and throws
+ * the resolved decision's message on denial. Returns the loaded bundle.
+ */
+async function guardRoomAction(
+  ctx: QueryCtx | MutationCtx,
+  user: Doc<"users">,
+  membership: Doc<"roomMemberships">,
+  roomId: Id<"rooms">,
+  spec: RequireCanSpec,
+  targetUserId?: Id<"users">
+): Promise<GuardBundle> {
   const room = await ctx.db.get(roomId);
   if (!room) {
     throw new Error("Room not found");
@@ -188,5 +272,5 @@ export async function requireCan(
     throw new Error(decision.message);
   }
 
-  return { identity, user, membership, room, target };
+  return { user, membership, room, target };
 }

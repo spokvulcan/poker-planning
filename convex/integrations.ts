@@ -1,11 +1,11 @@
 /**
  * Public API layer for integration connections and mappings.
- * Thin handlers with auth guards — delegates to model/DB.
+ * Thin handlers with auth guards — delegates to model/integrations.
  */
 
 import { mutation, query } from "./_generated/server";
-import { internal } from "./_generated/api";
 import { v } from "convex/values";
+import * as Integrations from "./model/integrations";
 import { requireAuthUser, requireRoomMember, requireCan } from "./model/auth";
 
 // ---------------------------------------------------------------------------
@@ -21,15 +21,8 @@ export const getConnections = query({
       .withIndex("by_user_provider", (q) => q.eq("userId", user._id))
       .collect();
 
-    // Return sanitized — never expose encrypted tokens
-    return connections.map((c) => ({
-      _id: c._id,
-      provider: c.provider,
-      siteUrl: c.siteUrl,
-      providerUserEmail: c.providerUserEmail,
-      connectedAt: c.connectedAt,
-      scopes: c.scopes,
-    }));
+    // Sanitized projection — never expose encrypted tokens
+    return connections.map(Integrations.toConnectionView);
   },
 });
 
@@ -42,16 +35,7 @@ export const disconnect = mutation({
       throw new Error("Connection not found");
     }
 
-    // Cascade delete all mappings using this connection
-    const mappings = await ctx.db
-      .query("integrationMappings")
-      .withIndex("by_connection", (q) =>
-        q.eq("connectionId", args.connectionId)
-      )
-      .collect();
-    await Promise.all(mappings.map((m) => ctx.db.delete(m._id)));
-
-    await ctx.db.delete(args.connectionId);
+    await Integrations.disconnectConnection(ctx, args.connectionId);
   },
 });
 
@@ -138,63 +122,7 @@ export const saveRoomMapping = mutation({
       throw new Error("Connection not found");
     }
 
-    // Upsert: check for existing mapping
-    const existing = await ctx.db
-      .query("integrationMappings")
-      .withIndex("by_room", (q) => q.eq("roomId", args.roomId))
-      .first();
-
-    if (existing) {
-      await ctx.db.patch(existing._id, {
-        connectionId: args.connectionId,
-        provider: args.provider,
-        jiraProjectKey: args.jiraProjectKey,
-        jiraBoardId: args.jiraBoardId,
-        jiraSprintId: args.jiraSprintId,
-        storyPointsFieldId: args.storyPointsFieldId,
-        autoImport: args.autoImport,
-        autoPushEstimates: args.autoPushEstimates,
-      });
-
-      // Schedule webhook registration if auto-push enabled
-      if (args.autoPushEstimates && args.jiraProjectKey) {
-        await ctx.scheduler.runAfter(
-          0,
-          internal.integrations.jira.registerWebhook,
-          {
-            mappingId: existing._id,
-          }
-        );
-      }
-
-      return existing._id;
-    }
-
-    const mappingId = await ctx.db.insert("integrationMappings", {
-      roomId: args.roomId,
-      connectionId: args.connectionId,
-      provider: args.provider,
-      jiraProjectKey: args.jiraProjectKey,
-      jiraBoardId: args.jiraBoardId,
-      jiraSprintId: args.jiraSprintId,
-      storyPointsFieldId: args.storyPointsFieldId,
-      autoImport: args.autoImport,
-      autoPushEstimates: args.autoPushEstimates,
-      createdAt: Date.now(),
-    });
-
-    // Schedule webhook registration if auto-push enabled
-    if (args.autoPushEstimates && args.jiraProjectKey) {
-      await ctx.scheduler.runAfter(
-        0,
-        internal.integrations.jira.registerWebhook,
-        {
-          mappingId,
-        }
-      );
-    }
-
-    return mappingId;
+    return await Integrations.saveRoomMapping(ctx, args);
   },
 });
 
@@ -203,13 +131,6 @@ export const removeRoomMapping = mutation({
   handler: async (ctx, args) => {
     await requireCan(ctx, args.roomId, { kind: "category", category: "roomSettings" });
 
-    const mapping = await ctx.db
-      .query("integrationMappings")
-      .withIndex("by_room", (q) => q.eq("roomId", args.roomId))
-      .first();
-
-    if (mapping) {
-      await ctx.db.delete(mapping._id);
-    }
+    await Integrations.removeRoomMapping(ctx, args.roomId);
   },
 });

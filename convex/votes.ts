@@ -1,7 +1,7 @@
 import { mutation } from "./_generated/server";
 import { v } from "convex/values";
 import * as VotingRound from "./model/votingRound";
-import { requireRoomMember } from "./model/auth";
+import { requireActingUser } from "./model/auth";
 
 export const pickCard = mutation({
   args: {
@@ -14,10 +14,7 @@ export const pickCard = mutation({
     cardIcon: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const { user } = await requireRoomMember(ctx, args.roomId);
-    if (user._id !== args.userId) {
-      throw new Error("Cannot vote as another user");
-    }
+    await requireActingUser(ctx, args.roomId, args.userId, "Cannot vote as another user");
     await VotingRound.castVote(ctx, args);
   },
 });
@@ -28,10 +25,7 @@ export const removeCard = mutation({
     userId: v.id("users"),
   },
   handler: async (ctx, args) => {
-    const { user } = await requireRoomMember(ctx, args.roomId);
-    if (user._id !== args.userId) {
-      throw new Error("Cannot remove another user's vote");
-    }
+    await requireActingUser(ctx, args.roomId, args.userId, "Cannot remove another user's vote");
     await VotingRound.retractVote(ctx, args);
   },
 });

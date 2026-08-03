@@ -4,6 +4,7 @@ import type { SanitizedVote } from "@/convex/model/rooms";
 import type { RoomUserData } from "@/convex/model/users";
 import type { MemberRole, ResolvedDecision } from "@/convex/permissions";
 import type { Phase } from "@/convex/phase";
+import type { TimerState } from "@/convex/timerState";
 
 // Demo mode constants
 export const DEMO_VIEWER_ID = "demo-viewer" as const;
@@ -55,21 +56,13 @@ export type SessionNodeData = {
   onOpenIssuesPanel?: () => void;
 };
 
-export type TimerNodeData = {
-  // Synchronized timer state fields
-  startedAt: number | null; // Server timestamp when started
-  pausedAt: number | null; // Server timestamp when paused
-  elapsedSeconds: number; // Total elapsed seconds
-  isRunning: boolean; // Current running state (derived from timestamps)
-  
-  // Tracking fields
-  lastUpdatedBy: Id<"users"> | null; // User who last changed timer
-  lastAction: "start" | "pause" | "reset" | null; // Last action performed
-  
-  // Required fields for timer synchronization
-  roomId: Id<"rooms">; // Room ID for timer sync
+// Persisted fields come from the single declaration in @/convex/timerState;
+// this adds only the view-side extras the node needs to render and control.
+export type TimerNodeData = TimerState & {
+  isRunning: boolean; // required in the view — buildTimerNode defaults the persisted optional
+  roomId: Id<"rooms">; // Room ID for timer controls
   userId?: Id<"users">; // Current user ID for timer controls
-  nodeId: string; // Node ID for timer sync
+  nodeId: string; // Node ID for timer controls
 };
 
 export type VotingCardNodeData = {

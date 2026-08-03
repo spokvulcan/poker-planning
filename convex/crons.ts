@@ -31,4 +31,12 @@ crons.daily(
   internal.integrations.jira.cleanupOldWebhookEvents
 );
 
+// Sweep orphaned rows (rows whose room/issue is gone) — the safety net under
+// the room cascade
+crons.daily(
+  "cleanup-orphaned-data",
+  { hourUTC: 5, minuteUTC: 0 },
+  internal.maintenance.cleanupOrphanedData
+);
+
 export default crons;
