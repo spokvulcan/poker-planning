@@ -118,6 +118,21 @@ describe("encrypt/decrypt round-trip", () => {
       TokenVault.decryptAccessToken(tamperedTag, TEST_KEY)
     ).rejects.toThrow();
   });
+
+  it("rejects empty tokens up front instead of producing empty ciphertext", async () => {
+    // AES-GCM ciphertext length equals plaintext length, so an empty token
+    // would round-trip to "" and then fail the write-side tripwire as
+    // "possible plaintext" — the vault names the real problem instead.
+    await expect(
+      TokenVault.encryptTokens({ accessToken: "" }, TEST_KEY)
+    ).rejects.toThrow("Cannot encrypt an empty access token");
+    await expect(
+      TokenVault.encryptTokens(
+        { accessToken: PLAINTEXT_ACCESS, refreshToken: "" },
+        TEST_KEY
+      )
+    ).rejects.toThrow("Cannot encrypt an empty refresh token");
+  });
 });
 
 describe("isAccessTokenFresh", () => {

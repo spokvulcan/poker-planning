@@ -36,6 +36,7 @@ import type * as model_roles from "../model/roles.js";
 import type * as model_roomAggregate from "../model/roomAggregate.js";
 import type * as model_rooms from "../model/rooms.js";
 import type * as model_timer from "../model/timer.js";
+import type * as model_tokenVault from "../model/tokenVault.js";
 import type * as model_users from "../model/users.js";
 import type * as model_votes from "../model/votes.js";
 import type * as model_votingRound from "../model/votingRound.js";
@@ -87,6 +88,7 @@ declare const fullApi: ApiFromModules<{
   "model/roomAggregate": typeof model_roomAggregate;
   "model/rooms": typeof model_rooms;
   "model/timer": typeof model_timer;
+  "model/tokenVault": typeof model_tokenVault;
   "model/users": typeof model_users;
   "model/votes": typeof model_votes;
   "model/votingRound": typeof model_votingRound;

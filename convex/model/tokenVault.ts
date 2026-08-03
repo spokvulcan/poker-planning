@@ -95,6 +95,16 @@ export async function encryptTokens(
   tokens: PlaintextTokens,
   keyHex: string = getTokenEncryptionKey()
 ): Promise<EncryptedTokenFields> {
+  // AES-GCM ciphertext length equals plaintext length, so an empty token
+  // would "encrypt" to an empty string and then fail the write-side tripwire
+  // as possible plaintext. Reject the degenerate input here, where the error
+  // names the real problem.
+  if (!tokens.accessToken) {
+    throw new Error("Cannot encrypt an empty access token");
+  }
+  if (tokens.refreshToken !== undefined && !tokens.refreshToken) {
+    throw new Error("Cannot encrypt an empty refresh token");
+  }
   const encAccess = await encryptToken(tokens.accessToken, keyHex);
   const fields: EncryptedTokenFields = {
     encryptedAccessToken: encAccess.ciphertext,
