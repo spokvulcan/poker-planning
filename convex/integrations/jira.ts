@@ -22,6 +22,8 @@ import {
 } from "../permissions";
 import { isRoomOwnerAbsent } from "../model/permissions";
 import { JiraClient } from "./jiraClient";
+import { validateIssueTitle } from "../model/issues";
+import { MAX_ISSUES_PER_ROOM } from "../constants";
 
 function getTokenEncryptionKey(): string {
   const key = process.env.TOKEN_ENCRYPTION_KEY;
@@ -250,6 +252,10 @@ export const createIssueWithLink = internalMutation({
       .withIndex("by_room", (q) => q.eq("roomId", args.roomId))
       .collect();
 
+    if (roomIssues.length >= MAX_ISSUES_PER_ROOM) {
+      throw new Error(`Rooms are limited to ${MAX_ISSUES_PER_ROOM} issues`);
+    }
+
     for (const issue of roomIssues) {
       const link = await ctx.db
         .query("issueLinks")
@@ -284,7 +290,7 @@ export const createIssueWithLink = internalMutation({
     const issueId = await ctx.db.insert("issues", {
       roomId: args.roomId,
       sequentialId: currentNumber,
-      title: args.title,
+      title: validateIssueTitle(args.title),
       status: "pending",
       createdAt: Date.now(),
       order: maxOrder + 1,

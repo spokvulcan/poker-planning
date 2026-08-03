@@ -123,7 +123,7 @@ export const rename = mutation({
   handler: async (ctx, args) => {
     await requireCan(ctx, args.roomId, { kind: "category", category: "roomSettings" });
     await ctx.db.patch(args.roomId, {
-      name: args.name,
+      name: Rooms.validateRoomName(args.name),
       lastActivityAt: Date.now(),
     });
   },

@@ -1,8 +1,29 @@
 import { QueryCtx, MutationCtx } from "../_generated/server";
 import { Id, Doc } from "../_generated/dataModel";
 import * as VotingRound from "./votingRound";
+import {
+  MAX_ISSUE_TITLE_LENGTH,
+  MAX_ISSUES_PER_ROOM,
+} from "../constants";
 
 export type IssueStatus = "pending" | "voting" | "completed";
+
+/**
+ * Validates an issue title (trims, enforces non-empty and a length cap).
+ * Jira-imported titles ("KEY - summary") fit comfortably under the cap.
+ */
+export function validateIssueTitle(title: string): string {
+  const trimmed = title.trim();
+  if (!trimmed) {
+    throw new Error("Issue title is required");
+  }
+  if (trimmed.length > MAX_ISSUE_TITLE_LENGTH) {
+    throw new Error(
+      `Issue title must be ${MAX_ISSUE_TITLE_LENGTH} characters or less`
+    );
+  }
+  return trimmed;
+}
 
 export interface VoteStats {
   average: number | null;
@@ -105,6 +126,9 @@ export async function createIssue(
     .query("issues")
     .withIndex("by_room", (q) => q.eq("roomId", args.roomId))
     .collect();
+  if (issues.length >= MAX_ISSUES_PER_ROOM) {
+    throw new Error(`Rooms are limited to ${MAX_ISSUES_PER_ROOM} issues`);
+  }
   const maxOrder = issues.length > 0 ? Math.max(...issues.map((i) => i.order)) : 0;
 
   // Update room's next issue number
@@ -117,7 +141,7 @@ export async function createIssue(
   return await ctx.db.insert("issues", {
     roomId: args.roomId,
     sequentialId: nextNumber,
-    title: args.title,
+    title: validateIssueTitle(args.title),
     status: "pending",
     createdAt: Date.now(),
     order: maxOrder + 1,
@@ -134,7 +158,7 @@ export async function updateIssueTitle(
   const issue = await ctx.db.get(args.issueId);
   if (!issue) throw new Error("Issue not found");
 
-  await ctx.db.patch(args.issueId, { title: args.title });
+  await ctx.db.patch(args.issueId, { title: validateIssueTitle(args.title) });
 
   // Update room activity
   await ctx.db.patch(issue.roomId, { lastActivityAt: Date.now() });
