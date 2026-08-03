@@ -2,6 +2,7 @@
 import { convexTest, type TestConvex } from "convex-test";
 import { describe, it, expect, vi, afterEach } from "vitest";
 import schema from "./schema";
+import { api } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import * as VotingRound from "./model/votingRound";
 import * as Issues from "./model/issues";
@@ -1045,5 +1046,139 @@ describe("linkAnonymousToPermanent — identity merge keeps spectators voteless 
         .collect()
     );
     expect(permVotes).toHaveLength(1);
+  });
+});
+
+
+// The round module owns the auto-complete setting: toggling it reconciles the
+// countdown in the same step, so disable can never leave an armed countdown
+// behind and enable arms a fully-voted room immediately (no next-vote wait).
+describe("VotingRound.setAutoComplete", () => {
+  const BASE = new Date("2026-05-23T12:00:00Z").getTime();
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("disable mid-countdown clears the countdown fields and cancels the scheduled reveal", async () => {
+    const t = convexTest(schema, modules);
+    const roomId = await seedRoom(t, { autoCompleteVoting: true });
+    const a = await addMember(t, roomId);
+    await armCountdown(t, roomId, [a]); // all in -> armed
+    const S1 = (await readRoom(t, roomId))!.autoRevealScheduledId!;
+    expect((await readRoom(t, roomId))!.autoRevealCountdownStartedAt).toEqual(
+      expect.any(Number)
+    );
+
+    await t.run((ctx) => VotingRound.setAutoComplete(ctx, roomId, false));
+
+    const room = await readRoom(t, roomId);
+    expect(room?.autoCompleteVoting).toBe(false);
+    expect(room?.autoRevealCountdownStartedAt).toBeUndefined();
+    expect(room?.autoRevealScheduledId).toBeUndefined();
+    const scheduled = await scheduledFns(t);
+    expect(scheduled.find((s) => s._id === S1)?.state.kind).toBe("canceled");
+  });
+
+  it("enable with all votes in arms the countdown immediately", async () => {
+    const t = convexTest(schema, modules);
+    const roomId = await seedRoom(t, { autoCompleteVoting: false });
+    const a = await addMember(t, roomId);
+    await rawVote(t, roomId, a); // fully voted, but the setting was off -> unarmed
+    expect(
+      (await readRoom(t, roomId))?.autoRevealCountdownStartedAt
+    ).toBeUndefined();
+
+    await t.run((ctx) => VotingRound.setAutoComplete(ctx, roomId, true));
+
+    const room = await readRoom(t, roomId);
+    expect(room?.autoCompleteVoting).toBe(true);
+    const token = room!.autoRevealCountdownStartedAt!;
+    expect(token).toEqual(expect.any(Number));
+    const scheduled = await scheduledFns(t);
+    const job = scheduled.find((s) => s._id === room!.autoRevealScheduledId);
+    expect(job?.state.kind).toBe("pending");
+    expect(job?.args[0]).toMatchObject({ roomId, token });
+  });
+
+  it("enable with votes outstanding stays unarmed", async () => {
+    const t = convexTest(schema, modules);
+    const roomId = await seedRoom(t, { autoCompleteVoting: false });
+    const a = await addMember(t, roomId);
+    await addMember(t, roomId); // a second non-spectator who has not voted
+    await rawVote(t, roomId, a);
+
+    await t.run((ctx) => VotingRound.setAutoComplete(ctx, roomId, true));
+
+    const room = await readRoom(t, roomId);
+    expect(room?.autoCompleteVoting).toBe(true);
+    expect(room?.autoRevealCountdownStartedAt).toBeUndefined();
+    expect(room?.autoRevealScheduledId).toBeUndefined();
+    expect(await scheduledFns(t)).toHaveLength(0);
+  });
+
+  it("enable -> disable -> enable re-arms with a fresh token and the stale job is inert", async () => {
+    const t = convexTest(schema, modules);
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(BASE);
+    const roomId = await seedRoom(t, { autoCompleteVoting: false });
+    const a = await addMember(t, roomId);
+    await rawVote(t, roomId, a);
+
+    await t.run((ctx) => VotingRound.setAutoComplete(ctx, roomId, true));
+    const armed = await readRoom(t, roomId);
+    const T1 = armed!.autoRevealCountdownStartedAt!;
+    const S1 = armed!.autoRevealScheduledId!;
+
+    await t.run((ctx) => VotingRound.setAutoComplete(ctx, roomId, false));
+    const scheduled = await scheduledFns(t);
+    expect(scheduled.find((s) => s._id === S1)?.state.kind).toBe("canceled");
+
+    // Re-arm at a later instant so the new token differs from the old one.
+    vi.setSystemTime(BASE + 10_000);
+    await t.run((ctx) => VotingRound.setAutoComplete(ctx, roomId, true));
+    const T2 = (await readRoom(t, roomId))!.autoRevealCountdownStartedAt!;
+    expect(T2).not.toBe(T1);
+
+    // The stale job (had it survived cancel) reveals nothing; the live
+    // countdown's own job still reveals normally.
+    await t.run((ctx) => VotingRound.autoReveal(ctx, { roomId, token: T1 }));
+    expect((await readRoom(t, roomId))?.isGameOver).toBe(false);
+    await t.run((ctx) => VotingRound.autoReveal(ctx, { roomId, token: T2 }));
+    expect((await readRoom(t, roomId))?.isGameOver).toBe(true);
+  });
+
+  it("registered toggleAutoComplete still enforces the room-settings permission", async () => {
+    const t = convexTest(schema, modules);
+    const roomId = await seedRoom(t, { autoCompleteVoting: true });
+    // A participant in a room whose settings category is owner-only.
+    await t.run(async (ctx) => {
+      const userId = await ctx.db.insert("users", {
+        authUserId: "auth-participant",
+        name: "U",
+        createdAt: Date.now(),
+      });
+      await ctx.db.insert("roomMemberships", {
+        roomId,
+        userId,
+        isSpectator: false,
+        joinedAt: Date.now(),
+      });
+      await ctx.db.patch(roomId, {
+        permissions: {
+          revealCards: "everyone",
+          gameFlow: "everyone",
+          issueManagement: "everyone",
+          roomSettings: "owner",
+        },
+      });
+    });
+
+    const asParticipant = t.withIdentity({ subject: "auth-participant" });
+    await expect(
+      asParticipant.mutation(api.rooms.toggleAutoComplete, { roomId })
+    ).rejects.toThrow("Only the owner can do this.");
+    // The denial ran no part of the toggle.
+    expect((await readRoom(t, roomId))?.autoCompleteVoting).toBe(true);
   });
 });

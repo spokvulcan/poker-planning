@@ -294,6 +294,27 @@ export async function cancelCountdown(
   await cancel(ctx, roomId);
 }
 
+/**
+ * setAutoComplete — flip the room's auto-complete setting and reconcile the
+ * countdown in the same step, so the setting can't drift from the countdown it
+ * feeds (the "remember to reconcile" class ADR-0004 closed for roster exits).
+ * Disabling tears the countdown down as one unit; enabling re-evaluates so a
+ * fully-voted room arms immediately instead of waiting for the next vote.
+ */
+export async function setAutoComplete(
+  ctx: MutationCtx,
+  roomId: Id<"rooms">,
+  enabled: boolean
+): Promise<void> {
+  if (!enabled) {
+    await cancel(ctx, roomId);
+    await ctx.db.patch(roomId, { autoCompleteVoting: false });
+    return;
+  }
+  await ctx.db.patch(roomId, { autoCompleteVoting: true });
+  await evaluate(ctx, roomId);
+}
+
 // --- internal round helpers ---------------------------------------------
 
 /**

@@ -97,11 +97,7 @@ export const toggleAutoComplete = mutation({
   args: { roomId: v.id("rooms") },
   handler: async (ctx, args) => {
     const { room } = await requireCan(ctx, args.roomId, { kind: "category", category: "roomSettings" });
-    // Toggling cancels any active countdown (one seam), then flips the setting.
-    await VotingRound.cancelCountdown(ctx, args.roomId);
-    await ctx.db.patch(args.roomId, {
-      autoCompleteVoting: !room.autoCompleteVoting,
-    });
+    await VotingRound.setAutoComplete(ctx, args.roomId, !room.autoCompleteVoting);
   },
 });
 
