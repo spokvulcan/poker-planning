@@ -264,6 +264,47 @@ describe("Timer.updateTimerState", () => {
     });
   });
 
+  it("two full pause/resume cycles accumulate both running segments", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const t = convexTest(schema, modules);
+    const roomId = await seedRoom(t);
+    const userId = await seedUser(t);
+
+    vi.setSystemTime(NOW);
+    await seedTimerNode(t, roomId);
+    await t.run((ctx) =>
+      Timer.updateTimerState(ctx, { roomId, nodeId: "timer", action: "start", userId })
+    );
+
+    // First cycle: run 60s, pause.
+    vi.setSystemTime(NOW + 60_000);
+    await t.run((ctx) =>
+      Timer.updateTimerState(ctx, { roomId, nodeId: "timer", action: "pause", userId })
+    );
+
+    // Second cycle: resume 90s later, run 30s, pause again.
+    vi.setSystemTime(NOW + 150_000);
+    await t.run((ctx) =>
+      Timer.updateTimerState(ctx, { roomId, nodeId: "timer", action: "start", userId })
+    );
+    vi.setSystemTime(NOW + 180_000);
+    await t.run((ctx) =>
+      Timer.updateTimerState(ctx, { roomId, nodeId: "timer", action: "pause", userId })
+    );
+
+    const data = await readTimerData(t, roomId);
+    expect(data).toEqual({
+      startedAt: null,
+      pausedAt: NOW + 180_000,
+      elapsedSeconds: 90, // 60s first segment + 30s second segment
+      isRunning: false,
+      lastUpdatedBy: userId,
+      lastAction: "pause",
+    });
+    // And the reading matches the accumulated state.
+    expect(calculateCurrentTime(data, NOW + 180_000).displayTime).toBe("1:30");
+  });
+
   it("pause on a stopped timer throws through the model interface", async () => {
     const t = convexTest(schema, modules);
     const roomId = await seedRoom(t);

@@ -152,6 +152,27 @@ describe("issue creation (createIssueInRoom)", () => {
     expect((await readRoom(t, roomId))?.nextIssueNumber).toBe(4);
   });
 
+  it("concurrent callers all get unique sequential IDs", async () => {
+    const t = convexTest(schema, modules);
+    const roomId = await seedRoom(t);
+
+    // convex-test serializes function execution, so this locks in uniqueness
+    // under simultaneous invocation; the OCC guarantee underneath is Convex's
+    // own transactionality (single-document read-modify-write per mutation).
+    await Promise.all(
+      ["A", "B", "C", "D", "E"].map((title) =>
+        t.run((ctx) => Issues.createIssueInRoom(ctx, { roomId, title }))
+      )
+    );
+
+    const issues = await listRoomIssues(t, roomId);
+    expect(issues).toHaveLength(5);
+    expect(issues.map((i) => i.sequentialId).sort((a, b) => a - b)).toEqual([
+      1, 2, 3, 4, 5,
+    ]);
+    expect((await readRoom(t, roomId))?.nextIssueNumber).toBe(5);
+  });
+
   it("re-importing the same external id in one room creates no second issue", async () => {
     const t = convexTest(schema, modules);
     const roomId = await seedRoom(t);
