@@ -69,7 +69,10 @@ export const removePlayerNode = mutation({
     userId: v.id("users"),
   },
   handler: async (ctx, args) => {
-    await requireRoomMember(ctx, args.roomId);
+    const { user } = await requireRoomMember(ctx, args.roomId);
+    if (user._id !== args.userId) {
+      throw new Error("Cannot act as another user");
+    }
     await Canvas.removePlayerNode(ctx, args);
   },
 });
