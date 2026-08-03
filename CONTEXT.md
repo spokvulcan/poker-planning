@@ -19,8 +19,12 @@ What an actor is attempting. Either a **category action** (one of the four confi
 _Avoid_: operation, command, capability
 
 **Permission guard**:
-The backend adapter (`requireCan`) over the **permission decision**. It does the IO — reads the room, the actor's membership, the target's membership, and whether the owner is absent — assembles the **Action**, calls `evaluate`, and throws a reason-derived message on denial. Identity rules (self-transfer, authoritative `ownerId`) stay in the calling handler, not the guard.
+The backend adapter (`requireCan`) over the **permission decision**. It does the IO — reads the room, the actor's membership, the target's membership, and whether the owner is absent — assembles the **Action**, calls `evaluate`, and throws a reason-derived message on denial. Two entry points share the one IO assembly: `requireCan` (identity from `ctx.auth`, for queries/mutations) and `requireCanForUser` (an already-resolved user, for action contexts such as the Jira integration). Identity rules (self-transfer, authoritative `ownerId`) stay in the calling handler, not the guard.
 _Avoid_: middleware, interceptor, auth wrapper
+
+**Acting-user guard**:
+The backend adapter (`requireActingUser`) for "authenticated ∧ room member ∧ acting as this `userId`" — the one place that triple check lives. Handlers that take a client-supplied `userId` call it instead of re-checking membership and identity inline.
+_Avoid_: self-check, impersonation check
 
 **Denial reason**:
 Why a **Decision** was `allowed: false` — `insufficient-role`, `owner-absent`, or `target-rank` (acting on a target whose role forbids it). One reason maps to one message via a shared pure function used by both backend throws and frontend tooltips.
@@ -71,7 +75,7 @@ A control action that moves the **phase**: **start** (begin a round on a target)
 _Avoid_: event, command
 
 **Auto-reveal countdown**:
-The armed timer that reveals automatically once every non-spectator has voted, when the room's auto-complete setting is on. Its two room fields and the scheduled reveal are one unit — clearing the countdown must cancel the scheduled reveal. The scheduled reveal is *bound to the countdown that armed it* by a token: it reveals only while that token is still the room's live countdown, so a stale job (its countdown since cleared or replaced) is inert even if it fires. It is reconciled on every vote and on **dropping a voter**; a member who appears mid-countdown — joining, or ceasing to be a spectator — does not cancel it, so the scheduled reveal still fires. A member admitted mid-countdown is always a fresh non-voter — spectators are *voteless* (the round refuses their ballots) — so admission can only fail to complete the round, never silently complete it.
+The armed timer that reveals automatically once every non-spectator has voted, when the room's auto-complete setting is on. Its two room fields and the scheduled reveal are one unit — clearing the countdown must cancel the scheduled reveal. The scheduled reveal is *bound to the countdown that armed it* by a token: it reveals only while that token is still the room's live countdown, so a stale job (its countdown since cleared or replaced) is inert even if it fires. It is reconciled on every vote and on **dropping a voter**; a member who appears mid-countdown — joining, or ceasing to be a spectator — does not cancel it, so the scheduled reveal still fires. A member admitted mid-countdown is always a fresh non-voter — spectators are *voteless* (the round refuses their ballots) — so admission can only fail to complete the round, never silently complete it. The auto-complete setting itself is set through the round module (`setAutoComplete`): disabling cancels the countdown in the same step; enabling re-evaluates, arming immediately if every non-spectator has voted.
 _Avoid_: timer (reserve **timer** for the canvas TimerNode), auto-complete (that is the room setting that enables it)
 
 **Dropping a voter** (`dropVoter`):
@@ -81,6 +85,12 @@ _Avoid_: kick (the `remove` relationship action is one trigger, not the concept)
 **Demo simulation**:
 The looping illustration on `/demo`. It is **not a room and runs no voting round** — there is no `rooms` row, no membership, no persisted vote, and the backend never participates. Bots, issues, and **phase** transitions are computed entirely on the viewer's machine and discarded. It *imitates* a round's **phase** lifecycle and reuses the one pure results computation (`summarize`) so its revealed numbers match a real round's, but it lives deliberately outside the **voting round** module's authority. Paused while its tab is hidden (see [ADR-0003](docs/adr/0003-demo-is-a-client-simulation.md)).
 _Avoid_: demo room (there is no room), demo game, bot round
+
+### Integrations
+
+**Token vault**:
+The module (`convex/model/tokenVault.ts`) that owns the token-field contract for integration connections: key validation, encrypt-on-write, decrypt-on-read, and the token-expiry predicate. Plaintext is unrepresentable through its interface — writes accept plaintext and persist ciphertext; readers receive ciphertext rows and decrypt explicitly. Provider-agnostic; Jira is the only adapter today, GitHub (spec 07) is the planned second.
+_Avoid_: encryption utils (the pure primitive is `convex/lib/encryption.ts` — the vault is the policy owner, not a second crypto implementation)
 
 ## Flagged ambiguities
 

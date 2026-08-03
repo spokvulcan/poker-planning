@@ -62,7 +62,7 @@ convex/
 
 **Model layer** (`convex/model/*.ts`): Contains business logic, database operations, and helper functions.
 
-**Auth guards** (`convex/model/auth.ts`): Every mutation must enforce authorization. Use `requireRoomMember(ctx, roomId)` for room-scoped mutations (returns `{ user }` for identity checks). Use `requireAuth(ctx)` for global mutations. Never trust client-supplied `userId` without verifying `user._id === args.userId`. See [docs/authentication.md](docs/authentication.md) for full patterns.
+**Auth guards** (`convex/model/auth.ts`): Every mutation must enforce authorization. Use `requireCan(ctx, roomId, spec)` for permission-checked operations (`requireCanForUser` where the user is already resolved, e.g. action contexts), `requireActingUser(ctx, roomId, userId)` for room-scoped mutations that take a client-supplied `userId` (verifies authenticated + member + acting as that user), and `requireAuth(ctx)` for global mutations. Never re-implement these checks inline in handlers. See [docs/authentication.md](docs/authentication.md) for full patterns.
 
 Example usage in frontend:
 
