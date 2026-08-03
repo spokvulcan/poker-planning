@@ -3,6 +3,7 @@ import { Id, Doc } from "../_generated/dataModel";
 import * as Canvas from "./canvas";
 import * as Users from "./users";
 import { VOTING_SCALES, VotingScaleType } from "../scales";
+import { MAX_ROOM_NAME_LENGTH } from "../constants";
 import { isRoomOwnerAbsent } from "./permissions";
 
 export interface CreateRoomArgs {
@@ -14,6 +15,26 @@ export interface CreateRoomArgs {
     cards?: string[]; // Required only for custom type
   };
 }
+
+/**
+ * Validates a room name (trims, enforces non-empty and a length cap).
+ */
+export function validateRoomName(name: string): string {
+  const trimmed = name.trim();
+  if (!trimmed) {
+    throw new Error("Room name is required");
+  }
+  if (trimmed.length > MAX_ROOM_NAME_LENGTH) {
+    throw new Error(`Room name must be ${MAX_ROOM_NAME_LENGTH} characters or less`);
+  }
+  return trimmed;
+}
+
+// Custom scale rules — mirror validateCustomScale in src/lib/voting-scales.ts
+// so direct Convex clients can't bypass them with oversized card arrays.
+const CUSTOM_SCALE_MIN_CARDS = 3;
+const CUSTOM_SCALE_MAX_CARDS = 20;
+const CUSTOM_SCALE_MAX_CARD_LENGTH = 10;
 
 export interface SanitizedVote extends Doc<"votes"> {
   hasVoted: boolean;
@@ -45,9 +66,27 @@ function resolveVotingScale(scaleConfig?: CreateRoomArgs["votingScale"]) {
     if (!scaleConfig.cards || scaleConfig.cards.length === 0) {
       throw new Error("Custom scale requires cards array");
     }
+    const cards = scaleConfig.cards;
+    if (cards.length < CUSTOM_SCALE_MIN_CARDS) {
+      throw new Error(`Minimum ${CUSTOM_SCALE_MIN_CARDS} cards required`);
+    }
+    if (cards.length > CUSTOM_SCALE_MAX_CARDS) {
+      throw new Error(`Maximum ${CUSTOM_SCALE_MAX_CARDS} cards allowed`);
+    }
+    if (new Set(cards).size !== cards.length) {
+      throw new Error("Duplicate card values not allowed");
+    }
+    if (cards.some((c) => c.trim() === "")) {
+      throw new Error("Empty card values not allowed");
+    }
+    if (cards.some((c) => c.length > CUSTOM_SCALE_MAX_CARD_LENGTH)) {
+      throw new Error(
+        `Card values must be ${CUSTOM_SCALE_MAX_CARD_LENGTH} characters or less`
+      );
+    }
     return {
       type: "custom" as const,
-      cards: scaleConfig.cards,
+      cards,
       isNumeric: false, // Custom scales default to non-numeric
     };
   }
@@ -71,7 +110,7 @@ export async function createRoom(
   const votingScale = resolveVotingScale(args.votingScale);
 
   const roomId = await ctx.db.insert("rooms", {
-    name: args.name,
+    name: validateRoomName(args.name),
     roomType: "canvas", // Always canvas now
     autoCompleteVoting: args.autoCompleteVoting ?? false,
     isGameOver: false,

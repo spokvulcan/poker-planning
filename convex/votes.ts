@@ -8,6 +8,8 @@ export const pickCard = mutation({
     roomId: v.id("rooms"),
     userId: v.id("users"),
     cardLabel: v.string(),
+    // Accepted but ignored: the numeric value is re-derived server-side from
+    // cardLabel in castVote. Kept in the API for client compatibility.
     cardValue: v.number(),
     cardIcon: v.optional(v.string()),
   },

@@ -63,7 +63,7 @@ export function JiraConnectionCard({ connection }: JiraConnectionCardProps) {
               </p>
               {connection && (
                 <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
-                  {connection.siteUrl && (
+                  {connection.siteUrl && connection.siteUrl.startsWith("https://") && (
                     <a
                       href={connection.siteUrl}
                       target="_blank"

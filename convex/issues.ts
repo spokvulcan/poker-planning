@@ -25,11 +25,13 @@ export const getCurrent = query({
 });
 
 /**
- * Get issues formatted for export
+ * Get issues formatted for export.
+ * Requires room membership: the export includes discussion-note contents.
  */
 export const getForExport = query({
   args: { roomId: v.id("rooms") },
   handler: async (ctx, args) => {
+    await requireRoomMember(ctx, args.roomId);
     return await Issues.getIssuesForExport(ctx, args.roomId);
   },
 });

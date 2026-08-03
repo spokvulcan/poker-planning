@@ -6,7 +6,7 @@ import * as Issues from "./issues";
 import * as Canvas from "./canvas";
 import * as Votes from "./votes";
 import { summarize } from "../summarize";
-import { SPECIAL_CARDS, VotingScale } from "../scales";
+import { SPECIAL_CARDS, DEFAULT_SCALE, VotingScale } from "../scales";
 import { COUNTDOWN_DURATION_MS } from "../constants";
 
 /**
@@ -427,6 +427,19 @@ export async function castVote(ctx: MutationCtx, args: CastVoteArgs): Promise<vo
     throw new Error("Spectators cannot vote");
   }
 
+  // Validate the card against the room's voting scale and re-derive its numeric
+  // value server-side. pickCard is public, so an unchecked label/value would
+  // flow into vote stats, exports, and auto-pushed Jira estimates.
+  const room = await ctx.db.get(args.roomId);
+  if (!room) throw new Error("Room not found");
+  const scale = room.votingScale ?? DEFAULT_SCALE;
+  const scaleCards: readonly string[] = scale.cards;
+  if (!scaleCards.includes(args.cardLabel)) {
+    throw new Error("Card is not in this room's voting scale");
+  }
+  const parsedValue = scale.isNumeric ? Number.parseFloat(args.cardLabel) : 0;
+  const cardValue = Number.isFinite(parsedValue) ? parsedValue : 0;
+
   await Rooms.updateRoomActivity(ctx, args.roomId);
 
   const existing = await ctx.db
@@ -439,7 +452,7 @@ export async function castVote(ctx: MutationCtx, args: CastVoteArgs): Promise<vo
   if (existing) {
     await ctx.db.patch(existing._id, {
       cardLabel: args.cardLabel,
-      cardValue: args.cardValue,
+      cardValue,
       cardIcon: args.cardIcon,
     });
   } else {
@@ -447,7 +460,7 @@ export async function castVote(ctx: MutationCtx, args: CastVoteArgs): Promise<vo
       roomId: args.roomId,
       userId: args.userId,
       cardLabel: args.cardLabel,
-      cardValue: args.cardValue,
+      cardValue,
       cardIcon: args.cardIcon,
     });
   }

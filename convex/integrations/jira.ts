@@ -22,6 +22,8 @@ import {
 } from "../permissions";
 import { isRoomOwnerAbsent } from "../model/permissions";
 import { JiraClient } from "./jiraClient";
+import { validateIssueTitle } from "../model/issues";
+import { MAX_ISSUES_PER_ROOM } from "../constants";
 
 function getTokenEncryptionKey(): string {
   const key = process.env.TOKEN_ENCRYPTION_KEY;
@@ -236,12 +238,23 @@ export const createIssueWithLink = internalMutation({
     externalUrl: v.string(),
   },
   handler: async (ctx, args) => {
+    // externalUrl is rendered as an anchor href in the room UI — only allow
+    // real web URLs so a malicious integration connection can't inject a
+    // javascript: link.
+    if (!args.externalUrl.startsWith("https://")) {
+      throw new Error("externalUrl must be an https:// URL");
+    }
+
     // Dedup per-room: same Jira issue can exist in multiple rooms,
     // but not twice in the same room.
     const roomIssues = await ctx.db
       .query("issues")
       .withIndex("by_room", (q) => q.eq("roomId", args.roomId))
       .collect();
+
+    if (roomIssues.length >= MAX_ISSUES_PER_ROOM) {
+      throw new Error(`Rooms are limited to ${MAX_ISSUES_PER_ROOM} issues`);
+    }
 
     for (const issue of roomIssues) {
       const link = await ctx.db
@@ -277,7 +290,7 @@ export const createIssueWithLink = internalMutation({
     const issueId = await ctx.db.insert("issues", {
       roomId: args.roomId,
       sequentialId: currentNumber,
-      title: args.title,
+      title: validateIssueTitle(args.title),
       status: "pending",
       createdAt: Date.now(),
       order: maxOrder + 1,
@@ -457,6 +470,22 @@ export const connectJira = action({
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Not authenticated");
+
+    // The siteUrl is stored and later concatenated into issue browse links
+    // rendered as anchor hrefs. This action is public, so a client could
+    // bypass the OAuth callback and store a javascript: URL — validate it.
+    let parsedSiteUrl: URL;
+    try {
+      parsedSiteUrl = new URL(args.siteUrl);
+    } catch {
+      throw new Error("Invalid Jira site URL");
+    }
+    if (
+      parsedSiteUrl.protocol !== "https:" ||
+      !parsedSiteUrl.hostname.endsWith(".atlassian.net")
+    ) {
+      throw new Error("Jira site URL must be an https://*.atlassian.net URL");
+    }
 
     // Resolve user from auth identity
     const user: Doc<"users"> | null = await ctx.runQuery(
@@ -756,7 +785,16 @@ export const registerWebhook = internalAction({
     if (!connection) throw new Error("Connection not found");
 
     const client = await buildJiraClient(ctx, connection);
-    const webhookUrl = `${process.env.CONVEX_SITE_URL}/webhooks/jira`;
+    // Jira Cloud webhooks cannot send custom headers, so the shared secret
+    // travels in the registered URL. The endpoint rejects deliveries without
+    // it, so registration must not proceed when the secret is missing.
+    const webhookSecret = process.env.JIRA_WEBHOOK_SECRET;
+    if (!webhookSecret) {
+      throw new Error(
+        "JIRA_WEBHOOK_SECRET must be configured to register a Jira webhook"
+      );
+    }
+    const webhookUrl = `${process.env.CONVEX_SITE_URL}/webhooks/jira?secret=${encodeURIComponent(webhookSecret)}`;
 
     try {
       if (mapping.jiraWebhookId) {

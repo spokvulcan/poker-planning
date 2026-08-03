@@ -165,7 +165,7 @@ export const IssueItem: FC<IssueItemProps> = ({
                 {issue.title}
               </span>
             )}
-            {issueLink && (
+            {issueLink && issueLink.externalUrl.startsWith("https://") && (
               <a
                 href={issueLink.externalUrl}
                 target="_blank"

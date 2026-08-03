@@ -69,7 +69,10 @@ export const removePlayerNode = mutation({
     userId: v.id("users"),
   },
   handler: async (ctx, args) => {
-    await requireRoomMember(ctx, args.roomId);
+    const { user } = await requireRoomMember(ctx, args.roomId);
+    if (user._id !== args.userId) {
+      throw new Error("Cannot act as another user");
+    }
     await Canvas.removePlayerNode(ctx, args);
   },
 });
@@ -121,12 +124,14 @@ export const updateNoteContent = mutation({
 });
 
 // Get note content for an issue (for export)
+// Requires room membership: note contents are private to the room.
 export const getNoteContentForIssue = query({
   args: {
     roomId: v.id("rooms"),
     issueId: v.id("issues"),
   },
   handler: async (ctx, args) => {
+    await requireRoomMember(ctx, args.roomId);
     return await Canvas.getNoteContentForIssue(ctx, args);
   },
 });

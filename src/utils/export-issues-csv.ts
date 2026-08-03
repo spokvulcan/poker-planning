@@ -2,11 +2,19 @@ import type { EnhancedExportableIssue } from "@/convex/model/issues";
 import { downloadFile } from "./download-file";
 
 /**
- * Escapes a CSV field value (handles commas, quotes, newlines)
+ * Escapes a CSV field value (handles commas, quotes, newlines).
+ * Also neutralizes spreadsheet formula injection: values that begin with
+ * =, +, -, @, tab, or CR are prefixed with a single quote so Excel and
+ * LibreOffice render them as text instead of evaluating them (OWASP CSV
+ * injection guidance). Issue titles, voter names, and notes are
+ * participant-controlled.
  */
 function escapeCSVField(value: string | number | null): string {
   if (value === null || value === undefined) return "";
-  const stringValue = String(value);
+  let stringValue = String(value);
+  if (/^[=+\-@\t\r]/.test(stringValue)) {
+    stringValue = `'${stringValue}`;
+  }
   // If contains comma, quote, or newline, wrap in quotes and escape existing quotes
   if (
     stringValue.includes(",") ||
