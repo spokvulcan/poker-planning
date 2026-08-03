@@ -181,7 +181,7 @@ describe("processJiraWebhookEvent", () => {
 });
 
 describe("disconnect", () => {
-  it("cascades the connection's mappings and schedules a deregistration per live webhook", async () => {
+  it("cascades the connection's mappings and hands live webhooks to one finalizeDisconnect tail", async () => {
     const t = convexTest(schema, modules);
     const userId = await seedUser(t, "auth-u");
     const connectionId = await seedConnection(t, userId);
@@ -195,21 +195,41 @@ describe("disconnect", () => {
 
     expect(await countRows(t, "integrationMappings")).toBe(0);
 
-    const deregistrations = await scheduledByName(t, ":deregisterWebhook");
-    expect(deregistrations).toHaveLength(2);
-    const deregisteredIds = deregistrations
-      .map(
-        (s) =>
-          (s.args as [{ connectionId: string; jiraWebhookId: string }])[0]
-            .jiraWebhookId
-      )
-      .sort();
-    expect(deregisteredIds).toEqual(["wh-a", "wh-b"]);
-
     // The connection row stays until the deregistrations have read its
-    // credentials — deletion is the scheduled tail of the cascade.
+    // credentials — and there is exactly ONE scheduled tail carrying both
+    // webhooks, so the row delete can never race the deregistrations (two
+    // independent same-tick jobs had no ordering guarantee).
     expect(await countRows(t, "integrationConnections")).toBe(1);
-    expect(await scheduledByName(t, ":deleteConnection")).toHaveLength(1);
+    const finalize = await scheduledByName(t, ":finalizeDisconnect");
+    expect(finalize).toHaveLength(1);
+    const finalizeArgs = (
+      finalize[0].args as [{ connectionId: string; jiraWebhookIds: string[] }]
+    )[0];
+    expect(finalizeArgs.connectionId).toBe(connectionId);
+    expect([...finalizeArgs.jiraWebhookIds].sort()).toEqual(["wh-a", "wh-b"]);
+    expect(await scheduledByName(t, ":deleteConnection")).toHaveLength(0);
+    expect(await scheduledByName(t, ":deregisterWebhook")).toHaveLength(0);
+  });
+
+  it("finalizeDisconnect deletes the connection row only after the deregistrations had their turn", async () => {
+    const t = convexTest(schema, modules);
+    const userId = await seedUser(t, "auth-u");
+    const connectionId = await seedConnection(t, userId);
+    const roomId = await seedRoom(t);
+    await seedMapping(t, roomId, connectionId, { jiraWebhookId: "wh-a" });
+
+    const asU = t.withIdentity({ subject: "auth-u" });
+    await asU.mutation(api.integrations.disconnect, { connectionId });
+    expect(await countRows(t, "integrationConnections")).toBe(1);
+
+    // Run the scheduled tail. Deregistration fails closed in the test env
+    // (seed tokens don't decrypt), is logged, and the row delete still
+    // lands — the leak is tracked, never silent, and never blocks disconnect.
+    await t.action(internal.integrations.jira.finalizeDisconnect, {
+      connectionId,
+      jiraWebhookIds: ["wh-a"],
+    });
+    expect(await countRows(t, "integrationConnections")).toBe(0);
   });
 
   it("deletes the connection directly when no webhook is live", async () => {
@@ -224,8 +244,88 @@ describe("disconnect", () => {
 
     expect(await countRows(t, "integrationMappings")).toBe(0);
     expect(await countRows(t, "integrationConnections")).toBe(0);
+    expect(await scheduledByName(t, ":finalizeDisconnect")).toHaveLength(0);
     expect(await scheduledByName(t, ":deregisterWebhook")).toHaveLength(0);
     expect(await scheduledByName(t, ":deleteConnection")).toHaveLength(0);
+  });
+});
+
+describe("deregisterWebhook", () => {
+  it("schedules one bounded retry on failure, then stops", async () => {
+    const t = convexTest(schema, modules);
+    const userId = await seedUser(t, "auth-u");
+    const connectionId = await seedConnection(t, userId);
+
+    // Deregistration fails in the test env (seed tokens don't decrypt)…
+    await t.action(internal.integrations.jira.deregisterWebhook, {
+      connectionId,
+      jiraWebhookId: "wh-x",
+    });
+
+    // …so exactly one retry is pending, disarmed (attemptsLeft: 0).
+    const retries = await scheduledByName(t, ":deregisterWebhook");
+    expect(retries).toHaveLength(1);
+    expect(
+      (retries[0].args as [{ attemptsLeft: number }])[0].attemptsLeft
+    ).toBe(0);
+
+    // The disarmed retry does not chain another retry.
+    await t.action(internal.integrations.jira.deregisterWebhook, {
+      connectionId,
+      jiraWebhookId: "wh-x",
+      attemptsLeft: 0,
+    });
+    expect(await scheduledByName(t, ":deregisterWebhook")).toHaveLength(1);
+  });
+
+  it("does nothing when the connection is already gone", async () => {
+    const t = convexTest(schema, modules);
+    const userId = await seedUser(t, "auth-u");
+    const connectionId = await seedConnection(t, userId);
+    await t.run((ctx) => ctx.db.delete(connectionId));
+
+    await t.action(internal.integrations.jira.deregisterWebhook, {
+      connectionId,
+      jiraWebhookId: "wh-x",
+    });
+
+    expect(await scheduledByName(t, ":deregisterWebhook")).toHaveLength(0);
+  });
+});
+
+describe("public Jira actions require authentication", () => {
+  it("rejects unauthenticated callers before touching the network", async () => {
+    const t = convexTest(schema, modules);
+    const roomId = await seedRoom(t);
+
+    await expect(t.action(api.integrations.jira.getJiraProjects, {})).rejects.toThrow(
+      "Not authenticated"
+    );
+    await expect(
+      t.action(api.integrations.jira.importIssues, {
+        roomId,
+        jiraIssueKeys: ["PROJ-1"],
+      })
+    ).rejects.toThrow("Not authenticated");
+    await expect(
+      t.action(api.integrations.jira.connectJira, {
+        accessToken: "a",
+        refreshToken: "r",
+        expiresIn: 3600,
+        cloudId: "cloud-1",
+        siteUrl: "https://team.atlassian.net",
+        scopes: [],
+      })
+    ).rejects.toThrow("Not authenticated");
+  });
+
+  it("rejects an identity with no app-level user record", async () => {
+    const t = convexTest(schema, modules);
+    const ghost = t.withIdentity({ subject: "auth-ghost" }); // no users row
+
+    await expect(
+      ghost.action(api.integrations.jira.getJiraProjects, {})
+    ).rejects.toThrow("User not found");
   });
 });
 

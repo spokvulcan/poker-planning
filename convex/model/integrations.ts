@@ -144,9 +144,10 @@ export function toConnectionView(connection: Doc<"integrationConnections">): {
 }
 
 /**
- * Deletes a connection row directly. Runs as the scheduled tail of
- * disconnectConnection, after the deregistration actions that still need the
- * row's credentials have had their turn.
+ * Deletes a connection row directly. Runs as the tail of finalizeDisconnect —
+ * the action that deregisters the connection's webhooks first, so the row
+ * deletion happens only after every deregistration has read the credentials
+ * it authenticates with.
  */
 export async function deleteConnection(
   ctx: MutationCtx,
@@ -277,11 +278,12 @@ export async function removeRoomMapping(
 }
 
 /**
- * The disconnect cascade: deletes every mapping on the connection (scheduling
- * deregistration per live Jira webhook), then removes the connection itself.
- * When deregistrations are pending, the row deletion is deferred to a
- * scheduled mutation so those actions can still read the credentials they
- * authenticate with; with nothing to deregister the row goes immediately.
+ * The disconnect cascade: deletes every mapping on the connection, then hands
+ * the live Jira webhooks to one finalizeDisconnect action, which deregisters
+ * them and deletes the connection row only afterwards — the ordering comes
+ * from that action's own awaits, not from same-tick scheduled-job ordering
+ * (which Convex does not guarantee). With nothing to deregister the row goes
+ * immediately.
  */
 export async function disconnectConnection(
   ctx: MutationCtx,
@@ -294,18 +296,15 @@ export async function disconnectConnection(
     .collect();
   await Promise.all(mappings.map((m) => ctx.db.delete(m._id)));
 
-  let hasPendingDeregistrations = false;
-  for (const mapping of mappings) {
-    await scheduleWebhookDeregistration(ctx, mapping);
-    hasPendingDeregistrations ||=
-      mapping.provider === "jira" && !!mapping.jiraWebhookId;
-  }
+  const liveWebhookIds = mappings
+    .filter((m) => m.provider === "jira" && !!m.jiraWebhookId)
+    .map((m) => m.jiraWebhookId!);
 
-  if (hasPendingDeregistrations) {
+  if (liveWebhookIds.length > 0) {
     await ctx.scheduler.runAfter(
       0,
-      internal.integrations.jira.deleteConnection,
-      { connectionId }
+      internal.integrations.jira.finalizeDisconnect,
+      { connectionId, jiraWebhookIds: liveWebhookIds }
     );
   } else {
     await ctx.db.delete(connectionId);
@@ -315,9 +314,10 @@ export async function disconnectConnection(
 /**
  * Schedules remote deregistration of a mapping's Jira webhook. Deleting the
  * mapping row alone orphans the remote webhook — it keeps POSTing until its
- * 30-day expiry — so every mapping-removal path must go through this.
+ * 30-day expiry — so every mapping-removal path (removeRoomMapping, the room
+ * cascade in model/roomAggregate) must go through this.
  */
-async function scheduleWebhookDeregistration(
+export async function scheduleWebhookDeregistration(
   ctx: MutationCtx,
   mapping: Doc<"integrationMappings">
 ): Promise<void> {

@@ -591,14 +591,16 @@ export const cleanupOldWebhookEvents = internalMutation({
 /**
  * Best-effort remote deregistration of one Jira webhook. The model schedules
  * this whenever a mapping or connection is torn down, so the remote webhook
- * is deleted instead of being orphaned until its 30-day expiry. If the
- * connection is already gone the webhook is left to expire — logged here so
- * the leak is tracked rather than silent.
+ * is deleted instead of being orphaned until its 30-day expiry. A failure is
+ * retried once after a delay (the connection row still exists at that point,
+ * so the retry can authenticate); a webhook that survives the retry is left
+ * to expire — logged here so the leak is tracked rather than silent.
  */
 export const deregisterWebhook = internalAction({
   args: {
     connectionId: v.id("integrationConnections"),
     jiraWebhookId: v.string(),
+    attemptsLeft: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const connection = await ctx.runQuery(
@@ -617,11 +619,84 @@ export const deregisterWebhook = internalAction({
       await client.deleteWebhooks([args.jiraWebhookId]);
       console.log(`Deregistered Jira webhook ${args.jiraWebhookId}`);
     } catch (error) {
+      const attemptsLeft = args.attemptsLeft ?? 1;
+      if (attemptsLeft > 0) {
+        console.warn(
+          `Failed to deregister Jira webhook ${args.jiraWebhookId}; retrying in 5 minutes:`,
+          error
+        );
+        await ctx.scheduler.runAfter(
+          5 * 60 * 1000,
+          internal.integrations.jira.deregisterWebhook,
+          {
+            connectionId: args.connectionId,
+            jiraWebhookId: args.jiraWebhookId,
+            attemptsLeft: attemptsLeft - 1,
+          }
+        );
+        return;
+      }
       console.warn(
-        `Failed to deregister Jira webhook ${args.jiraWebhookId}:`,
+        `Failed to deregister Jira webhook ${args.jiraWebhookId} (no retries left); left to expire remotely:`,
         error
       );
     }
+  },
+});
+
+/**
+ * The disconnect tail: deregisters every live webhook of a torn-down
+ * connection, then deletes the connection row. Scheduling deregistrations and
+ * the row deletion as independent same-tick jobs would race (the deletion
+ * could win, leaving the deregistrations unable to authenticate), so the
+ * ordering is enforced here by the action's own awaits. Deregistration is
+ * best-effort: a webhook that cannot be deleted remotely is logged and left
+ * to its 30-day expiry rather than blocking the disconnect.
+ */
+export const finalizeDisconnect = internalAction({
+  args: {
+    connectionId: v.id("integrationConnections"),
+    jiraWebhookIds: v.array(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const connection = await ctx.runQuery(
+      internal.integrations.jira.getConnectionById,
+      { connectionId: args.connectionId }
+    );
+
+    if (!connection) {
+      console.warn(
+        `Jira connection ${args.connectionId} already removed; ${args.jiraWebhookIds.length} webhook(s) left to expire remotely`
+      );
+    } else {
+      let client: JiraClient | null = null;
+      try {
+        client = await buildJiraClient(ctx, connection);
+      } catch (error) {
+        console.warn(
+          `Could not build a Jira client for connection ${args.connectionId}; ${args.jiraWebhookIds.length} webhook(s) left to expire remotely:`,
+          error
+        );
+      }
+      if (client) {
+        for (const jiraWebhookId of args.jiraWebhookIds) {
+          try {
+            await client.deleteWebhooks([jiraWebhookId]);
+            console.log(`Deregistered Jira webhook ${jiraWebhookId}`);
+          } catch (error) {
+            console.warn(
+              `Failed to deregister Jira webhook ${jiraWebhookId} during disconnect; left to expire remotely:`,
+              error
+            );
+          }
+        }
+      }
+    }
+
+    // The row goes only now — after every deregistration has had its turn.
+    await ctx.runMutation(internal.integrations.jira.deleteConnection, {
+      connectionId: args.connectionId,
+    });
   },
 });
 
