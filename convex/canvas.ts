@@ -121,12 +121,14 @@ export const updateNoteContent = mutation({
 });
 
 // Get note content for an issue (for export)
+// Requires room membership: note contents are private to the room.
 export const getNoteContentForIssue = query({
   args: {
     roomId: v.id("rooms"),
     issueId: v.id("issues"),
   },
   handler: async (ctx, args) => {
+    await requireRoomMember(ctx, args.roomId);
     return await Canvas.getNoteContentForIssue(ctx, args);
   },
 });
