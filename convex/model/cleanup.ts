@@ -1,74 +1,49 @@
 import { MutationCtx } from "../_generated/server";
-import { Doc, Id } from "../_generated/dataModel";
-import {
-  ROOM_OWNED_TABLES,
-  RoomOwnedTable,
-  deleteRoomAggregate,
-} from "./roomAggregate";
+import { Doc } from "../_generated/dataModel";
+import { internal } from "../_generated/api";
+import { ROOM_OWNED_TABLES, RoomOwnedTable } from "./roomAggregate";
 
-export interface CleanupResult {
-  roomsDeleted: number;
-  votesDeleted: number;
-  membershipsDeleted: number;
-  canvasNodesDeleted?: number;
+export interface RemoveInactiveRoomsResult {
+  /** Rooms whose cascade was scheduled (each runs as its own mutation). */
+  roomsScheduled: number;
 }
 
 /**
- * Removes inactive rooms and all associated data
- * @param inactiveDays - Number of days of inactivity before a room is considered inactive
+ * How many inactive rooms one cron tick hands to the cascade. The rest are
+ * picked up by the next daily run — bounding the scan keeps the cron mutation
+ * small no matter how many rooms went stale at once.
+ */
+const INACTIVE_ROOMS_PER_TICK = 100;
+
+/**
+ * Schedules deletion of inactive rooms (default 5 days of inactivity). Each
+ * room's cascade runs as its own scheduled mutation
+ * (internal.maintenance.deleteRoomAggregateChunk), so one oversized or
+ * failing room can neither blow the cron's transaction limits nor take the
+ * other rooms down with it.
  */
 export async function removeInactiveRooms(
   ctx: MutationCtx,
   inactiveDays: number = 5
-): Promise<CleanupResult> {
-  const cutoffTime = Date.now() - (inactiveDays * 24 * 60 * 60 * 1000);
+): Promise<RemoveInactiveRoomsResult> {
+  const cutoffTime = Date.now() - inactiveDays * 24 * 60 * 60 * 1000;
 
-  // Find inactive rooms.
   const inactiveRooms = await ctx.db
     .query("rooms")
     .withIndex("by_activity", (q) => q.lt("lastActivityAt", cutoffTime))
-    .collect();
+    .take(INACTIVE_ROOMS_PER_TICK);
 
-  console.log(`Found ${inactiveRooms.length} inactive rooms to clean up`);
+  console.log(`Scheduling ${inactiveRooms.length} inactive rooms for cleanup`);
 
-  const result: CleanupResult = {
-    roomsDeleted: 0,
-    votesDeleted: 0,
-    membershipsDeleted: 0,
-    canvasNodesDeleted: 0,
-  };
-
-  // Process each room
   for (const room of inactiveRooms) {
-    const cleanupStats = await cleanupRoom(ctx, room._id);
-
-    // Aggregate stats
-    result.votesDeleted += cleanupStats.votesDeleted;
-    result.membershipsDeleted += cleanupStats.membershipsDeleted;
-    result.canvasNodesDeleted! += cleanupStats.canvasNodesDeleted || 0;
-    result.roomsDeleted++;
-
-    console.log(`Cleaned up room ${room.name} (${room._id})`);
+    await ctx.scheduler.runAfter(
+      0,
+      internal.maintenance.deleteRoomAggregateChunk,
+      { roomId: room._id }
+    );
   }
 
-  return result;
-}
-
-/**
- * Cleans up all data associated with a single room.
- * The table set comes from the one room-aggregate inventory
- * (convex/model/roomAggregate.ts) — including issues, which used to leak.
- */
-export async function cleanupRoom(
-  ctx: MutationCtx,
-  roomId: Id<"rooms">
-): Promise<Omit<CleanupResult, "roomsDeleted">> {
-  const deleted = await deleteRoomAggregate(ctx, roomId);
-  return {
-    votesDeleted: deleted.votes,
-    membershipsDeleted: deleted.roomMemberships,
-    canvasNodesDeleted: deleted.canvasNodes,
-  };
+  return { roomsScheduled: inactiveRooms.length };
 }
 
 /**

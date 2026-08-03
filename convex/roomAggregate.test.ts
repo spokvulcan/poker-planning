@@ -1,15 +1,27 @@
 /// <reference types="vite/client" />
 import { convexTest, type TestConvex } from "convex-test";
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { internal } from "./_generated/api";
 import schema from "./schema";
 import type { Id } from "./_generated/dataModel";
-import * as Cleanup from "./model/cleanup";
+import * as RoomAggregate from "./model/roomAggregate";
 import { ROOM_OWNED_TABLES, type RoomOwnedTable } from "./model/roomAggregate";
 
 const modules = import.meta.glob("./**/*.*s");
 
 type T = TestConvex<typeof schema>;
+
+// convex-test dispatches runAfter(0) jobs through a real setTimeout, which
+// can fire mid-test — racing the _scheduled_functions assertions and running
+// Jira actions that need env vars. Faking setTimeout keeps scheduled jobs
+// pending for the duration of each test.
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["setTimeout"] });
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 type CountedTable =
   | RoomOwnedTable
@@ -21,6 +33,55 @@ type CountedTable =
 
 async function countRows(t: T, table: CountedTable): Promise<number> {
   return t.run(async (ctx) => (await ctx.db.query(table).collect()).length);
+}
+
+async function scheduledByName(t: T, suffix: string) {
+  const scheduled = await t.run((ctx) =>
+    ctx.db.system.query("_scheduled_functions").collect()
+  );
+  return scheduled.filter((s) => s.name.endsWith(suffix));
+}
+
+async function seedConnection(
+  t: T,
+  userId: Id<"users">
+): Promise<Id<"integrationConnections">> {
+  return t.run((ctx) =>
+    ctx.db.insert("integrationConnections", {
+      userId,
+      provider: "jira",
+      encryptedAccessToken: "enc-access",
+      accessTokenIv: "iv",
+      accessTokenAuthTag: "tag",
+      expiresAt: Date.now() + 3_600_000,
+      cloudId: "cloud-1",
+      siteUrl: "https://team.atlassian.net",
+      scopes: ["read:jira-work"],
+      connectedAt: Date.now(),
+      lastRefreshedAt: Date.now(),
+    })
+  );
+}
+
+async function seedMappingWithWebhook(
+  t: T,
+  roomId: Id<"rooms">,
+  connectionId: Id<"integrationConnections">,
+  jiraWebhookId: string
+): Promise<Id<"integrationMappings">> {
+  return t.run((ctx) =>
+    ctx.db.insert("integrationMappings", {
+      roomId,
+      connectionId,
+      provider: "jira",
+      jiraProjectKey: "PROJ",
+      jiraWebhookId,
+      jiraWebhookRegisteredAt: Date.now(),
+      autoImport: false,
+      autoPushEstimates: true,
+      createdAt: Date.now(),
+    })
+  );
 }
 
 async function seedRoom(t: T): Promise<Id<"rooms">> {
@@ -158,20 +219,120 @@ async function seedFullRoom(
   });
 }
 
-describe("deleteRoomAggregate", () => {
-  it("deletes the room and one row in every room-owned table", async () => {
+describe("deleteRoomAggregateChunk (registered continuation)", () => {
+  it("deletes the room and one row in every room-owned table through the continuation loop", async () => {
     const t = convexTest(schema, modules);
     const { roomId } = await seedFullRoom(t);
 
-    await t.run((ctx) => Cleanup.cleanupRoom(ctx, roomId));
+    // Phase 1 deletes the issue batch first and asks for a continuation…
+    const first = await t.mutation(internal.maintenance.deleteRoomAggregateChunk, {
+      roomId,
+    });
+    expect(first.done).toBe(false);
+    // …which the scheduled follow-up mutations complete.
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
 
-    // Against the old cleanupRoom, `issues` was never deleted, so
-    // countRows("issues") would still be 1 and this test would fail.
     expect(await countRows(t, "rooms")).toBe(0);
     for (const table of ROOM_OWNED_TABLES) {
       expect(await countRows(t, table)).toBe(0);
     }
     expect(await countRows(t, "issueLinks")).toBe(0);
+    // The integration connection is user-owned, not room-owned: it survives.
+    expect(await countRows(t, "integrationConnections")).toBe(1);
+  });
+
+  it("schedules webhook deregistration before deleting a mapped integration row", async () => {
+    const t = convexTest(schema, modules);
+    const roomId = await seedRoom(t);
+    const userId = await t.run((ctx) =>
+      ctx.db.insert("users", {
+        authUserId: `auth-${crypto.randomUUID()}`,
+        name: "U",
+        createdAt: Date.now(),
+      })
+    );
+    const connectionId = await seedConnection(t, userId);
+    await seedMappingWithWebhook(t, roomId, connectionId, "wh-room");
+
+    const step = await t.run((ctx) =>
+      RoomAggregate.deleteRoomAggregateChunk(ctx, roomId)
+    );
+
+    expect(step.done).toBe(true);
+    expect(await countRows(t, "integrationMappings")).toBe(0);
+    expect(await countRows(t, "rooms")).toBe(0);
+
+    // Deleting the mapping alone would orphan the remote webhook — the
+    // cascade must schedule the deregistration, and the user-owned
+    // connection row must survive so that action can still authenticate.
+    const deregistrations = await scheduledByName(t, ":deregisterWebhook");
+    expect(deregistrations).toHaveLength(1);
+    expect(
+      (deregistrations[0].args as [{ jiraWebhookId: string }])[0].jiraWebhookId
+    ).toBe("wh-room");
+    expect(await countRows(t, "integrationConnections")).toBe(1);
+  });
+});
+
+describe("deleteRoomAggregateChunk (batching)", () => {
+  it("deletes issues and their links in batches, the room row only once every table reads empty", async () => {
+    const t = convexTest(schema, modules);
+    const roomId = await seedRoom(t);
+    for (const sequentialId of [1, 2, 3]) {
+      const issueId = await seedIssue(t, roomId, sequentialId);
+      await seedIssueLink(t, issueId);
+    }
+
+    // Batch size 1: each step deletes exactly one issue plus its one link.
+    for (const issuesLeft of [2, 1, 0]) {
+      const step = await t.run((ctx) =>
+        RoomAggregate.deleteRoomAggregateChunk(ctx, roomId, 1)
+      );
+      expect(step).toEqual({ done: false, deleted: 2 });
+      expect(await countRows(t, "issues")).toBe(issuesLeft);
+      expect(await countRows(t, "issueLinks")).toBe(issuesLeft);
+      // The room row survives until every owned table reads empty.
+      expect(await countRows(t, "rooms")).toBe(1);
+    }
+
+    const final = await t.run((ctx) =>
+      RoomAggregate.deleteRoomAggregateChunk(ctx, roomId, 1)
+    );
+    expect(final).toEqual({ done: true, deleted: 1 }); // the room row itself
+    expect(await countRows(t, "rooms")).toBe(0);
+  });
+});
+
+describe("removeInactiveRooms", () => {
+  it("schedules one cascade per inactive room and leaves active rooms alone", async () => {
+    const t = convexTest(schema, modules);
+    const inactiveId = await t.run((ctx) =>
+      ctx.db.insert("rooms", {
+        name: "Stale",
+        autoCompleteVoting: true,
+        isGameOver: false,
+        createdAt: Date.now() - 10 * 24 * 60 * 60 * 1000,
+        lastActivityAt: Date.now() - 10 * 24 * 60 * 60 * 1000,
+      })
+    );
+    const activeId = await seedRoom(t);
+
+    const result = await t.mutation(internal.cleanup.removeInactiveRooms, {});
+
+    expect(result.roomsScheduled).toBe(1);
+    const cascades = await scheduledByName(t, ":deleteRoomAggregateChunk");
+    expect(cascades).toHaveLength(1);
+    expect((cascades[0].args as [{ roomId: string }])[0].roomId).toBe(
+      inactiveId
+    );
+
+    // Nothing is deleted synchronously — each room's cascade is its own
+    // mutation, so one oversized room can neither blow the cron's
+    // transaction limits nor take the other rooms down with it.
+    expect(await countRows(t, "rooms")).toBe(2);
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    expect(await countRows(t, "rooms")).toBe(1);
+    expect(await t.run((ctx) => ctx.db.get(activeId))).not.toBeNull();
   });
 });
 
