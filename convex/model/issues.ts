@@ -109,9 +109,11 @@ export async function getCurrentIssue(
 }
 
 /**
- * Creates a new issue with an auto-incremented sequential ID
+ * Canonical issue creation, shared by local creates and integration imports:
+ * enforces the per-room cap, allocates the next sequential ID, advances the
+ * room counter exactly once, and appends after the current max order.
  */
-export async function createIssue(
+export async function createIssueInRoom(
   ctx: MutationCtx,
   args: { roomId: Id<"rooms">; title: string }
 ): Promise<Id<"issues">> {
@@ -146,6 +148,16 @@ export async function createIssue(
     createdAt: Date.now(),
     order: maxOrder + 1,
   });
+}
+
+/**
+ * Creates a new issue with an auto-incremented sequential ID
+ */
+export async function createIssue(
+  ctx: MutationCtx,
+  args: { roomId: Id<"rooms">; title: string }
+): Promise<Id<"issues">> {
+  return await createIssueInRoom(ctx, args);
 }
 
 /**

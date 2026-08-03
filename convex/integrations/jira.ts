@@ -16,7 +16,7 @@ import { ActionCtx } from "../_generated/server";
 import { encryptToken, decryptToken } from "../lib/encryption";
 import { requireAuth, requireCanForUser } from "../model/auth";
 import { JiraClient } from "./jiraClient";
-import { validateIssueTitle } from "../model/issues";
+import { createIssueInRoom } from "../model/issues";
 import { MAX_ISSUES_PER_ROOM } from "../constants";
 
 function getTokenEncryptionKey(): string {
@@ -246,6 +246,8 @@ export const createIssueWithLink = internalMutation({
       .withIndex("by_room", (q) => q.eq("roomId", args.roomId))
       .collect();
 
+    // Cap check stays ahead of dedup so a full room errors even when this key
+    // was already imported; createIssueInRoom re-enforces it on creation.
     if (roomIssues.length >= MAX_ISSUES_PER_ROOM) {
       throw new Error(`Rooms are limited to ${MAX_ISSUES_PER_ROOM} issues`);
     }
@@ -264,30 +266,9 @@ export const createIssueWithLink = internalMutation({
       }
     }
 
-    // Create issue (follows Issues.createIssue pattern)
-    const room = await ctx.db.get(args.roomId);
-    if (!room) throw new Error("Room not found");
-
-    const currentNumber = room.nextIssueNumber ?? 1;
-    await ctx.db.patch(args.roomId, { nextIssueNumber: currentNumber + 1 });
-
-    // Find current max order
-    const existingIssues = await ctx.db
-      .query("issues")
-      .withIndex("by_room_order", (q) => q.eq("roomId", args.roomId))
-      .collect();
-    const maxOrder =
-      existingIssues.length > 0
-        ? Math.max(...existingIssues.map((i) => i.order))
-        : 0;
-
-    const issueId = await ctx.db.insert("issues", {
+    const issueId = await createIssueInRoom(ctx, {
       roomId: args.roomId,
-      sequentialId: currentNumber,
-      title: validateIssueTitle(args.title),
-      status: "pending",
-      createdAt: Date.now(),
-      order: maxOrder + 1,
+      title: args.title,
     });
 
     // Create bidirectional link
