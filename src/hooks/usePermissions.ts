@@ -33,6 +33,66 @@ export function permissionProps(rd: ResolvedDecision): PermissionOverlay {
   return { disabled: true, title: rd.message, "aria-label": rd.message };
 }
 
+/**
+ * The input-kind overlay: like `permissionProps`, but denies via `readOnly`
+ * instead of `disabled` so the field stays focusable and its value copyable.
+ * Allowed yields an empty overlay; spread it AFTER the input's own attributes.
+ */
+export type PermissionInputOverlay =
+  | Record<string, never>
+  | { readOnly: true; title: string; "aria-label": string };
+
+/**
+ * Maps a ResolvedDecision to the denial overlay an input composes by spreading
+ * it last. Pure — the input-kind counterpart of `permissionProps`.
+ */
+export function permissionInputProps(
+  rd: ResolvedDecision
+): PermissionInputOverlay {
+  if (rd.allowed) return {};
+  return { readOnly: true, title: rd.message, "aria-label": rd.message };
+}
+
+/**
+ * The denial tooltip copy for a resolved decision: the message when denied,
+ * undefined when allowed. For controls that keep their own attributes (spans,
+ * inputs already disabled by other state) but still read the copy from the
+ * decision rather than embedding their own.
+ */
+export function denialTooltip(rd: ResolvedDecision): string | undefined {
+  return rd.allowed ? undefined : rd.message;
+}
+
+/** The four relationship actions a roster row can take against one target. */
+export type RosterAction = "remove" | "promote" | "demote" | "transfer";
+
+/**
+ * One roster action's control state: `enabled` when its decision allows, else
+ * disabled with the decision's denial tooltip copy — so a denied action
+ * renders visible-but-disabled instead of vanishing.
+ */
+export type RosterActionControl =
+  | { enabled: true; denial?: never }
+  | { enabled: false; denial: string };
+
+/**
+ * Bundles a roster row's four relationship decisions against one target into
+ * per-action control state. Pure — the row keeps its own onClick, className,
+ * and per-action labels; this owns only the enabled/denial wiring.
+ */
+export function rosterControls(
+  decisions: Record<RosterAction, ResolvedDecision>
+): Record<RosterAction, RosterActionControl> {
+  const toControl = (rd: ResolvedDecision): RosterActionControl =>
+    rd.allowed ? { enabled: true } : { enabled: false, denial: rd.message };
+  return {
+    remove: toControl(decisions.remove),
+    promote: toControl(decisions.promote),
+    demote: toControl(decisions.demote),
+    transfer: toControl(decisions.transfer),
+  };
+}
+
 export interface UsePermissionsReturn {
   role: MemberRole;
   isOwner: boolean;

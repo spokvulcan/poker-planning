@@ -14,6 +14,7 @@ import {
 import { cn } from "@/lib/utils";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
 import { type ResolvedDecision, RESOLVED_ALLOWED } from "@/convex/permissions";
+import { denialTooltip, permissionProps } from "@/hooks/usePermissions";
 import { useIsDemoMode } from "./demo/DemoSimulationProvider";
 
 interface IssueLink {
@@ -51,9 +52,6 @@ export const IssueItem: FC<IssueItemProps> = ({
   // denial copy comes from the resolved decision's message (single source).
   const canManageIssues = canManageIssuesDecision.allowed;
   const canControlGameFlow = canControlGameFlowDecision.allowed;
-  const manageIssuesDenial = canManageIssuesDecision.allowed
-    ? undefined
-    : canManageIssuesDecision.message;
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [isEditingEstimate, setIsEditingEstimate] = useState(false);
   const [editedTitle, setEditedTitle] = useState(issue.title);
@@ -115,9 +113,15 @@ export const IssueItem: FC<IssueItemProps> = ({
   const isVoting = issue.status === "voting";
 
   const canStartVote = !isVoting && !isDemoMode && canControlGameFlow;
+  // Only a game-flow denial turns the fallback tooltip into the denial copy;
+  // the already-voting and demo states keep the plain title.
+  const startVotingDenial =
+    !isVoting && !isDemoMode
+      ? denialTooltip(canControlGameFlowDecision)
+      : undefined;
   const titleTooltip = canStartVote
     ? `Click to vote on: ${issue.title}`
-    : issue.title;
+    : (startVotingDenial ?? issue.title);
 
   return (
     <div
@@ -218,9 +222,8 @@ export const IssueItem: FC<IssueItemProps> = ({
             <Button
               variant="ghost"
               size="icon-sm"
-              disabled={true}
               className="opacity-40 cursor-not-allowed text-gray-400"
-              title={manageIssuesDenial}
+              {...permissionProps(canManageIssuesDecision)}
             >
               <MoreHorizontal className="h-4 w-4" />
               <span className="sr-only">Issue actions unavailable</span>
