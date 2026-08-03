@@ -1,6 +1,11 @@
 /**
  * Jira integration - actions and internal mutations for OAuth,
  * token management, issue import, and estimate push-back.
+ *
+ * Fetch orchestration (OAuth token exchange/refresh, Jira REST calls through
+ * JiraClient, webhook registration) lives here; the db-side invariants
+ * (connection upsert, mapping writes, webhook event dedup/apply) live in
+ * model/integrations.ts and the handlers below delegate to it.
  */
 
 import {
@@ -17,6 +22,7 @@ import { encryptToken, decryptToken } from "../lib/encryption";
 import { requireAuth, requireCanForUser } from "../model/auth";
 import { JiraClient } from "./jiraClient";
 import { createIssueInRoom } from "../model/issues";
+import * as Integrations from "../model/integrations";
 import { MAX_ISSUES_PER_ROOM } from "../constants";
 
 function getTokenEncryptionKey(): string {
@@ -148,53 +154,7 @@ export const saveConnection = internalMutation({
     scopes: v.array(v.string()),
   },
   handler: async (ctx, args) => {
-    // Check for existing connection
-    const existing = await ctx.db
-      .query("integrationConnections")
-      .withIndex("by_user_provider", (q) =>
-        q.eq("userId", args.userId).eq("provider", args.provider)
-      )
-      .first();
-
-    const now = Date.now();
-
-    if (existing) {
-      await ctx.db.patch(existing._id, {
-        encryptedAccessToken: args.encryptedAccessToken,
-        accessTokenIv: args.accessTokenIv,
-        accessTokenAuthTag: args.accessTokenAuthTag,
-        encryptedRefreshToken: args.encryptedRefreshToken,
-        refreshTokenIv: args.refreshTokenIv,
-        refreshTokenAuthTag: args.refreshTokenAuthTag,
-        expiresAt: args.expiresAt,
-        cloudId: args.cloudId,
-        siteUrl: args.siteUrl,
-        providerUserId: args.providerUserId,
-        providerUserEmail: args.providerUserEmail,
-        scopes: args.scopes,
-        lastRefreshedAt: now,
-      });
-      return existing._id;
-    }
-
-    return await ctx.db.insert("integrationConnections", {
-      userId: args.userId,
-      provider: args.provider,
-      encryptedAccessToken: args.encryptedAccessToken,
-      accessTokenIv: args.accessTokenIv,
-      accessTokenAuthTag: args.accessTokenAuthTag,
-      encryptedRefreshToken: args.encryptedRefreshToken,
-      refreshTokenIv: args.refreshTokenIv,
-      refreshTokenAuthTag: args.refreshTokenAuthTag,
-      expiresAt: args.expiresAt,
-      cloudId: args.cloudId,
-      siteUrl: args.siteUrl,
-      providerUserId: args.providerUserId,
-      providerUserEmail: args.providerUserEmail,
-      scopes: args.scopes,
-      connectedAt: now,
-      lastRefreshedAt: now,
-    });
+    return await Integrations.saveConnection(ctx, args);
   },
 });
 
@@ -290,10 +250,19 @@ export const setMappingWebhook = internalMutation({
     jiraWebhookId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    await ctx.db.patch(args.mappingId, {
-      jiraWebhookId: args.jiraWebhookId,
-      jiraWebhookRegisteredAt: args.jiraWebhookId ? Date.now() : undefined,
-    });
+    await Integrations.setMappingWebhook(
+      ctx,
+      args.mappingId,
+      args.jiraWebhookId
+    );
+  },
+});
+
+/** Scheduled tail of the disconnect cascade — see model/integrations.ts. */
+export const deleteConnection = internalMutation({
+  args: { connectionId: v.id("integrationConnections") },
+  handler: async (ctx, args) => {
+    await Integrations.deleteConnection(ctx, args.connectionId);
   },
 });
 
@@ -660,59 +629,50 @@ export const processJiraWebhook = internalMutation({
     issueSummary: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    // Atomic dedup: check + insert in the same mutation (no race window)
-    const existing = await ctx.db
-      .query("webhookEvents")
-      .withIndex("by_event_key", (q) => q.eq("eventKey", args.eventKey))
-      .first();
-    if (existing) return; // Already processed
-
-    await ctx.db.insert("webhookEvents", {
-      eventKey: args.eventKey,
-      provider: "jira",
-      processedAt: Date.now(),
-    });
-
-    // Find linked issue
-    const link = await ctx.db
-      .query("issueLinks")
-      .withIndex("by_external", (q) =>
-        q.eq("provider", "jira").eq("externalId", args.issueKey)
-      )
-      .first();
-
-    if (!link) return; // Not a tracked issue
-
-    if (args.eventType === "jira:issue_updated" && args.issueSummary) {
-      // Update issue title
-      const issue = await ctx.db.get(link.issueId);
-      if (issue) {
-        await ctx.db.patch(link.issueId, {
-          title: `${args.issueKey} - ${args.issueSummary}`,
-        });
-      }
-      await ctx.db.patch(link._id, { lastSyncedAt: Date.now() });
-    }
-
-    if (args.eventType === "jira:issue_deleted") {
-      // Remove the link (keep the AgileKit issue)
-      await ctx.db.delete(link._id);
-    }
+    await Integrations.processJiraWebhookEvent(ctx, args);
   },
 });
 
 export const cleanupOldWebhookEvents = internalMutation({
   args: {},
   handler: async (ctx) => {
-    const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
-    const oldEvents = await ctx.db
-      .query("webhookEvents")
-      .withIndex("by_processed", (q) => q.lt("processedAt", sevenDaysAgo))
-      .collect();
+    await Integrations.cleanupOldWebhookEvents(ctx);
+  },
+});
 
-    await Promise.all(oldEvents.map((e) => ctx.db.delete(e._id)));
-    if (oldEvents.length > 0) {
-      console.log(`Cleaned up ${oldEvents.length} old webhook events`);
+/**
+ * Best-effort remote deregistration of one Jira webhook. The model schedules
+ * this whenever a mapping or connection is torn down, so the remote webhook
+ * is deleted instead of being orphaned until its 30-day expiry. If the
+ * connection is already gone the webhook is left to expire — logged here so
+ * the leak is tracked rather than silent.
+ */
+export const deregisterWebhook = internalAction({
+  args: {
+    connectionId: v.id("integrationConnections"),
+    jiraWebhookId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const connection = await ctx.runQuery(
+      internal.integrations.jira.getConnectionById,
+      { connectionId: args.connectionId }
+    );
+    if (!connection) {
+      console.warn(
+        `Jira connection ${args.connectionId} already removed; webhook ${args.jiraWebhookId} left to expire remotely`
+      );
+      return;
+    }
+
+    try {
+      const client = await buildJiraClient(ctx, connection);
+      await client.deleteWebhooks([args.jiraWebhookId]);
+      console.log(`Deregistered Jira webhook ${args.jiraWebhookId}`);
+    } catch (error) {
+      console.warn(
+        `Failed to deregister Jira webhook ${args.jiraWebhookId}:`,
+        error
+      );
     }
   },
 });
