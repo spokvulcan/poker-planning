@@ -756,7 +756,16 @@ export const registerWebhook = internalAction({
     if (!connection) throw new Error("Connection not found");
 
     const client = await buildJiraClient(ctx, connection);
-    const webhookUrl = `${process.env.CONVEX_SITE_URL}/webhooks/jira`;
+    // Jira Cloud webhooks cannot send custom headers, so the shared secret
+    // travels in the registered URL. The endpoint rejects deliveries without
+    // it, so registration must not proceed when the secret is missing.
+    const webhookSecret = process.env.JIRA_WEBHOOK_SECRET;
+    if (!webhookSecret) {
+      throw new Error(
+        "JIRA_WEBHOOK_SECRET must be configured to register a Jira webhook"
+      );
+    }
+    const webhookUrl = `${process.env.CONVEX_SITE_URL}/webhooks/jira?secret=${encodeURIComponent(webhookSecret)}`;
 
     try {
       if (mapping.jiraWebhookId) {
