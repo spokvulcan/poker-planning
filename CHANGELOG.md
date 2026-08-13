@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.9.5](https://github.com/spokvulcan/poker-planning/compare/agilekit-v2.9.4...agilekit-v2.9.5) (2026-08-11)
+
+
+### Miscellaneous
+
+* **deps:** bump brace-expansion from 5.0.8 to 5.0.9 ([#245](https://github.com/spokvulcan/poker-planning/issues/245)) ([ff4510a](https://github.com/spokvulcan/poker-planning/commit/ff4510a3b710bfbec14987f44210995fff3db99d))
+* **deps:** bump fast-uri from 3.1.4 to 3.1.5 ([#244](https://github.com/spokvulcan/poker-planning/issues/244)) ([544abea](https://github.com/spokvulcan/poker-planning/commit/544abeaa6216de24b253de2076701181e5661f4f))
+* **deps:** bump hono from 4.12.32 to 4.13.1 ([#248](https://github.com/spokvulcan/poker-planning/issues/248)) ([383c409](https://github.com/spokvulcan/poker-planning/commit/383c409153a203301f1cee2285db8914cdaf3304))
+
 ## [2.9.4](https://github.com/spokvulcan/poker-planning/compare/agilekit-v2.9.3...agilekit-v2.9.4) (2026-08-03)
 
 
