@@ -1,4 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
+
+import { useLatest } from "./use-latest";
 
 /**
  * Any method signature. `(...args: never[]) => unknown` is the assignability
@@ -29,15 +31,10 @@ type AnyAction = (...args: never[]) => unknown;
 export function useStableActions<T extends Record<keyof T, AnyAction>>(
   impl: T,
 ): T {
-  // `useRef(impl)` seeds the latest-impl ref with the first render's closures;
-  // the effect keeps it current on every subsequent commit.
-  const implRef = useRef(impl);
-  // No dependency array is intentional: this runs after every commit so the
-  // ref always points at the latest closures (the "latest ref" pattern), not a
-  // forgotten dep list.
-  useEffect(() => {
-    implRef.current = impl;
-  });
+  // The shared latest-ref hook keeps the ref pointing at the current render's
+  // closures after every commit (`impl` is rebuilt each render, so its effect
+  // fires each commit).
+  const implRef = useLatest(impl);
 
   // Each wrapper method forwards to the latest impl under a key fixed at
   // creation — the seam's method set never changes between renders. The double

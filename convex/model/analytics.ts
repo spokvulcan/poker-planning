@@ -178,11 +178,9 @@ function toVoteRecord(vote: Doc<"individualVotes">): HistoryVoteRecord {
 }
 
 /**
- * The live scan behind the snapshot: one room's completed issues and vote
- * snapshots, straight from the tables. Used when no fresh snapshot exists, and
- * by the snapshot write path itself.
+ * The one room-table scan: completed issues + vote snapshots as records. Used
+ * when no fresh snapshot exists, and by the snapshot write path itself.
  */
-/** The one room-table scan: completed issues + vote snapshots as records. */
 async function collectRoomHistoryRecords(
   ctx: QueryCtx,
   roomId: Id<"rooms">
@@ -203,18 +201,6 @@ async function collectRoomHistoryRecords(
       .filter((i) => i.status === "completed")
       .map(toIssueRecord),
     individualVotes: individualVotes.map(toVoteRecord),
-  };
-}
-
-async function scanRoomHistory(
-  ctx: QueryCtx,
-  membership: Doc<"roomMemberships">,
-  room: Doc<"rooms">
-): Promise<RoomHistory> {
-  return {
-    membership,
-    room,
-    ...(await collectRoomHistoryRecords(ctx, room._id)),
   };
 }
 
@@ -256,7 +242,11 @@ async function roomHistories(
         };
       }
 
-      return scanRoomHistory(ctx, membership, room);
+      return {
+        membership,
+        room,
+        ...(await collectRoomHistoryRecords(ctx, room._id)),
+      };
     })
   );
 }
@@ -273,13 +263,14 @@ export async function refreshRoomAnalyticsSnapshot(
   ctx: MutationCtx,
   roomId: Id<"rooms">
 ): Promise<void> {
-  const history = await collectRoomHistoryRecords(ctx, roomId);
+  const [history, existing] = await Promise.all([
+    collectRoomHistoryRecords(ctx, roomId),
+    ctx.db
+      .query("roomAnalyticsSnapshots")
+      .withIndex("by_room", (q) => q.eq("roomId", roomId))
+      .first(),
+  ]);
   const computedAt = Date.now();
-
-  const existing = await ctx.db
-    .query("roomAnalyticsSnapshots")
-    .withIndex("by_room", (q) => q.eq("roomId", roomId))
-    .first();
   if (existing) {
     await ctx.db.patch(existing._id, { history, computedAt });
   } else {
@@ -304,13 +295,15 @@ export async function invalidateRoomAnalyticsSnapshots(
   ctx: MutationCtx,
   roomIds: Id<"rooms">[]
 ): Promise<void> {
-  for (const roomId of new Set(roomIds)) {
-    const snapshot = await ctx.db
-      .query("roomAnalyticsSnapshots")
-      .withIndex("by_room", (q) => q.eq("roomId", roomId))
-      .first();
-    if (snapshot) await ctx.db.delete(snapshot._id);
-  }
+  await Promise.all(
+    [...new Set(roomIds)].map(async (roomId) => {
+      const snapshot = await ctx.db
+        .query("roomAnalyticsSnapshots")
+        .withIndex("by_room", (q) => q.eq("roomId", roomId))
+        .first();
+      if (snapshot) await ctx.db.delete(snapshot._id);
+    })
+  );
 }
 
 /** Flattens the aggregate into issue entries carrying their room context. */

@@ -172,14 +172,15 @@ export async function removeIssue(
   const issue = await ctx.db.get(issueId);
   if (!issue) throw new Error("Issue not found");
 
-  await Rooms.updateRoomActivity(ctx, issue.roomId);
-
   // Deleting the issue being voted on ends the round cleanly: delegate to the
   // round's abandon (drops the target to a Quick Vote, cancels the countdown,
-  // clears votes) before the issue and its records are removed below.
+  // clears votes — and bumps room activity itself) before the issue and its
+  // records are removed below.
   const room = await ctx.db.get(issue.roomId);
   if (room?.currentIssueId === issueId) {
     await VotingRound.abandon(ctx, issue.roomId);
+  } else {
+    await Rooms.updateRoomActivity(ctx, issue.roomId);
   }
 
   // Delete associated voting timestamps

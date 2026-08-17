@@ -28,6 +28,7 @@ import { requireAuth, requireCanForUser } from "../model/auth";
 import { JiraClient } from "./jiraClient";
 import { buildJiraClient } from "./jiraAuth";
 import { applyJiraWebhookEvent } from "./jiraWebhook";
+import { cardNumericValue } from "../model/alignment";
 import { createIssueInRoom } from "../model/issues";
 import * as Integrations from "../model/integrations";
 import * as TokenVault from "../model/tokenVault";
@@ -456,9 +457,10 @@ export async function pushEstimateWithClient(
     return false;
   }
 
-  // Parse estimate to number — skip if non-numeric (e.g., "XL", "?")
-  const numericEstimate = parseFloat(push.finalEstimate);
-  if (isNaN(numericEstimate)) {
+  // Convert via the one card→numeric conversion — skip non-numeric estimates
+  // (e.g., "XL", "?")
+  const numericEstimate = cardNumericValue(push.finalEstimate);
+  if (numericEstimate === undefined) {
     console.log(`Non-numeric estimate "${push.finalEstimate}", skipping Jira push`);
     return false;
   }

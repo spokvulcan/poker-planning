@@ -7,7 +7,7 @@ import {
   type TimerState,
 } from "@/convex/timerState";
 import { useDemoSimulation } from "../demo/DemoSimulationProvider";
-import { useCanvasActions } from "./useCanvasActions";
+import { useTimerActions } from "./useTimerActions";
 
 interface UseTimerSyncProps {
   roomId: Id<"rooms">;
@@ -36,10 +36,11 @@ interface UseTimerSyncReturn {
  * smoothly between server snapshots; paused/reset states are static and re-derive
  * whenever the node data changes.
  *
- * Writes go through the canvas-actions seam (useCanvasActions): the demo no-op
- * policy and the missing-user guard live there with every other canvas write
- * (ADR-0003), so the old "User ID required" red error is unreachable — in the
- * demo every action silently no-ops, in a real room the viewer always exists.
+ * Writes go through the timer's action seam (useTimerActions): the demo no-op
+ * policy and the missing-user guard live there, same as every other *Actions
+ * seam (ADR-0003), so the old "User ID required" red error is unreachable — in
+ * the demo every action silently no-ops, in a real room the viewer always
+ * exists.
  */
 export function useTimerSync({
   roomId,
@@ -53,7 +54,7 @@ export function useTimerSync({
 
   // The seam also owns failure reporting (console, same as reveal/reset), so
   // this hook no longer carries an error state of its own.
-  const actions = useCanvasActions({ roomId, currentUserId: userId });
+  const actions = useTimerActions({ roomId, currentUserId: userId });
 
   // Local clock for smooth ticking while running
   const [now, setNow] = useState(() => Date.now());

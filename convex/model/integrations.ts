@@ -359,7 +359,7 @@ export async function scheduleWebhookDeregistration(
  */
 export async function recordWebhookEvent(
   ctx: MutationCtx,
-  args: { eventKey: string; provider: "jira" | "github" }
+  args: { eventKey: string; provider: Doc<"webhookEvents">["provider"] }
 ): Promise<boolean> {
   const existing = await ctx.db
     .query("webhookEvents")

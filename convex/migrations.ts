@@ -17,18 +17,19 @@ export const backfillIssueLinksRoomId = internalMutation({
   args: {},
   handler: async (ctx) => {
     const links = await ctx.db.query("issueLinks").collect();
-    let tagged = 0;
-    let orphaned = 0;
-    for (const link of links) {
-      if (link.roomId !== undefined) continue;
-      const issue = await ctx.db.get(link.issueId);
-      if (!issue) {
-        orphaned++;
-        continue;
-      }
-      await ctx.db.patch(link._id, { roomId: issue.roomId });
-      tagged++;
-    }
-    return { total: links.length, tagged, orphaned };
+    const outcomes = await Promise.all(
+      links.map(async (link) => {
+        if (link.roomId !== undefined) return "already-tagged";
+        const issue = await ctx.db.get(link.issueId);
+        if (!issue) return "orphaned";
+        await ctx.db.patch(link._id, { roomId: issue.roomId });
+        return "tagged";
+      })
+    );
+    return {
+      total: links.length,
+      tagged: outcomes.filter((o) => o === "tagged").length,
+      orphaned: outcomes.filter((o) => o === "orphaned").length,
+    };
   },
 });

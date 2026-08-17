@@ -1,5 +1,5 @@
 import { MutationCtx } from "../_generated/server";
-import { Id } from "../_generated/dataModel";
+import { Doc, Id } from "../_generated/dataModel";
 import { internal } from "../_generated/api";
 import * as Rooms from "./rooms";
 import * as Canvas from "./canvas";
@@ -406,26 +406,28 @@ async function openTimingRecord(
  * Closes the target issue's open timed round, if any — the ONE canonical
  * timestamp-close path. Every transition that ends a round without completing
  * it (start switching targets, reset, abandon, a consensus-less reveal)
- * funnels through here. Returns whether a round was open.
+ * funnels through here. Returns whether a round was open, plus the issue's
+ * timing records (durations current as of the close) so callers that need
+ * them don't re-read the index.
  */
 async function closeOpenTimingRecord(
   ctx: MutationCtx,
   issueId: Id<"issues">
-): Promise<boolean> {
+): Promise<{ closed: boolean; timestamps: Doc<"votingTimestamps">[] }> {
   const timestamps = await ctx.db
     .query("votingTimestamps")
     .withIndex("by_issue", (q) => q.eq("issueId", issueId))
     .collect();
 
   const latest = timestamps[timestamps.length - 1];
-  if (!latest || latest.votingEndedAt) return false;
+  if (!latest || latest.votingEndedAt) return { closed: false, timestamps };
 
   const now = Date.now();
-  await ctx.db.patch(latest._id, {
-    votingEndedAt: now,
-    durationMs: now - latest.votingStartedAt,
-  });
-  return true;
+  const durationMs = now - latest.votingStartedAt;
+  await ctx.db.patch(latest._id, { votingEndedAt: now, durationMs });
+  latest.votingEndedAt = now;
+  latest.durationMs = durationMs;
+  return { closed: true, timestamps };
 }
 
 /**
@@ -448,12 +450,10 @@ async function completeTargetIssue(
   // Close the open timed round (canonical close), then total the time across
   // rounds. Always recorded for an issue-backed round (the former demo-room
   // exemption is gone with the demo — ADR-0003).
-  const closedOpenRound = await closeOpenTimingRecord(ctx, args.issueId);
-
-  const timestamps = await ctx.db
-    .query("votingTimestamps")
-    .withIndex("by_issue", (q) => q.eq("issueId", args.issueId))
-    .collect();
+  const { closed: closedOpenRound, timestamps } = await closeOpenTimingRecord(
+    ctx,
+    args.issueId
+  );
   const totalMs = timestamps.reduce((sum, ts) => sum + (ts.durationMs ?? 0), 0);
 
   let timeToConsensusMs: number | undefined;

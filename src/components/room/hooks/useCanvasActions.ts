@@ -25,22 +25,14 @@ export interface CanvasActions {
   /** Persists a node position. Debouncing stays at the call site. */
   updateNodePosition: (nodeId: string, position: { x: number; y: number }) => void;
   removeUser: (userId: Id<"users">) => void;
-  /** Canvas TimerNode controls — the timer's writes share the seam's guards. */
-  startTimer: (nodeId: string) => void;
-  pauseTimer: (nodeId: string) => void;
-  resetTimer: (nodeId: string) => void;
 }
 
 interface UseCanvasActionsProps {
   roomId: Id<"rooms">;
   currentUserId?: Id<"users">;
-  /**
-   * The currently-highlighted card, so a failed pick can roll back to it. The
-   * pair is read only by selectCard — consumers that never pick cards (the
-   * timer, via use-timer-sync) omit it, and selectCard no-ops.
-   */
-  selectedCardValue?: string | null;
-  setSelectedCardValue?: (value: string | null) => void;
+  /** The currently-highlighted card, so a failed pick can roll back to it. */
+  selectedCardValue: string | null;
+  setSelectedCardValue: (value: string | null) => void;
 }
 
 /**
@@ -70,9 +62,6 @@ export function useCanvasActions({
   const createNoteMutation = useMutation(api.canvas.createNote);
   const deleteNoteMutation = useMutation(api.canvas.deleteNote);
   const removeUserMutation = useMutation(api.users.remove);
-  const startTimerMutation = useMutation(api.timer.startTimer);
-  const pauseTimerMutation = useMutation(api.timer.pauseTimer);
-  const resetTimerMutation = useMutation(api.timer.resetTimer);
 
   // The live implementations, recreated each render so they always close over
   // the latest roomId/currentUserId/mutations — no per-field refs needed.
@@ -110,7 +99,7 @@ export function useCanvasActions({
       }
     },
     selectCard: async (cardValue: string) => {
-      if (isDemo || !currentUserId || !setSelectedCardValue) return;
+      if (isDemo || !currentUserId) return;
       // Snapshot the prior highlight so a failed write rolls back to it rather
       // than to `null` (which would flash "no selection" over an existing vote
       // until the next server tick re-applies it).
@@ -169,32 +158,6 @@ export function useCanvasActions({
         await removeUserMutation({ userId, roomId });
       } catch (error) {
         console.error("Failed to remove user:", error);
-      }
-    },
-    // The TimerNode's controls (reached via use-timer-sync). Same guards and
-    // failure policy as every other canvas action — the demo no-ops (ADR-0003).
-    startTimer: async (nodeId: string) => {
-      if (isDemo || !currentUserId) return;
-      try {
-        await startTimerMutation({ roomId, nodeId, userId: currentUserId });
-      } catch (error) {
-        console.error("Failed to start timer:", error);
-      }
-    },
-    pauseTimer: async (nodeId: string) => {
-      if (isDemo || !currentUserId) return;
-      try {
-        await pauseTimerMutation({ roomId, nodeId, userId: currentUserId });
-      } catch (error) {
-        console.error("Failed to pause timer:", error);
-      }
-    },
-    resetTimer: async (nodeId: string) => {
-      if (isDemo || !currentUserId) return;
-      try {
-        await resetTimerMutation({ roomId, nodeId, userId: currentUserId });
-      } catch (error) {
-        console.error("Failed to reset timer:", error);
       }
     },
   };

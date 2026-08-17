@@ -1,5 +1,5 @@
 /// <reference types="vite/client" />
-import { convexTest, type TestConvex } from "convex-test";
+import { convexTest } from "convex-test";
 import { describe, it, expect, vi, afterEach } from "vitest";
 import schema from "./schema";
 import { api, internal } from "./_generated/api";
@@ -8,100 +8,26 @@ import * as Analytics from "./model/analytics";
 import * as Issues from "./model/issues";
 import * as Users from "./model/users";
 import * as VotingRound from "./model/votingRound";
+import {
+  type T,
+  IN,
+  OUT,
+  RANGE,
+  seedUser,
+  seedRoom,
+  addMembership,
+  seedIssue,
+  seedVote,
+} from "./analytics.seeds";
 
 const modules = import.meta.glob("./**/*.*s");
 
-type T = TestConvex<typeof schema>;
-
-// Deterministic UTC timestamps: IN lands inside RANGE, OUT outside it.
+// A timestamp before IN, for histories that need an earlier event in RANGE.
 const BASE = Date.UTC(2026, 0, 5, 12); // 2026-01-05
-const IN = Date.UTC(2026, 0, 10, 12); // 2026-01-10
-const OUT = Date.UTC(2026, 1, 10, 12); // 2026-02-10
-const RANGE = { from: Date.UTC(2026, 0, 1), to: Date.UTC(2026, 0, 31, 23, 59, 59) };
 
 afterEach(() => {
   vi.useRealTimers();
 });
-
-async function seedUser(t: T, authUserId: string, name = "U"): Promise<Id<"users">> {
-  return t.run((ctx) =>
-    ctx.db.insert("users", { authUserId, name, createdAt: Date.now() })
-  );
-}
-
-async function seedRoom(t: T, name = "R"): Promise<Id<"rooms">> {
-  return t.run((ctx) =>
-    ctx.db.insert("rooms", {
-      name,
-      autoCompleteVoting: false,
-      isGameOver: false,
-      createdAt: Date.now(),
-      lastActivityAt: Date.now(),
-    })
-  );
-}
-
-async function addMembership(
-  t: T,
-  roomId: Id<"rooms">,
-  userId: Id<"users">,
-  joinedAt: number
-): Promise<void> {
-  await t.run((ctx) =>
-    ctx.db.insert("roomMemberships", { roomId, userId, isSpectator: false, joinedAt })
-  );
-}
-
-async function seedIssue(
-  t: T,
-  roomId: Id<"rooms">,
-  opts: {
-    sequentialId: number;
-    status?: "pending" | "voting" | "completed";
-    votedAt?: number;
-    finalEstimate?: string;
-    voteStats?: { agreement: number; voteCount: number; timeToConsensusMs?: number };
-  }
-): Promise<Id<"issues">> {
-  return t.run((ctx) =>
-    ctx.db.insert("issues", {
-      roomId,
-      sequentialId: opts.sequentialId,
-      title: `Issue ${opts.sequentialId}`,
-      status: opts.status ?? "completed",
-      ...(opts.votedAt !== undefined ? { votedAt: opts.votedAt } : {}),
-      ...(opts.finalEstimate !== undefined ? { finalEstimate: opts.finalEstimate } : {}),
-      ...(opts.voteStats !== undefined ? { voteStats: opts.voteStats } : {}),
-      createdAt: Date.now(),
-      order: opts.sequentialId,
-    })
-  );
-}
-
-async function seedVote(
-  t: T,
-  opts: {
-    roomId: Id<"rooms">;
-    issueId: Id<"issues">;
-    userId: Id<"users">;
-    cardLabel: string;
-    consensusLabel?: string;
-    deltaSteps?: number;
-    votedAt: number;
-  }
-): Promise<void> {
-  await t.run((ctx) =>
-    ctx.db.insert("individualVotes", {
-      roomId: opts.roomId,
-      issueId: opts.issueId,
-      userId: opts.userId,
-      cardLabel: opts.cardLabel,
-      ...(opts.consensusLabel !== undefined ? { consensusLabel: opts.consensusLabel } : {}),
-      ...(opts.deltaSteps !== undefined ? { deltaSteps: opts.deltaSteps } : {}),
-      votedAt: opts.votedAt,
-    })
-  );
-}
 
 /** Plays one full round on an issue: start -> one vote -> reveal (consensus). */
 async function playRound(

@@ -52,9 +52,6 @@ function invokeAll(actions: ReturnType<typeof useCanvasActions>) {
   actions.deleteNote("note-1");
   actions.updateNodePosition("note-1", { x: 1, y: 2 });
   actions.removeUser(USER_ID);
-  actions.startTimer("timer");
-  actions.pauseTimer("timer");
-  actions.resetTimer("timer");
 }
 
 beforeEach(() => {
@@ -178,48 +175,5 @@ describe("useCanvasActions — selectCard value handling", () => {
 
     // Optimistic write to "8", then rollback to the prior "5" — never to null.
     expect(setSelectedCardValue.mock.calls).toEqual([["8"], ["5"]]);
-  });
-});
-
-describe("useCanvasActions — timer through the seam", () => {
-  it("writes start/pause/reset with the acting user in real mode", async () => {
-    const { result } = renderHook(() =>
-      useCanvasActions({
-        roomId: ROOM_ID,
-        currentUserId: USER_ID,
-        selectedCardValue: null,
-        setSelectedCardValue: vi.fn(),
-      }),
-    );
-
-    await act(async () => {
-      result.current.startTimer("timer");
-      result.current.pauseTimer("timer");
-      result.current.resetTimer("timer");
-    });
-
-    expect(writes.calls).toHaveLength(3);
-    for (const call of writes.calls) {
-      expect(call.args).toEqual({
-        roomId: ROOM_ID,
-        nodeId: "timer",
-        userId: USER_ID,
-      });
-    }
-  });
-
-  it("no-ops silently with no acting user (the timer's old red-error case)", async () => {
-    const { result } = renderHook(() =>
-      useCanvasActions({
-        roomId: ROOM_ID,
-        currentUserId: undefined,
-        selectedCardValue: null,
-        setSelectedCardValue: vi.fn(),
-      }),
-    );
-
-    await act(async () => result.current.startTimer("timer"));
-
-    expect(writes.calls).toEqual([]);
   });
 });
