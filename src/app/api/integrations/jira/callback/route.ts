@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { fetchAuthAction } from "@/lib/auth-server";
 import { api } from "@/convex/_generated/api";
+import { exchangeJiraCode } from "./exchangeCode";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -26,89 +27,23 @@ export async function GET(request: Request) {
     redirect("/dashboard/settings?tab=integrations&error=jira_state_mismatch");
   }
 
-  const clientId = process.env.JIRA_CLIENT_ID!;
-  const clientSecret = process.env.JIRA_CLIENT_SECRET!;
   const appUrl =
     process.env.NEXT_PUBLIC_APP_URL ?? process.env.NEXT_PUBLIC_SITE_URL!;
 
-  // Exchange code for tokens
-  const tokenResponse = await fetch(
-    "https://auth.atlassian.com/oauth/token",
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        grant_type: "authorization_code",
-        client_id: clientId,
-        client_secret: clientSecret,
-        code,
-        redirect_uri: `${appUrl}/api/integrations/jira/callback`,
-      }),
-    }
-  );
+  const result = await exchangeJiraCode(code, {
+    clientId: process.env.JIRA_CLIENT_ID!,
+    clientSecret: process.env.JIRA_CLIENT_SECRET!,
+    appUrl,
+  });
 
-  if (!tokenResponse.ok) {
-    console.error(
-      "Jira token exchange failed:",
-      await tokenResponse.text()
-    );
-    redirect("/dashboard/settings?tab=integrations&error=jira_token_failed");
-  }
-
-  const tokens = await tokenResponse.json();
-
-  // Get accessible resources (Cloud ID)
-  const resourcesResponse = await fetch(
-    "https://api.atlassian.com/oauth/token/accessible-resources",
-    {
-      headers: { Authorization: `Bearer ${tokens.access_token}` },
-    }
-  );
-
-  if (!resourcesResponse.ok) {
-    console.error(
-      "Jira resources fetch failed:",
-      await resourcesResponse.text()
-    );
-    redirect(
-      "/dashboard/settings?tab=integrations&error=jira_resources_failed"
-    );
-  }
-
-  const resources = await resourcesResponse.json();
-  const cloudId = resources[0]?.id;
-  const siteUrl = resources[0]?.url;
-
-  if (!cloudId) {
-    redirect(
-      "/dashboard/settings?tab=integrations&error=jira_no_site"
-    );
+  if (!result.ok) {
+    redirect(`/dashboard/settings?tab=integrations&error=${result.error}`);
   }
 
   try {
-    // Get Jira user info for metadata
-    const jiraUserResponse = await fetch(
-      "https://api.atlassian.com/me",
-      {
-        headers: { Authorization: `Bearer ${tokens.access_token}` },
-      }
-    );
-    const jiraUser = jiraUserResponse.ok
-      ? await jiraUserResponse.json()
-      : null;
-
     // Call public action via user's auth session (fetchAuthAction
     // carries the user's session cookie automatically)
-    await fetchAuthAction(api.integrations.jira.connectJira, {
-      accessToken: tokens.access_token,
-      refreshToken: tokens.refresh_token,
-      expiresIn: tokens.expires_in,
-      cloudId,
-      siteUrl,
-      scopes: (tokens.scope as string).split(" "),
-      providerUserId: jiraUser?.account_id,
-      providerUserEmail: jiraUser?.email,
-    });
+    await fetchAuthAction(api.integrations.jira.connectJira, result.connection);
   } catch (err) {
     console.error("Failed to store Jira connection:", err);
     redirect(

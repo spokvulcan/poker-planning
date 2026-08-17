@@ -59,21 +59,20 @@ export const getIssueLinks = query({
   handler: async (ctx, args) => {
     await requireRoomMember(ctx, args.roomId);
 
+    // Fetch the room's links ONCE via by_room instead of one by_issue query
+    // per issue. Link rows that predate the roomId field are invisible to
+    // by_room, so uncovered issues fall back to a per-issue lookup.
+    const roomLinks = await ctx.db
+      .query("issueLinks")
+      .withIndex("by_room", (q) => q.eq("roomId", args.roomId))
+      .collect();
+    const linkByIssue = new Map(roomLinks.map((l) => [l.issueId as string, l]));
+
     const issues = await ctx.db
       .query("issues")
       .withIndex("by_room", (q) => q.eq("roomId", args.roomId))
       .collect();
 
-    const links = await Promise.all(
-      issues.map((issue) =>
-        ctx.db
-          .query("issueLinks")
-          .withIndex("by_issue", (q) => q.eq("issueId", issue._id))
-          .first()
-      )
-    );
-
-    // Return map of issueId -> link
     const result: Record<
       string,
       {
@@ -84,10 +83,15 @@ export const getIssueLinks = query({
       }
     > = {};
 
-    for (let i = 0; i < issues.length; i++) {
-      const link = links[i];
+    for (const issue of issues) {
+      const link =
+        linkByIssue.get(issue._id) ??
+        (await ctx.db
+          .query("issueLinks")
+          .withIndex("by_issue", (q) => q.eq("issueId", issue._id))
+          .first());
       if (link) {
-        result[issues[i]._id] = {
+        result[issue._id] = {
           _id: link._id,
           provider: link.provider,
           externalId: link.externalId,
@@ -122,7 +126,19 @@ export const saveRoomMapping = mutation({
       throw new Error("Connection not found");
     }
 
-    return await Integrations.saveRoomMapping(ctx, args);
+    // The public args keep the Jira column names (the UI is the Jira mapping
+    // form); the model routes on provider-neutral names.
+    return await Integrations.saveRoomMapping(ctx, {
+      roomId: args.roomId,
+      connectionId: args.connectionId,
+      provider: args.provider,
+      projectKey: args.jiraProjectKey,
+      boardId: args.jiraBoardId,
+      sprintId: args.jiraSprintId,
+      storyPointsFieldId: args.storyPointsFieldId,
+      autoImport: args.autoImport,
+      autoPushEstimates: args.autoPushEstimates,
+    });
   },
 });
 

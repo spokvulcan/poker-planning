@@ -86,11 +86,31 @@ _Avoid_: kick (the `remove` relationship action is one trigger, not the concept)
 The looping illustration on `/demo`. It is **not a room and runs no voting round** — there is no `rooms` row, no membership, no persisted vote, and the backend never participates. Bots, issues, and **phase** transitions are computed entirely on the viewer's machine and discarded. It *imitates* a round's **phase** lifecycle and reuses the one pure results computation (`summarize`) so its revealed numbers match a real round's, but it lives deliberately outside the **voting round** module's authority. Paused while its tab is hidden (see [ADR-0003](docs/adr/0003-demo-is-a-client-simulation.md)).
 _Avoid_: demo room (there is no room), demo game, bot round
 
+**Voter alignment**:
+The per-voter distance-from-consensus picture (spec 04), persisted as `individualVotes` rows at reveal. Computed pure in `convex/model/alignment.ts` (`computeVoterAlignment`); the single card→numeric conversion (`cardNumericValue`) is shared by alignment, the round's cast-vote path, and the `summarize` results computation — no second parse may be introduced.
+_Avoid_: agreement score (that is `voteStats.agreement` on the issue), deviation, spread
+
+### Room activity
+
+**Room activity** (`lastActivityAt`):
+The room's liveness clock — the field the cleanup cascade reads to delete rooms silent for five days. Written only through the model-layer chokepoint `Rooms.updateRoomActivity`: every user-initiated model mutation calls it (voting, issues, canvas, timer, roles, integration mappings), and endpoint handlers never patch the field directly. Internal effects (relayout, countdown arm/cancel, scheduled cascades) do not bump — their initiating mutation already did. See [ADR-0005](docs/adr/0005-room-activity-has-one-model-layer-chokepoint.md).
+_Avoid_: touch point, heartbeat, keep-alive
+
+### Analytics
+
+**Analytics snapshot**:
+The per-room materialized completed-issue history (`roomAnalyticsSnapshots`), written in the reveal mutation when a **target** issue completes. The analytics queries project purely from it; a missing or stale row falls back to the on-the-fly scan with identical results. Freshness is keyed on **room activity** (`computedAt >= lastActivityAt`), which is why every history-changing write must go through the activity chokepoint. See [ADR-0007](docs/adr/0007-analytics-read-from-a-write-time-snapshot.md).
+_Avoid_: cache (the scan is the fallback, not the steady-state source), materialized view
+
 ### Integrations
 
 **Token vault**:
 The module (`convex/model/tokenVault.ts`) that owns the token-field contract for integration connections: key validation, encrypt-on-write, decrypt-on-read, and the token-expiry predicate. Plaintext is unrepresentable through its interface — writes accept plaintext and persist ciphertext; readers receive ciphertext rows and decrypt explicitly. Provider-agnostic; Jira is the only adapter today, GitHub (spec 07) is the planned second.
 _Avoid_: encryption utils (the pure primitive is `convex/lib/encryption.ts` — the vault is the policy owner, not a second crypto implementation)
+
+**Integration provider registry**:
+The seam (`convex/integrations/registry.ts`) that maps a connection's `provider` to its adapter's handler — webhook lifecycle, token refresh, client construction. The generic integrations module (`convex/model/integrations.ts`) routes through it and never names a provider; an unregistered provider throws loudly rather than silently skipping. Adapter functions take their effects (fetch, clock, sleep) as injected dependencies so they are testable without faking globals. Jira is the sole adapter; GitHub (spec 07) is the planned second. See [ADR-0006](docs/adr/0006-integration-providers-sit-behind-a-registry.md).
+_Avoid_: service layer, plugin, provider factory
 
 ## Flagged ambiguities
 

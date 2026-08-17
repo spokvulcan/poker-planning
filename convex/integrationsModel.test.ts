@@ -163,6 +163,27 @@ describe("processJiraWebhookEvent", () => {
     expect(await countRows(t, "webhookEvents")).toBe(1);
   });
 
+  it("jira:issue_updated bumps the room's lastActivityAt (snapshot freshness)", async () => {
+    const t = convexTest(schema, modules);
+    const roomId = await seedRoom(t);
+    const issueId = await seedIssue(t, roomId);
+    await seedIssueLink(t, issueId, "PROJ-1");
+
+    // Backdate activity to a sentinel so the bump is observable.
+    const sentinel = 1_000_000;
+    await t.run((ctx) => ctx.db.patch(roomId, { lastActivityAt: sentinel }));
+
+    await t.mutation(internal.integrations.jira.processJiraWebhook, {
+      eventKey: "jira:10001:1700000000002",
+      eventType: "jira:issue_updated",
+      issueKey: "PROJ-1",
+      issueSummary: "New summary",
+    });
+
+    const room = await t.run((ctx) => ctx.db.get(roomId));
+    expect(room?.lastActivityAt).toBeGreaterThan(sentinel);
+  });
+
   it("jira:issue_deleted removes the link but keeps the local issue", async () => {
     const t = convexTest(schema, modules);
     const roomId = await seedRoom(t);
@@ -203,10 +224,10 @@ describe("disconnect", () => {
     const finalize = await scheduledByName(t, ":finalizeDisconnect");
     expect(finalize).toHaveLength(1);
     const finalizeArgs = (
-      finalize[0].args as [{ connectionId: string; jiraWebhookIds: string[] }]
+      finalize[0].args as [{ connectionId: string; webhookIds: string[] }]
     )[0];
     expect(finalizeArgs.connectionId).toBe(connectionId);
-    expect([...finalizeArgs.jiraWebhookIds].sort()).toEqual(["wh-a", "wh-b"]);
+    expect([...finalizeArgs.webhookIds].sort()).toEqual(["wh-a", "wh-b"]);
     expect(await scheduledByName(t, ":deleteConnection")).toHaveLength(0);
     expect(await scheduledByName(t, ":deregisterWebhook")).toHaveLength(0);
   });
@@ -227,7 +248,7 @@ describe("disconnect", () => {
     // lands — the leak is tracked, never silent, and never blocks disconnect.
     await t.action(internal.integrations.jira.finalizeDisconnect, {
       connectionId,
-      jiraWebhookIds: ["wh-a"],
+      webhookIds: ["wh-a"],
     });
     expect(await countRows(t, "integrationConnections")).toBe(0);
   });
@@ -259,7 +280,7 @@ describe("deregisterWebhook", () => {
     // Deregistration fails in the test env (seed tokens don't decrypt)…
     await t.action(internal.integrations.jira.deregisterWebhook, {
       connectionId,
-      jiraWebhookId: "wh-x",
+      webhookId: "wh-x",
     });
 
     // …so exactly one retry is pending, disarmed (attemptsLeft: 0).
@@ -272,7 +293,7 @@ describe("deregisterWebhook", () => {
     // The disarmed retry does not chain another retry.
     await t.action(internal.integrations.jira.deregisterWebhook, {
       connectionId,
-      jiraWebhookId: "wh-x",
+      webhookId: "wh-x",
       attemptsLeft: 0,
     });
     expect(await scheduledByName(t, ":deregisterWebhook")).toHaveLength(1);
@@ -286,7 +307,7 @@ describe("deregisterWebhook", () => {
 
     await t.action(internal.integrations.jira.deregisterWebhook, {
       connectionId,
-      jiraWebhookId: "wh-x",
+      webhookId: "wh-x",
     });
 
     expect(await scheduledByName(t, ":deregisterWebhook")).toHaveLength(0);
@@ -344,12 +365,29 @@ describe("removeRoomMapping", () => {
     const deregistrations = await scheduledByName(t, ":deregisterWebhook");
     expect(deregistrations).toHaveLength(1);
     expect(
-      (deregistrations[0].args as [{ jiraWebhookId: string }])[0].jiraWebhookId
+      (deregistrations[0].args as [{ webhookId: string }])[0].webhookId
     ).toBe("wh-room");
 
     // The connection survives the mapping — the scheduled action uses its
     // credentials for the remote delete.
     expect(await countRows(t, "integrationConnections")).toBe(1);
+  });
+
+  it("bumps the room's lastActivityAt through the activity chokepoint", async () => {
+    const t = convexTest(schema, modules);
+    const userId = await seedUser(t, "auth-u");
+    const connectionId = await seedConnection(t, userId);
+    const roomId = await seedRoom(t);
+    await seedMapping(t, roomId, connectionId);
+
+    // Backdate activity to a sentinel so the bump is observable.
+    const sentinel = 1_000_000;
+    await t.run((ctx) => ctx.db.patch(roomId, { lastActivityAt: sentinel }));
+
+    await t.run((ctx) => Integrations.removeRoomMapping(ctx, roomId));
+
+    const room = await t.run((ctx) => ctx.db.get(roomId));
+    expect(room?.lastActivityAt).toBeGreaterThan(sentinel);
   });
 });
 
@@ -365,7 +403,7 @@ describe("saveRoomMapping", () => {
         roomId,
         connectionId,
         provider: "jira",
-        jiraProjectKey: "PROJ",
+        projectKey: "PROJ",
         autoImport: false,
         autoPushEstimates: true,
       })
@@ -380,7 +418,7 @@ describe("saveRoomMapping", () => {
         roomId,
         connectionId,
         provider: "jira",
-        jiraProjectKey: "PROJ",
+        projectKey: "PROJ",
         storyPointsFieldId: "customfield_10016",
         autoImport: false,
         autoPushEstimates: true,
@@ -395,6 +433,31 @@ describe("saveRoomMapping", () => {
 
     // Both the insert and the update scheduled a webhook (re-)registration.
     expect(await scheduledByName(t, ":registerWebhook")).toHaveLength(2);
+  });
+
+  it("bumps the room's lastActivityAt through the activity chokepoint", async () => {
+    const t = convexTest(schema, modules);
+    const userId = await seedUser(t, "auth-u");
+    const connectionId = await seedConnection(t, userId);
+    const roomId = await seedRoom(t);
+
+    // Backdate activity to a sentinel so the bump is observable.
+    const sentinel = 1_000_000;
+    await t.run((ctx) => ctx.db.patch(roomId, { lastActivityAt: sentinel }));
+
+    await t.run((ctx) =>
+      Integrations.saveRoomMapping(ctx, {
+        roomId,
+        connectionId,
+        provider: "jira",
+        projectKey: "PROJ",
+        autoImport: false,
+        autoPushEstimates: false,
+      })
+    );
+
+    const room = await t.run((ctx) => ctx.db.get(roomId));
+    expect(room?.lastActivityAt).toBeGreaterThan(sentinel);
   });
 });
 
@@ -451,5 +514,55 @@ describe("setMappingWebhook", () => {
     const cleared = await t.run((ctx) => ctx.db.get(mappingId));
     expect(cleared?.jiraWebhookId).toBeUndefined();
     expect(cleared?.jiraWebhookRegisteredAt).toBeUndefined();
+  });
+});
+
+describe("getIssueLinks", () => {
+  it("returns roomId-tagged and legacy untagged links in one map", async () => {
+    const t = convexTest(schema, modules);
+    const userId = await seedUser(t, "auth-u");
+    const roomId = await seedRoom(t);
+    await t.run((ctx) =>
+      ctx.db.insert("roomMemberships", {
+        roomId,
+        userId,
+        isSpectator: false,
+        joinedAt: Date.now(),
+      })
+    );
+    const taggedIssueId = await seedIssue(t, roomId);
+    const untaggedIssueId = await t.run((ctx) =>
+      ctx.db.insert("issues", {
+        roomId,
+        sequentialId: 2,
+        title: "PROJ-2 - Other",
+        status: "pending",
+        createdAt: Date.now(),
+        order: 1,
+      })
+    );
+    // Modern row: carries roomId, found by the room-wide by_room fetch.
+    await t.run((ctx) =>
+      ctx.db.insert("issueLinks", {
+        issueId: taggedIssueId,
+        roomId,
+        provider: "jira",
+        externalId: "PROJ-1",
+        externalUrl: "https://team.atlassian.net/browse/PROJ-1",
+        lastSyncedAt: Date.now(),
+      })
+    );
+    // Legacy row: no roomId — invisible to by_room, found by the per-issue
+    // fallback (seedIssueLink predates the roomId field).
+    await seedIssueLink(t, untaggedIssueId, "PROJ-2");
+
+    const asUser = t.withIdentity({ subject: "auth-u" });
+    const result = await asUser.query(api.integrations.getIssueLinks, {
+      roomId,
+    });
+
+    expect(Object.keys(result)).toHaveLength(2);
+    expect(result[taggedIssueId]?.externalId).toBe("PROJ-1");
+    expect(result[untaggedIssueId]?.externalId).toBe("PROJ-2");
   });
 });

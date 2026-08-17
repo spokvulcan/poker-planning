@@ -6,8 +6,9 @@ import { scheduleWebhookDeregistration } from "./integrations";
  * The one inventory of what a room owns (derived from schema.ts).
  *
  * Every table keyed by `roomId` is a direct member. `issueLinks` is owned
- * transitively through its issue — it has no `roomId` of its own — so the
- * cascade expands it from the room's issues instead.
+ * transitively through its issue — rows written before it gained its own
+ * `roomId` can only be found that way — so the cascade expands it from the
+ * room's issues instead.
  *
  * Deliberately NOT room-owned: `integrationConnections` belongs to users,
  * `webhookEvents` is a global dedup table, and `users` is global identity.
@@ -22,6 +23,7 @@ export const ROOM_OWNED_TABLES = [
   "votingTimestamps",
   "individualVotes",
   "integrationMappings",
+  "roomAnalyticsSnapshots",
 ] as const;
 
 export type RoomOwnedTable = (typeof ROOM_OWNED_TABLES)[number];

@@ -1,20 +1,23 @@
 import { MutationCtx } from "../_generated/server";
-import { internal } from "../_generated/api";
 import { Doc, Id } from "../_generated/dataModel";
 import {
   EncryptedTokenFields,
   assertEncryptedTokenFields,
 } from "./tokenVault";
+import * as Rooms from "./rooms";
+import { getProviderHandler } from "../integrations/registry";
 
 /**
  * The integrations model: the one owner of the db-side invariants for
  * provider connections, room mappings, and webhook event processing.
  *
- * Everything here is db-pure (MutationCtx only) — remote Jira calls stay in
- * the integrations/jira.ts actions; this module schedules them, the way the
- * voting round schedules the estimate push. The registered wrappers in
- * integrations.ts (public API) and integrations/jira.ts (internal) delegate
- * here, so every writer of these tables funnels through the same code.
+ * Everything here is db-pure (MutationCtx only) — remote provider calls stay
+ * in the integrations/<provider> adapter actions; this module schedules them
+ * through the provider registry (integrations/registry.ts) keyed by the
+ * connection's or mapping's `provider`, never by a hardcoded provider name.
+ * The registered wrappers in integrations.ts (public API) and
+ * integrations/jira.ts (internal) delegate here, so every writer of these
+ * tables funnels through the same code.
  */
 
 // ---------------------------------------------------------------------------
@@ -163,13 +166,19 @@ export async function deleteConnection(
 // Room mappings
 // ---------------------------------------------------------------------------
 
+/**
+ * Provider-neutral mapping args. The db columns keep their provider-prefixed
+ * names (jiraProjectKey, … — schema.ts), because each provider persists its
+ * own mapping shape; the neutral names here are what the generic module
+ * routes on. Public endpoint args map 1:1 onto these (see integrations.ts).
+ */
 export interface RoomMappingArgs {
   roomId: Id<"rooms">;
   connectionId: Id<"integrationConnections">;
   provider: Doc<"integrationMappings">["provider"];
-  jiraProjectKey?: string;
-  jiraBoardId?: number;
-  jiraSprintId?: number;
+  projectKey?: string;
+  boardId?: number;
+  sprintId?: number;
   storyPointsFieldId?: string;
   autoImport: boolean;
   autoPushEstimates: boolean;
@@ -177,49 +186,46 @@ export interface RoomMappingArgs {
 
 /**
  * Upserts the room's provider mapping (one per room), preserving the original
- * `createdAt` on update. When auto-push is enabled for a Jira project,
- * schedules webhook (re-)registration — the registration action deletes any
- * previous remote webhook before registering the new one.
+ * `createdAt` on update, and bumps the room's activity through the single
+ * chokepoint (Rooms.updateRoomActivity) like every other user-initiated
+ * mutation. When auto-push is enabled and the provider handler sees a
+ * registration target, schedules webhook (re-)registration — the registration
+ * action deletes any previous remote webhook before registering the new one.
  */
 export async function saveRoomMapping(
   ctx: MutationCtx,
   args: RoomMappingArgs
 ): Promise<Id<"integrationMappings">> {
+  const fields = {
+    connectionId: args.connectionId,
+    provider: args.provider,
+    jiraProjectKey: args.projectKey,
+    jiraBoardId: args.boardId,
+    jiraSprintId: args.sprintId,
+    storyPointsFieldId: args.storyPointsFieldId,
+    autoImport: args.autoImport,
+    autoPushEstimates: args.autoPushEstimates,
+  };
+
   // Upsert: check for existing mapping
   const existing = await ctx.db
     .query("integrationMappings")
     .withIndex("by_room", (q) => q.eq("roomId", args.roomId))
     .first();
 
+  let mappingId: Id<"integrationMappings">;
   if (existing) {
-    await ctx.db.patch(existing._id, {
-      connectionId: args.connectionId,
-      provider: args.provider,
-      jiraProjectKey: args.jiraProjectKey,
-      jiraBoardId: args.jiraBoardId,
-      jiraSprintId: args.jiraSprintId,
-      storyPointsFieldId: args.storyPointsFieldId,
-      autoImport: args.autoImport,
-      autoPushEstimates: args.autoPushEstimates,
+    await ctx.db.patch(existing._id, fields);
+    mappingId = existing._id;
+  } else {
+    mappingId = await ctx.db.insert("integrationMappings", {
+      roomId: args.roomId,
+      ...fields,
+      createdAt: Date.now(),
     });
-
-    await scheduleWebhookRegistration(ctx, args, existing._id);
-    return existing._id;
   }
 
-  const mappingId = await ctx.db.insert("integrationMappings", {
-    roomId: args.roomId,
-    connectionId: args.connectionId,
-    provider: args.provider,
-    jiraProjectKey: args.jiraProjectKey,
-    jiraBoardId: args.jiraBoardId,
-    jiraSprintId: args.jiraSprintId,
-    storyPointsFieldId: args.storyPointsFieldId,
-    autoImport: args.autoImport,
-    autoPushEstimates: args.autoPushEstimates,
-    createdAt: Date.now(),
-  });
-
+  await Rooms.updateRoomActivity(ctx, args.roomId);
   await scheduleWebhookRegistration(ctx, args, mappingId);
   return mappingId;
 }
@@ -229,31 +235,29 @@ async function scheduleWebhookRegistration(
   args: RoomMappingArgs,
   mappingId: Id<"integrationMappings">
 ): Promise<void> {
-  // Schedule webhook registration if auto-push enabled
-  if (args.autoPushEstimates && args.jiraProjectKey) {
-    await ctx.scheduler.runAfter(
-      0,
-      internal.integrations.jira.registerWebhook,
-      {
-        mappingId,
-      }
-    );
+  // Schedule webhook registration when auto-push is on and the provider
+  // handler sees a registration target in the mapping (for Jira, the project
+  // key).
+  const handler = getProviderHandler(args.provider);
+  if (args.autoPushEstimates && handler.hasWebhookTarget(args)) {
+    await ctx.scheduler.runAfter(0, handler.registerWebhook, { mappingId });
   }
 }
 
 /**
- * Records the registered Jira webhook on a mapping — or clears it when called
+ * Records the registered webhook on a mapping — or clears it when called
  * without an id. The registration timestamp is written iff an id is present,
- * so the pair never drifts.
+ * so the pair never drifts. (The db columns keep the jira prefix; they are
+ * the Jira adapter's webhook slot, read through its handler's webhookIdOf.)
  */
 export async function setMappingWebhook(
   ctx: MutationCtx,
   mappingId: Id<"integrationMappings">,
-  jiraWebhookId?: string
+  webhookId?: string
 ): Promise<void> {
   await ctx.db.patch(mappingId, {
-    jiraWebhookId,
-    jiraWebhookRegisteredAt: jiraWebhookId ? Date.now() : undefined,
+    jiraWebhookId: webhookId,
+    jiraWebhookRegisteredAt: webhookId ? Date.now() : undefined,
   });
 }
 
@@ -274,16 +278,19 @@ export async function removeRoomMapping(
   if (mapping) {
     await ctx.db.delete(mapping._id);
     await scheduleWebhookDeregistration(ctx, mapping);
+    // Removing the room's integration mapping is user-initiated room
+    // activity — route it through the single chokepoint.
+    await Rooms.updateRoomActivity(ctx, roomId);
   }
 }
 
 /**
  * The disconnect cascade: deletes every mapping on the connection, then hands
- * the live Jira webhooks to one finalizeDisconnect action, which deregisters
- * them and deletes the connection row only afterwards — the ordering comes
- * from that action's own awaits, not from same-tick scheduled-job ordering
- * (which Convex does not guarantee). With nothing to deregister the row goes
- * immediately.
+ * the live webhooks to the provider handler's finalizeDisconnect action,
+ * which deregisters them and deletes the connection row only afterwards — the
+ * ordering comes from that action's own awaits, not from same-tick
+ * scheduled-job ordering (which Convex does not guarantee). With nothing to
+ * deregister the row goes immediately.
  */
 export async function disconnectConnection(
   ctx: MutationCtx,
@@ -296,40 +303,44 @@ export async function disconnectConnection(
     .collect();
   await Promise.all(mappings.map((m) => ctx.db.delete(m._id)));
 
+  const connection = await ctx.db.get(connectionId);
+  if (!connection) return;
+
+  // Every mapping of a connection shares the connection's provider, so the
+  // one handler reads all of their live webhook ids.
+  const handler = getProviderHandler(connection.provider);
   const liveWebhookIds = mappings
-    .filter((m) => m.provider === "jira" && !!m.jiraWebhookId)
-    .map((m) => m.jiraWebhookId!);
+    .map((m) => handler.webhookIdOf(m))
+    .filter((id): id is string => !!id);
 
   if (liveWebhookIds.length > 0) {
-    await ctx.scheduler.runAfter(
-      0,
-      internal.integrations.jira.finalizeDisconnect,
-      { connectionId, jiraWebhookIds: liveWebhookIds }
-    );
+    await ctx.scheduler.runAfter(0, handler.finalizeDisconnect, {
+      connectionId,
+      webhookIds: liveWebhookIds,
+    });
   } else {
     await ctx.db.delete(connectionId);
   }
 }
 
 /**
- * Schedules remote deregistration of a mapping's Jira webhook. Deleting the
- * mapping row alone orphans the remote webhook — it keeps POSTing until its
- * 30-day expiry — so every mapping-removal path (removeRoomMapping, the room
- * cascade in model/roomAggregate) must go through this.
+ * Schedules remote deregistration of a mapping's webhook via its provider
+ * handler. Deleting the mapping row alone orphans the remote webhook — it
+ * keeps POSTing until its remote expiry — so every mapping-removal path
+ * (removeRoomMapping, the room cascade in model/roomAggregate) must go
+ * through this.
  */
 export async function scheduleWebhookDeregistration(
   ctx: MutationCtx,
   mapping: Doc<"integrationMappings">
 ): Promise<void> {
-  if (mapping.provider === "jira" && mapping.jiraWebhookId) {
-    await ctx.scheduler.runAfter(
-      0,
-      internal.integrations.jira.deregisterWebhook,
-      {
-        connectionId: mapping.connectionId,
-        jiraWebhookId: mapping.jiraWebhookId,
-      }
-    );
+  const handler = getProviderHandler(mapping.provider);
+  const webhookId = handler.webhookIdOf(mapping);
+  if (webhookId) {
+    await ctx.scheduler.runAfter(0, handler.deregisterWebhook, {
+      connectionId: mapping.connectionId,
+      webhookId,
+    });
   }
 }
 
@@ -384,6 +395,10 @@ export async function processJiraWebhookEvent(
       await ctx.db.patch(link.issueId, {
         title: `${event.issueKey} - ${event.issueSummary}`,
       });
+      // The title change feeds the room's analytics history — bump activity
+      // through the chokepoint so a fresh analytics snapshot can't serve the
+      // stale title.
+      await Rooms.updateRoomActivity(ctx, issue.roomId);
     }
     await ctx.db.patch(link._id, { lastSyncedAt: Date.now() });
   }

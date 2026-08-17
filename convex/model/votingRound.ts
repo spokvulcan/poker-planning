@@ -4,6 +4,7 @@ import { internal } from "../_generated/api";
 import * as Rooms from "./rooms";
 import * as Canvas from "./canvas";
 import * as Votes from "./votes";
+import * as Analytics from "./analytics";
 import { cardNumericValue, computeVoterAlignment } from "./alignment";
 import { summarize, VoteStatsSummary } from "../summarize";
 import { DEFAULT_SCALE, VotingScale } from "../scales";
@@ -102,7 +103,8 @@ export async function reset(ctx: MutationCtx, roomId: Id<"rooms">): Promise<void
  * the reveal effects. For an issue-backed round it snapshots the summary onto
  * the issue (final estimate + stats), records per-voter alignment, closes the
  * timed round, schedules the Jira push when linked with auto-push, and upserts
- * the canvas results node.
+ * the canvas results node. A round that completes its target issue (consensus
+ * reached) also refreshes the room's analytics snapshot in the same mutation.
  */
 export async function reveal(ctx: MutationCtx, roomId: Id<"rooms">): Promise<void> {
   const room = await ctx.db.get(roomId);
@@ -144,6 +146,14 @@ export async function reveal(ctx: MutationCtx, roomId: Id<"rooms">): Promise<voi
       consensusLabel: summary.consensus,
       votingScale: room.votingScale,
     });
+
+    // A completed target issue changes the room's completed-issue history:
+    // refresh the analytics snapshot in the same mutation. This must run after
+    // the issue patch (completeTargetIssue) and the vote snapshot above so the
+    // refreshed history includes this round's issue and votes.
+    if (summary.consensus) {
+      await Analytics.refreshRoomAnalyticsSnapshot(ctx, roomId);
+    }
 
     // Reveal effect: push the estimate to a linked Jira issue when auto-push is on.
     if (summary.consensus) {

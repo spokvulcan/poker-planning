@@ -10,11 +10,12 @@ crons.daily(
   internal.cleanup.removeInactiveRooms
 );
 
-// Refresh OAuth tokens expiring in the next 45 minutes
+// Refresh OAuth tokens expiring in the next 45 minutes (iterates the
+// provider registry — every registered provider's connections are swept)
 crons.interval(
   "refresh-oauth-tokens",
   { minutes: 30 },
-  internal.integrations.jira.refreshExpiringTokens
+  internal.integrations.tokenRefresh.refreshExpiringTokens
 );
 
 // Re-register Jira webhooks (they expire after 30 days)

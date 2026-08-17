@@ -313,20 +313,41 @@ export async function getEnhancedIssuesForExport(
     votesByIssue.set(key, existing);
   }
 
-  // Batch-query issueLinks for all issues in this room
-  const allIssueLinks = await Promise.all(
-    issues.map((issue) =>
+  // Fetch the room's issue links ONCE via by_room and group in memory, instead
+  // of one by_issue query per issue. Links whose rows predate the roomId field
+  // (or were written by paths that don't set it) are invisible to by_room, so
+  // issues not covered by the room-wide fetch fall back to a per-issue lookup.
+  const roomLinks = await ctx.db
+    .query("issueLinks")
+    .withIndex("by_room", (q) => q.eq("roomId", roomId))
+    .collect();
+
+  const issueLinkMap = new Map<string, { externalUrl: string; externalId: string }>();
+  for (const link of roomLinks) {
+    const key = link.issueId as string;
+    if (!issueLinkMap.has(key)) {
+      issueLinkMap.set(key, {
+        externalUrl: link.externalUrl,
+        externalId: link.externalId,
+      });
+    }
+  }
+
+  const uncoveredIssues = issues.filter(
+    (issue) => !issueLinkMap.has(issue._id as string)
+  );
+  const fallbackLinks = await Promise.all(
+    uncoveredIssues.map((issue) =>
       ctx.db
         .query("issueLinks")
         .withIndex("by_issue", (q) => q.eq("issueId", issue._id))
         .first()
     )
   );
-  const issueLinkMap = new Map<string, { externalUrl: string; externalId: string }>();
-  for (let i = 0; i < issues.length; i++) {
-    const link = allIssueLinks[i];
+  for (let i = 0; i < uncoveredIssues.length; i++) {
+    const link = fallbackLinks[i];
     if (link) {
-      issueLinkMap.set(issues[i]._id as string, {
+      issueLinkMap.set(uncoveredIssues[i]._id as string, {
         externalUrl: link.externalUrl,
         externalId: link.externalId,
       });

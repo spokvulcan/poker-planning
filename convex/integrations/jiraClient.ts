@@ -1,7 +1,18 @@
 /**
  * Jira Cloud REST API client.
  * Used within Convex actions for all Jira API calls.
+ *
+ * Effectful dependencies (fetch, the rate-limit backoff sleep) are injected
+ * with production defaults, so tests drive the real request/retry code paths
+ * without faking globals.
  */
+
+export interface JiraClientDeps {
+  /** Defaults to the global fetch. */
+  fetchImpl?: typeof fetch;
+  /** Backoff wait between 429 retries; defaults to a real setTimeout sleep. */
+  sleep?: (ms: number) => Promise<void>;
+}
 
 export interface JiraProject {
   id: string;
@@ -42,11 +53,18 @@ interface JiraField {
 }
 
 export class JiraClient {
+  private readonly fetchImpl: typeof fetch;
+  private readonly sleep: (ms: number) => Promise<void>;
+
   constructor(
     private cloudId: string,
-    private accessToken: string
-  ) {}
-
+    private accessToken: string,
+    deps: JiraClientDeps = {}
+  ) {
+    this.fetchImpl = deps.fetchImpl ?? ((...args) => fetch(...args));
+    this.sleep =
+      deps.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
+  }
   private get baseUrl() {
     return `https://api.atlassian.com/ex/jira/${this.cloudId}`;
   }
@@ -195,7 +213,7 @@ export class JiraClient {
       headers["Content-Type"] = "application/json";
     }
 
-    const response = await fetch(url, {
+    const response = await this.fetchImpl(url, {
       method,
       headers,
       body: body ? JSON.stringify(body) : undefined,
@@ -204,9 +222,7 @@ export class JiraClient {
     // Retry on 429 (rate limit)
     if (response.status === 429 && retries > 0) {
       const retryAfter = parseInt(response.headers.get("Retry-After") ?? "5");
-      await new Promise((resolve) =>
-        setTimeout(resolve, retryAfter * 1000)
-      );
+      await this.sleep(retryAfter * 1000);
       return this.request<T>(method, path, body, retries - 1);
     }
 

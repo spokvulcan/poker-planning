@@ -57,6 +57,7 @@ export async function cleanupOrphanedData(ctx: MutationCtx): Promise<{
   orphanedVotingTimestamps: number;
   orphanedIndividualVotes: number;
   orphanedIntegrationMappings: number;
+  orphanedRoomAnalyticsSnapshots: number;
   orphanedIssues: number;
   orphanedIssueLinks: number;
 }> {
@@ -94,6 +95,7 @@ export async function cleanupOrphanedData(ctx: MutationCtx): Promise<{
     orphanedVotingTimestamps: swept.votingTimestamps,
     orphanedIndividualVotes: swept.individualVotes,
     orphanedIntegrationMappings: swept.integrationMappings,
+    orphanedRoomAnalyticsSnapshots: swept.roomAnalyticsSnapshots,
     orphanedIssues: swept.issues,
     orphanedIssueLinks,
   };
