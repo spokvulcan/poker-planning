@@ -3,15 +3,6 @@ import { mutation, query } from "./_generated/server";
 import * as Canvas from "./model/canvas";
 import { requireRoomMember, requireActingUser } from "./model/auth";
 
-// Initialize canvas nodes when a canvas room is created
-export const initializeCanvasNodes = mutation({
-  args: { roomId: v.id("rooms") },
-  handler: async (ctx, args) => {
-    await requireRoomMember(ctx, args.roomId);
-    await Canvas.initializeCanvasNodes(ctx, args);
-  },
-});
-
 // Get all canvas nodes for a room
 // Requires room membership: note contents are private to the room.
 export const getCanvasNodes = query({
@@ -33,53 +24,6 @@ export const updateNodePosition = mutation({
   handler: async (ctx, args) => {
     await requireActingUser(ctx, args.roomId, args.userId);
     await Canvas.updateNodePosition(ctx, args);
-  },
-});
-
-// Create or update player node
-export const upsertPlayerNode = mutation({
-  args: {
-    roomId: v.id("rooms"),
-    userId: v.id("users"),
-    position: v.optional(v.object({ x: v.number(), y: v.number() })),
-  },
-  handler: async (ctx, args) => {
-    await requireActingUser(ctx, args.roomId, args.userId);
-    return await Canvas.upsertPlayerNode(ctx, args);
-  },
-});
-
-// Create or update results node
-export const upsertResultsNode = mutation({
-  args: { roomId: v.id("rooms") },
-  handler: async (ctx, args) => {
-    await requireRoomMember(ctx, args.roomId);
-    return await Canvas.upsertResultsNode(ctx, args);
-  },
-});
-
-// Remove player node when user leaves
-export const removePlayerNode = mutation({
-  args: {
-    roomId: v.id("rooms"),
-    userId: v.id("users"),
-  },
-  handler: async (ctx, args) => {
-    await requireActingUser(ctx, args.roomId, args.userId);
-    await Canvas.removePlayerNode(ctx, args);
-  },
-});
-
-// Lock/unlock node
-export const toggleNodeLock = mutation({
-  args: {
-    roomId: v.id("rooms"),
-    nodeId: v.string(),
-    locked: v.boolean(),
-  },
-  handler: async (ctx, args) => {
-    await requireRoomMember(ctx, args.roomId);
-    await Canvas.toggleNodeLock(ctx, args);
   },
 });
 
@@ -107,19 +51,6 @@ export const updateNoteContent = mutation({
   handler: async (ctx, args) => {
     await requireActingUser(ctx, args.roomId, args.userId);
     await Canvas.updateNoteContent(ctx, args);
-  },
-});
-
-// Get note content for an issue (for export)
-// Requires room membership: note contents are private to the room.
-export const getNoteContentForIssue = query({
-  args: {
-    roomId: v.id("rooms"),
-    issueId: v.id("issues"),
-  },
-  handler: async (ctx, args) => {
-    await requireRoomMember(ctx, args.roomId);
-    return await Canvas.getNoteContentForIssue(ctx, args);
   },
 });
 

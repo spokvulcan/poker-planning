@@ -14,7 +14,7 @@ import {
   SelectItem,
   SelectTrigger,
 } from "@/components/ui/select";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "@/lib/toast";
 
 interface IntegrationSettingsSectionProps {
   roomId: Id<"rooms">;
@@ -35,7 +35,6 @@ interface JiraBoard {
 export function IntegrationSettingsSection({
   roomId,
 }: IntegrationSettingsSectionProps) {
-  const { toast } = useToast();
   const connections = useQuery(api.integrations.getConnections);
   const mapping = useQuery(api.integrations.getRoomMapping, { roomId });
   const saveMapping = useMutation(api.integrations.saveRoomMapping);
@@ -128,22 +127,18 @@ export function IntegrationSettingsSection({
       const fieldId = await detectField();
       if (fieldId) {
         setStoryPointsFieldId(fieldId);
-        toast({
-          title: "Story points field detected",
+        toast.success("Story points field detected", {
           description: fieldId,
         });
       } else {
-        toast({
-          title: "Not found",
+        // Default variant, as before the toast wrapper removal.
+        toast.success("Not found", {
           description:
             "Could not auto-detect story points field. Enter the custom field ID manually.",
         });
       }
     } catch {
-      toast({
-        title: "Detection failed",
-        variant: "destructive",
-      });
+      toast.error("Detection failed");
     }
   };
 
@@ -161,9 +156,9 @@ export function IntegrationSettingsSection({
         autoPushEstimates: autoPush,
         storyPointsFieldId: storyPointsFieldId || undefined,
       });
-      toast({ title: "Jira mapping saved" });
+      toast.success("Jira mapping saved");
     } catch {
-      toast({ title: "Failed to save mapping", variant: "destructive" });
+      toast.error("Failed to save mapping");
     } finally {
       setSaving(false);
     }
@@ -176,9 +171,9 @@ export function IntegrationSettingsSection({
       setBoardId(null);
       setAutoPush(false);
       setStoryPointsFieldId("");
-      toast({ title: "Jira mapping removed" });
+      toast.success("Jira mapping removed");
     } catch {
-      toast({ title: "Failed to remove mapping", variant: "destructive" });
+      toast.error("Failed to remove mapping");
     }
   };
 

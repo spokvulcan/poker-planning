@@ -5,19 +5,16 @@ import {
   Edge,
   Background,
   BackgroundVariant,
-  useNodesState,
   useEdgesState,
   NodeTypes,
   ReactFlowProvider,
   useReactFlow,
   ConnectionMode,
 } from "@xyflow/react";
-import { ReactElement, useCallback, useEffect, useMemo } from "react";
+import { ReactElement, useCallback, useEffect } from "react";
 import "@xyflow/react/dist/style.css";
-import { debounce } from "lodash";
 import type { NodeChange, EdgeChange } from "@xyflow/react";
 
-import { useLatest } from "@/hooks/use-latest";
 import { CanvasNavigation } from "./canvas-navigation";
 import { RoomPresenceProvider } from "./room-presence";
 import { RoomSettingsPanel } from "./room-settings-panel";
@@ -29,13 +26,13 @@ import { useCanvasActions } from "./hooks/useCanvasActions";
 import { useCardSelection } from "./hooks/useCardSelection";
 import { usePanelState } from "./hooks/usePanelState";
 import { useDeleteConfirmation } from "./hooks/useDeleteConfirmation";
+import { useNodeDragBuffer } from "./hooks/useNodeDragBuffer";
 import { NodePickerToolbar } from "./node-picker-toolbar";
 import { Id } from "@/convex/_generated/dataModel";
 import {
   NoteNode,
   PlayerNode,
   ResultsNode,
-  StoryNode,
   SessionNode,
   TimerNode,
   VotingCardNode,
@@ -64,7 +61,6 @@ interface RoomCanvasProps {
 const nodeTypes: NodeTypes = {
   note: NoteNode,
   player: PlayerNode,
-  story: StoryNode,
   session: SessionNode,
   votingCard: VotingCardNode,
   results: ResultsNode,
@@ -76,13 +72,8 @@ function RoomCanvasInner({ roomData, currentUserId, isEmbedded = false }: RoomCa
   // the children and hooks below now obtain it; the demo route mounts the
   // provider and is the sole place that decides demo-vs-real.
   const isDemoMode = useIsDemoMode();
-  const [nodes, setNodes, onNodesChange] = useNodesState<CustomNodeType>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const { fitView } = useReactFlow();
-
-  // Stable ref for nodes - prevents callback recreation on layout changes
-  // Based on Vercel React Best Practices: advanced-use-latest
-  const nodesRef = useLatest(nodes);
 
   // Permission flags for the current user
   const permissions = usePermissions(roomData, currentUserId);
@@ -146,32 +137,21 @@ function RoomCanvasInner({ roomData, currentUserId, isEmbedded = false }: RoomCa
     onDeleteNote: isDemoMode ? undefined : requestDeleteNote,
   });
 
-  // Update nodes and edges when layout changes
-  useEffect(() => {
-    setNodes(layoutNodes);
-  }, [layoutNodes, setNodes]);
+  // The node buffer between the derived layout and React Flow: the nodesRef
+  // mirror, copy-in, and the debounced drag write-back live in the hook so the
+  // drag path is unit-testable without mounting the canvas. Its handlers have
+  // frozen identity, like everything else the node-builder memo depends on.
+  const { nodes, nodesRef, onNodesChange: applyNodeChanges } =
+    useNodeDragBuffer<CustomNodeType>({
+      layoutNodes,
+      onPositionSettled: actions.updateNodePosition,
+    });
 
+  // Update edges when the layout derivation changes (nodes copy-in is owned
+  // by the drag buffer hook above).
   useEffect(() => {
     setEdges(layoutEdges);
   }, [layoutEdges, setEdges]);
-
-  // Debounced position update to prevent database overload. The debounce stays
-  // at the call site; the write itself (and its demo/user guards) lives in the
-  // stable actions module, so this memo never rebuilds.
-  const debouncedPositionUpdate = useMemo(
-    () =>
-      debounce((nodeId: string, position: { x: number; y: number }) => {
-        actions.updateNodePosition(nodeId, position);
-      }, 100),
-    [actions]
-  );
-
-  // Cleanup debounced function on unmount
-  useEffect(() => {
-    return () => {
-      debouncedPositionUpdate.cancel();
-    };
-  }, [debouncedPositionUpdate]);
 
   // Handle node position changes
   // Uses nodesRef to avoid callback recreation on every layout change
@@ -201,17 +181,10 @@ function RoomCanvasInner({ roomData, currentUserId, isEmbedded = false }: RoomCa
         return true;
       });
 
-      // Call the original handler to update local state
-      onNodesChange(filteredChanges);
-
-      // Send position updates to database
-      filteredChanges.forEach((change) => {
-        if (change.type === "position" && change.position && !change.dragging) {
-          debouncedPositionUpdate(change.id, change.position);
-        }
-      });
+      // Apply locally; settled drags are written back (debounced) by the buffer.
+      applyNodeChanges(filteredChanges);
     },
-    [onNodesChange, debouncedPositionUpdate, nodesRef, requestDeleteNote, requestDeletePlayer, permissions]
+    [applyNodeChanges, nodesRef, requestDeleteNote, requestDeletePlayer, permissions]
   );
 
   // Handle edge changes - block all edge deletions

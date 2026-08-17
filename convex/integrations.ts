@@ -5,7 +5,9 @@
 
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
+import { providerValidator } from "./schema";
 import * as Integrations from "./model/integrations";
+import * as Issues from "./model/issues";
 import { requireAuthUser, requireRoomMember, requireCan } from "./model/auth";
 
 // ---------------------------------------------------------------------------
@@ -59,19 +61,8 @@ export const getIssueLinks = query({
   handler: async (ctx, args) => {
     await requireRoomMember(ctx, args.roomId);
 
-    const issues = await ctx.db
-      .query("issues")
-      .withIndex("by_room", (q) => q.eq("roomId", args.roomId))
-      .collect();
-
-    const links = await Promise.all(
-      issues.map((issue) =>
-        ctx.db
-          .query("issueLinks")
-          .withIndex("by_issue", (q) => q.eq("issueId", issue._id))
-          .first()
-      )
-    );
+    // One by_room fetch via the model helper — no per-issue queries.
+    const linkByIssue = await Issues.issueLinksForRoom(ctx, args.roomId);
 
     // Return map of issueId -> link
     const result: Record<
@@ -84,16 +75,13 @@ export const getIssueLinks = query({
       }
     > = {};
 
-    for (let i = 0; i < issues.length; i++) {
-      const link = links[i];
-      if (link) {
-        result[issues[i]._id] = {
-          _id: link._id,
-          provider: link.provider,
-          externalId: link.externalId,
-          externalUrl: link.externalUrl,
-        };
-      }
+    for (const [issueId, link] of linkByIssue) {
+      result[issueId] = {
+        _id: link._id,
+        provider: link.provider,
+        externalId: link.externalId,
+        externalUrl: link.externalUrl,
+      };
     }
 
     return result;
@@ -104,7 +92,7 @@ export const saveRoomMapping = mutation({
   args: {
     roomId: v.id("rooms"),
     connectionId: v.id("integrationConnections"),
-    provider: v.union(v.literal("jira"), v.literal("github")),
+    provider: providerValidator,
     jiraProjectKey: v.optional(v.string()),
     jiraBoardId: v.optional(v.number()),
     jiraSprintId: v.optional(v.number()),
@@ -122,7 +110,19 @@ export const saveRoomMapping = mutation({
       throw new Error("Connection not found");
     }
 
-    return await Integrations.saveRoomMapping(ctx, args);
+    // The public args keep the Jira column names (the UI is the Jira mapping
+    // form); the model routes on provider-neutral names.
+    return await Integrations.saveRoomMapping(ctx, {
+      roomId: args.roomId,
+      connectionId: args.connectionId,
+      provider: args.provider,
+      projectKey: args.jiraProjectKey,
+      boardId: args.jiraBoardId,
+      sprintId: args.jiraSprintId,
+      storyPointsFieldId: args.storyPointsFieldId,
+      autoImport: args.autoImport,
+      autoPushEstimates: args.autoPushEstimates,
+    });
   },
 });
 

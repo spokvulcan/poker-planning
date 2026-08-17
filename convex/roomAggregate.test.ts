@@ -1,27 +1,17 @@
 /// <reference types="vite/client" />
 import { convexTest, type TestConvex } from "convex-test";
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect } from "vitest";
 import { internal } from "./_generated/api";
 import schema from "./schema";
 import type { Id } from "./_generated/dataModel";
 import * as RoomAggregate from "./model/roomAggregate";
 import { ROOM_OWNED_TABLES, type RoomOwnedTable } from "./model/roomAggregate";
+import * as Timer from "./model/timer";
+import * as Canvas from "./model/canvas";
 
 const modules = import.meta.glob("./**/*.*s");
 
 type T = TestConvex<typeof schema>;
-
-// convex-test dispatches runAfter(0) jobs through a real setTimeout, which
-// can fire mid-test — racing the _scheduled_functions assertions and running
-// Jira actions that need env vars. Faking setTimeout keeps scheduled jobs
-// pending for the duration of each test.
-beforeEach(() => {
-  vi.useFakeTimers({ toFake: ["setTimeout"] });
-});
-
-afterEach(() => {
-  vi.useRealTimers();
-});
 
 type CountedTable =
   | RoomOwnedTable
@@ -40,6 +30,33 @@ async function scheduledByName(t: T, suffix: string) {
     ctx.db.system.query("_scheduled_functions").collect()
   );
   return scheduled.filter((s) => s.name.endsWith(suffix));
+}
+
+/**
+ * Drains scheduled jobs on real timers. convex-test dispatches runAfter(0)
+ * jobs through a real 0ms setTimeout, so yielding a few macrotasks lets them
+ * fire; continuations schedule follow-up jobs, so loop until every row
+ * reaches a terminal state. Jobs that fail (e.g. Jira deregistration, whose
+ * seed tokens never decrypt) land in "failed" — terminal, and logged by the
+ * actions themselves rather than silently.
+ */
+async function drainScheduled(t: T): Promise<void> {
+  for (let i = 0; i < 50; i++) {
+    await new Promise((r) => setTimeout(r, 5));
+    await t.finishInProgressScheduledFunctions();
+    const jobs = await t.run((ctx) =>
+      ctx.db.system.query("_scheduled_functions").collect()
+    );
+    const live = jobs.filter(
+      (j) =>
+        j.state.kind === "pending" &&
+        // A deregistration retry is scheduled 5 minutes out; it never fires
+        // within a test, so it must not hold the drain open.
+        j.scheduledTime < Date.now() + 60_000
+    );
+    if (live.length === 0) return;
+  }
+  throw new Error("scheduled functions did not drain");
 }
 
 async function seedConnection(
@@ -189,6 +206,21 @@ async function seedFullRoom(
       cardLabel: "5",
       votedAt: Date.now(),
     });
+    await ctx.db.insert("roomAnalyticsSnapshots", {
+      roomId,
+      history: {
+        completedIssues: [
+          {
+            title: "Issue 1",
+            votedAt: Date.now(),
+            finalEstimate: "5",
+            voteStats: { agreement: 100 },
+          },
+        ],
+        individualVotes: [{ userId, cardLabel: "5", votedAt: Date.now() }],
+      },
+      computedAt: Date.now(),
+    });
     const connectionId = await ctx.db.insert("integrationConnections", {
       userId,
       provider: "jira",
@@ -230,7 +262,7 @@ describe("deleteRoomAggregateChunk (registered continuation)", () => {
     });
     expect(first.done).toBe(false);
     // …which the scheduled follow-up mutations complete.
-    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    await drainScheduled(t);
 
     expect(await countRows(t, "rooms")).toBe(0);
     for (const table of ROOM_OWNED_TABLES) {
@@ -265,10 +297,15 @@ describe("deleteRoomAggregateChunk (registered continuation)", () => {
     // Deleting the mapping alone would orphan the remote webhook — the
     // cascade must schedule the deregistration, and the user-owned
     // connection row must survive so that action can still authenticate.
-    const deregistrations = await scheduledByName(t, ":deregisterWebhook");
+    // The job may already have fired on real timers (and failed closed on the
+    // seed tokens, scheduling its one disarmed retry) — so match the original
+    // job (no attemptsLeft) rather than asserting an exact row count.
+    const deregistrations = (await scheduledByName(t, ":deregisterWebhook")).filter(
+      (j) => (j.args as [{ attemptsLeft?: number }])[0].attemptsLeft === undefined
+    );
     expect(deregistrations).toHaveLength(1);
     expect(
-      (deregistrations[0].args as [{ jiraWebhookId: string }])[0].jiraWebhookId
+      (deregistrations[0].args as [{ webhookId: string }])[0].webhookId
     ).toBe("wh-room");
     expect(await countRows(t, "integrationConnections")).toBe(1);
   });
@@ -330,9 +367,101 @@ describe("removeInactiveRooms", () => {
     // mutation, so one oversized room can neither blow the cron's
     // transaction limits nor take the other rooms down with it.
     expect(await countRows(t, "rooms")).toBe(2);
-    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    await drainScheduled(t);
     expect(await countRows(t, "rooms")).toBe(1);
     expect(await t.run((ctx) => ctx.db.get(activeId))).not.toBeNull();
+  });
+
+  it("leaves a room with recent timer-only activity alone", async () => {
+    const t = convexTest(schema, modules);
+    const roomId = await t.run((ctx) =>
+      ctx.db.insert("rooms", {
+        name: "Timer-only",
+        autoCompleteVoting: true,
+        isGameOver: false,
+        createdAt: Date.now() - 10 * 24 * 60 * 60 * 1000,
+        lastActivityAt: Date.now() - 10 * 24 * 60 * 60 * 1000,
+      })
+    );
+    const userId = await t.run((ctx) =>
+      ctx.db.insert("users", {
+        authUserId: "auth-t",
+        name: "U",
+        createdAt: Date.now(),
+      })
+    );
+    await t.run((ctx) =>
+      ctx.db.insert("canvasNodes", {
+        roomId,
+        nodeId: "timer",
+        type: "timer",
+        position: { x: 0, y: 0 },
+        data: {
+          startedAt: null,
+          pausedAt: null,
+          elapsedSeconds: 0,
+          lastUpdatedBy: null,
+          lastAction: null,
+        },
+        lastUpdatedAt: Date.now(),
+      })
+    );
+
+    // The room's only sign of life in days is a timer start — that must count
+    // as activity or the cleanup cascade deletes a room in use.
+    await t.run((ctx) =>
+      Timer.updateTimerState(ctx, { roomId, nodeId: "timer", action: "start", userId })
+    );
+
+    const result = await t.mutation(internal.cleanup.removeInactiveRooms, {});
+    expect(result.roomsScheduled).toBe(0);
+    await drainScheduled(t);
+    expect(await t.run((ctx) => ctx.db.get(roomId))).not.toBeNull();
+  });
+
+  it("leaves a room with recent canvas-only activity alone", async () => {
+    const t = convexTest(schema, modules);
+    const roomId = await t.run((ctx) =>
+      ctx.db.insert("rooms", {
+        name: "Canvas-only",
+        autoCompleteVoting: true,
+        isGameOver: false,
+        createdAt: Date.now() - 10 * 24 * 60 * 60 * 1000,
+        lastActivityAt: Date.now() - 10 * 24 * 60 * 60 * 1000,
+      })
+    );
+    const userId = await t.run((ctx) =>
+      ctx.db.insert("users", {
+        authUserId: "auth-c",
+        name: "U",
+        createdAt: Date.now(),
+      })
+    );
+    await t.run((ctx) =>
+      ctx.db.insert("canvasNodes", {
+        roomId,
+        nodeId: "session-current",
+        type: "session",
+        position: { x: 0, y: 0 },
+        data: {},
+        lastUpdatedAt: Date.now(),
+      })
+    );
+
+    // Only a canvas node move — no votes, no issues — keeps the room alive.
+    await t.run((ctx) =>
+      Canvas.updateNodePosition(ctx, {
+        roomId,
+        nodeId: "session-current",
+        position: { x: 10, y: 20 },
+        userId,
+      })
+    );
+
+    const result = await t.mutation(internal.cleanup.removeInactiveRooms, {});
+    expect(result.roomsScheduled).toBe(0);
+    await drainScheduled(t);
+    expect(await t.run((ctx) => ctx.db.get(roomId))).not.toBeNull();
   });
 });
 

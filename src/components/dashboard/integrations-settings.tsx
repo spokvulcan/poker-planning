@@ -6,20 +6,18 @@ import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { JiraConnectionCard } from "./jira-connection-card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "@/lib/toast";
 
 export function IntegrationsSettings() {
   const connections = useQuery(api.integrations.getConnections);
   const searchParams = useSearchParams();
-  const { toast } = useToast();
 
   const jiraConnection = connections?.find((c) => c.provider === "jira");
 
   // Show toast on successful connection
   useEffect(() => {
     if (searchParams.get("connected") === "jira") {
-      toast({
-        title: "Jira connected",
+      toast.success("Jira connected", {
         description: "Your Jira Cloud account has been connected successfully.",
       });
       // Clean up URL
@@ -43,16 +41,14 @@ export function IntegrationsSettings() {
         jira_no_user: "Could not identify your user account.",
         jira_store_failed: "Failed to save connection.",
       };
-      toast({
-        title: "Jira connection failed",
+      toast.error("Jira connection failed", {
         description: messages[error] ?? "An unknown error occurred.",
-        variant: "destructive",
       });
       const url = new URL(window.location.href);
       url.searchParams.delete("error");
       window.history.replaceState({}, "", url.toString());
     }
-  }, [searchParams, toast]);
+  }, [searchParams]);
 
   if (connections === undefined) {
     return (

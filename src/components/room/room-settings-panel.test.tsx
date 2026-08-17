@@ -51,8 +51,8 @@ vi.mock("next/link", () => ({
 // Desktop branch of SidePanel — jsdom has no matchMedia.
 vi.mock("@/hooks/use-mobile", () => ({ useIsMobile: () => false }));
 
-vi.mock("@/hooks/use-toast", () => ({
-  useToast: () => ({ toast: () => {} }),
+vi.mock("@/lib/toast", () => ({
+  toast: { success: () => {}, error: () => {} },
 }));
 
 vi.mock("./demo/DemoSimulationProvider", () => ({

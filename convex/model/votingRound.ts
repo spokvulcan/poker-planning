@@ -1,17 +1,22 @@
 import { MutationCtx } from "../_generated/server";
-import { Id } from "../_generated/dataModel";
+import { Doc, Id } from "../_generated/dataModel";
 import { internal } from "../_generated/api";
 import * as Rooms from "./rooms";
-import * as Issues from "./issues";
 import * as Canvas from "./canvas";
 import * as Votes from "./votes";
-import { summarize } from "../summarize";
-import { SPECIAL_CARDS, DEFAULT_SCALE, VotingScale } from "../scales";
+import * as Analytics from "./analytics";
+import { cardNumericValue, computeVoterAlignment } from "./alignment";
+import { summarize, VoteStatsSummary } from "../summarize";
+import { DEFAULT_SCALE, VotingScale } from "../scales";
 import { COUNTDOWN_DURATION_MS } from "../constants";
 
 /**
  * VotingRound — the module that owns the round's lifecycle (ADR-0002).
- * Sole writer of the round's state; transitions land here over the coming steps.
+ * Sole writer of the round's state: the rooms round fields, the votes table,
+ * and — while a round is running — the target issue's `status` and
+ * `votingTimestamps` (the `completed` transition and the one canonical
+ * timestamp-close path live here, not in the issues module). Owns the
+ * transitions (start, reveal, reset, abandon) and the auto-reveal countdown.
  */
 
 /**
@@ -36,7 +41,7 @@ export async function start(
   if (room.currentIssueId && room.currentIssueId !== args.issueId) {
     const previous = await ctx.db.get(room.currentIssueId);
     if (previous && previous.status === "voting") {
-      await Issues.closeOpenTimestamp(ctx, room.currentIssueId);
+      await closeOpenTimingRecord(ctx, room.currentIssueId);
       await ctx.db.patch(room.currentIssueId, { status: "pending" });
     }
   }
@@ -53,8 +58,8 @@ export async function start(
   await ctx.db.patch(args.roomId, {
     currentIssueId: args.issueId,
     isGameOver: false,
-    lastActivityAt: Date.now(),
   });
+  await Rooms.updateRoomActivity(ctx, args.roomId);
 
   await clearRoomVotes(ctx, args.roomId);
 
@@ -78,7 +83,7 @@ export async function reset(ctx: MutationCtx, roomId: Id<"rooms">): Promise<void
       // A mid-vote reset leaves an open round; close it before opening a fresh
       // one so durations don't overlap.
       if (issue.status === "voting" && shouldRecordTiming(room.currentIssueId)) {
-        await Issues.closeOpenTimestamp(ctx, room.currentIssueId);
+        await closeOpenTimingRecord(ctx, room.currentIssueId);
       }
       await ctx.db.patch(room.currentIssueId, { status: "voting" });
       if (shouldRecordTiming(room.currentIssueId)) {
@@ -88,7 +93,8 @@ export async function reset(ctx: MutationCtx, roomId: Id<"rooms">): Promise<void
   }
 
   await cancel(ctx, roomId);
-  await ctx.db.patch(roomId, { isGameOver: false, lastActivityAt: Date.now() });
+  await ctx.db.patch(roomId, { isGameOver: false });
+  await Rooms.updateRoomActivity(ctx, roomId);
   await clearRoomVotes(ctx, roomId);
 }
 
@@ -97,7 +103,8 @@ export async function reset(ctx: MutationCtx, roomId: Id<"rooms">): Promise<void
  * the reveal effects. For an issue-backed round it snapshots the summary onto
  * the issue (final estimate + stats), records per-voter alignment, closes the
  * timed round, schedules the Jira push when linked with auto-push, and upserts
- * the canvas results node.
+ * the canvas results node. A round that completes its target issue (consensus
+ * reached) also refreshes the room's analytics snapshot in the same mutation.
  */
 export async function reveal(ctx: MutationCtx, roomId: Id<"rooms">): Promise<void> {
   const room = await ctx.db.get(roomId);
@@ -105,7 +112,8 @@ export async function reveal(ctx: MutationCtx, roomId: Id<"rooms">): Promise<voi
 
   // Cancel the countdown as one unit, then settle to `revealed`.
   await cancel(ctx, roomId);
-  await ctx.db.patch(roomId, { isGameOver: true, lastActivityAt: Date.now() });
+  await ctx.db.patch(roomId, { isGameOver: true });
+  await Rooms.updateRoomActivity(ctx, roomId);
 
   // Reveal effect: results node on canvas rooms.
   if (room.roomType === "canvas") {
@@ -119,8 +127,7 @@ export async function reveal(ctx: MutationCtx, roomId: Id<"rooms">): Promise<voi
     const summary = summarize(votes, room.votingScale);
 
     if (summary.consensus) {
-      await Issues.completeIssueVoting(ctx, {
-        roomId,
+      await completeTargetIssue(ctx, {
         issueId: room.currentIssueId,
         finalEstimate: summary.consensus,
         voteStats: summary.stats,
@@ -129,7 +136,7 @@ export async function reveal(ctx: MutationCtx, roomId: Id<"rooms">): Promise<voi
       // No consensus to snapshot (all special / no votes), so the issue stays
       // un-completed — but the round is over. Close its open timing record now
       // so the duration ends at reveal, not at the next reset/abandon.
-      await Issues.closeOpenTimestamp(ctx, room.currentIssueId);
+      await closeOpenTimingRecord(ctx, room.currentIssueId);
     }
 
     // Per-voter alignment snapshot for analytics/export.
@@ -139,6 +146,14 @@ export async function reveal(ctx: MutationCtx, roomId: Id<"rooms">): Promise<voi
       consensusLabel: summary.consensus,
       votingScale: room.votingScale,
     });
+
+    // A completed target issue changes the room's completed-issue history:
+    // refresh the analytics snapshot in the same mutation. This must run after
+    // the issue patch (completeTargetIssue) and the vote snapshot above so the
+    // refreshed history includes this round's issue and votes.
+    if (summary.consensus) {
+      await Analytics.refreshRoomAnalyticsSnapshot(ctx, roomId);
+    }
 
     // Reveal effect: push the estimate to a linked Jira issue when auto-push is on.
     if (summary.consensus) {
@@ -155,6 +170,7 @@ export async function reveal(ctx: MutationCtx, roomId: Id<"rooms">): Promise<voi
 /**
  * Snapshots each non-special vote as an `individualVotes` row for voter-alignment
  * analytics/export. Idempotent — clears prior snapshots for the issue first.
+ * The per-voter computation itself is pure (`alignment.ts`); this is the IO.
  */
 async function snapshotVoterAlignment(
   ctx: MutationCtx,
@@ -175,53 +191,18 @@ async function snapshotVoterAlignment(
   await Promise.all(existing.map((row) => ctx.db.delete(row._id)));
 
   const votes = await Votes.getRoomVotes(ctx, roomId);
-
-  // Build scale index map for deltaSteps computation.
-  const scaleCards = votingScale?.cards ?? [];
-  const numericScale = votingScale?.isNumeric ?? false;
-  const scaleIndexMap = new Map<string, number>();
-  scaleCards.forEach((card, idx) => {
-    if (!SPECIAL_CARDS.includes(card)) {
-      scaleIndexMap.set(card, idx);
-    }
-  });
-
-  const consensusIndex = consensusLabel
-    ? scaleIndexMap.get(consensusLabel)
-    : undefined;
-  const consensusValue =
-    consensusLabel !== null ? parseFloat(consensusLabel) : undefined;
+  const rows = computeVoterAlignment(votes, consensusLabel, votingScale);
 
   const now = Date.now();
-
   await Promise.all(
-    votes
-      .filter((vote) => vote.cardLabel && !SPECIAL_CARDS.includes(vote.cardLabel))
-      .map((vote) => {
-        const label = vote.cardLabel!;
-        const voteIndex = scaleIndexMap.get(label);
-        const deltaSteps =
-          numericScale && voteIndex !== undefined && consensusIndex !== undefined
-            ? voteIndex - consensusIndex
-            : undefined;
-
-        const cardValue = parseFloat(label);
-
-        return ctx.db.insert("individualVotes", {
-          roomId,
-          issueId,
-          userId: vote.userId,
-          cardLabel: label,
-          cardValue: isNaN(cardValue) ? undefined : cardValue,
-          consensusLabel: consensusLabel ?? undefined,
-          consensusValue:
-            consensusValue !== undefined && !isNaN(consensusValue)
-              ? consensusValue
-              : undefined,
-          deltaSteps,
-          votedAt: now,
-        });
+    rows.map((row) =>
+      ctx.db.insert("individualVotes", {
+        roomId,
+        issueId,
+        ...row,
+        votedAt: now,
       })
+    )
   );
 }
 
@@ -264,7 +245,7 @@ export async function abandon(ctx: MutationCtx, roomId: Id<"rooms">): Promise<vo
   if (room.currentIssueId) {
     const issue = await ctx.db.get(room.currentIssueId);
     if (issue && issue.status === "voting") {
-      await Issues.closeOpenTimestamp(ctx, room.currentIssueId);
+      await closeOpenTimingRecord(ctx, room.currentIssueId);
       await ctx.db.patch(room.currentIssueId, { status: "pending" });
     }
   }
@@ -276,8 +257,8 @@ export async function abandon(ctx: MutationCtx, roomId: Id<"rooms">): Promise<vo
   await ctx.db.patch(roomId, {
     currentIssueId: undefined,
     isGameOver: false,
-    lastActivityAt: Date.now(),
   });
+  await Rooms.updateRoomActivity(ctx, roomId);
 
   // Clear prior votes so the Quick Vote starts clean.
   await clearRoomVotes(ctx, roomId);
@@ -291,6 +272,7 @@ export async function cancelCountdown(
   ctx: MutationCtx,
   roomId: Id<"rooms">
 ): Promise<void> {
+  await Rooms.updateRoomActivity(ctx, roomId);
   await cancel(ctx, roomId);
 }
 
@@ -306,6 +288,7 @@ export async function setAutoComplete(
   roomId: Id<"rooms">,
   enabled: boolean
 ): Promise<void> {
+  await Rooms.updateRoomActivity(ctx, roomId);
   if (!enabled) {
     await cancel(ctx, roomId);
     await ctx.db.patch(roomId, { autoCompleteVoting: false });
@@ -419,6 +402,81 @@ async function openTimingRecord(
   });
 }
 
+/**
+ * Closes the target issue's open timed round, if any — the ONE canonical
+ * timestamp-close path. Every transition that ends a round without completing
+ * it (start switching targets, reset, abandon, a consensus-less reveal)
+ * funnels through here. Returns whether a round was open, plus the issue's
+ * timing records (durations current as of the close) so callers that need
+ * them don't re-read the index.
+ */
+async function closeOpenTimingRecord(
+  ctx: MutationCtx,
+  issueId: Id<"issues">
+): Promise<{ closed: boolean; timestamps: Doc<"votingTimestamps">[] }> {
+  const timestamps = await ctx.db
+    .query("votingTimestamps")
+    .withIndex("by_issue", (q) => q.eq("issueId", issueId))
+    .collect();
+
+  const latest = timestamps[timestamps.length - 1];
+  if (!latest || latest.votingEndedAt) return { closed: false, timestamps };
+
+  const now = Date.now();
+  const durationMs = now - latest.votingStartedAt;
+  await ctx.db.patch(latest._id, { votingEndedAt: now, durationMs });
+  latest.votingEndedAt = now;
+  latest.durationMs = durationMs;
+  return { closed: true, timestamps };
+}
+
+/**
+ * completeTargetIssue — the `completed` transition of an issue-backed target:
+ * sets the final estimate and stats snapshot, closes the open timed round via
+ * the canonical path, and records time-to-consensus as the total across the
+ * issue's rounds. The round module owns this lifecycle write (ADR-0002); the
+ * issues module keeps CRUD only.
+ */
+async function completeTargetIssue(
+  ctx: MutationCtx,
+  args: {
+    issueId: Id<"issues">;
+    finalEstimate: string;
+    voteStats: VoteStatsSummary;
+  }
+): Promise<void> {
+  const now = Date.now();
+
+  // Close the open timed round (canonical close), then total the time across
+  // rounds. Always recorded for an issue-backed round (the former demo-room
+  // exemption is gone with the demo — ADR-0003).
+  const { closed: closedOpenRound, timestamps } = await closeOpenTimingRecord(
+    ctx,
+    args.issueId
+  );
+  const totalMs = timestamps.reduce((sum, ts) => sum + (ts.durationMs ?? 0), 0);
+
+  let timeToConsensusMs: number | undefined;
+  if (closedOpenRound || totalMs > 0) {
+    // The just-closed round's duration is in the total; if every round was
+    // already closed (e.g. reset then completed), the sum stands alone.
+    timeToConsensusMs = totalMs;
+  }
+
+  await ctx.db.patch(args.issueId, {
+    status: "completed",
+    finalEstimate: args.finalEstimate,
+    votedAt: now,
+    voteStats: {
+      average: args.voteStats.average ?? undefined,
+      median: args.voteStats.median ?? undefined,
+      agreement: args.voteStats.agreement,
+      voteCount: args.voteStats.voteCount,
+      timeToConsensusMs,
+    },
+  });
+}
+
 export interface CastVoteArgs {
   roomId: Id<"rooms">;
   userId: Id<"users">;
@@ -458,8 +516,9 @@ export async function castVote(ctx: MutationCtx, args: CastVoteArgs): Promise<vo
   if (!scaleCards.includes(args.cardLabel)) {
     throw new Error("Card is not in this room's voting scale");
   }
-  const parsedValue = scale.isNumeric ? Number.parseFloat(args.cardLabel) : 0;
-  const cardValue = Number.isFinite(parsedValue) ? parsedValue : 0;
+  const cardValue = scale.isNumeric
+    ? (cardNumericValue(args.cardLabel) ?? 0)
+    : 0;
 
   await Rooms.updateRoomActivity(ctx, args.roomId);
 

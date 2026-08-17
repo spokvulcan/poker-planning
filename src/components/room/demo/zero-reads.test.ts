@@ -83,12 +83,13 @@ import { useRoomPresence } from "@/hooks/useRoomPresence";
 import { DEMO_VIEWER_ID } from "../types";
 
 // Every subscription reachable from the demo canvas. In demo mode all must be
-// bypassed; in a real room all must open.
+// bypassed; in a real room all must open. `api.issues.getForEnhancedExport`
+// is deliberately absent: the export flow fetches it imperatively at click
+// time (useIssuesExport), so no component ever subscribes it.
 const SUBSCRIPTIONS = [
   getFunctionName(api.canvas.getCanvasNodes),
   getFunctionName(api.issues.getCurrent),
   getFunctionName(api.issues.list),
-  getFunctionName(api.issues.getForEnhancedExport),
 ];
 
 // The root subscription mounted above the demo tree (AuthProvider). It is
@@ -119,13 +120,16 @@ function capturedRootSubscriptions(): { name: string; args: unknown }[] {
 // Calls every always-mounted Convex-subscribing hook reachable from the demo
 // canvas. The other demo-reachable subscriptions are guarded at their own site,
 // so they are deliberately outside this Probe's scope (audited 2026-08-03):
-//   - RoomCanvas/PlayerNode/StoryNode read `roomData` (a prop) — api.rooms.get
+//   - RoomCanvas/PlayerNode read `roomData` (a prop) — api.rooms.get
 //     is never called in demo mode.
 //   - issues-panel skips its integration queries in demo (derives the signal
 //     from `useIsDemoMode()`); its writes go through useIssueActions, which
-//     no-ops in demo (covered by useIssueActions.test.tsx).
+//     no-ops in demo (covered by useIssueActions.test.tsx). Its export flow
+//     fetches imperatively (useIssuesExport) and the control is disabled in
+//     demo, so it opens no subscription either.
 //   - integration-settings (getConnections/getRoomMapping, both un-skipped) only
-//     mounts behind `{!isDemoMode && …}` in room-settings-panel.
+//     mounts behind `{!isDemoMode && …}` in room-settings-panel, and only while
+//     the settings panel is open.
 // If one of those gates regresses this Probe won't catch it — re-audit on change.
 // A stopped persisted timer, as a freshly created canvas node delivers it.
 // useTimerSync opens no subscription in either mode — it is probed so a

@@ -5,7 +5,7 @@ import { useTheme } from "next-themes";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useAuth } from "@/components/auth/auth-provider";
-import { authClient } from "@/lib/auth-client";
+import { useSignOut } from "@/hooks/useSignOut";
 import { UserAvatar } from "@/components/user-menu/user-avatar";
 import { EditNameDialog } from "@/components/user-menu/edit-name-dialog";
 import {
@@ -45,7 +45,9 @@ export function NavUser() {
   );
 
   const editGlobalUser = useMutation(api.users.editGlobalUser);
-  const deleteUser = useMutation(api.users.deleteUser);
+  // The one sign-out policy (anonymous-account deletion included). Called
+  // above the early return below, per the rules of hooks.
+  const handleSignOut = useSignOut();
 
   if (!authUserId || !globalUser) {
     return (
@@ -70,20 +72,6 @@ export function NavUser() {
       await editGlobalUser({ name });
     } catch {
       toast.error("Failed to update name. Please try again.");
-    }
-  };
-
-  const handleSignOut = async () => {
-    try {
-      if (isAnonymous) {
-        await deleteUser({});
-      }
-      const result = await authClient.signOut();
-      if (result.error) {
-        toast.error(result.error.message || "Failed to sign out. Please try again.");
-      }
-    } catch {
-      toast.error("Failed to sign out. Please try again.");
     }
   };
 

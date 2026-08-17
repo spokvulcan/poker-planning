@@ -30,7 +30,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "@/lib/toast";
 import { UserMenu } from "@/components/user-menu";
 import { ShinyButton } from "@/components/ui/shiny-button";
 import { cn } from "@/lib/utils";
@@ -80,7 +80,6 @@ export const CanvasNavigation: FC<CanvasNavigationProps> = ({
   const { zoomIn, zoomOut, fitView } = useReactFlow();
   const router = useRouter();
 
-  const { toast } = useToast();
   // Fullscreen support is a client-only capability resolved via the store
   // callbacks defined above — no hydration mismatch, no setState-in-effect.
   const isFullscreenSupported = useSyncExternalStore(
@@ -98,17 +97,14 @@ export const CanvasNavigation: FC<CanvasNavigationProps> = ({
         : `${window.location.origin}/room/${roomData.room._id}`;
       const success = await copyTextToClipboard(url);
       if (success) {
-        toast({
-          title: isDemoMode ? "Demo URL copied!" : "Room URL copied!",
+        toast.success(isDemoMode ? "Demo URL copied" : "Room URL copied", {
           description: isDemoMode
             ? "Share this link to show others the demo."
             : "Share this link with others to join the room.",
         });
       } else {
-        toast({
-          title: "Failed to copy URL",
+        toast.error("Failed to copy URL", {
           description: "Please copy the URL from your browser's address bar.",
-          variant: "destructive",
         });
       }
     }

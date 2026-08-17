@@ -1,4 +1,5 @@
 import { SPECIAL_CARDS } from "./scales";
+import { cardNumericValue } from "./model/alignment";
 
 /**
  * summarize — the ONE pure computation of a round's results.
@@ -72,8 +73,8 @@ export function summarize(
   let median: number | null = null;
   if (scale?.isNumeric ?? true) {
     const numericVotes = labels
-      .map((l) => parseFloat(l))
-      .filter((n) => !isNaN(n));
+      .map(cardNumericValue)
+      .filter((n): n is number => n !== undefined);
     if (numericVotes.length > 0) {
       average =
         numericVotes.reduce((sum, v) => sum + v, 0) / numericVotes.length;

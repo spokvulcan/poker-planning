@@ -1,5 +1,6 @@
 import { MutationCtx, QueryCtx } from "../_generated/server";
 import { Id, Doc } from "../_generated/dataModel";
+import * as Analytics from "./analytics";
 import * as Canvas from "./canvas";
 import * as Rooms from "./rooms";
 import * as VotingRound from "./votingRound";
@@ -389,12 +390,19 @@ export async function deleteUserByAuthUserId(
     memberships.map((membership) => leaveRoom(ctx, user._id, membership.roomId))
   );
 
-  // Delete individual vote snapshots for this user
+  // Delete individual vote snapshots for this user — across every room they
+  // ever voted in, including ones they already left. Their history changes
+  // there, so invalidate those rooms' analytics snapshots directly (an
+  // account deletion is not room liveness, so no activity bump).
   const individualVotes = await ctx.db
     .query("individualVotes")
     .withIndex("by_user", (q) => q.eq("userId", user._id))
     .collect();
   await Promise.all(individualVotes.map((iv) => ctx.db.delete(iv._id)));
+  await Analytics.invalidateRoomAnalyticsSnapshots(
+    ctx,
+    individualVotes.map((iv) => iv.roomId)
+  );
 
   // Delete the global user record
   await ctx.db.delete(user._id);
@@ -524,6 +532,13 @@ export async function linkAnonymousToPermanent(
         await ctx.db.patch(iv._id, { userId: existingPermanent._id });
       }
     }
+
+    // Both branches above rewrote room history (a vote row deleted or
+    // re-pointed) — invalidate the affected rooms' analytics snapshots.
+    await Analytics.invalidateRoomAnalyticsSnapshots(
+      ctx,
+      anonIndividualVotes.map((iv) => iv.roomId)
+    );
 
     // Transfer canvas nodes (ownership & player nodes)
     // Query each room the anonymous user is a member of to find their player nodes

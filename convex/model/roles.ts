@@ -2,6 +2,7 @@ import { MutationCtx } from "../_generated/server";
 import { Id } from "../_generated/dataModel";
 import { RoomPermissions } from "../permissions";
 import { requireCan } from "./auth";
+import * as Rooms from "./rooms";
 
 /**
  * Promotes a participant to facilitator.
@@ -19,6 +20,7 @@ export async function promoteFacilitator(
   );
 
   await ctx.db.patch(target!._id, { role: "facilitator" });
+  await Rooms.updateRoomActivity(ctx, args.roomId);
 }
 
 /**
@@ -37,6 +39,7 @@ export async function demoteFacilitator(
   );
 
   await ctx.db.patch(target!._id, { role: "participant" });
+  await Rooms.updateRoomActivity(ctx, args.roomId);
 }
 
 /**
@@ -69,6 +72,7 @@ export async function transferOwnership(
 
   // Update room's ownerId
   await ctx.db.patch(args.roomId, { ownerId: args.targetUserId });
+  await Rooms.updateRoomActivity(ctx, args.roomId);
 }
 
 /**
@@ -85,4 +89,5 @@ export async function updatePermissions(
   });
 
   await ctx.db.patch(args.roomId, { permissions: args.permissions });
+  await Rooms.updateRoomActivity(ctx, args.roomId);
 }

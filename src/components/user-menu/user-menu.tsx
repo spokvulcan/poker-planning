@@ -6,7 +6,7 @@ import { useTheme } from "next-themes";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useAuth } from "@/components/auth/auth-provider";
-import { authClient } from "@/lib/auth-client";
+import { useSignOut } from "@/hooks/useSignOut";
 import { UserAvatar } from "./user-avatar";
 import { EditNameDialog } from "./edit-name-dialog";
 import {
@@ -55,7 +55,9 @@ export function UserMenu() {
 
   const editGlobalUser = useMutation(api.users.editGlobalUser);
   const editUser = useMutation(api.users.edit);
-  const deleteUser = useMutation(api.users.deleteUser);
+  // The one sign-out policy (anonymous-account deletion included). Called
+  // above the early return below, per the rules of hooks.
+  const handleSignOut = useSignOut();
 
   if (!authUserId || !globalUser) {
     return null;
@@ -83,23 +85,6 @@ export function UserMenu() {
       });
     } catch {
       toast.error("Failed to update spectator mode. Please try again.");
-    }
-  };
-
-  const handleSignOut = async () => {
-    try {
-      // Only delete user completely if they are anonymous
-      // Non-anonymous users keep their data for when they sign back in
-      if (isAnonymous) {
-        await deleteUser({});
-      }
-      // Sign out from auth (clears session cookie)
-      const result = await authClient.signOut();
-      if (result.error) {
-        toast.error(result.error.message || "Failed to sign out. Please try again.");
-      }
-    } catch {
-      toast.error("Failed to sign out. Please try again.");
     }
   };
 

@@ -21,9 +21,10 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { SidePanel } from "@/components/ui/side-panel";
 import { Badge } from "@/components/ui/badge";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 import { useIssues } from "./hooks/useIssues";
+import { useIssuesExport } from "./hooks/useIssuesExport";
 import { useIssueActions } from "./hooks/useIssueActions";
 import { useIsDemoMode } from "./demo/DemoSimulationProvider";
 import { IssueItem } from "./issue-item";
@@ -31,6 +32,7 @@ import { JiraImportModal } from "./jira-import-modal";
 import { exportIssuesToCSV } from "@/utils/export-issues-csv";
 import { exportIssuesToJSON } from "@/utils/export-issues-json";
 import type { Id } from "@/convex/_generated/dataModel";
+import type { EnhancedExportableIssue } from "@/convex/model/issues";
 import { type ResolvedDecision, RESOLVED_ALLOWED } from "@/convex/permissions";
 import { denialTooltip, permissionProps } from "@/hooks/usePermissions";
 
@@ -43,10 +45,28 @@ interface IssuesPanelProps {
   canControlGameFlow?: ResolvedDecision;
 }
 
-export const IssuesPanel: FC<IssuesPanelProps> = ({
+type IssuesPanelContentProps = Omit<IssuesPanelProps, "isOpen">;
+
+/**
+ * The animated panel shell stays mounted for the open/close transition; the
+ * panel CONTENT mounts only while the panel is open, so every Convex
+ * subscription below (issues list, current issue, integration links) attaches
+ * on open and detaches on close instead of running for the whole session.
+ * The even heavier export read is not a subscription at all — see
+ * useIssuesExport.
+ */
+export const IssuesPanel: FC<IssuesPanelProps> = (props) => {
+  const { isOpen, onClose } = props;
+  return (
+    <SidePanel isOpen={isOpen} onClose={onClose}>
+      {isOpen ? <IssuesPanelContent {...props} /> : null}
+    </SidePanel>
+  );
+};
+
+const IssuesPanelContent: FC<IssuesPanelContentProps> = ({
   roomId,
   roomName,
-  isOpen,
   onClose,
   canManageIssues: canManageIssuesDecision = RESOLVED_ALLOWED,
   canControlGameFlow: canControlGameFlowDecision = RESOLVED_ALLOWED,
@@ -56,7 +76,6 @@ export const IssuesPanel: FC<IssuesPanelProps> = ({
   const canManageIssues = canManageIssuesDecision.allowed;
   const canControlGameFlow = canControlGameFlowDecision.allowed;
   const manageIssuesDenial = denialTooltip(canManageIssuesDecision);
-  const { toast } = useToast();
 
   const [newIssueTitle, setNewIssueTitle] = useState("");
   const [isAddingIssue, setIsAddingIssue] = useState(false);
@@ -71,8 +90,9 @@ export const IssuesPanel: FC<IssuesPanelProps> = ({
     currentIssue,
     isQuickVoteMode,
     isLoading,
-    exportData,
   } = useIssues({ roomId });
+  // The export read is fetched at click time, not subscribed (see the hook).
+  const fetchExportData = useIssuesExport({ roomId });
   // Writes come from the action seam, which no-ops internally in demo mode
   // (ADR-0003) — the remaining `isDemoMode` branches below are presentation only
   // (hide/disable controls), never write guards.
@@ -92,16 +112,12 @@ export const IssuesPanel: FC<IssuesPanelProps> = ({
     try {
       await createIssue(newIssueTitle.trim());
       setNewIssueTitle("");
-      toast({
-        title: "Issue added",
+      toast.success("Issue added", {
         description: `"${newIssueTitle.trim()}" has been added to the list.`,
       });
     } catch (error) {
       console.error("Failed to add issue:", error);
-      toast({
-        title: "Failed to add issue",
-        variant: "destructive",
-      });
+      toast.error("Failed to add issue");
     } finally {
       setIsAddingIssue(false);
     }
@@ -117,16 +133,12 @@ export const IssuesPanel: FC<IssuesPanelProps> = ({
     const issue = issues.find((i) => i._id === issueId);
     try {
       await startVoting(issueId);
-      toast({
-        title: issue ? `Voting on "${issue.title}"` : "Voting started",
+      toast.success(issue ? `Voting on "${issue.title}"` : "Voting started", {
         description: "All previous votes have been cleared.",
       });
     } catch (error) {
       console.error("Failed to start voting:", error);
-      toast({
-        title: "Failed to start voting",
-        variant: "destructive",
-      });
+      toast.error("Failed to start voting");
     }
   };
 
@@ -134,16 +146,12 @@ export const IssuesPanel: FC<IssuesPanelProps> = ({
     if (isQuickVoteMode) return; // Already in Quick Vote mode
     try {
       await switchToQuickVote();
-      toast({
-        title: "Quick Vote",
+      toast.success("Quick Vote", {
         description: "Switched to ad-hoc voting mode.",
       });
     } catch (error) {
       console.error("Failed to switch to Quick Vote:", error);
-      toast({
-        title: "Failed to switch mode",
-        variant: "destructive",
-      });
+      toast.error("Failed to switch mode");
     }
   };
 
@@ -152,10 +160,7 @@ export const IssuesPanel: FC<IssuesPanelProps> = ({
       await updateTitle(issueId, title);
     } catch (error) {
       console.error("Failed to update title:", error);
-      toast({
-        title: "Failed to update title",
-        variant: "destructive",
-      });
+      toast.error("Failed to update title");
     }
   };
 
@@ -167,34 +172,33 @@ export const IssuesPanel: FC<IssuesPanelProps> = ({
       await updateEstimate(issueId, estimate);
     } catch (error) {
       console.error("Failed to update estimate:", error);
-      toast({
-        title: "Failed to update estimate",
-        variant: "destructive",
-      });
+      toast.error("Failed to update estimate");
     }
   };
 
   const handleDeleteIssue = async (issueId: Id<"issues">) => {
     try {
       await deleteIssue(issueId);
-      toast({
-        title: "Issue deleted",
-      });
+      toast.success("Issue deleted");
     } catch (error) {
       console.error("Failed to delete issue:", error);
-      toast({
-        title: "Failed to delete issue",
-        variant: "destructive",
-      });
+      toast.error("Failed to delete issue");
     }
   };
 
-  const handleExport = (format: "csv" | "json") => {
-    if (!exportData || exportData.length === 0) {
-      toast({
-        title: "No issues to export",
+  const handleExport = async (format: "csv" | "json") => {
+    let exportData: EnhancedExportableIssue[];
+    try {
+      exportData = await fetchExportData();
+    } catch (error) {
+      console.error("Failed to export issues:", error);
+      toast.error("Export failed");
+      return;
+    }
+
+    if (exportData.length === 0) {
+      toast.error("No issues to export", {
         description: "Add some issues first.",
-        variant: "destructive",
       });
       return;
     }
@@ -204,15 +208,13 @@ export const IssuesPanel: FC<IssuesPanelProps> = ({
     } else {
       exportIssuesToJSON(exportData, roomName);
     }
-    toast({
-      title: "Export successful",
+    toast.success("Export successful", {
       description: `Exported ${exportData.length} issues to ${format.toUpperCase()}.`,
     });
   };
 
   return (
     <>
-    <SidePanel isOpen={isOpen} onClose={onClose}>
         {/* Header */}
         <div className="flex items-center justify-between px-6 h-14 border-b border-gray-200/50 dark:border-border shrink-0 bg-white dark:bg-surface-1">
           <div className="flex items-center gap-3">
@@ -293,7 +295,7 @@ export const IssuesPanel: FC<IssuesPanelProps> = ({
 
         {/* Content */}
         <div className="flex flex-col min-h-0 flex-1 bg-gray-50/50 dark:bg-surface-1/50">
-          
+
           {/* Quick Vote Section - Always pinned to top of scroll */}
           <div className="p-6 pb-2 shrink-0">
             <button
@@ -312,8 +314,8 @@ export const IssuesPanel: FC<IssuesPanelProps> = ({
               <div className="flex items-center gap-3">
                 <div className={cn(
                   "flex items-center justify-center h-8 w-8 rounded-full transition-colors",
-                  isQuickVoteMode 
-                    ? "bg-blue-100 text-blue-600 dark:bg-blue-500/20 dark:text-blue-400" 
+                  isQuickVoteMode
+                    ? "bg-blue-100 text-blue-600 dark:bg-blue-500/20 dark:text-blue-400"
                     : "bg-gray-100 text-gray-500 dark:bg-surface-3 dark:text-gray-400 group-hover:bg-gray-200 dark:group-hover:bg-surface-3/80 group-hover:text-gray-700 dark:group-hover:text-gray-300"
                 )}>
                   <Zap className="h-4 w-4" />
@@ -412,7 +414,7 @@ export const IssuesPanel: FC<IssuesPanelProps> = ({
               </div>
             </div>
           </div>
-          
+
           {/* Demo CTA */}
           {isDemoMode && (
             <div className="p-6 border-t border-gray-200/50 dark:border-border bg-white dark:bg-surface-1">
@@ -425,7 +427,6 @@ export const IssuesPanel: FC<IssuesPanelProps> = ({
             </div>
           )}
         </div>
-    </SidePanel>
 
     {hasJiraMapping && (
       <JiraImportModal

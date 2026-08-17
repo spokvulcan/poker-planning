@@ -1,6 +1,15 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
+/**
+ * The integration provider union — the one validator shared by the schema
+ * tables and every function argument that takes a provider.
+ */
+export const providerValidator = v.union(
+  v.literal("jira"),
+  v.literal("github")
+);
+
 export default defineSchema({
   rooms: defineTable({
     name: v.string(),
@@ -178,10 +187,44 @@ export default defineSchema({
     .index("by_room_user_issue", ["roomId", "userId", "issueId"])
     .index("by_room", ["roomId"]),
 
+  // Per-room analytics snapshot: the completed-issue history behind every
+  // analytics dashboard projection. One row per room, recomputed when a voting
+  // round completes its target issue (see model/votingRound.ts); the analytics
+  // queries project from it purely and fall back to a live scan when no fresh
+  // snapshot exists (see model/analytics.ts).
+  roomAnalyticsSnapshots: defineTable({
+    roomId: v.id("rooms"),
+    history: v.object({
+      completedIssues: v.array(
+        v.object({
+          title: v.string(),
+          votedAt: v.optional(v.number()),
+          finalEstimate: v.optional(v.string()),
+          voteStats: v.optional(
+            v.object({
+              agreement: v.number(),
+              timeToConsensusMs: v.optional(v.number()),
+            })
+          ),
+        })
+      ),
+      individualVotes: v.array(
+        v.object({
+          userId: v.id("users"),
+          cardLabel: v.string(),
+          consensusLabel: v.optional(v.string()),
+          deltaSteps: v.optional(v.number()),
+          votedAt: v.number(),
+        })
+      ),
+    }),
+    computedAt: v.number(),
+  }).index("by_room", ["roomId"]),
+
   // Integration connections (user-level OAuth tokens, encrypted)
   integrationConnections: defineTable({
     userId: v.id("users"),
-    provider: v.union(v.literal("jira"), v.literal("github")),
+    provider: providerValidator,
     // Encrypted OAuth tokens (AES-256-GCM)
     encryptedAccessToken: v.string(),
     accessTokenIv: v.string(),
@@ -207,7 +250,7 @@ export default defineSchema({
   integrationMappings: defineTable({
     roomId: v.id("rooms"),
     connectionId: v.id("integrationConnections"),
-    provider: v.union(v.literal("jira"), v.literal("github")),
+    provider: providerValidator,
     // Jira mapping
     jiraProjectKey: v.optional(v.string()),
     jiraBoardId: v.optional(v.number()),
@@ -230,12 +273,18 @@ export default defineSchema({
   // Bidirectional links between AgileKit issues and external issues
   issueLinks: defineTable({
     issueId: v.id("issues"),
-    provider: v.union(v.literal("jira"), v.literal("github")),
+    // Denormalized room ownership so room-level readers (export, cascades) can
+    // fetch a room's links in one indexed query. by_room is authoritative for
+    // room-level reads; rows predating the field are healed by the
+    // backfillIssueLinksRoomId migration.
+    roomId: v.optional(v.id("rooms")),
+    provider: providerValidator,
     externalId: v.string(), // Jira issue key (e.g., "PROJ-123") or GitHub issue number
     externalUrl: v.string(), // Direct link to the issue
     lastSyncedAt: v.number(),
   })
     .index("by_issue", ["issueId"])
+    .index("by_room", ["roomId"])
     .index("by_external", ["provider", "externalId"]),
 
   // Shared webhook dedup table (Jira, GitHub, Paddle)

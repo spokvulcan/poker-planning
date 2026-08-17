@@ -1,5 +1,6 @@
 import { QueryCtx, MutationCtx } from "../_generated/server";
 import { Id, Doc } from "../_generated/dataModel";
+import * as Rooms from "./rooms";
 import * as VotingRound from "./votingRound";
 import {
   MAX_ISSUE_TITLE_LENGTH,
@@ -23,14 +24,6 @@ export function validateIssueTitle(title: string): string {
     );
   }
   return trimmed;
-}
-
-export interface VoteStats {
-  average: number | null;
-  median: number | null;
-  agreement: number;
-  voteCount: number;
-  timeToConsensusMs?: number;
 }
 
 export interface ExportableIssue {
@@ -58,29 +51,6 @@ export interface EnhancedExportableIssue extends ExportableIssue {
   }> | null;
   externalUrl: string | null; // placeholder for Epics 6-7
   externalId: string | null; // placeholder for Epics 6-7
-}
-
-/**
- * Closes any open voting timestamp for the given issue.
- * Called when an issue is abandoned (switched away, reset) without completing.
- */
-export async function closeOpenTimestamp(
-  ctx: MutationCtx,
-  issueId: Id<"issues">
-): Promise<void> {
-  const timestamps = await ctx.db
-    .query("votingTimestamps")
-    .withIndex("by_issue", (q) => q.eq("issueId", issueId))
-    .collect();
-
-  const latest = timestamps[timestamps.length - 1];
-  if (latest && !latest.votingEndedAt) {
-    const now = Date.now();
-    await ctx.db.patch(latest._id, {
-      votingEndedAt: now,
-      durationMs: now - latest.votingStartedAt,
-    });
-  }
 }
 
 /**
@@ -136,8 +106,8 @@ export async function createIssueInRoom(
   // Update room's next issue number
   await ctx.db.patch(args.roomId, {
     nextIssueNumber: nextNumber,
-    lastActivityAt: Date.now(),
   });
+  await Rooms.updateRoomActivity(ctx, args.roomId);
 
   // Create the issue
   return await ctx.db.insert("issues", {
@@ -173,7 +143,7 @@ export async function updateIssueTitle(
   await ctx.db.patch(args.issueId, { title: validateIssueTitle(args.title) });
 
   // Update room activity
-  await ctx.db.patch(issue.roomId, { lastActivityAt: Date.now() });
+  await Rooms.updateRoomActivity(ctx, issue.roomId);
 }
 
 /**
@@ -189,7 +159,7 @@ export async function updateIssueEstimate(
   await ctx.db.patch(args.issueId, { finalEstimate: args.finalEstimate });
 
   // Update room activity
-  await ctx.db.patch(issue.roomId, { lastActivityAt: Date.now() });
+  await Rooms.updateRoomActivity(ctx, issue.roomId);
 }
 
 /**
@@ -204,10 +174,13 @@ export async function removeIssue(
 
   // Deleting the issue being voted on ends the round cleanly: delegate to the
   // round's abandon (drops the target to a Quick Vote, cancels the countdown,
-  // clears votes) before the issue and its records are removed below.
+  // clears votes — and bumps room activity itself) before the issue and its
+  // records are removed below.
   const room = await ctx.db.get(issue.roomId);
   if (room?.currentIssueId === issueId) {
     await VotingRound.abandon(ctx, issue.roomId);
+  } else {
+    await Rooms.updateRoomActivity(ctx, issue.roomId);
   }
 
   // Delete associated voting timestamps
@@ -225,66 +198,6 @@ export async function removeIssue(
   await Promise.all(individualVotes.map((iv) => ctx.db.delete(iv._id)));
 
   await ctx.db.delete(issueId);
-}
-
-/**
- * Completes voting on an issue - sets final estimate, status, and vote stats
- */
-export async function completeIssueVoting(
-  ctx: MutationCtx,
-  args: {
-    roomId: Id<"rooms">;
-    issueId: Id<"issues">;
-    finalEstimate: string;
-    voteStats: VoteStats;
-  }
-): Promise<void> {
-  const now = Date.now();
-
-  // Close the latest open voting timestamp for this issue and total the time
-  // across rounds. Always recorded for an issue-backed round (the former
-  // demo-room exemption is gone with the demo — ADR-0003).
-  let timeToConsensusMs: number | undefined;
-  const timestamps = await ctx.db
-    .query("votingTimestamps")
-    .withIndex("by_issue", (q) => q.eq("issueId", args.issueId))
-    .collect();
-
-  const latestTimestamp = timestamps[timestamps.length - 1];
-  if (latestTimestamp && !latestTimestamp.votingEndedAt) {
-    const durationMs = now - latestTimestamp.votingStartedAt;
-    await ctx.db.patch(latestTimestamp._id, {
-      votingEndedAt: now,
-      durationMs,
-    });
-
-    // Total time = sum of all previously completed rounds + current round
-    const totalMs =
-      timestamps.reduce((sum, ts) => sum + (ts.durationMs ?? 0), 0) + durationMs;
-    timeToConsensusMs = totalMs;
-  } else if (timestamps.length > 0) {
-    // All rounds already closed (e.g. issue was reset then completed) — sum existing
-    const totalMs = timestamps.reduce(
-      (sum, ts) => sum + (ts.durationMs ?? 0),
-      0
-    );
-    if (totalMs > 0) {
-      timeToConsensusMs = totalMs;
-    }
-  }
-
-  await ctx.db.patch(args.issueId, {
-    status: "completed",
-    finalEstimate: args.finalEstimate,
-    votedAt: now,
-    voteStats: {
-      average: args.voteStats.average ?? undefined,
-      median: args.voteStats.median ?? undefined,
-      agreement: args.voteStats.agreement,
-      voteCount: args.voteStats.voteCount,
-      timeToConsensusMs,
-    },
-  });
 }
 
 /**
@@ -348,7 +261,7 @@ export async function reorderIssues(
   );
 
   // Update room activity
-  await ctx.db.patch(args.roomId, { lastActivityAt: Date.now() });
+  await Rooms.updateRoomActivity(ctx, args.roomId);
 }
 
 /**
@@ -365,6 +278,30 @@ function formatDurationMs(ms: number): string {
 /**
  * Gets issues with enhanced data for export (time-to-consensus, individual votes, voting rounds)
  */
+/**
+ * The room's issue links, keyed by issueId — one by_room fetch, grouped in
+ * memory (first link per issue wins; duplicates shouldn't exist). by_room is
+ * authoritative: link rows are tagged with roomId at creation, and rows
+ * predating the field are healed by the backfillIssueLinksRoomId migration —
+ * NOT by per-issue fallback queries, which turn a room with no links into a
+ * full N+1.
+ */
+export async function issueLinksForRoom(
+  ctx: QueryCtx,
+  roomId: Id<"rooms">
+): Promise<Map<string, Doc<"issueLinks">>> {
+  const links = await ctx.db
+    .query("issueLinks")
+    .withIndex("by_room", (q) => q.eq("roomId", roomId))
+    .collect();
+  const byIssue = new Map<string, Doc<"issueLinks">>();
+  for (const link of links) {
+    const key = link.issueId as string;
+    if (!byIssue.has(key)) byIssue.set(key, link);
+  }
+  return byIssue;
+}
+
 export async function getEnhancedIssuesForExport(
   ctx: QueryCtx,
   roomId: Id<"rooms">
@@ -401,25 +338,9 @@ export async function getEnhancedIssuesForExport(
     votesByIssue.set(key, existing);
   }
 
-  // Batch-query issueLinks for all issues in this room
-  const allIssueLinks = await Promise.all(
-    issues.map((issue) =>
-      ctx.db
-        .query("issueLinks")
-        .withIndex("by_issue", (q) => q.eq("issueId", issue._id))
-        .first()
-    )
-  );
-  const issueLinkMap = new Map<string, { externalUrl: string; externalId: string }>();
-  for (let i = 0; i < issues.length; i++) {
-    const link = allIssueLinks[i];
-    if (link) {
-      issueLinkMap.set(issues[i]._id as string, {
-        externalUrl: link.externalUrl,
-        externalId: link.externalId,
-      });
-    }
-  }
+  // The room's issue links come from one by_room fetch (authoritative — see
+  // issueLinksForRoom), grouped in memory; no per-issue queries at all.
+  const issueLinkMap = await issueLinksForRoom(ctx, roomId);
 
   // Collect unique userIds and batch-resolve names
   const uniqueUserIds = new Set<Id<"users">>();
@@ -439,7 +360,8 @@ export async function getEnhancedIssuesForExport(
     const base = baseIssues[index];
     const issueId = issue._id as string;
 
-    // Time-to-consensus from voteStats (already computed during completeIssueVoting)
+    // Time-to-consensus from voteStats (computed by the round module when it
+    // completed the issue — see completeTargetIssue in model/votingRound.ts)
     const timeToConsensusMs = issue.voteStats?.timeToConsensusMs ?? null;
     const timeToConsensusFormatted =
       timeToConsensusMs !== null ? formatDurationMs(timeToConsensusMs) : null;

@@ -1,5 +1,5 @@
-import { QueryCtx } from "../_generated/server";
-import { Doc } from "../_generated/dataModel";
+import { QueryCtx, MutationCtx } from "../_generated/server";
+import { Doc, Id } from "../_generated/dataModel";
 import * as AnalyticsMath from "../analyticsMath";
 
 // The response shapes are owned by the pure projection module; re-exported
@@ -35,15 +35,39 @@ export interface DateRange {
 }
 
 /**
+ * The trimmed completed-issue record the projections need — the shape stored
+ * in a room's analytics snapshot. Structurally satisfies AnalyticsMath.HistoryIssue.
+ */
+export interface HistoryIssueRecord {
+  title: string;
+  votedAt?: number;
+  finalEstimate?: string;
+  voteStats?: {
+    agreement: number;
+    timeToConsensusMs?: number;
+  };
+}
+
+/** The trimmed per-voter record stored in a room's analytics snapshot. */
+export interface HistoryVoteRecord {
+  userId: Id<"users">;
+  cardLabel: string;
+  consensusLabel?: string;
+  deltaSteps?: number;
+  votedAt: number;
+}
+
+/**
  * One room's slice of the user's completed-issue history: the room's
- * completed issues plus the joins analytics metrics need, each fetched once.
+ * completed issues plus the joins analytics metrics need. Sourced from the
+ * room's analytics snapshot when one is fresh, else scanned live — either way
+ * the records are the same trimmed shape, so projections are pure over it.
  */
 export interface RoomHistory {
   membership: Doc<"roomMemberships">;
   room: Doc<"rooms">;
-  completedIssues: Doc<"issues">[];
-  individualVotes: Doc<"individualVotes">[];
-  votingTimestamps: Doc<"votingTimestamps">[];
+  completedIssues: HistoryIssueRecord[];
+  individualVotes: HistoryVoteRecord[];
 }
 
 /**
@@ -80,9 +104,16 @@ export async function getUserMemberships(
 }
 
 /**
- * completedIssueHistory — THE one memberships → rooms → history scan behind
- * every analytics metric. Model functions are scan → project: they call this
- * aggregate and hand the rows to a pure projection in analyticsMath.
+ * completedIssueHistory — THE one memberships → rooms → history aggregate
+ * behind every analytics metric. Model functions are scan → project: they call
+ * this aggregate and hand the rows to a pure projection in analyticsMath.
+ *
+ * Source: each room's history comes from its `roomAnalyticsSnapshots` row when
+ * one exists and is fresh — written when a round completes its target issue
+ * (refreshRoomAnalyticsSnapshot) — else from a live scan of the room's tables
+ * (legacy rooms before their next completion, and rooms with any activity
+ * since the snapshot was computed; see roomHistories for the freshness rule).
+ * Both sources produce identical records.
  *
  * Date semantics: a date range windows on `issue.votedAt` — when voting
  * completed — never on `membership.joinedAt`. An issue without a `votedAt`
@@ -91,46 +122,186 @@ export async function getUserMemberships(
  * getUserSessions and getParticipationStats.totalSessions, where the metric
  * is about the membership itself (see those functions).
  *
- * individualVotes and votingTimestamps are fetched once per room alongside
- * the issues; vote-level metrics window on the vote's own `votedAt`.
+ * individualVotes are windowed at consumption, not here: vote-level metrics
+ * window on the vote's own `votedAt` (see votesInRange).
  */
 export async function completedIssueHistory(
   ctx: QueryCtx,
   authUserId: string,
   dateRange?: DateRange
 ): Promise<RoomHistory[]> {
+  const history = await roomHistories(ctx, authUserId);
+  if (!dateRange) return history;
+  return history.map((h) => ({
+    ...h,
+    completedIssues: h.completedIssues.filter(
+      (i) =>
+        i.votedAt !== undefined &&
+        i.votedAt >= dateRange.from &&
+        i.votedAt <= dateRange.to
+    ),
+  }));
+}
+
+/** Trims a completed issue Doc to the record the snapshot stores. */
+function toIssueRecord(issue: Doc<"issues">): HistoryIssueRecord {
+  return {
+    title: issue.title,
+    ...(issue.votedAt !== undefined ? { votedAt: issue.votedAt } : {}),
+    ...(issue.finalEstimate !== undefined
+      ? { finalEstimate: issue.finalEstimate }
+      : {}),
+    ...(issue.voteStats !== undefined
+      ? {
+          voteStats: {
+            agreement: issue.voteStats.agreement,
+            ...(issue.voteStats.timeToConsensusMs !== undefined
+              ? { timeToConsensusMs: issue.voteStats.timeToConsensusMs }
+              : {}),
+          },
+        }
+      : {}),
+  };
+}
+
+/** Trims an individualVotes Doc to the record the snapshot stores. */
+function toVoteRecord(vote: Doc<"individualVotes">): HistoryVoteRecord {
+  return {
+    userId: vote.userId,
+    cardLabel: vote.cardLabel,
+    ...(vote.consensusLabel !== undefined
+      ? { consensusLabel: vote.consensusLabel }
+      : {}),
+    ...(vote.deltaSteps !== undefined ? { deltaSteps: vote.deltaSteps } : {}),
+    votedAt: vote.votedAt,
+  };
+}
+
+/**
+ * The one room-table scan: completed issues + vote snapshots as records. Used
+ * when no fresh snapshot exists, and by the snapshot write path itself.
+ */
+async function collectRoomHistoryRecords(
+  ctx: QueryCtx,
+  roomId: Id<"rooms">
+): Promise<Pick<RoomHistory, "completedIssues" | "individualVotes">> {
+  const [issues, individualVotes] = await Promise.all([
+    ctx.db
+      .query("issues")
+      .withIndex("by_room", (q) => q.eq("roomId", roomId))
+      .collect(),
+    ctx.db
+      .query("individualVotes")
+      .withIndex("by_room", (q) => q.eq("roomId", roomId))
+      .collect(),
+  ]);
+
+  return {
+    completedIssues: issues
+      .filter((i) => i.status === "completed")
+      .map(toIssueRecord),
+    individualVotes: individualVotes.map(toVoteRecord),
+  };
+}
+
+/**
+ * Loads every room's history for a user: one snapshot read per room when
+ * fresh, the live scan otherwise.
+ *
+ * Freshness rule: every mutation that touches a room's history bumps
+ * `room.lastActivityAt` (issue edits/removals, round transitions, votes), so a
+ * snapshot computed at or after the room's last activity covers every write
+ * the history could have seen. A snapshot older than the room's last activity
+ * is treated as absent — the scan returns identical rows, just slower. This
+ * errs toward stale-never-served over hit-rate: active rooms re-scan until
+ * play settles, while the dashboard's typical post-session read hits the
+ * snapshot.
+ */
+async function roomHistories(
+  ctx: QueryCtx,
+  authUserId: string
+): Promise<RoomHistory[]> {
   const membershipsWithRooms = await getUserMemberships(ctx, authUserId);
 
   return Promise.all(
     membershipsWithRooms.map(async ({ membership, room }) => {
-      const [issues, individualVotes, votingTimestamps] = await Promise.all([
-        ctx.db
-          .query("issues")
-          .withIndex("by_room", (q) => q.eq("roomId", room._id))
-          .collect(),
-        ctx.db
-          .query("individualVotes")
-          .withIndex("by_room", (q) => q.eq("roomId", room._id))
-          .collect(),
-        ctx.db
-          .query("votingTimestamps")
-          .withIndex("by_room", (q) => q.eq("roomId", room._id))
-          .collect(),
-      ]);
+      // One snapshot row per room — .unique() enforces the invariant the
+      // upsert write path relies on (Convex OCC serializes concurrent
+      // refreshes, so a double-insert would be a bug worth throwing on).
+      const snapshot = await ctx.db
+        .query("roomAnalyticsSnapshots")
+        .withIndex("by_room", (q) => q.eq("roomId", room._id))
+        .unique();
 
-      const completedIssues = issues.filter((i) => {
-        if (i.status !== "completed") return false;
-        if (dateRange) {
-          return (
-            i.votedAt !== undefined &&
-            i.votedAt >= dateRange.from &&
-            i.votedAt <= dateRange.to
-          );
-        }
-        return true;
-      });
+      if (snapshot && snapshot.computedAt >= room.lastActivityAt) {
+        return {
+          membership,
+          room,
+          completedIssues: snapshot.history.completedIssues,
+          individualVotes: snapshot.history.individualVotes,
+        };
+      }
 
-      return { membership, room, completedIssues, individualVotes, votingTimestamps };
+      return {
+        membership,
+        room,
+        ...(await collectRoomHistoryRecords(ctx, room._id)),
+      };
+    })
+  );
+}
+
+/**
+ * refreshRoomAnalyticsSnapshot — the write side of the snapshot. Recomputes
+ * the room's completed-issue history and upserts the room's one snapshot row.
+ * Called when a round completes its target issue (votingRound.reveal), after
+ * the issue and vote snapshots for that round have landed, so the history is
+ * whole. Rooms complete rounds at human timescale, so the inline recompute is
+ * fine.
+ */
+export async function refreshRoomAnalyticsSnapshot(
+  ctx: MutationCtx,
+  roomId: Id<"rooms">
+): Promise<void> {
+  const [history, existing] = await Promise.all([
+    collectRoomHistoryRecords(ctx, roomId),
+    ctx.db
+      .query("roomAnalyticsSnapshots")
+      .withIndex("by_room", (q) => q.eq("roomId", roomId))
+      .first(),
+  ]);
+  const computedAt = Date.now();
+  if (existing) {
+    await ctx.db.patch(existing._id, { history, computedAt });
+  } else {
+    await ctx.db.insert("roomAnalyticsSnapshots", {
+      roomId,
+      history,
+      computedAt,
+    });
+  }
+}
+
+/**
+ * invalidateRoomAnalyticsSnapshots — drops the snapshot rows for rooms whose
+ * history changed outside the round lifecycle: account-level user deletion and
+ * identity merge delete or re-point `individualVotes` across rooms the user may
+ * no longer belong to. Those paths deliberately don't bump room activity (an
+ * account event is not room liveness), so the snapshot is deleted outright —
+ * the next read falls back to the live scan until the room's next completion
+ * rewrites it.
+ */
+export async function invalidateRoomAnalyticsSnapshots(
+  ctx: MutationCtx,
+  roomIds: Id<"rooms">[]
+): Promise<void> {
+  await Promise.all(
+    [...new Set(roomIds)].map(async (roomId) => {
+      const snapshot = await ctx.db
+        .query("roomAnalyticsSnapshots")
+        .withIndex("by_room", (q) => q.eq("roomId", roomId))
+        .first();
+      if (snapshot) await ctx.db.delete(snapshot._id);
     })
   );
 }
@@ -150,7 +321,7 @@ function flattenIssues(history: RoomHistory[]): AnalyticsMath.RoomIssue[] {
 function votesInRange(
   history: RoomHistory[],
   dateRange?: DateRange
-): Doc<"individualVotes">[] {
+): HistoryVoteRecord[] {
   return history
     .flatMap((h) => h.individualVotes)
     .filter(

@@ -22,7 +22,6 @@ export const TimerNode = memo(
       onStart,
       onPause,
       onReset,
-      error,
     } = useTimerSync({
       roomId,
       nodeId: nodeId || "timer", // fallback to default timer nodeId
@@ -57,11 +56,6 @@ export const TimerNode = memo(
           "p-3 bg-white dark:bg-surface-1 rounded-lg shadow-md border border-gray-200 dark:border-border",
           selected && "ring-2 ring-blue-500 dark:ring-blue-400 ring-offset-2 ring-offset-white dark:ring-offset-surface-1"
         )}>
-          {error && (
-            <div className="mb-2 text-xs text-red-500 dark:text-red-400">
-              {error}
-            </div>
-          )}
           <div className="flex items-center gap-3">
             <div
               className={cn(
@@ -78,7 +72,6 @@ export const TimerNode = memo(
                 onClick={handleToggle}
                 className="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
                 aria-label={isRunning ? "Pause timer" : "Start timer"}
-                disabled={!!error}
               >
                 {isRunning ? (
                   <Pause className="h-4 w-4 text-gray-600 dark:text-gray-400" />

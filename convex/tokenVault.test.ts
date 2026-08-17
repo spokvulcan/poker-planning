@@ -199,6 +199,63 @@ describe("assertEncryptedTokenFields", () => {
       })
     ).toThrow(/all-or-nothing/);
   });
+
+  it("enforces the vault's exact iv/tag format — a 40-char hex GitHub classic token can no longer pass", async () => {
+    const enc = await TokenVault.encryptTokens(
+      { accessToken: PLAINTEXT_ACCESS, refreshToken: PLAINTEXT_REFRESH },
+      TEST_KEY
+    );
+
+    // Legacy GitHub tokens are 40 lowercase hex chars — they sail through a
+    // bare "even-length hex" check. The tripwire must pin the iv (24 hex) and
+    // auth tag (32 hex) lengths so hex-looking plaintext is rejected.
+    const GITHUB_CLASSIC_TOKEN = "0123456789abcdef0123456789abcdef01234567";
+    expect(GITHUB_CLASSIC_TOKEN).toMatch(/^[0-9a-f]{40}$/);
+
+    expect(() =>
+      TokenVault.assertEncryptedTokenFields({
+        ...enc,
+        encryptedAccessToken: GITHUB_CLASSIC_TOKEN,
+        accessTokenIv: GITHUB_CLASSIC_TOKEN,
+        accessTokenAuthTag: GITHUB_CLASSIC_TOKEN,
+      })
+    ).toThrow(/refusing to store possible plaintext/);
+
+    // Wrong-length iv/tag are rejected even when hex and even-length.
+    expect(() =>
+      TokenVault.assertEncryptedTokenFields({
+        ...enc,
+        accessTokenIv: "aa".repeat(11), // 22 hex chars ≠ 24
+      })
+    ).toThrow(/refusing to store possible plaintext/);
+    expect(() =>
+      TokenVault.assertEncryptedTokenFields({
+        ...enc,
+        accessTokenAuthTag: "aa".repeat(17), // 34 hex chars ≠ 32
+      })
+    ).toThrow(/refusing to store possible plaintext/);
+    expect(() =>
+      TokenVault.assertEncryptedTokenFields({
+        ...enc,
+        refreshTokenIv: "aa".repeat(4),
+      })
+    ).toThrow(/refusing to store possible plaintext/);
+
+    // Vault output always matches the pinned format.
+    expect(enc.accessTokenIv).toMatch(/^[0-9a-f]{24}$/);
+    expect(enc.accessTokenAuthTag).toMatch(/^[0-9a-f]{32}$/);
+    expect(enc.refreshTokenIv).toMatch(/^[0-9a-f]{24}$/);
+    expect(enc.refreshTokenAuthTag).toMatch(/^[0-9a-f]{32}$/);
+  });
+});
+
+describe("computeExpiresAt", () => {
+  it("is the single expiresAt rule: now + expiresIn seconds", () => {
+    expect(TokenVault.computeExpiresAt(3600, 1_000_000)).toBe(
+      1_000_000 + 3_600_000
+    );
+    expect(TokenVault.computeExpiresAt(0, 1_000_000)).toBe(1_000_000);
+  });
 });
 
 describe("vault write path (convex-test)", () => {
