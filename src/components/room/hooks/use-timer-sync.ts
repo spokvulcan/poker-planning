@@ -26,13 +26,6 @@ interface UseTimerSyncReturn {
   onStart: () => void;
   onPause: () => void;
   onReset: () => void;
-
-  /**
-   * Always null: failures are logged at the canvas-actions seam (same policy
-   * as reveal/reset) and the demo no-ops, so the in-node red error banner this
-   * field used to feed is unreachable. Kept so TimerNode compiles untouched.
-   */
-  error: string | null;
 }
 
 /**
@@ -90,6 +83,5 @@ export function useTimerSync({
     onStart,
     onPause,
     onReset,
-    error: null,
   };
 }

@@ -32,11 +32,21 @@ import { useCopyRoomUrlToClipboard } from "@/hooks/use-copy-room-url-to-clipboar
 import {
   VOTING_SCALES,
   VotingScaleType,
-  VotingScaleConfig,
   validateCustomScale,
-} from "@/lib/voting-scales";
+} from "@/convex/scales";
 import { cn } from "@/lib/utils";
 import { generateGuestName } from "@/lib/guest-names";
+
+// The one validator lives in convex/scales (throwing form, shared with the
+// backend); the form adapts it to inline error display.
+function customScaleError(cards: string[]): string | null {
+  try {
+    validateCustomScale(cards);
+    return null;
+  } catch (error) {
+    return error instanceof Error ? error.message : "Invalid scale";
+  }
+}
 
 const scaleOptions: {
   type: VotingScaleType;
@@ -74,8 +84,7 @@ export function CreateContent() {
         .split(",")
         .map((c) => c.trim())
         .filter(Boolean);
-      const validation = validateCustomScale(cards);
-      setCustomError(validation.valid ? null : validation.error ?? null);
+      setCustomError(customScaleError(cards));
     } else {
       setCustomError(null);
     }
@@ -83,16 +92,16 @@ export function CreateContent() {
 
   const handleCreate = useCallback(async () => {
     setIsCreating(true);
-    let votingScale: VotingScaleConfig;
+    let votingScale: { type: VotingScaleType | "custom"; cards?: string[] };
 
     if (selectedScale === "custom") {
       const cards = customCards
         .split(",")
         .map((c) => c.trim())
         .filter(Boolean);
-      const validation = validateCustomScale(cards);
-      if (!validation.valid) {
-        setCustomError(validation.error ?? "Invalid scale");
+      const error = customScaleError(cards);
+      if (error) {
+        setCustomError(error);
         setIsCreating(false);
         return;
       }

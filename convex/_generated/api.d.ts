@@ -29,6 +29,7 @@ import type * as integrations_tokenRefresh from "../integrations/tokenRefresh.js
 import type * as issues from "../issues.js";
 import type * as lib_encryption from "../lib/encryption.js";
 import type * as maintenance from "../maintenance.js";
+import type * as migrations from "../migrations.js";
 import type * as model_alignment from "../model/alignment.js";
 import type * as model_analytics from "../model/analytics.js";
 import type * as model_auth from "../model/auth.js";
@@ -86,6 +87,7 @@ declare const fullApi: ApiFromModules<{
   issues: typeof issues;
   "lib/encryption": typeof lib_encryption;
   maintenance: typeof maintenance;
+  migrations: typeof migrations;
   "model/alignment": typeof model_alignment;
   "model/analytics": typeof model_analytics;
   "model/auth": typeof model_auth;

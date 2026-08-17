@@ -97,7 +97,7 @@ export const CanvasNavigation: FC<CanvasNavigationProps> = ({
         : `${window.location.origin}/room/${roomData.room._id}`;
       const success = await copyTextToClipboard(url);
       if (success) {
-        toast.success(isDemoMode ? "Demo URL copied!" : "Room URL copied!", {
+        toast.success(isDemoMode ? "Demo URL copied" : "Room URL copied", {
           description: isDemoMode
             ? "Share this link to show others the demo."
             : "Share this link with others to join the room.",

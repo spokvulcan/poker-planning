@@ -457,11 +457,9 @@ async function completeTargetIssue(
   const totalMs = timestamps.reduce((sum, ts) => sum + (ts.durationMs ?? 0), 0);
 
   let timeToConsensusMs: number | undefined;
-  if (closedOpenRound) {
-    // The just-closed round's duration is in the total.
-    timeToConsensusMs = totalMs;
-  } else if (totalMs > 0) {
-    // All rounds already closed (e.g. issue was reset then completed) — sum existing.
+  if (closedOpenRound || totalMs > 0) {
+    // The just-closed round's duration is in the total; if every round was
+    // already closed (e.g. reset then completed), the sum stands alone.
     timeToConsensusMs = totalMs;
   }
 

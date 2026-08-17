@@ -2,10 +2,11 @@
 import { convexTest, type TestConvex } from "convex-test";
 import { describe, it, expect, vi, afterEach } from "vitest";
 import schema from "./schema";
-import { api } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import * as Analytics from "./model/analytics";
 import * as Issues from "./model/issues";
+import * as Users from "./model/users";
 import * as VotingRound from "./model/votingRound";
 
 const modules = import.meta.glob("./**/*.*s");
@@ -393,7 +394,7 @@ describe("stale snapshot — history-changing writes outside completion", () => 
 });
 
 describe("export path — issue links fetched by room", () => {
-  it("resolves links written with and without roomId identically", async () => {
+  it("resolves roomId-tagged links; legacy untagged rows heal via the backfill migration", async () => {
     const t = convexTest(schema, modules);
     const userId = await seedUser(t, "auth-a");
     const roomId = await seedRoom(t);
@@ -413,7 +414,8 @@ describe("export path — issue links fetched by room", () => {
         lastSyncedAt: Date.now(),
       })
     );
-    // ...and a legacy link without roomId (found via the by_issue fallback).
+    // ...and a legacy link without roomId: invisible to by_room until the
+    // backfill migration tags it (no per-issue fallback — that was the N+1).
     await t.run((ctx) =>
       ctx.db.insert("issueLinks", {
         issueId: i2,
@@ -425,20 +427,86 @@ describe("export path — issue links fetched by room", () => {
     );
 
     const asA = t.withIdentity({ subject: "auth-a" });
-    const exported = await asA.query(api.issues.getForEnhancedExport, { roomId });
+    const before = new Map(
+      (await asA.query(api.issues.getForEnhancedExport, { roomId })).map((e) => [e.title, e])
+    );
+    expect(before.get("Issue 1")).toMatchObject({ externalId: "PROJ-1" });
+    expect(before.get("Issue 2")).toMatchObject({ externalId: null });
 
-    const byIssue = new Map(exported.map((e) => [e.title, e]));
-    expect(byIssue.get("Issue 1")).toMatchObject({
+    await t.mutation(internal.migrations.backfillIssueLinksRoomId, {});
+
+    const after = new Map(
+      (await asA.query(api.issues.getForEnhancedExport, { roomId })).map((e) => [e.title, e])
+    );
+    expect(after.get("Issue 1")).toMatchObject({
       externalId: "PROJ-1",
       externalUrl: "https://example.atlassian.net/browse/PROJ-1",
     });
-    expect(byIssue.get("Issue 2")).toMatchObject({
+    expect(after.get("Issue 2")).toMatchObject({
       externalId: "42",
       externalUrl: "https://github.com/acme/repo/issues/42",
     });
-    expect(byIssue.get("Issue 3")).toMatchObject({
+    expect(after.get("Issue 3")).toMatchObject({
       externalId: null,
       externalUrl: null,
     });
+  });
+});
+
+describe("snapshot invalidation on account-level user events", () => {
+  it("user deletion invalidates the snapshot of a room they already left", async () => {
+    const t = convexTest(schema, modules);
+    // No membership: leaveRoom can't bump this room's activity, so only the
+    // direct invalidation keeps the deleted user's votes out of analytics.
+    const userId = await seedUser(t, "auth-gone");
+    const roomId = await seedRoom(t);
+    const issueId = await seedIssue(t, roomId, {
+      sequentialId: 1,
+      votedAt: IN,
+      finalEstimate: "5",
+    });
+    await seedVote(t, { roomId, issueId, userId, cardLabel: "5", votedAt: IN });
+    await refreshSnapshot(t, roomId);
+    expect(await readSnapshot(t, roomId)).not.toBeNull();
+
+    await t.run((ctx) => Users.deleteUserByAuthUserId(ctx, "auth-gone"));
+
+    expect(await readSnapshot(t, roomId)).toBeNull();
+    // The fallback scan no longer serves the deleted user's vote rows.
+    const votes = await t.run((ctx) =>
+      ctx.db.query("individualVotes").collect()
+    );
+    expect(votes).toHaveLength(0);
+  });
+
+  it("identity merge invalidates snapshots for rooms whose votes were re-pointed", async () => {
+    const t = convexTest(schema, modules);
+    const anonId = await seedUser(t, "auth-anon");
+    const permId = await seedUser(t, "auth-perm");
+    const roomId = await seedRoom(t);
+    const issueId = await seedIssue(t, roomId, {
+      sequentialId: 1,
+      votedAt: IN,
+      finalEstimate: "5",
+    });
+    await seedVote(t, { roomId, issueId, userId: anonId, cardLabel: "5", votedAt: IN });
+    await refreshSnapshot(t, roomId);
+    expect(await readSnapshot(t, roomId)).not.toBeNull();
+
+    await t.run((ctx) =>
+      Users.linkAnonymousToPermanent(ctx, {
+        oldAuthUserId: "auth-anon",
+        newAuthUserId: "auth-perm",
+        email: "p@example.com",
+      })
+    );
+
+    expect(await readSnapshot(t, roomId)).toBeNull();
+    // The vote row itself was re-pointed to the permanent account.
+    const votes = await t.run((ctx) =>
+      ctx.db.query("individualVotes").collect()
+    );
+    expect(votes).toHaveLength(1);
+    expect(votes[0].userId).toBe(permId);
   });
 });

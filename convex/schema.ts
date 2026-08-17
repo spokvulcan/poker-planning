@@ -1,6 +1,15 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
+/**
+ * The integration provider union — the one validator shared by the schema
+ * tables and every function argument that takes a provider.
+ */
+export const providerValidator = v.union(
+  v.literal("jira"),
+  v.literal("github")
+);
+
 export default defineSchema({
   rooms: defineTable({
     name: v.string(),
@@ -215,7 +224,7 @@ export default defineSchema({
   // Integration connections (user-level OAuth tokens, encrypted)
   integrationConnections: defineTable({
     userId: v.id("users"),
-    provider: v.union(v.literal("jira"), v.literal("github")),
+    provider: providerValidator,
     // Encrypted OAuth tokens (AES-256-GCM)
     encryptedAccessToken: v.string(),
     accessTokenIv: v.string(),
@@ -241,7 +250,7 @@ export default defineSchema({
   integrationMappings: defineTable({
     roomId: v.id("rooms"),
     connectionId: v.id("integrationConnections"),
-    provider: v.union(v.literal("jira"), v.literal("github")),
+    provider: providerValidator,
     // Jira mapping
     jiraProjectKey: v.optional(v.string()),
     jiraBoardId: v.optional(v.number()),
@@ -265,11 +274,11 @@ export default defineSchema({
   issueLinks: defineTable({
     issueId: v.id("issues"),
     // Denormalized room ownership so room-level readers (export, cascades) can
-    // fetch a room's links in one indexed query. Optional: rows written before
-    // the field existed (or by writers that don't set it yet) are still found
-    // via by_issue.
+    // fetch a room's links in one indexed query. by_room is authoritative for
+    // room-level reads; rows predating the field are healed by the
+    // backfillIssueLinksRoomId migration.
     roomId: v.optional(v.id("rooms")),
-    provider: v.union(v.literal("jira"), v.literal("github")),
+    provider: providerValidator,
     externalId: v.string(), // Jira issue key (e.g., "PROJ-123") or GitHub issue number
     externalUrl: v.string(), // Direct link to the issue
     lastSyncedAt: v.number(),

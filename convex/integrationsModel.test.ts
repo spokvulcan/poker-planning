@@ -137,7 +137,7 @@ async function scheduledByName(t: T, suffix: string) {
   return scheduled.filter((s) => s.name.endsWith(suffix));
 }
 
-describe("processJiraWebhookEvent", () => {
+describe("applyJiraWebhookEvent (via processJiraWebhook)", () => {
   it("applies a redelivered event only once", async () => {
     const t = convexTest(schema, modules);
     const roomId = await seedRoom(t);
@@ -518,7 +518,7 @@ describe("setMappingWebhook", () => {
 });
 
 describe("getIssueLinks", () => {
-  it("returns roomId-tagged and legacy untagged links in one map", async () => {
+  it("serves by_room-tagged links; legacy untagged rows heal via the backfill migration", async () => {
     const t = convexTest(schema, modules);
     const userId = await seedUser(t, "auth-u");
     const roomId = await seedRoom(t);
@@ -552,17 +552,24 @@ describe("getIssueLinks", () => {
         lastSyncedAt: Date.now(),
       })
     );
-    // Legacy row: no roomId — invisible to by_room, found by the per-issue
-    // fallback (seedIssueLink predates the roomId field).
+    // Legacy row: no roomId — invisible to by_room until the migration tags
+    // it (no per-issue fallback — that was the N+1).
     await seedIssueLink(t, untaggedIssueId, "PROJ-2");
 
     const asUser = t.withIdentity({ subject: "auth-u" });
-    const result = await asUser.query(api.integrations.getIssueLinks, {
+    const before = await asUser.query(api.integrations.getIssueLinks, {
       roomId,
     });
+    expect(Object.keys(before)).toHaveLength(1);
+    expect(before[taggedIssueId]?.externalId).toBe("PROJ-1");
 
-    expect(Object.keys(result)).toHaveLength(2);
-    expect(result[taggedIssueId]?.externalId).toBe("PROJ-1");
-    expect(result[untaggedIssueId]?.externalId).toBe("PROJ-2");
+    await t.mutation(internal.migrations.backfillIssueLinksRoomId, {});
+
+    const after = await asUser.query(api.integrations.getIssueLinks, {
+      roomId,
+    });
+    expect(Object.keys(after)).toHaveLength(2);
+    expect(after[taggedIssueId]?.externalId).toBe("PROJ-1");
+    expect(after[untaggedIssueId]?.externalId).toBe("PROJ-2");
   });
 });

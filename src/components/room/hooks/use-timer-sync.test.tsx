@@ -3,8 +3,7 @@
  * canvas-actions seam. Pinned here:
  *
  *  1. Demo no-op (ADR-0003): inside a demo context start/pause/reset issue
- *     zero backend writes, the display is the local stopped 0:00, and no error
- *     is surfaced — the old "User ID required" red error is unreachable.
+ *     zero backend writes and the display is the local stopped 0:00.
  *  2. Real room: the controls forward to the seam with the acting user; with
  *     no acting user they no-op silently (the same guard as selectCard & co.).
  *  3. The display still derives from the persisted timer state via the shared
@@ -51,7 +50,7 @@ beforeEach(() => {
 });
 
 describe("use-timer-sync — demo no-op", () => {
-  it("issues zero backend writes, shows 0:00, and never surfaces an error", async () => {
+  it("issues zero backend writes and shows 0:00", async () => {
     const wrapper = ({ children }: { children: ReactNode }) =>
       createElement(DemoSimulationProvider, null, children);
 
@@ -74,7 +73,6 @@ describe("use-timer-sync — demo no-op", () => {
     });
 
     expect(writes.calls).toEqual([]);
-    expect(result.current.error).toBeNull();
     expect(result.current.displayTime).toBe("0:00");
     expect(result.current.isRunning).toBe(false);
   });
@@ -105,7 +103,6 @@ describe("use-timer-sync — real room", () => {
         userId: USER_ID,
       });
     }
-    expect(result.current.error).toBeNull();
   });
 
   it("no-ops silently with no acting user (the old red-error case)", async () => {
@@ -121,7 +118,6 @@ describe("use-timer-sync — real room", () => {
     await act(async () => result.current.onStart());
 
     expect(writes.calls).toEqual([]);
-    expect(result.current.error).toBeNull();
   });
 
   it("derives the display from the persisted timer state", () => {

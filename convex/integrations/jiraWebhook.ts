@@ -1,9 +1,14 @@
 /**
  * The Jira adapter's inbound webhook boundary: shared-secret verification and
- * payload parsing for deliveries to /webhooks/jira. Extracted from http.ts as
- * a plain function so the verify/parse paths are testable without standing up
- * an HTTP action — http.ts keeps only the route and the mutation dispatch.
+ * payload parsing for deliveries to /webhooks/jira (verifyAndParseJiraWebhook,
+ * pure) plus the event application (applyJiraWebhookEvent, model-layer). The
+ * generic integrations module owns only the dedup table — what a Jira event
+ * *does* lives here, with the rest of the adapter.
  */
+
+import { MutationCtx } from "../_generated/server";
+import * as Integrations from "../model/integrations";
+import * as Rooms from "../model/rooms";
 
 export interface ParsedJiraWebhookEvent {
   eventKey: string;
@@ -89,4 +94,52 @@ export async function verifyAndParseJiraWebhook(
       issueSummary: issue.fields?.summary,
     },
   };
+}
+
+/**
+ * Applies a verified Jira delivery. The generic module records the event key
+ * (dedup), then the Jira semantics run here: `jira:issue_updated` syncs the
+ * linked issue's title; `jira:issue_deleted` removes the link but keeps the
+ * AgileKit issue.
+ */
+export async function applyJiraWebhookEvent(
+  ctx: MutationCtx,
+  event: ParsedJiraWebhookEvent
+): Promise<void> {
+  // Atomic dedup: check + insert in the same mutation (no race window)
+  const isNew = await Integrations.recordWebhookEvent(ctx, {
+    eventKey: event.eventKey,
+    provider: "jira",
+  });
+  if (!isNew) return;
+
+  // Find linked issue
+  const link = await ctx.db
+    .query("issueLinks")
+    .withIndex("by_external", (q) =>
+      q.eq("provider", "jira").eq("externalId", event.issueKey)
+    )
+    .first();
+
+  if (!link) return; // Not a tracked issue
+
+  if (event.eventType === "jira:issue_updated" && event.issueSummary) {
+    // Update issue title
+    const issue = await ctx.db.get(link.issueId);
+    if (issue) {
+      await ctx.db.patch(link.issueId, {
+        title: `${event.issueKey} - ${event.issueSummary}`,
+      });
+      // The title change feeds the room's analytics history — bump activity
+      // through the chokepoint so a fresh analytics snapshot can't serve the
+      // stale title.
+      await Rooms.updateRoomActivity(ctx, issue.roomId);
+    }
+    await ctx.db.patch(link._id, { lastSyncedAt: Date.now() });
+  }
+
+  if (event.eventType === "jira:issue_deleted") {
+    // Remove the link (keep the AgileKit issue)
+    await ctx.db.delete(link._id);
+  }
 }

@@ -21,11 +21,13 @@ import {
 } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { v } from "convex/values";
+import { providerValidator } from "../schema";
 import { Doc, Id } from "../_generated/dataModel";
 import { ActionCtx } from "../_generated/server";
 import { requireAuth, requireCanForUser } from "../model/auth";
 import { JiraClient } from "./jiraClient";
 import { buildJiraClient } from "./jiraAuth";
+import { applyJiraWebhookEvent } from "./jiraWebhook";
 import { createIssueInRoom } from "../model/issues";
 import * as Integrations from "../model/integrations";
 import * as TokenVault from "../model/tokenVault";
@@ -95,7 +97,7 @@ async function requireJiraClient(ctx: ActionCtx): Promise<{
 export const saveConnection = internalMutation({
   args: {
     userId: v.id("users"),
-    provider: v.union(v.literal("jira"), v.literal("github")),
+    provider: providerValidator,
     encryptedAccessToken: v.string(),
     accessTokenIv: v.string(),
     accessTokenAuthTag: v.string(),
@@ -134,7 +136,7 @@ export const createIssueWithLink = internalMutation({
   args: {
     roomId: v.id("rooms"),
     title: v.string(),
-    provider: v.union(v.literal("jira"), v.literal("github")),
+    provider: providerValidator,
     externalId: v.string(),
     externalUrl: v.string(),
   },
@@ -230,7 +232,7 @@ export const getMappingById = internalQuery({
 });
 
 export const getConnectionForUser = internalQuery({
-  args: { userId: v.id("users"), provider: v.union(v.literal("jira"), v.literal("github")) },
+  args: { userId: v.id("users"), provider: providerValidator },
   handler: async (ctx, args) => {
     return await ctx.db
       .query("integrationConnections")
@@ -538,7 +540,7 @@ export const processJiraWebhook = internalMutation({
     issueSummary: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    await Integrations.processJiraWebhookEvent(ctx, args);
+    await applyJiraWebhookEvent(ctx, args);
   },
 });
 

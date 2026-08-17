@@ -9,15 +9,17 @@ import { getProviderHandler } from "../integrations/registry";
 
 /**
  * The integrations model: the one owner of the db-side invariants for
- * provider connections, room mappings, and webhook event processing.
+ * provider connections, room mappings, and webhook event dedup.
  *
  * Everything here is db-pure (MutationCtx only) — remote provider calls stay
  * in the integrations/<provider> adapter actions; this module schedules them
  * through the provider registry (integrations/registry.ts) keyed by the
  * connection's or mapping's `provider`, never by a hardcoded provider name.
- * The registered wrappers in integrations.ts (public API) and
- * integrations/jira.ts (internal) delegate here, so every writer of these
- * tables funnels through the same code.
+ * Webhook *semantics* (what an event does to issues and links) live in the
+ * adapter too; this module owns only the shared dedup table. The registered
+ * wrappers in integrations.ts (public API) and integrations/jira.ts
+ * (internal) delegate here, so every writer of these tables funnels through
+ * the same code.
  */
 
 // ---------------------------------------------------------------------------
@@ -348,65 +350,29 @@ export async function scheduleWebhookDeregistration(
 // Webhook events
 // ---------------------------------------------------------------------------
 
-export interface JiraWebhookEvent {
-  eventKey: string;
-  eventType: string;
-  issueKey: string;
-  issueSummary?: string;
-}
-
 /**
- * Applies a Jira webhook delivery, deduplicated by event key: the dedup check
- * and insert happen in this one mutation, so a redelivery of the same event
- * can never re-apply. `jira:issue_updated` syncs the linked issue's title;
- * `jira:issue_deleted` removes the link but keeps the AgileKit issue.
+ * Records a webhook delivery, deduplicated by event key: the check and insert
+ * happen in this one mutation, so a redelivery of the same event can never
+ * re-apply. Returns false for a duplicate. Provider-neutral — what the event
+ * *does* is the adapter's business (integrations/<provider>); this module
+ * owns only the dedup table.
  */
-export async function processJiraWebhookEvent(
+export async function recordWebhookEvent(
   ctx: MutationCtx,
-  event: JiraWebhookEvent
-): Promise<void> {
-  // Atomic dedup: check + insert in the same mutation (no race window)
+  args: { eventKey: string; provider: "jira" | "github" }
+): Promise<boolean> {
   const existing = await ctx.db
     .query("webhookEvents")
-    .withIndex("by_event_key", (q) => q.eq("eventKey", event.eventKey))
+    .withIndex("by_event_key", (q) => q.eq("eventKey", args.eventKey))
     .first();
-  if (existing) return; // Already processed
+  if (existing) return false; // Already processed
 
   await ctx.db.insert("webhookEvents", {
-    eventKey: event.eventKey,
-    provider: "jira",
+    eventKey: args.eventKey,
+    provider: args.provider,
     processedAt: Date.now(),
   });
-
-  // Find linked issue
-  const link = await ctx.db
-    .query("issueLinks")
-    .withIndex("by_external", (q) =>
-      q.eq("provider", "jira").eq("externalId", event.issueKey)
-    )
-    .first();
-
-  if (!link) return; // Not a tracked issue
-
-  if (event.eventType === "jira:issue_updated" && event.issueSummary) {
-    // Update issue title
-    const issue = await ctx.db.get(link.issueId);
-    if (issue) {
-      await ctx.db.patch(link.issueId, {
-        title: `${event.issueKey} - ${event.issueSummary}`,
-      });
-      // The title change feeds the room's analytics history — bump activity
-      // through the chokepoint so a fresh analytics snapshot can't serve the
-      // stale title.
-      await Rooms.updateRoomActivity(ctx, issue.roomId);
-    }
-    await ctx.db.patch(link._id, { lastSyncedAt: Date.now() });
-  }
-
-  if (event.eventType === "jira:issue_deleted") {
-    // Remove the link (keep the AgileKit issue)
-    await ctx.db.delete(link._id);
-  }
+  return true;
 }
 
 /** Sweeps processed webhook dedup rows older than 7 days. */

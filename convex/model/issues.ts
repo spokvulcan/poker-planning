@@ -277,6 +277,30 @@ function formatDurationMs(ms: number): string {
 /**
  * Gets issues with enhanced data for export (time-to-consensus, individual votes, voting rounds)
  */
+/**
+ * The room's issue links, keyed by issueId — one by_room fetch, grouped in
+ * memory (first link per issue wins; duplicates shouldn't exist). by_room is
+ * authoritative: link rows are tagged with roomId at creation, and rows
+ * predating the field are healed by the backfillIssueLinksRoomId migration —
+ * NOT by per-issue fallback queries, which turn a room with no links into a
+ * full N+1.
+ */
+export async function issueLinksForRoom(
+  ctx: QueryCtx,
+  roomId: Id<"rooms">
+): Promise<Map<string, Doc<"issueLinks">>> {
+  const links = await ctx.db
+    .query("issueLinks")
+    .withIndex("by_room", (q) => q.eq("roomId", roomId))
+    .collect();
+  const byIssue = new Map<string, Doc<"issueLinks">>();
+  for (const link of links) {
+    const key = link.issueId as string;
+    if (!byIssue.has(key)) byIssue.set(key, link);
+  }
+  return byIssue;
+}
+
 export async function getEnhancedIssuesForExport(
   ctx: QueryCtx,
   roomId: Id<"rooms">
@@ -313,46 +337,9 @@ export async function getEnhancedIssuesForExport(
     votesByIssue.set(key, existing);
   }
 
-  // Fetch the room's issue links ONCE via by_room and group in memory, instead
-  // of one by_issue query per issue. Links whose rows predate the roomId field
-  // (or were written by paths that don't set it) are invisible to by_room, so
-  // issues not covered by the room-wide fetch fall back to a per-issue lookup.
-  const roomLinks = await ctx.db
-    .query("issueLinks")
-    .withIndex("by_room", (q) => q.eq("roomId", roomId))
-    .collect();
-
-  const issueLinkMap = new Map<string, { externalUrl: string; externalId: string }>();
-  for (const link of roomLinks) {
-    const key = link.issueId as string;
-    if (!issueLinkMap.has(key)) {
-      issueLinkMap.set(key, {
-        externalUrl: link.externalUrl,
-        externalId: link.externalId,
-      });
-    }
-  }
-
-  const uncoveredIssues = issues.filter(
-    (issue) => !issueLinkMap.has(issue._id as string)
-  );
-  const fallbackLinks = await Promise.all(
-    uncoveredIssues.map((issue) =>
-      ctx.db
-        .query("issueLinks")
-        .withIndex("by_issue", (q) => q.eq("issueId", issue._id))
-        .first()
-    )
-  );
-  for (let i = 0; i < uncoveredIssues.length; i++) {
-    const link = fallbackLinks[i];
-    if (link) {
-      issueLinkMap.set(uncoveredIssues[i]._id as string, {
-        externalUrl: link.externalUrl,
-        externalId: link.externalId,
-      });
-    }
-  }
+  // The room's issue links come from one by_room fetch (authoritative — see
+  // issueLinksForRoom), grouped in memory; no per-issue queries at all.
+  const issueLinkMap = await issueLinksForRoom(ctx, roomId);
 
   // Collect unique userIds and batch-resolve names
   const uniqueUserIds = new Set<Id<"users">>();

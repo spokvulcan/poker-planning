@@ -5,7 +5,9 @@
 
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
+import { providerValidator } from "./schema";
 import * as Integrations from "./model/integrations";
+import * as Issues from "./model/issues";
 import { requireAuthUser, requireRoomMember, requireCan } from "./model/auth";
 
 // ---------------------------------------------------------------------------
@@ -59,20 +61,10 @@ export const getIssueLinks = query({
   handler: async (ctx, args) => {
     await requireRoomMember(ctx, args.roomId);
 
-    // Fetch the room's links ONCE via by_room instead of one by_issue query
-    // per issue. Link rows that predate the roomId field are invisible to
-    // by_room, so uncovered issues fall back to a per-issue lookup.
-    const roomLinks = await ctx.db
-      .query("issueLinks")
-      .withIndex("by_room", (q) => q.eq("roomId", args.roomId))
-      .collect();
-    const linkByIssue = new Map(roomLinks.map((l) => [l.issueId as string, l]));
+    // One by_room fetch via the model helper — no per-issue queries.
+    const linkByIssue = await Issues.issueLinksForRoom(ctx, args.roomId);
 
-    const issues = await ctx.db
-      .query("issues")
-      .withIndex("by_room", (q) => q.eq("roomId", args.roomId))
-      .collect();
-
+    // Return map of issueId -> link
     const result: Record<
       string,
       {
@@ -83,21 +75,13 @@ export const getIssueLinks = query({
       }
     > = {};
 
-    for (const issue of issues) {
-      const link =
-        linkByIssue.get(issue._id) ??
-        (await ctx.db
-          .query("issueLinks")
-          .withIndex("by_issue", (q) => q.eq("issueId", issue._id))
-          .first());
-      if (link) {
-        result[issue._id] = {
-          _id: link._id,
-          provider: link.provider,
-          externalId: link.externalId,
-          externalUrl: link.externalUrl,
-        };
-      }
+    for (const [issueId, link] of linkByIssue) {
+      result[issueId] = {
+        _id: link._id,
+        provider: link.provider,
+        externalId: link.externalId,
+        externalUrl: link.externalUrl,
+      };
     }
 
     return result;
@@ -108,7 +92,7 @@ export const saveRoomMapping = mutation({
   args: {
     roomId: v.id("rooms"),
     connectionId: v.id("integrationConnections"),
-    provider: v.union(v.literal("jira"), v.literal("github")),
+    provider: providerValidator,
     jiraProjectKey: v.optional(v.string()),
     jiraBoardId: v.optional(v.number()),
     jiraSprintId: v.optional(v.number()),

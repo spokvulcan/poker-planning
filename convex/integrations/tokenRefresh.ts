@@ -9,6 +9,7 @@ import { internalAction, internalQuery } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { v } from "convex/values";
 import { Doc } from "../_generated/dataModel";
+import { providerValidator } from "../schema";
 import { getProviderHandler, registeredProviders } from "./registry";
 
 /**
@@ -19,7 +20,7 @@ import { getProviderHandler, registeredProviders } from "./registry";
  */
 export const getExpiringConnections = internalQuery({
   args: {
-    provider: v.union(v.literal("jira"), v.literal("github")),
+    provider: providerValidator,
     expiryThreshold: v.number(),
   },
   handler: async (ctx, args) => {

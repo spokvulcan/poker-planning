@@ -182,29 +182,39 @@ function toVoteRecord(vote: Doc<"individualVotes">): HistoryVoteRecord {
  * snapshots, straight from the tables. Used when no fresh snapshot exists, and
  * by the snapshot write path itself.
  */
+/** The one room-table scan: completed issues + vote snapshots as records. */
+async function collectRoomHistoryRecords(
+  ctx: QueryCtx,
+  roomId: Id<"rooms">
+): Promise<Pick<RoomHistory, "completedIssues" | "individualVotes">> {
+  const [issues, individualVotes] = await Promise.all([
+    ctx.db
+      .query("issues")
+      .withIndex("by_room", (q) => q.eq("roomId", roomId))
+      .collect(),
+    ctx.db
+      .query("individualVotes")
+      .withIndex("by_room", (q) => q.eq("roomId", roomId))
+      .collect(),
+  ]);
+
+  return {
+    completedIssues: issues
+      .filter((i) => i.status === "completed")
+      .map(toIssueRecord),
+    individualVotes: individualVotes.map(toVoteRecord),
+  };
+}
+
 async function scanRoomHistory(
   ctx: QueryCtx,
   membership: Doc<"roomMemberships">,
   room: Doc<"rooms">
 ): Promise<RoomHistory> {
-  const [issues, individualVotes] = await Promise.all([
-    ctx.db
-      .query("issues")
-      .withIndex("by_room", (q) => q.eq("roomId", room._id))
-      .collect(),
-    ctx.db
-      .query("individualVotes")
-      .withIndex("by_room", (q) => q.eq("roomId", room._id))
-      .collect(),
-  ]);
-
   return {
     membership,
     room,
-    completedIssues: issues
-      .filter((i) => i.status === "completed")
-      .map(toIssueRecord),
-    individualVotes: individualVotes.map(toVoteRecord),
+    ...(await collectRoomHistoryRecords(ctx, room._id)),
   };
 }
 
@@ -229,10 +239,13 @@ async function roomHistories(
 
   return Promise.all(
     membershipsWithRooms.map(async ({ membership, room }) => {
+      // One snapshot row per room — .unique() enforces the invariant the
+      // upsert write path relies on (Convex OCC serializes concurrent
+      // refreshes, so a double-insert would be a bug worth throwing on).
       const snapshot = await ctx.db
         .query("roomAnalyticsSnapshots")
         .withIndex("by_room", (q) => q.eq("roomId", room._id))
-        .first();
+        .unique();
 
       if (snapshot && snapshot.computedAt >= room.lastActivityAt) {
         return {
@@ -260,23 +273,7 @@ export async function refreshRoomAnalyticsSnapshot(
   ctx: MutationCtx,
   roomId: Id<"rooms">
 ): Promise<void> {
-  const [issues, individualVotes] = await Promise.all([
-    ctx.db
-      .query("issues")
-      .withIndex("by_room", (q) => q.eq("roomId", roomId))
-      .collect(),
-    ctx.db
-      .query("individualVotes")
-      .withIndex("by_room", (q) => q.eq("roomId", roomId))
-      .collect(),
-  ]);
-
-  const history = {
-    completedIssues: issues
-      .filter((i) => i.status === "completed")
-      .map(toIssueRecord),
-    individualVotes: individualVotes.map(toVoteRecord),
-  };
+  const history = await collectRoomHistoryRecords(ctx, roomId);
   const computedAt = Date.now();
 
   const existing = await ctx.db
@@ -291,6 +288,28 @@ export async function refreshRoomAnalyticsSnapshot(
       history,
       computedAt,
     });
+  }
+}
+
+/**
+ * invalidateRoomAnalyticsSnapshots — drops the snapshot rows for rooms whose
+ * history changed outside the round lifecycle: account-level user deletion and
+ * identity merge delete or re-point `individualVotes` across rooms the user may
+ * no longer belong to. Those paths deliberately don't bump room activity (an
+ * account event is not room liveness), so the snapshot is deleted outright —
+ * the next read falls back to the live scan until the room's next completion
+ * rewrites it.
+ */
+export async function invalidateRoomAnalyticsSnapshots(
+  ctx: MutationCtx,
+  roomIds: Id<"rooms">[]
+): Promise<void> {
+  for (const roomId of new Set(roomIds)) {
+    const snapshot = await ctx.db
+      .query("roomAnalyticsSnapshots")
+      .withIndex("by_room", (q) => q.eq("roomId", roomId))
+      .first();
+    if (snapshot) await ctx.db.delete(snapshot._id);
   }
 }
 
