@@ -78,7 +78,7 @@ const createRoom = useMutation(api.rooms.create);
 
 The room canvas (`src/components/room/`) uses React Flow with custom node types:
 
-- **Node types** defined in `src/components/room/nodes/` (PlayerNode, SessionNode, TimerNode, VotingCardNode, ResultsNode, StoryNode, NoteNode)
+- **Node types** defined in `src/components/room/nodes/` (PlayerNode, SessionNode, TimerNode, VotingCardNode, ResultsNode, NoteNode)
 - **Type definitions** in `src/components/room/types.ts` - defines `CustomNodeType` union
 - **Node state** synced via Convex (`canvasNodes` table)
 - **Layout logic** in `useCanvasLayout.ts`, state management in `useCanvasNodes.ts`

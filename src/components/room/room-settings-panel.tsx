@@ -45,7 +45,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/components/ui/accordion";
 import { SidePanel } from "@/components/ui/side-panel";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "@/lib/toast";
 import {
   Select,
   SelectContent,
@@ -115,7 +115,6 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
   onClose,
 }) => {
   const isDemoMode = useIsDemoMode();
-  const { toast } = useToast();
   const { theme, setTheme } = useTheme();
 
   // Roster from the single presence module, ordered current-user-first, then
@@ -155,16 +154,12 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
     setIsSaving(true);
     try {
       await settingsActions.rename(roomName.trim());
-      toast({
-        title: "Room renamed",
+      toast.success("Room renamed", {
         description: `Room is now called "${roomName.trim()}"`,
       });
     } catch (error) {
       console.error("Failed to rename room:", error);
-      toast({
-        title: "Failed to rename room",
-        variant: "destructive",
-      });
+      toast.error("Failed to rename room");
       setRoomName(roomData.room.name);
     } finally {
       setIsSaving(false);
@@ -176,10 +171,7 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
       await settingsActions.toggleAutoComplete();
     } catch (error) {
       console.error("Failed to toggle auto-reveal:", error);
-      toast({
-        title: "Failed to update setting",
-        variant: "destructive",
-      });
+      toast.error("Failed to update setting");
     }
   };
 
@@ -192,16 +184,12 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
     setRemovingUserId(pendingDeleteUser.id);
     try {
       await settingsActions.removeUser(pendingDeleteUser.id);
-      toast({
-        title: "User removed",
+      toast.success("User removed", {
         description: `${pendingDeleteUser.name} has been removed from the room.`,
       });
     } catch (error) {
       console.error("Failed to remove user:", error);
-      toast({
-        title: "Failed to remove user",
-        variant: "destructive",
-      });
+      toast.error("Failed to remove user");
     } finally {
       setRemovingUserId(null);
       setPendingDeleteUser(null);
@@ -211,26 +199,24 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
   const handlePromote = async (userId: Id<"users">, userName: string) => {
     try {
       await settingsActions.promoteFacilitator(userId);
-      toast({
-        title: "User promoted",
+      toast.success("User promoted", {
         description: `${userName} is now a facilitator.`,
       });
     } catch (error) {
       console.error("Failed to promote user:", error);
-      toast({ title: "Failed to promote user", variant: "destructive" });
+      toast.error("Failed to promote user");
     }
   };
 
   const handleDemote = async (userId: Id<"users">, userName: string) => {
     try {
       await settingsActions.demoteFacilitator(userId);
-      toast({
-        title: "User demoted",
+      toast.success("User demoted", {
         description: `${userName} is now a participant.`,
       });
     } catch (error) {
       console.error("Failed to demote user:", error);
-      toast({ title: "Failed to demote user", variant: "destructive" });
+      toast.error("Failed to demote user");
     }
   };
 
@@ -238,13 +224,12 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
     if (!pendingTransferUser) return;
     try {
       await settingsActions.transferOwnership(pendingTransferUser.id);
-      toast({
-        title: "Ownership transferred",
+      toast.success("Ownership transferred", {
         description: `${pendingTransferUser.name} is now the room owner.`,
       });
     } catch (error) {
       console.error("Failed to transfer ownership:", error);
-      toast({ title: "Failed to transfer ownership", variant: "destructive" });
+      toast.error("Failed to transfer ownership");
     } finally {
       setPendingTransferUser(null);
     }
@@ -260,7 +245,7 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
       await settingsActions.updatePermissions(newPermissions);
     } catch (error) {
       console.error("Failed to update permissions:", error);
-      toast({ title: "Failed to update permissions", variant: "destructive" });
+      toast.error("Failed to update permissions");
     }
   };
 
@@ -523,7 +508,10 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
                     </div>
                   </AccordionTrigger>
                   <AccordionContent className="pb-4 pt-1">
-                    <IntegrationSettingsSection roomId={roomData.room._id} />
+                    {/* Mounts only while the panel is open (in addition to the
+                        accordion's own collapsed-state unmount), so its
+                        integration queries detach when the panel closes. */}
+                    {isOpen && <IntegrationSettingsSection roomId={roomData.room._id} />}
                   </AccordionContent>
                 </AccordionItem>
                 )}

@@ -25,6 +25,7 @@ import type * as integrations_jiraClient from "../integrations/jiraClient.js";
 import type * as issues from "../issues.js";
 import type * as lib_encryption from "../lib/encryption.js";
 import type * as maintenance from "../maintenance.js";
+import type * as model_alignment from "../model/alignment.js";
 import type * as model_analytics from "../model/analytics.js";
 import type * as model_auth from "../model/auth.js";
 import type * as model_canvas from "../model/canvas.js";
@@ -77,6 +78,7 @@ declare const fullApi: ApiFromModules<{
   issues: typeof issues;
   "lib/encryption": typeof lib_encryption;
   maintenance: typeof maintenance;
+  "model/alignment": typeof model_alignment;
   "model/analytics": typeof model_analytics;
   "model/auth": typeof model_auth;
   "model/canvas": typeof model_canvas;

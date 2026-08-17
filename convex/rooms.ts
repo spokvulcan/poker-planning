@@ -2,12 +2,7 @@ import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import * as Rooms from "./model/rooms";
 import * as VotingRound from "./model/votingRound";
-import {
-  requireAuth,
-  requireAuthUser,
-  requireCan,
-  requireRoomMember,
-} from "./model/auth";
+import { requireAuthUser, requireCan } from "./model/auth";
 
 // Create a new room
 export const create = mutation({
@@ -51,26 +46,6 @@ export const get = query({
       currentUserId = appUser?._id;
     }
     return await Rooms.getRoomWithRelatedData(ctx, args.roomId, currentUserId);
-  },
-});
-
-// Get rooms for the current user
-export const getUserRooms = query({
-  args: {},
-  handler: async (ctx) => {
-    const identity = await requireAuth(ctx);
-    return await Rooms.getUserRooms(ctx, identity.subject);
-  },
-});
-
-// Update room activity
-export const updateActivity = mutation({
-  args: { roomId: v.id("rooms") },
-  handler: async (ctx, args) => {
-    // Membership, not just auth: otherwise any signed-in user could keep
-    // arbitrary rooms alive forever, defeating the inactivity cleanup cron.
-    await requireRoomMember(ctx, args.roomId);
-    await Rooms.updateRoomActivity(ctx, args.roomId);
   },
 });
 
@@ -118,9 +93,6 @@ export const rename = mutation({
   },
   handler: async (ctx, args) => {
     await requireCan(ctx, args.roomId, { kind: "category", category: "roomSettings" });
-    await ctx.db.patch(args.roomId, {
-      name: Rooms.validateRoomName(args.name),
-      lastActivityAt: Date.now(),
-    });
+    await Rooms.renameRoom(ctx, args);
   },
 });

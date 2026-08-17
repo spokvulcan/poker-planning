@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
 import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { RoomPermissions } from "@/convex/permissions";
 import { useDemoSimulation } from "../demo/DemoSimulationProvider";
+import { useStableActions } from "@/hooks/useStableActions";
 
 /**
  * Every backend write the room-settings panel can trigger, behind one
@@ -30,9 +30,8 @@ interface UseRoomSettingsActionsProps {
  * every method is a no-op, so "the demo never writes to the backend" (ADR-0003)
  * is one adapter rather than a guard at every control. Unlike useCanvasActions
  * the methods propagate failures instead of swallowing them — the panel owns the
- * failure toast. The single ref-backed stabilizer lives here too (see
- * useCanvasActions for the full rationale): the wrapper is built once and always
- * invokes the latest closure, so method identity never churns.
+ * failure toast. Frozen method identity comes from useStableActions, the
+ * shared stabilizer every *Actions seam returns through.
  */
 export function useRoomSettingsActions({
   roomId,
@@ -80,26 +79,8 @@ export function useRoomSettingsActions({
     },
   };
 
-  // The single stabilizer, identical to useCanvasActions: the ref always points
-  // at the latest closures (updated after every commit — no dependency array is
-  // intentional), and the wrapper is built once via a lazy `useState`
-  // initializer so its methods keep a frozen identity while always invoking the
-  // latest closure.
-  const implRef = useRef(impl);
-  useEffect(() => {
-    implRef.current = impl;
-  });
-
-  const [stableActions] = useState<RoomSettingsActions>(() => ({
-    rename: (name) => implRef.current.rename(name),
-    toggleAutoComplete: () => implRef.current.toggleAutoComplete(),
-    removeUser: (userId) => implRef.current.removeUser(userId),
-    promoteFacilitator: (userId) => implRef.current.promoteFacilitator(userId),
-    demoteFacilitator: (userId) => implRef.current.demoteFacilitator(userId),
-    transferOwnership: (userId) => implRef.current.transferOwnership(userId),
-    updatePermissions: (permissions) =>
-      implRef.current.updatePermissions(permissions),
-  }));
-
-  return stableActions;
+  // Frozen identity comes from the one shared stabilizer (see useStableActions
+  // for the full rationale): the returned wrapper is built once and always
+  // invokes the latest closure.
+  return useStableActions(impl);
 }

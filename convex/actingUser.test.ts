@@ -4,7 +4,6 @@ import { describe, it, expect } from "vitest";
 import schema from "./schema";
 import { api } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
-import * as Canvas from "./model/canvas";
 
 const modules = import.meta.glob("./**/*.*s");
 
@@ -202,17 +201,17 @@ describe("acting-user guard (requireActingUser)", () => {
       content: "acceptance criteria",
       userId: userA,
     });
-    expect(
-      await t.run((ctx) =>
-        Canvas.getNoteContentForIssue(ctx, { roomId, issueId })
-      )
-    ).toBe("acceptance criteria");
+
+    // Read back through the live getCanvasNodes endpoint (requireRoomMember
+    // guard) — the old getNoteContentForIssue read seam is deleted.
+    const nodes = await asA.query(api.canvas.getCanvasNodes, { roomId });
+    expect(nodes.find((n) => n.nodeId === nodeId)).toMatchObject({
+      type: "note",
+      data: { content: "acceptance criteria" },
+    });
 
     await asA.mutation(api.canvas.deleteNote, { roomId, nodeId, userId: userA });
-    expect(
-      await t.run((ctx) =>
-        Canvas.getNoteContentForIssue(ctx, { roomId, issueId })
-      )
-    ).toBeNull();
+    const afterDelete = await asA.query(api.canvas.getCanvasNodes, { roomId });
+    expect(afterDelete.find((n) => n.nodeId === nodeId)).toBeUndefined();
   });
 });

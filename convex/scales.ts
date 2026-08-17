@@ -64,6 +64,39 @@ export type VotingScale = {
   isNumeric: boolean;
 };
 
+/** Custom scale validation limits — shared by argument validation and the model. */
+export const SCALE_VALIDATION = {
+  minCards: 3,
+  maxCards: 20,
+  maxCardLength: 10,
+} as const;
+
+/**
+ * The one custom-scale validator. Throws on the first violated rule.
+ * Lives here (not in the model) so the same rules back endpoint argument
+ * validation and any direct Convex client — the model calls it on room
+ * creation, so an oversized or malformed deck is unrepresentable.
+ */
+export function validateCustomScale(cards: string[]): void {
+  if (cards.length < SCALE_VALIDATION.minCards) {
+    throw new Error(`Minimum ${SCALE_VALIDATION.minCards} cards required`);
+  }
+  if (cards.length > SCALE_VALIDATION.maxCards) {
+    throw new Error(`Maximum ${SCALE_VALIDATION.maxCards} cards allowed`);
+  }
+  if (new Set(cards).size !== cards.length) {
+    throw new Error("Duplicate card values not allowed");
+  }
+  if (cards.some((c) => c.trim() === "")) {
+    throw new Error("Empty card values not allowed");
+  }
+  if (cards.some((c) => c.length > SCALE_VALIDATION.maxCardLength)) {
+    throw new Error(
+      `Card values must be ${SCALE_VALIDATION.maxCardLength} characters or less`
+    );
+  }
+}
+
 /** Special cards that should not be included in numeric calculations */
 export const SPECIAL_CARDS = ["∞", "?", "☕"];
 

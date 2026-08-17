@@ -2,7 +2,7 @@ import { QueryCtx, MutationCtx } from "../_generated/server";
 import { Id, Doc } from "../_generated/dataModel";
 import * as Canvas from "./canvas";
 import * as Users from "./users";
-import { VOTING_SCALES, VotingScaleType } from "../scales";
+import { VOTING_SCALES, VotingScaleType, validateCustomScale } from "../scales";
 import { MAX_ROOM_NAME_LENGTH } from "../constants";
 import { isRoomOwnerAbsent } from "./permissions";
 
@@ -29,12 +29,6 @@ export function validateRoomName(name: string): string {
   }
   return trimmed;
 }
-
-// Custom scale rules — mirror validateCustomScale in src/lib/voting-scales.ts
-// so direct Convex clients can't bypass them with oversized card arrays.
-const CUSTOM_SCALE_MIN_CARDS = 3;
-const CUSTOM_SCALE_MAX_CARDS = 20;
-const CUSTOM_SCALE_MAX_CARD_LENGTH = 10;
 
 export interface SanitizedVote extends Doc<"votes"> {
   hasVoted: boolean;
@@ -66,27 +60,12 @@ function resolveVotingScale(scaleConfig?: CreateRoomArgs["votingScale"]) {
     if (!scaleConfig.cards || scaleConfig.cards.length === 0) {
       throw new Error("Custom scale requires cards array");
     }
-    const cards = scaleConfig.cards;
-    if (cards.length < CUSTOM_SCALE_MIN_CARDS) {
-      throw new Error(`Minimum ${CUSTOM_SCALE_MIN_CARDS} cards required`);
-    }
-    if (cards.length > CUSTOM_SCALE_MAX_CARDS) {
-      throw new Error(`Maximum ${CUSTOM_SCALE_MAX_CARDS} cards allowed`);
-    }
-    if (new Set(cards).size !== cards.length) {
-      throw new Error("Duplicate card values not allowed");
-    }
-    if (cards.some((c) => c.trim() === "")) {
-      throw new Error("Empty card values not allowed");
-    }
-    if (cards.some((c) => c.length > CUSTOM_SCALE_MAX_CARD_LENGTH)) {
-      throw new Error(
-        `Card values must be ${CUSTOM_SCALE_MAX_CARD_LENGTH} characters or less`
-      );
-    }
+    // The one custom-scale validator (../scales) — direct Convex clients
+    // can't bypass it with oversized card arrays.
+    validateCustomScale(scaleConfig.cards);
     return {
       type: "custom" as const,
-      cards,
+      cards: scaleConfig.cards,
       isNumeric: false, // Custom scales default to non-numeric
     };
   }
@@ -182,7 +161,10 @@ export function sanitizeVotes(
 }
 
 /**
- * Updates room activity timestamp
+ * The single chokepoint for room activity writes. Every user-initiated
+ * mutation touching room-scoped state routes its bump through here, so the
+ * cleanup cascade's inactivity window (model/cleanup.ts) reflects real use —
+ * a room worked only via its timer or canvas must not read as abandoned.
  */
 export async function updateRoomActivity(
   ctx: MutationCtx,
@@ -194,15 +176,13 @@ export async function updateRoomActivity(
 }
 
 /**
- * Gets rooms for a specific user
- * TODO: Implement proper user session tracking
+ * Renames a room. The permission guard runs in the endpoint handler; the model
+ * owns the validation, the write, and the activity bump.
  */
-export async function getUserRooms(
-
-  _ctx: QueryCtx,
-  _userId: string
-): Promise<Doc<"rooms">[]> {
-  // This would need to track user sessions differently
-  // For now, return empty array
-  return [];
+export async function renameRoom(
+  ctx: MutationCtx,
+  args: { roomId: Id<"rooms">; name: string }
+): Promise<void> {
+  await ctx.db.patch(args.roomId, { name: validateRoomName(args.name) });
+  await updateRoomActivity(ctx, args.roomId);
 }

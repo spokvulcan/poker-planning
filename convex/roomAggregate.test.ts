@@ -6,6 +6,8 @@ import schema from "./schema";
 import type { Id } from "./_generated/dataModel";
 import * as RoomAggregate from "./model/roomAggregate";
 import { ROOM_OWNED_TABLES, type RoomOwnedTable } from "./model/roomAggregate";
+import * as Timer from "./model/timer";
+import * as Canvas from "./model/canvas";
 
 const modules = import.meta.glob("./**/*.*s");
 
@@ -333,6 +335,98 @@ describe("removeInactiveRooms", () => {
     await t.finishAllScheduledFunctions(vi.runAllTimers);
     expect(await countRows(t, "rooms")).toBe(1);
     expect(await t.run((ctx) => ctx.db.get(activeId))).not.toBeNull();
+  });
+
+  it("leaves a room with recent timer-only activity alone", async () => {
+    const t = convexTest(schema, modules);
+    const roomId = await t.run((ctx) =>
+      ctx.db.insert("rooms", {
+        name: "Timer-only",
+        autoCompleteVoting: true,
+        isGameOver: false,
+        createdAt: Date.now() - 10 * 24 * 60 * 60 * 1000,
+        lastActivityAt: Date.now() - 10 * 24 * 60 * 60 * 1000,
+      })
+    );
+    const userId = await t.run((ctx) =>
+      ctx.db.insert("users", {
+        authUserId: "auth-t",
+        name: "U",
+        createdAt: Date.now(),
+      })
+    );
+    await t.run((ctx) =>
+      ctx.db.insert("canvasNodes", {
+        roomId,
+        nodeId: "timer",
+        type: "timer",
+        position: { x: 0, y: 0 },
+        data: {
+          startedAt: null,
+          pausedAt: null,
+          elapsedSeconds: 0,
+          lastUpdatedBy: null,
+          lastAction: null,
+        },
+        lastUpdatedAt: Date.now(),
+      })
+    );
+
+    // The room's only sign of life in days is a timer start — that must count
+    // as activity or the cleanup cascade deletes a room in use.
+    await t.run((ctx) =>
+      Timer.updateTimerState(ctx, { roomId, nodeId: "timer", action: "start", userId })
+    );
+
+    const result = await t.mutation(internal.cleanup.removeInactiveRooms, {});
+    expect(result.roomsScheduled).toBe(0);
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    expect(await t.run((ctx) => ctx.db.get(roomId))).not.toBeNull();
+  });
+
+  it("leaves a room with recent canvas-only activity alone", async () => {
+    const t = convexTest(schema, modules);
+    const roomId = await t.run((ctx) =>
+      ctx.db.insert("rooms", {
+        name: "Canvas-only",
+        autoCompleteVoting: true,
+        isGameOver: false,
+        createdAt: Date.now() - 10 * 24 * 60 * 60 * 1000,
+        lastActivityAt: Date.now() - 10 * 24 * 60 * 60 * 1000,
+      })
+    );
+    const userId = await t.run((ctx) =>
+      ctx.db.insert("users", {
+        authUserId: "auth-c",
+        name: "U",
+        createdAt: Date.now(),
+      })
+    );
+    await t.run((ctx) =>
+      ctx.db.insert("canvasNodes", {
+        roomId,
+        nodeId: "session-current",
+        type: "session",
+        position: { x: 0, y: 0 },
+        data: {},
+        lastUpdatedAt: Date.now(),
+      })
+    );
+
+    // Only a canvas node move — no votes, no issues — keeps the room alive.
+    await t.run((ctx) =>
+      Canvas.updateNodePosition(ctx, {
+        roomId,
+        nodeId: "session-current",
+        position: { x: 10, y: 20 },
+        userId,
+      })
+    );
+
+    const result = await t.mutation(internal.cleanup.removeInactiveRooms, {});
+    expect(result.roomsScheduled).toBe(0);
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    expect(await t.run((ctx) => ctx.db.get(roomId))).not.toBeNull();
   });
 });
 

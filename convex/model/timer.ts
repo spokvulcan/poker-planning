@@ -1,5 +1,6 @@
 import { MutationCtx } from "../_generated/server";
 import { Id } from "../_generated/dataModel";
+import * as Rooms from "./rooms";
 import {
   calculateCurrentTime,
   validateTimerAction,
@@ -89,4 +90,8 @@ export async function updateTimerState(
     lastUpdatedBy: args.userId,
     lastUpdatedAt: now,
   });
+
+  // A timer action is room activity — a room driven only by its timer must not
+  // read as abandoned to the cleanup cascade.
+  await Rooms.updateRoomActivity(ctx, args.roomId);
 }

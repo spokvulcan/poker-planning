@@ -1,5 +1,6 @@
 import { QueryCtx, MutationCtx } from "../_generated/server";
 import { Id } from "../_generated/dataModel";
+import * as Rooms from "./rooms";
 import {
   computeHorizontalLayout,
   NOTE_POSITION,
@@ -196,6 +197,8 @@ export async function updateNodePosition(
     lastUpdatedBy: args.userId,
     lastUpdatedAt: Date.now(),
   });
+
+  await Rooms.updateRoomActivity(ctx, args.roomId);
 }
 
 /**
@@ -297,34 +300,6 @@ export async function removePlayerNode(
 }
 
 /**
- * Toggles lock state of a node
- */
-export async function toggleNodeLock(
-  ctx: MutationCtx,
-  args: {
-    roomId: Id<"rooms">;
-    nodeId: string;
-    locked: boolean;
-  }
-): Promise<void> {
-  const node = await ctx.db
-    .query("canvasNodes")
-    .withIndex("by_room_node", (q) =>
-      q.eq("roomId", args.roomId).eq("nodeId", args.nodeId)
-    )
-    .unique();
-
-  if (!node) {
-    throw new Error("Node not found");
-  }
-
-  await ctx.db.patch(node._id, {
-    isLocked: args.locked,
-    lastUpdatedAt: Date.now(),
-  });
-}
-
-/**
  * Creates a note node for an issue
  */
 export async function createNoteNode(
@@ -358,7 +333,7 @@ export async function createNoteNode(
   // Get user name for lastUpdatedBy display
   const user = await ctx.db.get(args.userId);
 
-  return await ctx.db.insert("canvasNodes", {
+  const id = await ctx.db.insert("canvasNodes", {
     roomId: args.roomId,
     nodeId,
     type: "note",
@@ -372,6 +347,9 @@ export async function createNoteNode(
     },
     lastUpdatedAt: Date.now(),
   });
+
+  await Rooms.updateRoomActivity(ctx, args.roomId);
+  return id;
 }
 
 /**
@@ -420,30 +398,7 @@ export async function updateNoteContent(
   });
 
   // Update room activity
-  await ctx.db.patch(args.roomId, { lastActivityAt: Date.now() });
-}
-
-/**
- * Gets the note content for an issue (for CSV export)
- */
-export async function getNoteContentForIssue(
-  ctx: QueryCtx,
-  args: { roomId: Id<"rooms">; issueId: Id<"issues"> }
-): Promise<string | null> {
-  const nodeId = `note-${args.issueId}`;
-
-  const node = await ctx.db
-    .query("canvasNodes")
-    .withIndex("by_room_node", (q) =>
-      q.eq("roomId", args.roomId).eq("nodeId", nodeId)
-    )
-    .unique();
-
-  if (!node || node.type !== "note") {
-    return null;
-  }
-
-  return node.data?.content ?? null;
+  await Rooms.updateRoomActivity(ctx, args.roomId);
 }
 
 /**
@@ -469,4 +424,6 @@ export async function deleteNoteNode(
   }
 
   await ctx.db.delete(node._id);
+
+  await Rooms.updateRoomActivity(ctx, args.roomId);
 }

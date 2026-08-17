@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/dialog";
 
 
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "@/lib/toast";
 
 interface JiraImportModalProps {
   open: boolean;
@@ -60,8 +60,6 @@ export function JiraImportModal({
   onOpenChange,
   roomId,
 }: JiraImportModalProps) {
-  const { toast } = useToast();
-
   const getProjects = useAction(api.integrations.jira.getJiraProjects);
   const getBoards = useAction(api.integrations.jira.getJiraBoards);
   const getSprints = useAction(api.integrations.jira.getJiraSprints);
@@ -115,10 +113,8 @@ export function JiraImportModal({
         if (!cancelled) setProjects(result);
       } catch {
         if (!cancelled) {
-          toast({
-            title: "Failed to load projects",
+          toast.error("Failed to load projects", {
             description: "Check your Jira connection and try again.",
-            variant: "destructive",
           });
         }
       } finally {
@@ -139,10 +135,7 @@ export function JiraImportModal({
       setBoards(result);
       setStep("board");
     } catch {
-      toast({
-        title: "Failed to load boards",
-        variant: "destructive",
-      });
+      toast.error("Failed to load boards");
     } finally {
       setLoading(false);
     }
@@ -156,10 +149,7 @@ export function JiraImportModal({
       setSprints(result);
       setStep("sprint");
     } catch {
-      toast({
-        title: "Failed to load sprints",
-        variant: "destructive",
-      });
+      toast.error("Failed to load sprints");
     } finally {
       setLoading(false);
     }
@@ -176,10 +166,7 @@ export function JiraImportModal({
       setIssues(result);
       setStep("issues");
     } catch {
-      toast({
-        title: "Failed to load issues",
-        variant: "destructive",
-      });
+      toast.error("Failed to load issues");
     } finally {
       setLoading(false);
     }
@@ -213,16 +200,13 @@ export function JiraImportModal({
         roomId,
         jiraIssueKeys: Array.from(selectedIssues),
       });
-      toast({
-        title: "Import complete",
+      toast.success("Import complete", {
         description: `Imported ${result.imported} issue${result.imported !== 1 ? "s" : ""}${result.skipped > 0 ? `, ${result.skipped} already existed` : ""}.`,
       });
       handleOpenChange(false);
     } catch {
-      toast({
-        title: "Import failed",
+      toast.error("Import failed", {
         description: "An error occurred during import.",
-        variant: "destructive",
       });
     } finally {
       setImporting(false);

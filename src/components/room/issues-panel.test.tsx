@@ -27,6 +27,7 @@ vi.mock("convex/react", () => ({
   useQuery: () => undefined,
   useMutation: () => () => Promise.resolve(undefined),
   useAction: () => () => Promise.resolve(undefined),
+  useConvex: () => ({ query: () => Promise.resolve([]) }),
 }));
 
 vi.mock("next/link", () => ({
@@ -36,8 +37,8 @@ vi.mock("next/link", () => ({
 // Desktop branch of SidePanel — jsdom has no matchMedia.
 vi.mock("@/hooks/use-mobile", () => ({ useIsMobile: () => false }));
 
-vi.mock("@/hooks/use-toast", () => ({
-  useToast: () => ({ toast: () => {} }),
+vi.mock("@/lib/toast", () => ({
+  toast: { success: () => {}, error: () => {} },
 }));
 
 vi.mock("./hooks/useIssues", () => ({
@@ -46,7 +47,6 @@ vi.mock("./hooks/useIssues", () => ({
     currentIssue: null,
     isQuickVoteMode: false,
     isLoading: false,
-    exportData: undefined,
   }),
 }));
 

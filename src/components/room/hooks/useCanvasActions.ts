@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
 import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useDemoSimulation } from "../demo/DemoSimulationProvider";
+import { useStableActions } from "@/hooks/useStableActions";
 
 /**
  * Every backend write the canvas can trigger, behind one frozen-identity object.
@@ -25,23 +25,30 @@ export interface CanvasActions {
   /** Persists a node position. Debouncing stays at the call site. */
   updateNodePosition: (nodeId: string, position: { x: number; y: number }) => void;
   removeUser: (userId: Id<"users">) => void;
+  /** Canvas TimerNode controls — the timer's writes share the seam's guards. */
+  startTimer: (nodeId: string) => void;
+  pauseTimer: (nodeId: string) => void;
+  resetTimer: (nodeId: string) => void;
 }
 
 interface UseCanvasActionsProps {
   roomId: Id<"rooms">;
   currentUserId?: Id<"users">;
-  /** The currently-highlighted card, so a failed pick can roll back to it. */
-  selectedCardValue: string | null;
-  setSelectedCardValue: (value: string | null) => void;
+  /**
+   * The currently-highlighted card, so a failed pick can roll back to it. The
+   * pair is read only by selectCard — consumers that never pick cards (the
+   * timer, via use-timer-sync) omit it, and selectCard no-ops.
+   */
+  selectedCardValue?: string | null;
+  setSelectedCardValue?: (value: string | null) => void;
 }
 
 /**
  * Owns the demo-vs-real decision once, at the action seam: inside a demo context
  * every method is a no-op, so "the demo never writes to the backend" (ADR-0003)
- * is one adapter rather than ten inline `isDemoMode` guards (user stories
- * 8/9/12/23). The single ref-backed stabilizer lives here too — the wrapper is
- * built once and always invokes the latest closure, so stability can never be
- * reintroduced by a caller.
+ * is one adapter rather than an inline `isDemoMode` guard per method (user
+ * stories 8/9/12/23). Frozen method identity comes from useStableActions, the
+ * shared stabilizer every *Actions seam returns through.
  */
 export function useCanvasActions({
   roomId,
@@ -63,6 +70,9 @@ export function useCanvasActions({
   const createNoteMutation = useMutation(api.canvas.createNote);
   const deleteNoteMutation = useMutation(api.canvas.deleteNote);
   const removeUserMutation = useMutation(api.users.remove);
+  const startTimerMutation = useMutation(api.timer.startTimer);
+  const pauseTimerMutation = useMutation(api.timer.pauseTimer);
+  const resetTimerMutation = useMutation(api.timer.resetTimer);
 
   // The live implementations, recreated each render so they always close over
   // the latest roomId/currentUserId/mutations — no per-field refs needed.
@@ -100,11 +110,11 @@ export function useCanvasActions({
       }
     },
     selectCard: async (cardValue: string) => {
-      if (isDemo || !currentUserId) return;
+      if (isDemo || !currentUserId || !setSelectedCardValue) return;
       // Snapshot the prior highlight so a failed write rolls back to it rather
       // than to `null` (which would flash "no selection" over an existing vote
       // until the next server tick re-applies it).
-      const previous = selectedCardValue;
+      const previous = selectedCardValue ?? null;
       setSelectedCardValue(cardValue);
       try {
         await pickCard({
@@ -161,39 +171,36 @@ export function useCanvasActions({
         console.error("Failed to remove user:", error);
       }
     },
+    // The TimerNode's controls (reached via use-timer-sync). Same guards and
+    // failure policy as every other canvas action — the demo no-ops (ADR-0003).
+    startTimer: async (nodeId: string) => {
+      if (isDemo || !currentUserId) return;
+      try {
+        await startTimerMutation({ roomId, nodeId, userId: currentUserId });
+      } catch (error) {
+        console.error("Failed to start timer:", error);
+      }
+    },
+    pauseTimer: async (nodeId: string) => {
+      if (isDemo || !currentUserId) return;
+      try {
+        await pauseTimerMutation({ roomId, nodeId, userId: currentUserId });
+      } catch (error) {
+        console.error("Failed to pause timer:", error);
+      }
+    },
+    resetTimer: async (nodeId: string) => {
+      if (isDemo || !currentUserId) return;
+      try {
+        await resetTimerMutation({ roomId, nodeId, userId: currentUserId });
+      } catch (error) {
+        console.error("Failed to reset timer:", error);
+      }
+    },
   };
 
-  // The single stabilizer. `useRef(impl)` seeds the latest-impl ref with the
-  // first render's closures; the effect keeps it current on every subsequent
-  // commit (this is the `advanced-event-handler-refs` pattern, chosen over
-  // `useEffectEvent` because these methods are embedded into React Flow node
-  // `data` and passed to child node components, which the lint rule forbids for
-  // effect events). The wrapper itself is built once via a lazy `useState`
-  // initializer and held in state — never read back from a ref during render —
-  // so its methods keep a frozen identity for the canvas's lifetime while always
-  // invoking the latest closure.
-  const implRef = useRef(impl);
-  // No dependency array is intentional: this runs after every commit so the ref
-  // always points at the latest closures (the "latest ref" pattern), not a
-  // forgotten dep list.
-  useEffect(() => {
-    implRef.current = impl;
-  });
-
-  const [stableActions] = useState<CanvasActions>(() => ({
-    reveal: () => implRef.current.reveal(),
-    reset: () => implRef.current.reset(),
-    toggleAutoComplete: () => implRef.current.toggleAutoComplete(),
-    cancelAutoReveal: () => implRef.current.cancelAutoReveal(),
-    selectCard: (cardValue) => implRef.current.selectCard(cardValue),
-    updateNoteContent: (nodeId, content) =>
-      implRef.current.updateNoteContent(nodeId, content),
-    createNote: (issueId) => implRef.current.createNote(issueId),
-    deleteNote: (nodeId) => implRef.current.deleteNote(nodeId),
-    updateNodePosition: (nodeId, position) =>
-      implRef.current.updateNodePosition(nodeId, position),
-    removeUser: (userId) => implRef.current.removeUser(userId),
-  }));
-
-  return stableActions;
+  // Frozen identity comes from the one shared stabilizer (see useStableActions
+  // for the full rationale): the returned wrapper is built once and always
+  // invokes the latest closure.
+  return useStableActions(impl);
 }

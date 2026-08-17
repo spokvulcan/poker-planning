@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
 import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useDemoSimulation } from "../demo/DemoSimulationProvider";
+import { useStableActions } from "@/hooks/useStableActions";
 
 /**
  * Every backend write the issues panel can trigger, behind one frozen-identity
@@ -30,9 +30,8 @@ interface UseIssueActionsProps {
  * every method is a no-op, so "the demo never writes to the backend" (ADR-0003)
  * is one adapter rather than a guard at every control. Unlike useCanvasActions
  * the methods propagate failures instead of swallowing them — the panel owns the
- * failure toast. The single ref-backed stabilizer lives here too (see
- * useCanvasActions for the full rationale): the wrapper is built once and always
- * invokes the latest closure, so method identity never churns.
+ * failure toast. Frozen method identity comes from useStableActions, the
+ * shared stabilizer every *Actions seam returns through.
  */
 export function useIssueActions({ roomId }: UseIssueActionsProps): IssueActions {
   const isDemo = useDemoSimulation() !== null;
@@ -78,26 +77,8 @@ export function useIssueActions({ roomId }: UseIssueActionsProps): IssueActions 
     },
   };
 
-  // The single stabilizer, identical to useCanvasActions: the ref always points
-  // at the latest closures (updated after every commit — no dependency array is
-  // intentional), and the wrapper is built once via a lazy `useState`
-  // initializer so its methods keep a frozen identity while always invoking the
-  // latest closure.
-  const implRef = useRef(impl);
-  useEffect(() => {
-    implRef.current = impl;
-  });
-
-  const [stableActions] = useState<IssueActions>(() => ({
-    createIssue: (title) => implRef.current.createIssue(title),
-    startVoting: (issueId) => implRef.current.startVoting(issueId),
-    switchToQuickVote: () => implRef.current.switchToQuickVote(),
-    updateTitle: (issueId, title) => implRef.current.updateTitle(issueId, title),
-    updateEstimate: (issueId, estimate) =>
-      implRef.current.updateEstimate(issueId, estimate),
-    deleteIssue: (issueId) => implRef.current.deleteIssue(issueId),
-    reorderIssues: (issueIds) => implRef.current.reorderIssues(issueIds),
-  }));
-
-  return stableActions;
+  // Frozen identity comes from the one shared stabilizer (see useStableActions
+  // for the full rationale): the returned wrapper is built once and always
+  // invokes the latest closure.
+  return useStableActions(impl);
 }
