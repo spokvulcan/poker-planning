@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.9.6](https://github.com/spokvulcan/poker-planning/compare/agilekit-v2.9.5...agilekit-v2.9.6) (2026-08-17)
+
+
+### Code Refactoring
+
+* deepen architecture — activity ownership, round lifecycle, integration seam, analytics snapshot ([#249](https://github.com/spokvulcan/poker-planning/issues/249)) ([e69985e](https://github.com/spokvulcan/poker-planning/commit/e69985ecf55babe7f3c961796b2eee96655f92dd))
+
 ## [2.9.5](https://github.com/spokvulcan/poker-planning/compare/agilekit-v2.9.4...agilekit-v2.9.5) (2026-08-11)
 
 
