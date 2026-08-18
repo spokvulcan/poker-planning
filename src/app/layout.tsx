@@ -7,6 +7,7 @@ import { Geist, Geist_Mono, Outfit } from "next/font/google";
 import { Providers } from "@/components/providers";
 import { Toaster } from "sonner";
 import { getToken } from "@/lib/auth-server";
+import { isEmbeddedDocument } from "@/lib/embed";
 import { AnalyticsConsentBanner } from "@/components/legal/analytics-consent";
 
 import "./globals.css";
@@ -99,6 +100,7 @@ export default async function RootLayout({
 }>) {
   const cookieStore = await cookies();
   const initialToken = await getToken();
+  const isEmbedded = await isEmbeddedDocument();
   const analyticsConsentValue = cookieStore.get("analytics_consent")?.value;
   const analyticsConsent =
     analyticsConsentValue === "granted"
@@ -106,6 +108,10 @@ export default async function RootLayout({
       : analyticsConsentValue === "denied"
         ? "denied"
         : null;
+  // A framed document is a second render of this layout inside a page that is
+  // already reporting the same visit, so it must not report it again. The
+  // toaster stays: toasts raised inside the demo belong to the demo's viewport.
+  const analyticsEnabled = analyticsConsent === "granted" && !isEmbedded;
 
   return (
     <html lang="en" className={outfit.variable} suppressHydrationWarning>
@@ -115,10 +121,12 @@ export default async function RootLayout({
         <Providers initialToken={initialToken}>
           {children}
           <Toaster />
-          <AnalyticsConsentBanner initialConsent={analyticsConsent} />
-          {analyticsConsent === "granted" && <SpeedInsights />}
+          {!isEmbedded && (
+            <AnalyticsConsentBanner initialConsent={analyticsConsent} />
+          )}
+          {analyticsEnabled && <SpeedInsights />}
         </Providers>
-        {analyticsConsent === "granted" && process.env.NEXT_PUBLIC_GA_ID && (
+        {analyticsEnabled && process.env.NEXT_PUBLIC_GA_ID && (
           <GoogleAnalytics gaId={process.env.NEXT_PUBLIC_GA_ID} />
         )}
       </body>

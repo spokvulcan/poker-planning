@@ -1,5 +1,6 @@
 "use client";
 
+import { useSyncExternalStore } from "react";
 import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
@@ -8,6 +9,9 @@ const ANALYTICS_CONSENT_COOKIE = "analytics_consent";
 const ANALYTICS_CONSENT_MAX_AGE = 60 * 60 * 24 * 365;
 
 type AnalyticsConsentValue = "granted" | "denied" | null;
+
+/** Whether the page is framed cannot change over the document's lifetime. */
+const subscribeToNothing = () => () => {};
 
 function setAnalyticsConsent(value: Exclude<AnalyticsConsentValue, null>) {
   const secure = window.location.protocol === "https:" ? "; Secure" : "";
@@ -22,7 +26,17 @@ export function AnalyticsConsentBanner({
 }: {
   initialConsent: AnalyticsConsentValue;
 }) {
-  if (initialConsent !== null) {
+  // The root layout already drops this banner from framed documents, so the
+  // hero's demo iframe never renders it. This is the fallback for requests that
+  // detection cannot see (no `Sec-Fetch-Dest`): the server snapshot keeps the
+  // hydrated markup unchanged, then the client snapshot hides the banner.
+  const isFramed = useSyncExternalStore(
+    subscribeToNothing,
+    () => window.self !== window.top,
+    () => false,
+  );
+
+  if (initialConsent !== null || isFramed) {
     return null;
   }
 
