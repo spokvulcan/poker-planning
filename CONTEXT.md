@@ -37,7 +37,7 @@ _Avoid_: gate (an outcome-changing branch, per [ADR-0001](docs/adr/0001-lockdown
 ### Roles & permissions
 
 **Role**:
-A member's standing in one room: **owner** (exactly one; full control; transferable), **facilitator** (trusted helper, promoted by owner or another facilitator), or **participant** (default voter). A role is per-room, not global.
+A member's standing in one room: **owner** (exactly one; full control; transferable), **facilitator** (trusted helper, promoted by owner or another facilitator), or **participant** (default voter). A role is per-room, not global — a **Team role** is the separate, team-wide axis and grants no room powers.
 _Avoid_: rank, level (reserve "level" for permission level), tier
 
 **Permission level**:
@@ -51,6 +51,30 @@ _Avoid_: permission group, scope
 **Lockdown**:
 The state after the owner *explicitly leaves* (membership deleted), detected at query time as "`ownerId` set, but no membership for that user". Owner-level and owner-only actions become unavailable. **Invariant:** lockdown is a *reason refinement, not a separate gate* — an absent owner already fails the role check, so lockdown only changes the **denial reason** to `owner-absent` (and thus the message/banner), never the allow/deny outcome (see [ADR-0001](docs/adr/0001-lockdown-is-a-denial-reason-not-a-gate.md)). Network disconnects do not trigger it.
 _Avoid_: orphaned, locked, frozen
+
+### Teams
+
+Decided on [map #253](https://github.com/spokvulcan/poker-planning/issues/253) and not yet built. See [ADR-0008](docs/adr/0008-a-team-is-the-permanent-visibility-boundary.md) and [ADR-0009](docs/adr/0009-room-access-and-room-attendance-are-separate-guards.md).
+
+**Team**:
+The permanent boundary that owns retro history and fixes who may read it. Deliberately minimal — it exists to give retros continuity and a knowable set of readers, nothing else (no seats, billing, SSO or org roles). A room names its team through a set-once `teamId`, and the team *is* the series: its history is its rooms in creation order, with no separate series entity.
+_Avoid_: workspace, organization, space, squad; team room (a room a **Team** owns is still just a room)
+
+**Team membership**:
+A person's standing in one **Team** — the durable relationship granting **room access** to that team's retros. Its own table, deliberately not an extension of `roomMemberships`: the two say different things, and a person in a team's retro normally holds both. Requires a permanent account, because an anonymous identity is a browser session and not a knowable reader.
+_Avoid_: seat, licence, subscription
+
+**Team role**:
+A **Team membership**'s standing: **admin** (invite, remove, rename, delete) or **member**. A separate axis from **Role**, which is per-room — a team admin holds no room powers by virtue of being one. A **Team** may never be left without an admin; unlike a room it cannot enter **lockdown**, because a permanent object nobody can administer is a leak rather than a denial reason (see [ADR-0008](docs/adr/0008-a-team-is-the-permanent-visibility-boundary.md)).
+_Avoid_: owner (reserve that for the per-room **Role**), permission level (that is the room's configurable threshold)
+
+**Room access**:
+May this person *read* this room's contents — true for a room member **or** for a member of the room's **Team**. Enforced by its own guard (`requireRoomReader`), which read-only queries take.
+_Avoid_: visibility (that is the property being protected), read permission
+
+**Room attendance**:
+Is this person *in* this room — a `roomMemberships` row, which is what puts them on the roster, in the presence list, and in the non-spectator count a **voting round** reads. Enforced by `requireRoomMember`, which every mutation keeps. A team member reading a retro they never joined has **room access** without attendance, and is deliberately never made an attendee (see [ADR-0009](docs/adr/0009-room-access-and-room-attendance-are-separate-guards.md)).
+_Avoid_: presence (that is the live connection signal), participation
 
 ### Voting round
 
@@ -114,6 +138,7 @@ _Avoid_: service layer, plugin, provider factory
 
 ## Flagged ambiguities
 
+- **"Team" vs "the team"**: bare "team" means the people currently in a room ("the team voted") and is fine in copy; capital-T **Team** is the entity that owns retro history and fixes who may read it. The `teams` table and `teamId` always mean the entity.
 - **"Permission"** is overloaded: the **permissions** config (the levels an owner sets) versus a **permission decision** (the runtime verdict). Always qualify which one. The bare table/field name `permissions` always means the config.
 - **"Owner absent" vs "owner offline"**: only an explicit *leave* causes **lockdown**. Going offline (disconnect, tab close) is cosmetic presence and changes no permissions.
 - **"Phase" vs "status"**: a **voting round** has a derived **phase**; an **issue** has a stored **status** (`pending` / `voting` / `completed`). They correlate but are different axes — a **Quick Vote** round has a phase but no issue status.
