@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { ChevronDown } from "lucide-react";
 import { Navbar } from "@/components/navbar";
 import { Footer } from "@/components/footer";
 import { Starfield } from "@/components/starfield";
@@ -23,6 +24,13 @@ export const metadata: Metadata = {
     canonical: "https://agilekit.dev/changelog",
   },
 };
+
+/**
+ * How many releases stay expanded. The rest sit behind a disclosure: the very
+ * first release carries every pre-1.0 commit, so rendering the full history
+ * eagerly makes the page tens of thousands of pixels tall.
+ */
+const EXPANDED_RELEASE_COUNT = 10;
 
 function ReleaseSection({ release }: { release: ChangelogRelease }) {
   const relativeTime = formatRelativeTime(release.date);
@@ -66,8 +74,42 @@ function ReleaseSection({ release }: { release: ChangelogRelease }) {
   );
 }
 
+/**
+ * The older half of the timeline. A native `<details>` keeps this a server
+ * component and keeps the entries in the markup for crawlers, while costing
+ * the reader nothing until they open it.
+ */
+function EarlierReleases({ releases }: { releases: ChangelogRelease[] }) {
+  return (
+    <details className="group">
+      <summary className="relative flex cursor-pointer list-none items-center gap-2 pl-8 text-sm font-medium text-gray-500 transition-colors hover:text-gray-900 dark:text-gray-400 dark:hover:text-white [&::-webkit-details-marker]:hidden">
+        <span
+          aria-hidden
+          className="absolute left-0 top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-gray-300 bg-white ring-4 ring-white dark:border-zinc-700 dark:bg-black dark:ring-black"
+        />
+        <span className="group-open:hidden">
+          Show {releases.length} earlier releases
+        </span>
+        <span className="hidden group-open:inline">Hide earlier releases</span>
+        <ChevronDown
+          aria-hidden
+          className="h-4 w-4 transition-transform group-open:rotate-180"
+        />
+      </summary>
+
+      <div className="mt-12">
+        {releases.map((release) => (
+          <ReleaseSection key={release.version} release={release} />
+        ))}
+      </div>
+    </details>
+  );
+}
+
 export default async function ChangelogPage() {
   const releases = parseChangelog();
+  const expandedReleases = releases.slice(0, EXPANDED_RELEASE_COUNT);
+  const earlierReleases = releases.slice(EXPANDED_RELEASE_COUNT);
 
   return (
     <div className="relative min-h-screen bg-white dark:bg-black overflow-hidden">
@@ -101,9 +143,12 @@ export default async function ChangelogPage() {
                 aria-hidden
                 className="absolute left-0 top-4 bottom-0 w-0.5 -translate-x-1/2 rounded-full bg-gray-100 dark:bg-zinc-800"
               />
-              {releases.map((release) => (
+              {expandedReleases.map((release) => (
                 <ReleaseSection key={release.version} release={release} />
               ))}
+              {earlierReleases.length > 0 && (
+                <EarlierReleases releases={earlierReleases} />
+              )}
             </div>
 
             {releases.length === 0 && (
