@@ -29,7 +29,7 @@ function ReleaseSection({ release }: { release: ChangelogRelease }) {
 
   return (
     <article className="relative pl-8 pb-12 last:pb-0">
-      <div className="absolute left-0 top-1.5 h-2.5 w-2.5 rounded-full bg-primary ring-4 ring-white dark:ring-black" />
+      <div className="absolute left-0 top-4 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary ring-4 ring-white dark:ring-black" />
 
       <header className="mb-6">
         <h2 className="text-2xl font-semibold text-gray-900 dark:text-white tracking-tight">
@@ -96,7 +96,11 @@ export default async function ChangelogPage() {
               </p>
             </header>
 
-            <div className="relative border-l-2 border-gray-100 dark:border-zinc-800">
+            <div className="relative">
+              <div
+                aria-hidden
+                className="absolute left-0 top-4 bottom-0 w-0.5 -translate-x-1/2 rounded-full bg-gray-100 dark:bg-zinc-800"
+              />
               {releases.map((release) => (
                 <ReleaseSection key={release.version} release={release} />
               ))}
