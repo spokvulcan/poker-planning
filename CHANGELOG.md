@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.9.7](https://github.com/spokvulcan/poker-planning/compare/agilekit-v2.9.6...agilekit-v2.9.7) (2026-08-18)
+
+
+### Bug Fixes
+
+* changelog timeline and duplicate consent banner in the demo iframe ([#251](https://github.com/spokvulcan/poker-planning/issues/251)) ([c1ad074](https://github.com/spokvulcan/poker-planning/commit/c1ad074de8f88ae1d932c2a95f45793d39d99c69))
+
 ## [2.9.6](https://github.com/spokvulcan/poker-planning/compare/agilekit-v2.9.5...agilekit-v2.9.6) (2026-08-17)
 
 
