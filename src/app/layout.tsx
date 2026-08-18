@@ -8,6 +8,7 @@ import { Providers } from "@/components/providers";
 import { Toaster } from "sonner";
 import { getToken } from "@/lib/auth-server";
 import { isEmbeddedDocument } from "@/lib/embed";
+import { TopLevelOnly } from "@/components/top-level-only";
 import { AnalyticsConsentBanner } from "@/components/legal/analytics-consent";
 
 import "./globals.css";
@@ -122,12 +123,16 @@ export default async function RootLayout({
           {children}
           <Toaster />
           {!isEmbedded && (
-            <AnalyticsConsentBanner initialConsent={analyticsConsent} />
+            <TopLevelOnly>
+              <AnalyticsConsentBanner initialConsent={analyticsConsent} />
+              {analyticsEnabled && <SpeedInsights />}
+            </TopLevelOnly>
           )}
-          {analyticsEnabled && <SpeedInsights />}
         </Providers>
         {analyticsEnabled && process.env.NEXT_PUBLIC_GA_ID && (
-          <GoogleAnalytics gaId={process.env.NEXT_PUBLIC_GA_ID} />
+          <TopLevelOnly>
+            <GoogleAnalytics gaId={process.env.NEXT_PUBLIC_GA_ID} />
+          </TopLevelOnly>
         )}
       </body>
     </html>
