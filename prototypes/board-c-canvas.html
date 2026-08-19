@@ -1,0 +1,1922 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>Board direction C — spatial affinity canvas</title>
+<style>
+/* ============================================================================
+   THROWAWAY PROTOTYPE — prototypes/board-c-canvas.html, ticket #260.
+   Tokens mirrored from src/app/globals.css and DESIGN.md ("The Architect's
+   Desk"): ink on paper, a faint drafting grid, one blueprint blue used rarely.
+   No build step, no network, no fonts fetched. Open the file. That's it.
+   ========================================================================= */
+:root {
+  --paper:        oklch(1 0 0);
+  --ink:          oklch(0.145 0 0);
+  --surface-1:    oklch(1 0 0);
+  --surface-2:    oklch(0.985 0 0);
+  --surface-3:    oklch(0.967 0.001 286.375);
+  --muted-fg:     oklch(0.556 0 0);
+  --border:       oklch(0.922 0 0);
+  --hairline:     oklch(0.145 0 0 / 0.10);
+  --hairline-2:   oklch(0.145 0 0 / 0.06);
+  --grid:         oklch(0.145 0 0 / 0.05);
+  --grid-major:   oklch(0.145 0 0 / 0.09);
+  --blue:         oklch(0.55 0.22 250);
+  --blue-deep:    oklch(0.45 0.22 250);
+  --blue-wash:    oklch(0.55 0.22 250 / 0.09);
+  --info-bg:      oklch(0.95 0.02 250);
+  --info-fg:      oklch(0.45 0.15 250);
+  --success-bg:   oklch(0.95 0.02 150);
+  --success-fg:   oklch(0.45 0.15 150);
+  --warning-bg:   oklch(0.95 0.03 85);
+  --warning-fg:   oklch(0.45 0.15 85);
+  --error-bg:     oklch(0.95 0.03 25);
+  --error-fg:     oklch(0.50 0.20 25);
+  --card-face:    oklch(0.995 0 0);
+  --shadow-sm: 0 1px 2px 0 oklch(0 0 0 / 0.05);
+  --shadow-md: 0 4px 6px -1px oklch(0 0 0 / 0.10), 0 2px 4px -2px oklch(0 0 0 / 0.10);
+  --shadow-lg: 0 10px 15px -3px oklch(0 0 0 / 0.10), 0 4px 6px -4px oklch(0 0 0 / 0.10);
+  --shadow-blueprint: 0 10px 15px -3px oklch(0.55 0.22 250 / 0.30), 0 4px 6px -4px oklch(0.55 0.22 250 / 0.30);
+  --radius: 8px;
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --font-sans: "Outfit", "Avenir Next", "Segoe UI Variable Text", system-ui, -apple-system, "Helvetica Neue", sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: oklch(0.145 0 0); --ink: oklch(0.985 0 0);
+    --surface-1: oklch(0.145 0 0); --surface-2: oklch(0.16 0 0); --surface-3: oklch(0.18 0 0);
+    --muted-fg: oklch(0.708 0 0); --border: oklch(1 0 0 / 0.10);
+    --hairline: oklch(1 0 0 / 0.12); --hairline-2: oklch(1 0 0 / 0.07);
+    --grid: oklch(1 0 0 / 0.05); --grid-major: oklch(1 0 0 / 0.09);
+    --blue: oklch(0.62 0.20 250); --blue-deep: oklch(0.74 0.17 250);
+    --blue-wash: oklch(0.62 0.20 250 / 0.15);
+    --info-bg: oklch(0.18 0.04 250); --info-fg: oklch(0.80 0.15 250);
+    --success-bg: oklch(0.18 0.04 150); --success-fg: oklch(0.80 0.15 150);
+    --warning-bg: oklch(0.18 0.05 85); --warning-fg: oklch(0.85 0.15 85);
+    --error-bg: oklch(0.18 0.05 25); --error-fg: oklch(0.80 0.18 25);
+    --card-face: oklch(0.205 0 0);
+    --shadow-md: 0 4px 6px -1px oklch(0 0 0 / 0.40), 0 2px 4px -2px oklch(0 0 0 / 0.40);
+    --shadow-lg: 0 10px 15px -3px oklch(0 0 0 / 0.50), 0 4px 6px -4px oklch(0 0 0 / 0.50);
+  }
+}
+:root[data-theme="dark"] {
+  --paper: oklch(0.145 0 0); --ink: oklch(0.985 0 0);
+  --surface-1: oklch(0.145 0 0); --surface-2: oklch(0.16 0 0); --surface-3: oklch(0.18 0 0);
+  --muted-fg: oklch(0.708 0 0); --border: oklch(1 0 0 / 0.10);
+  --hairline: oklch(1 0 0 / 0.12); --hairline-2: oklch(1 0 0 / 0.07);
+  --grid: oklch(1 0 0 / 0.05); --grid-major: oklch(1 0 0 / 0.09);
+  --blue: oklch(0.62 0.20 250); --blue-deep: oklch(0.74 0.17 250);
+  --blue-wash: oklch(0.62 0.20 250 / 0.15);
+  --info-bg: oklch(0.18 0.04 250); --info-fg: oklch(0.80 0.15 250);
+  --success-bg: oklch(0.18 0.04 150); --success-fg: oklch(0.80 0.15 150);
+  --warning-bg: oklch(0.18 0.05 85); --warning-fg: oklch(0.85 0.15 85);
+  --error-bg: oklch(0.18 0.05 25); --error-fg: oklch(0.80 0.18 25);
+  --card-face: oklch(0.205 0 0);
+  --shadow-md: 0 4px 6px -1px oklch(0 0 0 / 0.40), 0 2px 4px -2px oklch(0 0 0 / 0.40);
+  --shadow-lg: 0 10px 15px -3px oklch(0 0 0 / 0.50), 0 4px 6px -4px oklch(0 0 0 / 0.50);
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  background: var(--paper); color: var(--ink);
+  font-family: var(--font-sans); font-size: 14px; line-height: 1.5;
+  overflow: hidden; overscroll-behavior: none;
+  -webkit-font-smoothing: antialiased; -webkit-tap-highlight-color: transparent;
+}
+button, input, select, textarea { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; border-radius: 4px; }
+.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+/* ---- chrome ------------------------------------------------------------- */
+#app { display: grid; grid-template-rows: auto auto 1fr; height: 100dvh; }
+.topbar {
+  display: flex; align-items: center; gap: 12px; padding: 0 14px; height: 46px;
+  border-bottom: 1px solid var(--hairline); background: var(--surface-2);
+  flex-wrap: nowrap; overflow: hidden;
+}
+.brand { display:flex; align-items:baseline; gap:8px; flex:0 0 auto; }
+.brand b { font-weight: 700; letter-spacing: -0.03em; font-size: 15px; }
+.brand .proto {
+  font-size: 10px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--warning-fg); background: var(--warning-bg);
+  padding: 2px 7px; border-radius: 999px; white-space: nowrap;
+}
+.retro-name { font-weight: 500; letter-spacing: -0.01em; white-space: nowrap; overflow:hidden; text-overflow:ellipsis; }
+.retro-name span { color: var(--muted-fg); font-weight: 400; }
+.spacer { flex: 1 1 auto; min-width: 0; }
+.roster-strip { display:flex; align-items:center; flex: 0 0 auto; padding-left:6px; }
+.av {
+  width: 25px; height: 25px; border-radius: 999px; display:grid; place-items:center;
+  font-size: 10px; font-weight: 600; border: 1.5px solid var(--surface-2);
+  margin-left: -6px; color: oklch(1 0 0); position: relative;
+}
+.av.ready::after {
+  content:""; position:absolute; right:-1px; bottom:-1px; width:8px; height:8px; border-radius:999px;
+  background: var(--success-fg); border: 1.5px solid var(--surface-2);
+}
+.btn {
+  height: 30px; padding: 0 10px; border-radius: var(--radius);
+  border: 1px solid var(--hairline); background: var(--surface-1); color: var(--ink);
+  cursor: pointer; font-size: 13px; font-weight: 500; white-space: nowrap;
+  display:inline-flex; align-items:center; gap:6px;
+  transition: background 160ms var(--ease), transform 160ms var(--ease), box-shadow 160ms var(--ease);
+}
+.btn:hover { background: var(--surface-3); }
+.btn:active { transform: scale(0.97); }
+.btn[disabled] { opacity: 0.4; cursor: not-allowed; }
+.btn.primary { background: var(--ink); color: var(--paper); border-color: transparent; }
+.btn.primary:hover { background: var(--ink); box-shadow: var(--shadow-lg); }
+.btn.ghost { background: transparent; border-color: transparent; }
+.btn.ghost:hover { background: var(--surface-3); }
+.btn.sm { height: 26px; font-size: 12px; padding: 0 8px; }
+.btn.accent { background: var(--blue); color: oklch(1 0 0); border-color: transparent; }
+.btn.accent:hover { background: var(--blue-deep); }
+.btn.block { width: 100%; justify-content: center; }
+
+/* ---- stage bar ---------------------------------------------------------- */
+.stagebar {
+  display: flex; align-items: center; gap: 8px; padding: 7px 14px;
+  border-bottom: 1px solid var(--hairline); background: var(--surface-1);
+  overflow-x: auto; scrollbar-width: thin;
+}
+.stages { display:flex; align-items:center; gap: 2px; flex: 0 0 auto; }
+.stage-chip {
+  position: relative; display:flex; align-items:center; gap:7px; height: 30px;
+  padding: 0 11px 0 9px; border-radius: 999px; border: 1px solid transparent;
+  background: transparent; cursor: pointer; font-size: 13px; font-weight: 500;
+  color: var(--muted-fg); white-space: nowrap;
+  transition: background 180ms var(--ease), color 180ms var(--ease), border-color 180ms var(--ease);
+}
+.stage-chip .dot { width: 6px; height: 6px; border-radius: 999px; background: currentColor; opacity: 0.4; }
+.stage-chip:hover { background: var(--surface-3); color: var(--ink); }
+.stage-chip.done { color: var(--ink); }
+.stage-chip.done .dot { opacity: 1; }
+.stage-chip.current { background: var(--blue); color: oklch(1 0 0); box-shadow: var(--shadow-blueprint); }
+.stage-chip.current .dot { background: oklch(1 0 0); opacity: 1; }
+.stage-chip.viewing:not(.current) { border-color: var(--blue); color: var(--blue-deep); }
+.timebox {
+  display:flex; align-items:center; gap:8px; padding: 0 10px; height: 30px;
+  border-radius: var(--radius); border: 1px solid var(--hairline);
+  background: var(--surface-2); flex: 0 0 auto;
+}
+.timebox .t { font-family: var(--font-mono); font-size: 13px; font-variant-numeric: tabular-nums; }
+.timebox.over { background: var(--warning-bg); border-color: transparent; }
+.timebox.over .t, .timebox.over .lbl { color: var(--warning-fg); }
+.timebox .lbl { font-size: 10.5px; color: var(--muted-fg); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; }
+
+/* ---- main --------------------------------------------------------------- */
+.main { position: relative; display: grid; grid-template-columns: 1fr 300px; min-height: 0; }
+#canvas {
+  position: relative; overflow: hidden; touch-action: none; cursor: grab;
+  background-color: var(--paper);
+  background-image:
+    linear-gradient(var(--grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid) 1px, transparent 1px),
+    linear-gradient(var(--grid-major) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-major) 1px, transparent 1px);
+}
+#canvas.panning { cursor: grabbing; }
+#canvas.marq { cursor: crosshair; }
+#world { position: absolute; inset: 0; transform-origin: 0 0; will-change: transform; }
+#under { position: absolute; left: -3000px; top: -3000px; width: 11000px; height: 10000px; overflow: visible; pointer-events: none; }
+
+/* ---- zones (soft hints, never columns) ---------------------------------- */
+.zone-rect { fill: transparent; stroke: var(--hairline); stroke-width: 1.25; stroke-dasharray: 11 8; transition: opacity 400ms var(--ease), stroke 400ms var(--ease); }
+.zone-label { font-family: var(--font-sans); font-weight: 600; letter-spacing: -0.015em; fill: var(--muted-fg); transition: opacity 400ms var(--ease), fill 400ms var(--ease); }
+.zone-hint  { font-family: var(--font-sans); font-weight: 400; fill: var(--muted-fg); opacity: 0; transition: opacity 400ms var(--ease); }
+.zones.fore .zone-rect { stroke: var(--blue); opacity: 0.6; }
+.zones.fore .zone-label { fill: var(--ink); }
+.zones.fore .zone-hint { opacity: 0.85; }
+.zones.back { opacity: 0.45; }
+
+/* ---- hulls -------------------------------------------------------------- */
+.hull-under { fill: none; stroke-linejoin: round; stroke-linecap: round; }
+.hull-body  { stroke-linejoin: round; stroke-linecap: round; }
+.hull-name { font-family: var(--font-sans); font-weight: 600; font-size: 13px; letter-spacing: -0.01em; }
+.hull-count { font-family: var(--font-mono); font-size: 11px; }
+
+/* ---- walk line (the signature: a surveyor's traverse drawn on the plan) --
+   The route is drawn in world space so it deforms with the board, but the
+   numbered stops stay screen-constant — a navigational marker that shrinks
+   with zoom is useless exactly when you need it. */
+.walk-seg { fill: none; stroke: var(--blue); stroke-width: 1.5; stroke-dasharray: 7 6; opacity: 0.75; }
+.walk-seg.done { stroke-dasharray: none; opacity: 1; stroke-width: 2.5; }
+#wstops { position: absolute; inset: 0; pointer-events: none; z-index: 45; }
+.wstop { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+.wstop b {
+  position: absolute; transform: translate(-50%, -50%);
+  width: 26px; height: 26px; border-radius: 999px; display: grid; place-items: center;
+  font-family: var(--font-mono); font-size: 12px; font-weight: 500;
+  background: var(--paper); color: var(--blue); border: 1.5px solid var(--blue);
+  pointer-events: auto; cursor: pointer; box-shadow: var(--shadow-sm);
+  transition: background 180ms var(--ease), color 180ms var(--ease);
+}
+.wstop.visited b { background: var(--blue); color: oklch(1 0 0); }
+.wstop.covered b { background: var(--success-fg); border-color: var(--success-fg); color: oklch(1 0 0); }
+.wstop.current b { background: var(--blue); color: oklch(1 0 0); border-width: 3px; box-shadow: var(--shadow-blueprint); width: 32px; height: 32px; font-size: 13px; }
+.wstop b:hover { filter: brightness(1.12); }
+
+/* ---- cards -------------------------------------------------------------- */
+.card {
+  position: absolute; left: 0; top: 0; width: 240px; background: var(--card-face); color: var(--ink);
+  border-radius: 10px; box-shadow: 0 0 0 1px var(--hairline), var(--shadow-md);
+  padding: 9px 11px 8px; cursor: grab; user-select: none; touch-action: none;
+  transition: box-shadow 200ms var(--ease), opacity 200ms var(--ease);
+  will-change: transform; contain: layout style;
+}
+.card:hover { box-shadow: 0 0 0 1px var(--hairline), var(--shadow-lg); z-index: 20; }
+.card.dragging { cursor: grabbing; box-shadow: 0 0 0 1px var(--blue), var(--shadow-lg); z-index: 40; }
+.card.selected { box-shadow: 0 0 0 2px var(--blue), var(--shadow-lg); }
+.card.tween { transition: box-shadow 200ms var(--ease), transform 420ms var(--ease); }
+.card.mine::before {
+  content:""; position: absolute; left: 0; top: 10px; bottom: 10px; width: 2.5px;
+  border-radius: 0 3px 3px 0; background: var(--blue);
+}
+.card .txt { font-size: 13px; line-height: 1.42; letter-spacing: -0.005em; }
+.card .meta { display:flex; align-items:center; gap:6px; margin-top: 7px; font-size: 10.5px; color: var(--muted-fg); font-weight: 500; }
+.card .who { display:flex; align-items:center; gap:5px; min-width:0; }
+.card .who i { width:11px; height:11px; border-radius:999px; flex:0 0 auto; font-style: normal; }
+.card .who span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.card .dots { margin-left:auto; display:flex; align-items:center; gap:3px; flex:0 0 auto; }
+.card .pip { width:7px; height:7px; border-radius:999px; background: var(--blue); }
+.card .pip.mine { box-shadow: 0 0 0 1.5px var(--card-face), 0 0 0 3px var(--blue); margin-right:2px; }
+.card.hidden-txt .txt { filter: blur(4.5px); opacity: 0.5; }
+.card.hidden-txt { background: repeating-linear-gradient(135deg, var(--card-face) 0 7px, var(--surface-3) 7px 14px); }
+.card.lockedby { box-shadow: 0 0 0 2px var(--lockc), var(--shadow-lg); z-index: 30; }
+.card .lock-tag {
+  position:absolute; top:-9px; left: 8px; font-size: 9.5px; font-weight: 600; color: oklch(1 0 0);
+  padding: 1px 6px; border-radius: 999px; white-space: nowrap; background: var(--lockc); pointer-events: none;
+}
+.card .newtag {
+  position:absolute; top:-8px; right: 8px; font-size: 9px; font-weight: 700; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--success-fg); background: var(--success-bg);
+  padding: 2px 6px; border-radius: 999px; pointer-events: none;
+}
+.card.walk-focus { box-shadow: 0 0 0 2px var(--blue), var(--shadow-blueprint); }
+.card.dimmed { opacity: 0.26; }
+.card textarea {
+  width: 100%; border: 0; background: transparent; resize: none; padding: 0; margin: 0;
+  font-size: 13px; line-height: 1.42; letter-spacing: -0.005em; outline: none;
+  font-family: inherit; min-height: 56px;
+}
+.card .cbadge {
+  display:inline-flex; align-items:center; gap:4px; font-size:9.5px; font-weight:600;
+  padding: 1px 6px; border-radius: 999px; margin-right: 4px;
+}
+
+/* ---- ghost cursors ------------------------------------------------------ */
+.peercur { position:absolute; pointer-events:none; z-index: 60; top:0; left:0; }
+.peercur svg { display:block; filter: drop-shadow(0 1px 2px oklch(0 0 0 / 0.35)); }
+.peercur b {
+  position:absolute; left: 12px; top: 14px; font-size: 10px; font-weight: 600; color: oklch(1 0 0);
+  padding: 1.5px 6px; border-radius: 999px; white-space: nowrap;
+}
+#marquee { position:absolute; border: 1.5px solid var(--blue); background: var(--blue-wash); border-radius: 4px; pointer-events:none; display:none; z-index: 50; }
+
+/* ---- rail --------------------------------------------------------------- */
+.rail { border-left: 1px solid var(--hairline); background: var(--surface-2); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.panel { border-bottom: 1px solid var(--hairline); padding: 13px 14px; }
+.panel:last-child { border-bottom: 0; padding-bottom: 40px; }
+.panel h3 {
+  margin: 0 0 9px; font-size: 10.5px; font-weight: 700; letter-spacing: 0.075em;
+  text-transform: uppercase; color: var(--muted-fg); display:flex; align-items:center; gap: 7px;
+}
+.panel h3 .n { font-family: var(--font-mono); letter-spacing: 0; color: var(--ink); }
+.panel h3 .sp { margin-left:auto; }
+.prompt { font-size: 13px; line-height: 1.5; }
+.hint { font-size: 11.5px; line-height: 1.45; color: var(--muted-fg); margin-top: 8px; }
+.hint code, .prompt code { font-family: var(--font-mono); font-size: 10.5px; background: var(--surface-3); padding: 1px 4px; border-radius: 3px; }
+.row { display:flex; align-items:center; gap: 8px; flex-wrap: wrap; }
+.rail .btn { min-width: 0; }
+.rail .btn > span { overflow: hidden; text-overflow: ellipsis; }
+.row + .row { margin-top: 8px; }
+.seg { display:inline-flex; border:1px solid var(--hairline); border-radius: var(--radius); overflow:hidden; background: var(--surface-1); flex:0 0 auto; }
+.seg button { border:0; background: transparent; padding: 0 9px; height: 26px; font-size: 12px; cursor:pointer; color: var(--muted-fg); font-weight: 500; }
+.seg button + button { border-left: 1px solid var(--hairline); }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+.field { display:flex; align-items:center; justify-content: space-between; gap: 10px; padding: 5px 0; }
+.field label { font-size: 12.5px; }
+.field .sub { font-size: 11px; color: var(--muted-fg); display:block; margin-top:1px; }
+.member { display:flex; align-items:center; gap:8px; padding: 4px 0; font-size: 12.5px; }
+.member .nm { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.member .st { font-size: 10px; font-weight: 600; padding: 1.5px 7px; border-radius: 999px; }
+.st.ready { background: var(--success-bg); color: var(--success-fg); }
+.st.working { background: var(--surface-3); color: var(--muted-fg); }
+.st.typing { background: var(--info-bg); color: var(--info-fg); }
+.tel { display:grid; grid-template-columns: 1fr auto; gap: 3px 8px; font-size: 11.5px; margin:0; }
+.tel dt { color: var(--muted-fg); }
+.tel dd { margin:0; font-family: var(--font-mono); font-variant-numeric: tabular-nums; text-align: right; }
+.tel dd.warn { color: var(--warning-fg); }
+.tel dd.bad { color: var(--error-fg); }
+.crow { display:flex; align-items:center; gap: 8px; padding: 5px 0; border-top: 1px solid var(--hairline-2); font-size:12.5px; }
+.crow:first-of-type { border-top: 0; }
+.crow .sw { width: 9px; height: 9px; border-radius: 3px; flex:0 0 auto; }
+.crow .nm { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.crow .ct { font-family: var(--font-mono); font-size: 11px; color: var(--muted-fg); }
+.cov { display:flex; gap: 3px; margin: 9px 0 6px; flex-wrap: wrap; }
+.cov i { flex: 1 1 12px; max-width: 26px; height: 5px; border-radius: 2px; background: var(--surface-3); font-style: normal; }
+.cov i.visited { background: var(--muted-fg); }
+.cov i.covered { background: var(--success-fg); }
+.cov i.current { background: var(--blue); box-shadow: 0 0 0 2px var(--blue-wash); }
+.walkcard { border: 1px solid var(--hairline); border-radius: var(--radius); padding: 9px 10px; background: var(--surface-1); }
+.walkcard .top { display:flex; align-items:baseline; gap:7px; }
+.walkcard .idx { font-family: var(--font-mono); font-size: 11px; color: var(--muted-fg); }
+.walkcard .ttl { font-weight: 600; font-size: 13.5px; letter-spacing: -0.01em; flex:1; }
+.walkcard .vt { font-family: var(--font-mono); font-size: 11.5px; color: var(--blue-deep); }
+.carry, .action-item { display:flex; gap:8px; align-items:flex-start; padding: 7px 0; border-top: 1px solid var(--hairline-2); font-size:12.5px; }
+.carry:first-of-type, .action-item:first-of-type { border-top:0; }
+.badge { font-size:9.5px; font-weight:700; letter-spacing:0.05em; text-transform:uppercase; padding:2px 6px; border-radius:999px; flex:0 0 auto; margin-top:2px; }
+.badge.open { background: var(--warning-bg); color: var(--warning-fg); }
+.badge.done { background: var(--success-bg); color: var(--success-fg); }
+.note { font-size: 11.5px; line-height: 1.5; color: var(--muted-fg); border-left: 2px solid var(--hairline); padding-left: 10px; margin-top: 10px; }
+.note b { color: var(--ink); font-weight: 600; }
+.warnbox { background: var(--warning-bg); color: var(--warning-fg); border-radius: var(--radius); padding: 8px 10px; font-size: 11.5px; line-height: 1.45; }
+.infobox { background: var(--info-bg); color: var(--info-fg); border-radius: var(--radius); padding: 8px 10px; font-size: 11.5px; line-height: 1.45; }
+.errbox { background: var(--error-bg); color: var(--error-fg); border-radius: var(--radius); padding: 8px 10px; font-size: 11.5px; line-height: 1.45; }
+.emptystate { font-size: 12.5px; color: var(--muted-fg); line-height:1.5; }
+
+/* ---- HUD ---------------------------------------------------------------- */
+#hud { position: absolute; left: 12px; bottom: 12px; z-index: 30; display:flex; align-items:center; gap: 6px; flex-wrap: wrap; max-width: calc(100% - 24px); }
+.hudgrp { display:flex; align-items:center; gap: 2px; padding: 3px; background: var(--surface-2); border: 1px solid var(--hairline); border-radius: 10px; box-shadow: var(--shadow-md); }
+.hudgrp .btn { height: 26px; border-color: transparent; background: transparent; }
+.hudgrp .zl { font-family: var(--font-mono); font-size: 11.5px; color: var(--muted-fg); padding: 0 4px; min-width: 42px; text-align:center; }
+.hudgrp .btn[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+#minimap { position:absolute; right: 12px; bottom: 12px; z-index: 30; background: var(--surface-2); border: 1px solid var(--hairline); border-radius: 10px; box-shadow: var(--shadow-md); padding: 5px; cursor: crosshair; }
+#minimap canvas { display:block; border-radius: 5px; }
+#toasts { position:absolute; left: 50%; transform: translateX(-50%); bottom: 64px; z-index: 70; display:flex; flex-direction:column; gap:6px; align-items:center; pointer-events:none; }
+.toast { background: var(--ink); color: var(--paper); padding: 7px 13px; border-radius: 999px; font-size: 12.5px; font-weight: 500; box-shadow: var(--shadow-lg); max-width: min(440px, 86vw); text-align:center; animation: rise 240ms var(--ease); }
+.toast.warn { background: var(--warning-fg); color: oklch(0.145 0 0); }
+@keyframes rise { from { opacity:0; transform: translateY(8px); } to { opacity:1; transform:none; } }
+#followbar {
+  position:absolute; left:50%; top: 12px; transform: translateX(-50%); z-index: 55;
+  display:none; align-items:center; gap: 8px; background: var(--ink); color: var(--paper);
+  padding: 6px 7px 6px 14px; border-radius: 999px; box-shadow: var(--shadow-lg);
+  font-size: 12.5px; font-weight: 500; max-width: calc(100% - 24px);
+}
+#followbar.on { display: flex; }
+#followbar .btn { height: 26px; }
+#followbar .btn.ghost { color: var(--paper); }
+
+/* ---- intro -------------------------------------------------------------- */
+#intro { position: fixed; inset: 0; z-index: 200; background: oklch(0 0 0 / 0.45); display: grid; place-items: center; padding: 20px; backdrop-filter: blur(3px); }
+#intro.off { display: none; }
+.introbox { background: var(--surface-1); border-radius: 16px; box-shadow: var(--shadow-lg); max-width: 640px; width: 100%; padding: 26px 28px; max-height: 90dvh; overflow-y: auto; border: 1px solid var(--hairline); }
+.introbox h1 { margin: 0 0 4px; font-size: 28px; font-weight: 700; letter-spacing: -0.045em; line-height: 1.02; }
+.introbox h1 span { color: var(--muted-fg); }
+.introbox p { margin: 11px 0; font-size: 13.5px; line-height: 1.55; }
+.introbox ol { margin: 10px 0; padding-left: 20px; font-size: 13px; line-height: 1.65; }
+.introbox kbd { font-family: var(--font-mono); font-size: 11px; background: var(--surface-3); border: 1px solid var(--hairline); border-bottom-width: 2px; border-radius: 4px; padding: 1px 5px; }
+
+/* ---- responsive --------------------------------------------------------- */
+#railtoggle { display: none; }
+@media (max-width: 960px) {
+  .main { grid-template-columns: 1fr; }
+  .rail { position: absolute; right: 0; top: 0; bottom: 0; width: min(304px, 90vw); z-index: 90; transform: translateX(100%); transition: transform 260ms var(--ease); box-shadow: var(--shadow-lg); }
+  .rail.open { transform: none; }
+  #railtoggle { display: inline-flex; }
+  #minimap { bottom: 56px; }
+}
+@media (max-width: 640px) {
+  .retro-name { display: none; }
+  .roster-strip .av:nth-child(n+6) { display:none; }
+  #minimap { display:none; }
+  .card { width: 190px; }
+  .topbar { gap: 8px; padding: 0 10px; }
+}
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; } }
+</style>
+</head>
+<body>
+<div id="app">
+  <header class="topbar">
+    <div class="brand"><b>AgileKit</b><span class="proto">Prototype C</span></div>
+    <div class="retro-name">Sprint 41 retro <span>· Platform team</span></div>
+    <div class="spacer"></div>
+    <div class="roster-strip" id="roster"></div>
+    <button class="btn ghost sm" id="themebtn" aria-label="Toggle light and dark theme">◐</button>
+    <button class="btn ghost sm" id="helpbtn" aria-label="Show the walkthrough">?</button>
+    <button class="btn sm" id="railtoggle" aria-label="Toggle side panel">Panel</button>
+  </header>
+
+  <nav class="stagebar" aria-label="Retro stages">
+    <button class="btn sm ghost" id="rewind" title="Rewind one stage" aria-label="Rewind one stage">◀</button>
+    <div class="stages" id="stages"></div>
+    <button class="btn sm primary" id="advance">Advance ▶</button>
+    <div class="spacer"></div>
+    <div class="timebox" id="timebox">
+      <span class="lbl">Timebox</span><span class="t" id="tbclock">08:00</span><span class="lbl" style="opacity:.65">advisory</span>
+    </div>
+  </nav>
+
+  <div class="main">
+    <div id="canvas" tabindex="0" aria-label="Retro board canvas">
+      <div id="world"><svg id="under" aria-hidden="true"></svg></div>
+      <div id="marquee"></div>
+      <div id="followbar" role="status">
+        <span id="followtxt"></span>
+        <button class="btn sm" id="followbtn">Catch up</button>
+        <button class="btn sm ghost" id="staybtn">Stay here</button>
+      </div>
+      <div id="toasts" role="status" aria-live="polite"></div>
+      <div id="hud">
+        <div class="hudgrp">
+          <button class="btn sm" id="zout" aria-label="Zoom out">−</button>
+          <span class="zl mono" id="zlabel">55%</span>
+          <button class="btn sm" id="zin" aria-label="Zoom in">+</button>
+          <button class="btn sm" id="zfit">Fit</button>
+        </div>
+        <div class="hudgrp">
+          <button class="btn sm" id="hudadd" title="Write a card — available in every stage">＋ Card</button>
+        </div>
+        <div class="hudgrp">
+          <button class="btn sm" id="simbtn" aria-pressed="false">Simulate 8 people</button>
+          <button class="btn sm" id="stressbtn" aria-pressed="false">200 cards</button>
+        </div>
+      </div>
+      <div id="minimap"><canvas id="mmcv" width="200" height="132"></canvas></div>
+    </div>
+    <aside class="rail" id="rail"></aside>
+  </div>
+</div>
+
+<div id="intro">
+  <div class="introbox">
+    <h1>Board direction C<br><span>spatial affinity canvas</span></h1>
+    <p>A throwaway prototype for ticket #260. Cards land anywhere in 2D, proximity is the grouping
+      gesture, zones are hints rather than columns. All in memory, nothing is saved, nothing is real.</p>
+    <p style="color:var(--muted-fg);font-weight:600;margin-bottom:2px">Drive it in this order</p>
+    <ol>
+      <li>In <b>Collect</b>, drag two cards together. Watch a hull form, then drag one 40px away and watch it dissolve.</li>
+      <li>Turn on <b>Simulate 8 people</b> (bottom left) and try to keep working. Watch the write counter.</li>
+      <li>Advance to <b>Group</b>. Name a hull. Then <kbd>Shift</kbd>-click three loose cards and press <kbd>G</kbd>.</li>
+      <li>Advance to <b>Vote</b>, spend six dots. Then <b>Discuss</b> — press <kbd>N</kbd> repeatedly and watch the viewport fly.</li>
+      <li>Flip <b>Flight</b> to <b>Cut</b> in the discuss panel and press <kbd>N</kbd> again. Compare.</li>
+    </ol>
+    <p style="color:var(--muted-fg);font-size:12.5px">
+      Pan: two-finger scroll, drag empty space, or <kbd>Space</kbd>+drag. Zoom: <kbd>⌘</kbd>/<kbd>Ctrl</kbd>+scroll,
+      pinch, or <kbd>+</kbd>/<kbd>−</kbd>. <kbd>0</kbd> fits everything. <kbd>G</kbd> groups the selection,
+      <kbd>U</kbd> ungroups. <kbd>N</kbd>/<kbd>P</kbd> walk topics. Arrow keys nudge.
+    </p>
+    <div class="row" style="margin-top:16px">
+      <button class="btn primary" id="introgo">Open the board</button>
+      <span class="hint" style="margin:0">Built for a trackpad. Usable on touch.</span>
+    </div>
+  </div>
+</div>
+
+<script>
+/* =============================================================================
+   PROTOTYPE C — spatial affinity canvas.  Everything below is hand-rolled:
+   pan, zoom, drag, marquee, clustering, viewport tweening.  No React Flow, no
+   d3, no libraries — because the point is to test the interaction model rather
+   than a library's opinion of it.
+   ========================================================================== */
+"use strict";
+
+/* ---------------------------------------------------------------- people -- */
+const PEOPLE = [
+  { id: "p1", name: "Priya Raman",   short: "Priya",  hue: 250 },
+  { id: "p2", name: "Tom Okafor",    short: "Tom",    hue: 150 },
+  { id: "p3", name: "Lena Fischer",  short: "Lena",   hue: 25  },
+  { id: "p4", name: "Marcus Bell",   short: "Marcus", hue: 85  },
+  { id: "p5", name: "Sofia Duarte",  short: "Sofia",  hue: 310 },
+  { id: "p6", name: "Aiden Clarke",  short: "Aiden",  hue: 195 },
+  { id: "p7", name: "Yuki Tanaka",   short: "Yuki",   hue: 120 },
+  { id: "p8", name: "Rosa Iglesias", short: "Rosa",   hue: 340 },
+];
+PEOPLE.forEach(p => { p.color = `oklch(0.55 0.13 ${p.hue})`; p.soft = `oklch(0.55 0.13 ${p.hue} / 0.14)`; });
+const ME = PEOPLE[0];
+const byId = Object.fromEntries(PEOPLE.map(p => [p.id, p]));
+const initials = n => n.split(" ").map(w => w[0]).join("").slice(0, 2);
+
+/* ----------------------------------------------------------------- zones -- */
+/* Soft hints. Drawn, labelled, and completely non-binding: a card may sit
+   inside one, straddle two, or float in the open, and nothing objects.      */
+const ZONES = [
+  { id: "z1", label: "What went well",      hint: "Name it even if it feels obvious",   x:  100, y:  100, w: 1420, h: 1000 },
+  { id: "z2", label: "What slowed us down", hint: "The thing you kept working around",  x: 1700, y:  100, w: 1720, h: 1120 },
+  { id: "z3", label: "Puzzles & questions", hint: "Things nobody actually knows",       x:  100, y: 1330, w: 1420, h: 940 },
+  { id: "z4", label: "Try next sprint",     hint: "Only if you'd actually do it",       x: 1700, y: 1450, w: 1720, h: 820 },
+];
+
+/* ----------------------------------------------------------------- cards -- */
+/* 40 seeded cards. Real sprint-retro content from a platform team, placed to
+   produce three obvious affinity clumps, two ambiguous ones, and four orphans
+   that belong to no zone at all — because that is what a free canvas does.  */
+/* [author, text, x, y, clump] — `clump` marks the three affinity clusters the
+   seed deliberately arranges tightly. Everything else starts loose, and the
+   relax pass below guarantees the visual difference is real, not a coincidence
+   of how long a sentence happens to be. */
+const SEED = [
+  // --- z1: what went well — deliberately scattered, no theme --------------
+  ["p3", "The Postgres 16 upgrade went out with zero downtime. Nobody noticed, which is the point.", 190, 200, null],
+  ["p4", "Pairing on the auth refactor saved a week of review ping-pong.", 620, 230, null],
+  ["p6", "Sofia's runbook meant Tuesday's incident didn't wake anyone up.", 1060, 195, null],
+  ["p1", "We said no to two mid-sprint requests. First time in months.", 200, 560, null],
+  ["p2", "Preview deploys on every PR. I've stopped asking people to describe their change.", 640, 570, null],
+  ["p7", "Bug count went down even though we shipped more. I'll take it.", 1080, 555, null],
+  ["p8", "Design handed over Figma with real copy in it, not placeholder text.", 205, 880, null],
+  ["p5", "The new onboarding doc got Marcus productive on day three.", 640, 895, null],
+  ["p2", "Standup finished in nine minutes on Thursday.", 1090, 880, null],
+  ["p3", "Nobody worked a weekend this sprint.", 1230, 400, null],
+
+  // --- z2: CI flakes — five cards, deliberately tight ---------------------
+  ["p2", "CI failed three times on main and none of them were our code.", 1780, 200, "ci"],
+  ["p7", "The flaky Playwright test on room-creation cost me two hours of reruns.", 2050, 215, "ci"],
+  ["p4", "I can't tell any more whether a red build means anything.", 1830, 400, "ci"],
+  ["p1", "We rerun CI as a reflex now. That's the real cost.", 2090, 420, "ci"],
+  ["p8", "Nobody owns the test suite so the flakes just pile up.", 1950, 600, "ci"],
+
+  // --- z2: review latency — four cards, deliberately tight ----------------
+  ["p6", "My PR sat for two days before anyone looked at it.", 2680, 200, "rev"],
+  ["p5", "Review is a lottery. Sometimes ten minutes, sometimes Thursday.", 2950, 215, "rev"],
+  ["p3", "We have no rule about who reviews what, so everyone assumes someone else will.", 2730, 410, "rev"],
+  ["p4", "Big PRs are the problem, not slow reviewers. Mine was 900 lines.", 3000, 430, "rev"],
+
+  // --- z2: on-call — only two cards. Does a pair read as a group? ---------
+  ["p6", "Two people were on call at once because the rota spreadsheet is wrong.", 1810, 930, "oncall"],
+  ["p7", "On-call handover happens in DMs and then it's gone.", 2080, 950, "oncall"],
+
+  // --- z2: loose stragglers inside a busy zone ----------------------------
+  ["p2", "Staging was broken Monday to Wednesday and we just worked around it.", 2680, 880, null],
+  ["p8", "Acceptance criteria on RETRO-114 changed after I'd built it.", 3080, 940, null],
+
+  // --- z3: puzzles — scattered ---------------------------------------------
+  ["p1", "Why do we estimate in points if we never look at the numbers afterwards?", 195, 1430, null],
+  ["p4", "Is the feature flag from March still doing anything? Nobody knows.", 640, 1450, null],
+  ["p5", "Are we supposed to be writing E2E tests for every feature or not?", 1075, 1425, null],
+  ["p8", "What happened to the accessibility audit we scoped in January?", 200, 1790, null],
+  ["p7", "Do we care about bundle size? We measured it once.", 645, 1800, null],
+  ["p2", "Who decides when something goes behind a paywall?", 1085, 1780, null],
+  ["p3", "Our error budget is a number in a doc nobody reads.", 400, 2080, null],
+  ["p6", "Is the design system a library or a folder? It's currently a folder.", 900, 2090, null],
+
+  // --- z4: try next -------------------------------------------------------
+  ["p4", "Cap PRs at 400 lines and split anything bigger.", 1790, 1550, null],
+  ["p8", "Rotate a test-suite gardener each sprint, one hour a day.", 2230, 1570, null],
+  ["p6", "Move the on-call rota into the calendar so there's one source.", 2680, 1545, null],
+  ["p5", "Write acceptance criteria into the ticket before we estimate it.", 3100, 1565, null],
+  ["p1", "Try a 24-hour review SLA and see whether it hurts.", 1980, 1930, null],
+  ["p7", "Delete the March feature flag or write down why it's still there.", 2500, 1950, null],
+
+  // --- deliberately homeless: outside every zone --------------------------
+  ["p3", "I still don't know what 'done' means for a spike.", 1580, 1250, null],
+  ["p2", "We keep talking about the same three things every retro.", 1590, 2150, null],
+  ["p7", "Honestly this sprint was fine. I don't have a complaint.", 760, 2400, null],
+];
+
+/* --------------------------------------------------------------- carryover */
+const CARRYOVER = [
+  { txt: "Split the deploy pipeline so staging can fail on its own", owner: "p2", state: "open", age: "3 sprints" },
+  { txt: "Write down the on-call escalation path", owner: "p6", state: "done", age: "last sprint" },
+  { txt: "Cap sprint scope at 80% of capacity", owner: "p1", state: "open", age: "2 sprints" },
+];
+
+/* ---------------------------------------------------------------- stages -- */
+/* The stage list is DATA, stamped at creation (ADR-0010). Each entry carries
+   its own id, so a kind may repeat and per-stage state hangs off the entry.  */
+const STAGE_LIST = [
+  { id: "s1", kind: "collect", label: "Collect", timebox: 480,
+    prompt: "Write what you noticed. Drop it anywhere — near a zone if it fits, in the open if it doesn't.",
+    reveal: "hidden" },
+  { id: "s2", kind: "review",  label: "Review",  timebox: 300,
+    prompt: "What's still open from last time? Nothing here blocks anything — it's context, not a gate.",
+    reveal: "shown" },
+  { id: "s3", kind: "group",   label: "Group",   timebox: 480,
+    prompt: "Push cards that belong together closer. Name a cluster once it stops moving.",
+    reveal: "shown" },
+  { id: "s4", kind: "vote",    label: "Vote",    timebox: 240,
+    prompt: "Six dots each. Spend them on what you want to spend the meeting talking about.",
+    reveal: "shown" },
+  { id: "s5", kind: "discuss", label: "Discuss", timebox: 1200,
+    prompt: "Walk the topics. Mark each one covered when you're done with it — coverage is the point, not position.",
+    reveal: "shown" },
+  { id: "s6", kind: "close",   label: "Close",   timebox: 300,
+    prompt: "What are we actually doing, and who's doing it? Everything stays on the board afterwards.",
+    reveal: "shown" },
+];
+const VOTE_BUDGET = 6;
+
+/* ------------------------------------------------------------------ state -- */
+const S = {
+  cards: [],
+  clusters: [],
+  nextCard: 1,
+  nextCluster: 1,
+  sharedStage: 0,      // the team's pointer
+  viewStage: 0,        // where *I* am looking. Free to diverge.
+  following: true,
+  votes: {},           // votes[personId][targetKey] = n
+  readiness: {},
+  selection: new Set(),
+  walk: null,          // { order:[key], cursor, visited:Set, covered:Set, at }
+  actions: [],
+  reveal: "hidden",    // viewer-flippable: #262 / #270 still open
+  proximityGap: 58,
+  showHulls: true,
+  showWalkLine: true,
+  flight: true,        // animate viewport moves vs cut
+  sim: false,
+  stress: false,
+  writeMode: "settle", // settle | throttle | frame
+  editing: null,
+  tbLeft: STAGE_LIST[0].timebox,
+  tbRunning: false,
+  tel: { writes: 0, windowWrites: [], fps: 60, lastFrame: performance.now(), frames: 0, fpsAt: performance.now() },
+};
+
+/* --------------------------------------------------------------- viewport -- */
+const VP = { x: 0, y: 0, k: 0.55 };
+const MINK = 0.14, MAXK = 2.2;
+let tween = null;
+
+/* ---------------------------------------------------------------- element -- */
+const $ = s => document.querySelector(s);
+const canvas = $("#canvas"), world = $("#world"), under = $("#under");
+const railEl = $("#rail"), marquee = $("#marquee"), toasts = $("#toasts");
+const mm = $("#mmcv"), mmx = mm.getContext("2d");
+
+/* ============================================================== bootstrap == */
+function seed() {
+  S.cards = SEED.map(([author, txt, x, y, clump], i) => ({
+    id: "c" + (i + 1), author, txt, x, y, ax: x, ay: y, clump, h: 0, clusterId: null,
+    createdAt: Date.now() - (SEED.length - i) * 90000, isNew: false, lockedBy: null,
+  }));
+  S.nextCard = SEED.length + 1;
+  PEOPLE.forEach(p => { S.votes[p.id] = {}; S.readiness[p.id] = false; });
+}
+seed();
+
+/* One-shot settle so the seed's intent survives however the text wraps: cards
+   in the same clump are pulled to a ~26px gap (well inside the proximity
+   threshold), everything else pushed to ~110px (well outside it). Without
+   this, whether two cards read as "grouped" depends on sentence length, which
+   is a fair description of the whole direction's problem but a bad demo. */
+function relaxSeed(iters) {
+  const TIGHT = 26, LOOSE = 112;
+  for (let t = 0; t < iters; t++) {
+    for (let i = 0; i < S.cards.length; i++) {
+      for (let j = i + 1; j < S.cards.length; j++) {
+        const a = S.cards[i], b = S.cards[j];
+        const ra = cardRect(a), rb = cardRect(b);
+        const g = rectGap(ra, rb);
+        const same = a.clump && a.clump === b.clump;
+        const want = same ? TIGHT : LOOSE;
+        let push = 0;
+        if (!same && g < want) push = (want - g) * 0.45;
+        else if (same && g > want) push = -(g - want) * 0.30;
+        else continue;
+        let dx = (ra.x + ra.w / 2) - (rb.x + rb.w / 2);
+        let dy = (ra.y + ra.h / 2) - (rb.y + rb.h / 2);
+        const d = Math.hypot(dx, dy) || 1;
+        dx /= d; dy /= d;
+        a.x += dx * push; a.y += dy * push; b.x -= dx * push; b.y -= dy * push;
+      }
+    }
+    for (const c of S.cards) { c.x += (c.ax - c.x) * 0.03; c.y += (c.ay - c.y) * 0.03; }
+  }
+  for (const c of S.cards) { c.x = Math.round(c.x); c.y = Math.round(c.y); }
+}
+
+/* =========================================================== rendering ===== */
+const cardEls = new Map();
+const ghostEls = new Map();
+
+function cardHeight(c) { return c.h || 92; }
+function cardW() { return window.innerWidth <= 640 ? 190 : 240; }
+function cardRect(c) { return { x: c.x, y: c.y, w: cardW(), h: cardHeight(c) || 92 }; }
+function cardCenter(c) { const r = cardRect(c); return { x: r.x + r.w / 2, y: r.y + r.h / 2 }; }
+
+function ensureCardEl(c) {
+  let el = cardEls.get(c.id);
+  if (el) return el;
+  el = document.createElement("div");
+  el.className = "card";
+  el.dataset.id = c.id;
+  el.tabIndex = 0;
+  world.appendChild(el);
+  cardEls.set(c.id, el);
+  return el;
+}
+
+function stage() { return STAGE_LIST[S.viewStage]; }
+function sharedStage() { return STAGE_LIST[S.sharedStage]; }
+function kind() { return stage().kind; }
+
+function targetKeyOfCard(c) { return c.clusterId ? "cl:" + c.clusterId : "cd:" + c.id; }
+function votesFor(key) { let n = 0; for (const p of PEOPLE) n += S.votes[p.id][key] || 0; return n; }
+function myVotesFor(key) { return S.votes[ME.id][key] || 0; }
+function mySpent() { return Object.values(S.votes[ME.id]).reduce((a, b) => a + b, 0); }
+
+function renderCards() {
+  const showText = S.reveal === "shown" || kind() !== "collect";
+  const walkFocus = S.walk && S.walk.order[S.walk.cursor];
+  const remeasure = [];
+  for (const c of S.cards) {
+    if (c.id === S.editing) { const e0 = cardEls.get(c.id); if (e0) e0.style.transform = `translate(${c.x}px,${c.y}px)`; continue; }
+    const el = ensureCardEl(c);
+    const person = byId[c.author];
+    const key = targetKeyOfCard(c);
+    const v = votesFor(key), myv = myVotesFor(key);
+    const cluster = c.clusterId ? S.clusters.find(x => x.id === c.clusterId) : null;
+    const hide = !showText && c.author !== ME.id;
+
+    let cls = "card";
+    if (c.author === ME.id) cls += " mine";
+    if (hide) cls += " hidden-txt";
+    if (S.selection.has(c.id)) cls += " selected";
+    if (c.lockedBy) cls += " lockedby";
+    if (c.isNew) cls += "";
+    if (walkFocus) {
+      const inFocus = walkFocus.startsWith("cl:")
+        ? c.clusterId === walkFocus.slice(3)
+        : walkFocus === "cd:" + c.id;
+      cls += inFocus ? " walk-focus" : " dimmed";
+    }
+    if (el.className !== cls && !el.classList.contains("dragging")) el.className = cls;
+
+    if (c.lockedBy) el.style.setProperty("--lockc", byId[c.lockedBy].color);
+
+    const sg = sig(c, v, myv, hide, cluster);
+    if (el.dataset.sig !== sg) {
+      el.dataset.sig = sg;
+      remeasure.push([c, el]);
+      el.innerHTML =
+        (c.lockedBy ? `<span class="lock-tag">${byId[c.lockedBy].short} is moving this</span>` : "") +
+        (c.isNew ? `<span class="newtag">new</span>` : "") +
+        `<div class="txt">${hide ? maskText(c.txt) : esc(c.txt)}</div>` +
+        `<div class="meta">` +
+          (cluster ? `<span class="cbadge" style="background:${cluster.soft};color:${cluster.color}">${esc(cluster.name)}</span>` : "") +
+          `<span class="who"><i style="background:${person.color}"></i><span>${hide ? "hidden until reveal" : esc(person.short)}</span></span>` +
+          (v > 0 ? `<span class="dots">${myv ? `<span class="pip mine"></span>` : ""}${
+              Array.from({length: Math.min(v, 6)}).map(() => `<span class="pip"></span>`).join("")
+            }${v > 6 ? `<span class="mono" style="font-size:10px;color:var(--blue-deep)">+${v-6}</span>` : ""}</span>` : "") +
+        `</div>`;
+    }
+    el.style.transform = `translate(${c.x}px, ${c.y}px)`;
+  }
+  for (const [c, el] of remeasure) c.h = el.offsetHeight;
+}
+function sig(c, v, myv, hide, cluster) { return [c.txt.length, v, myv, hide ? 1 : 0, cluster ? cluster.name : "", c.lockedBy || "", c.isNew ? 1 : 0].join("|"); }
+function esc(s) { return s.replace(/[&<>"]/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch])); }
+function maskText(s) { return esc(s.replace(/[^\s]/g, "█")); }
+
+/* ------------------------------------------------------- proximity groups -- */
+/* Honest single-linkage union-find over rectangle gaps. This is what
+   "proximity is grouping" literally means if you implement it and nothing else. */
+function rectGap(a, b) {
+  const dx = Math.max(0, Math.max(a.x - (b.x + b.w), b.x - (a.x + a.w)));
+  const dy = Math.max(0, Math.max(a.y - (b.y + b.h), b.y - (a.y + a.h)));
+  return Math.hypot(dx, dy);
+}
+function detectProximity() {
+  const loose = S.cards.filter(c => !c.clusterId);
+  const rects = loose.map(cardRect);
+  const parent = loose.map((_, i) => i);
+  const find = i => (parent[i] === i ? i : (parent[i] = find(parent[i])));
+  for (let i = 0; i < loose.length; i++)
+    for (let j = i + 1; j < loose.length; j++)
+      if (rectGap(rects[i], rects[j]) < S.proximityGap) parent[find(i)] = find(j);
+  const groups = new Map();
+  loose.forEach((c, i) => {
+    const r = find(i);
+    if (!groups.has(r)) groups.set(r, []);
+    groups.get(r).push(c);
+  });
+  return [...groups.values()].filter(g => g.length >= 2);
+}
+
+/* --------------------------------------------------------------- geometry -- */
+function convexHull(pts) {
+  if (pts.length < 3) return pts.slice();
+  const p = pts.slice().sort((a, b) => a.x - b.x || a.y - b.y);
+  const cross = (o, a, b) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+  const lower = [];
+  for (const q of p) { while (lower.length >= 2 && cross(lower[lower.length-2], lower[lower.length-1], q) <= 0) lower.pop(); lower.push(q); }
+  const upper = [];
+  for (let i = p.length - 1; i >= 0; i--) { const q = p[i]; while (upper.length >= 2 && cross(upper[upper.length-2], upper[upper.length-1], q) <= 0) upper.pop(); upper.push(q); }
+  lower.pop(); upper.pop();
+  return lower.concat(upper);
+}
+function hullPathFor(cards) {
+  const pts = [];
+  for (const c of cards) { const r = cardRect(c); pts.push({x:r.x,y:r.y},{x:r.x+r.w,y:r.y},{x:r.x+r.w,y:r.y+r.h},{x:r.x,y:r.y+r.h}); }
+  const h = convexHull(pts);
+  if (h.length === 0) return "";
+  return "M" + h.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join("L") + "Z";
+}
+function bboxOf(cards) {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const c of cards) { const r = cardRect(c); x0=Math.min(x0,r.x); y0=Math.min(y0,r.y); x1=Math.max(x1,r.x+r.w); y1=Math.max(y1,r.y+r.h); }
+  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0, cx: (x0+x1)/2, cy: (y0+y1)/2 };
+}
+
+/* --------------------------------------------------------------- underlay -- */
+const SVGNS = "http://www.w3.org/2000/svg";
+function svg(tag, attrs, txt) {
+  const e = document.createElementNS(SVGNS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (txt != null) e.textContent = txt;
+  return e;
+}
+let lastProximity = [];
+function renderUnder() {
+  under.replaceChildren();
+  const off = 3000; // #under is offset so negative world coords are drawable
+  const g = svg("g", { transform: `translate(${off},${off})` });
+  under.appendChild(g);
+
+  /* zones — foregrounded in collect, receded afterwards */
+  const zg = svg("g", { class: "zones " + (kind() === "collect" ? "fore" : "back") });
+  for (const z of ZONES) {
+    zg.appendChild(svg("rect", { class: "zone-rect", x: z.x, y: z.y, width: z.w, height: z.h, rx: 22, "vector-effect": "non-scaling-stroke" }));
+    zg.appendChild(svg("text", { class: "zone-label", x: z.x + 22, y: z.y - 16, "font-size": 26 }, z.label));
+    zg.appendChild(svg("text", { class: "zone-hint", x: z.x + 22, y: z.y + z.h + 30, "font-size": 17 }, z.hint));
+  }
+  g.appendChild(zg);
+
+  /* explicit clusters — solid hulls with a name */
+  for (const cl of S.clusters) {
+    const members = S.cards.filter(c => c.clusterId === cl.id);
+    if (!members.length) continue;
+    const d = hullPathFor(members), pad = 26;
+    const gg = svg("g", { class: "hull-g" });
+    gg.appendChild(svg("path", { class: "hull-under", d, stroke: cl.color, "stroke-width": pad * 2 + 3, opacity: 0.5 }));
+    gg.appendChild(svg("path", { class: "hull-body", d, fill: cl.soft, stroke: cl.soft, "stroke-width": pad * 2 }));
+    const bb = bboxOf(members);
+    gg.appendChild(svg("text", { class: "hull-name", x: bb.x - 6, y: bb.y - pad - 12, fill: cl.color, "font-size": 17 }, cl.name));
+    const key = "cl:" + cl.id, v = votesFor(key);
+    if (v > 0) gg.appendChild(svg("text", { class: "hull-count", x: bb.x - 6, y: bb.y - pad + 8, fill: cl.color, "font-size": 13 }, `${v} vote${v===1?"":"s"} · ${members.length} cards`));
+    g.appendChild(gg);
+  }
+
+  /* proximity hulls — dashed, unnamed, transient */
+  lastProximity = S.showHulls ? detectProximity() : [];
+  if (S.showHulls) {
+    for (const grp of lastProximity) {
+      const d = hullPathFor(grp), pad = 20;
+      const gg = svg("g", { class: "hull-g" });
+      gg.appendChild(svg("path", { class: "hull-under", d, stroke: "var(--muted-fg)", "stroke-width": pad * 2 + 2, opacity: 0.24, "stroke-dasharray": "14 10" }));
+      gg.appendChild(svg("path", { class: "hull-body", d, fill: "var(--surface-3)", stroke: "var(--surface-3)", "stroke-width": pad * 2, opacity: 0.6 }));
+      const bb = bboxOf(grp);
+      gg.appendChild(svg("text", { class: "hull-count", x: bb.x - 2, y: bb.y - pad - 8, fill: "var(--muted-fg)", "font-size": 13 }, `${grp.length} cards near each other · unnamed`));
+      g.insertBefore(gg, g.firstChild.nextSibling);
+    }
+  }
+
+  /* the walk line — a surveyor's traverse across the plan */
+  if (S.walk && S.showWalkLine && kind() === "discuss") {
+    const pts = S.walk.order.map(k => walkTargetCenter(k)).filter(Boolean);
+    for (let i = 0; i < pts.length - 1; i++) {
+      const done = i < S.walk.cursor;
+      g.appendChild(svg("path", {
+        class: "walk-seg" + (done ? " done" : ""),
+        d: `M${pts[i].x},${pts[i].y}L${pts[i+1].x},${pts[i+1].y}`,
+        "vector-effect": "non-scaling-stroke",
+      }));
+    }
+  }
+  renderWalkStops();
+}
+
+/* Numbered stops live in the DOM, not the SVG, so they can hold a constant
+   screen size while the board scales underneath them. */
+const wstopsEl = document.createElement("div");
+wstopsEl.id = "wstops";
+world.appendChild(wstopsEl);
+function renderWalkStops() {
+  const show = S.walk && S.showWalkLine && kind() === "discuss";
+  if (!show) { wstopsEl.replaceChildren(); return; }
+  const frag = document.createDocumentFragment();
+  S.walk.order.forEach((key, i) => {
+    const p = walkTargetCenter(key); if (!p) return;
+    const d = document.createElement("div");
+    d.className = "wstop" + (i === S.walk.cursor ? " current" : S.walk.covered.has(key) ? " covered" : S.walk.visited.has(key) ? " visited" : "");
+    d.dataset.i = i; d.dataset.wx = p.x; d.dataset.wy = p.y;
+    d.style.transform = `translate(${p.x}px,${p.y}px) scale(${1 / VP.k})`;
+    d.innerHTML = `<b title="${esc(walkTargetTitle(key))}">${i + 1}</b>`;
+    frag.appendChild(d);
+  });
+  wstopsEl.replaceChildren(frag);
+}
+function rescaleWalkStops() {
+  const s = 1 / VP.k;
+  for (const d of wstopsEl.children) d.style.transform = `translate(${d.dataset.wx}px,${d.dataset.wy}px) scale(${s})`;
+}
+wstopsEl.addEventListener("click", e => {
+  const d = e.target.closest(".wstop"); if (!d) return;
+  e.stopPropagation(); goToStop(+d.dataset.i);
+});
+function walkTargetCards(key) {
+  return key.startsWith("cl:")
+    ? S.cards.filter(c => c.clusterId === key.slice(3))
+    : S.cards.filter(c => c.id === key.slice(3));
+}
+function walkTargetCenter(key) {
+  const cs = walkTargetCards(key);
+  if (!cs.length) return null;
+  const bb = bboxOf(cs);
+  return { x: bb.cx, y: bb.y - 46 };
+}
+function walkTargetTitle(key) {
+  if (key.startsWith("cl:")) { const cl = S.clusters.find(c => c.id === key.slice(3)); return cl ? cl.name : "(deleted cluster)"; }
+  const c = S.cards.find(c => c.id === key.slice(3));
+  return c ? (c.txt.length > 54 ? c.txt.slice(0, 54) + "…" : c.txt) : "(deleted card)";
+}
+
+/* --------------------------------------------------------------- viewport -- */
+function applyVP() {
+  world.style.transform = `translate(${VP.x}px,${VP.y}px) scale(${VP.k})`;
+  const g = 40 * VP.k, G = 200 * VP.k;
+  canvas.style.backgroundSize = `${g}px ${g}px, ${g}px ${g}px, ${G}px ${G}px, ${G}px ${G}px`;
+  canvas.style.backgroundPosition = `${VP.x}px ${VP.y}px, ${VP.x}px ${VP.y}px, ${VP.x}px ${VP.y}px, ${VP.x}px ${VP.y}px`;
+  $("#zlabel").textContent = Math.round(VP.k * 100) + "%";
+  if (wstopsEl.firstChild) rescaleWalkStops();
+}
+function screenToWorld(sx, sy) {
+  const r = canvas.getBoundingClientRect();
+  return { x: (sx - r.left - VP.x) / VP.k, y: (sy - r.top - VP.y) / VP.k };
+}
+function zoomAt(sx, sy, factor) {
+  const r = canvas.getBoundingClientRect();
+  const px = sx - r.left, py = sy - r.top;
+  const wx = (px - VP.x) / VP.k, wy = (py - VP.y) / VP.k;
+  VP.k = Math.min(MAXK, Math.max(MINK, VP.k * factor));
+  VP.x = px - wx * VP.k; VP.y = py - wy * VP.k;
+  applyVP();
+}
+function boardBounds() {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const z of ZONES) { x0=Math.min(x0,z.x); y0=Math.min(y0,z.y); x1=Math.max(x1,z.x+z.w); y1=Math.max(y1,z.y+z.h); }
+  for (const c of S.cards) { const r = cardRect(c); x0=Math.min(x0,r.x); y0=Math.min(y0,r.y); x1=Math.max(x1,r.x+r.w); y1=Math.max(y1,r.y+r.h); }
+  return { x: x0 - 90, y: y0 - 90, w: x1 - x0 + 180, h: y1 - y0 + 180 };
+}
+function viewportFor(bb, maxZoom) {
+  const r = canvas.getBoundingClientRect();
+  const k = Math.min(MAXK, Math.max(MINK, Math.min(r.width / bb.w, r.height / bb.h) * 0.92, 0.001));
+  const kk = Math.min(k, maxZoom || MAXK);
+  return { k: kk, x: r.width / 2 - (bb.x + bb.w / 2) * kk, y: r.height / 2 - (bb.y + bb.h / 2) * kk };
+}
+function flyTo(target, ms) {
+  if (!S.flight || ms === 0) { VP.x = target.x; VP.y = target.y; VP.k = target.k; applyVP(); return; }
+  const from = { ...VP }, t0 = performance.now(), dur = ms || 520;
+  tween = { from, target, t0, dur };
+}
+function stepTween(now) {
+  if (!tween) return;
+  const t = Math.min(1, (now - tween.t0) / tween.dur);
+  const e = 1 - Math.pow(1 - t, 3); // ease-out cubic — "lift, don't bounce"
+  VP.x = tween.from.x + (tween.target.x - tween.from.x) * e;
+  VP.y = tween.from.y + (tween.target.y - tween.from.y) * e;
+  VP.k = tween.from.k + (tween.target.k - tween.from.k) * e;
+  applyVP();
+  if (t >= 1) tween = null;
+}
+function fitBoard(ms) { flyTo(viewportFor(boardBounds(), 1.0), ms); }
+
+/* ================================================================ writes == */
+/* Modelled from docs/research/convex-realtime-board.md §5.1: Convex has no
+   delta protocol, so one committed position push re-sends the whole query
+   result to every subscriber. The counter below is the honest cost readout. */
+function boardPayloadBytes() {
+  // rough JSON size of an unprojected .collect() over the card rows
+  let n = 0;
+  for (const c of S.cards) n += 120 + c.txt.length; // ids, coords, author, timestamps
+  return n;
+}
+function commitWrite(n) {
+  n = n || 1;
+  S.tel.writes += n;
+  const t = performance.now();
+  for (let i = 0; i < n; i++) S.tel.windowWrites.push(t);
+}
+function writesPerSec() {
+  const cut = performance.now() - 1000;
+  while (S.tel.windowWrites.length && S.tel.windowWrites[0] < cut) S.tel.windowWrites.shift();
+  return S.tel.windowWrites.length;
+}
+
+/* =============================================================== dragging = */
+let drag = null, pan = null, marq = null, pinch = null;
+let spaceHeld = false;
+
+canvas.addEventListener("pointerdown", e => {
+  if (e.target.closest("#hud") || e.target.closest("#minimap") || e.target.closest("#followbar")) return;
+  const cardEl = e.target.closest(".card");
+  canvas.focus({ preventScroll: true });
+
+  if (cardEl && !spaceHeld && !e.target.closest("textarea")) {
+    const c = S.cards.find(x => x.id === cardEl.dataset.id);
+    if (!c) return;
+    if (e.shiftKey) { toggleSelect(c.id); renderCards(); renderRail(); return; }
+
+    /* Note: even during `vote`, a card still drags. A stage never forbids —
+       a click that does not move casts the dot, a click that moves does not. */
+    const w = screenToWorld(e.clientX, e.clientY);
+    const ids = S.selection.has(c.id) ? [...S.selection] : (c.clusterId ? S.cards.filter(x => x.clusterId === c.clusterId).map(x => x.id) : [c.id]);
+    drag = {
+      ids, dx: w.x - c.x, dy: w.y - c.y, lead: c.id,
+      origin: Object.fromEntries(ids.map(id => { const cc = S.cards.find(x => x.id === id); return [id, { x: cc.x, y: cc.y }]; })),
+      moved: false, lastWrite: 0, fromCluster: c.clusterId,
+    };
+    ids.forEach(id => cardEls.get(id) && cardEls.get(id).classList.add("dragging"));
+    canvas.setPointerCapture(e.pointerId);
+    return;
+  }
+
+  if (e.shiftKey) {
+    const w = screenToWorld(e.clientX, e.clientY);
+    marq = { x0: w.x, y0: w.y, x1: w.x, y1: w.y };
+    marquee.style.display = "block";
+    canvas.setPointerCapture(e.pointerId);
+    return;
+  }
+
+  pan = { sx: e.clientX, sy: e.clientY, vx: VP.x, vy: VP.y };
+  canvas.classList.add("panning");
+  canvas.setPointerCapture(e.pointerId);
+});
+
+canvas.addEventListener("pointermove", e => {
+  if (drag) {
+    const w = screenToWorld(e.clientX, e.clientY);
+    const lead = S.cards.find(x => x.id === drag.lead);
+    const nx = w.x - drag.dx, ny = w.y - drag.dy;
+    const ddx = nx - drag.origin[drag.lead].x, ddy = ny - drag.origin[drag.lead].y;
+    if (Math.abs(ddx) + Math.abs(ddy) > 3) drag.moved = true;
+    for (const id of drag.ids) {
+      const c = S.cards.find(x => x.id === id);
+      c.x = drag.origin[id].x + ddx; c.y = drag.origin[id].y + ddy;
+      const el = cardEls.get(id); if (el) el.style.transform = `translate(${c.x}px,${c.y}px)`;
+    }
+    if (S.writeMode === "frame") commitWrite(drag.ids.length);
+    else if (S.writeMode === "throttle") {
+      const t = performance.now();
+      if (t - drag.lastWrite > 100) { drag.lastWrite = t; commitWrite(drag.ids.length); }
+    }
+    return;
+  }
+  if (marq) {
+    const w = screenToWorld(e.clientX, e.clientY);
+    marq.x1 = w.x; marq.y1 = w.y;
+    const r = canvas.getBoundingClientRect();
+    const sx = Math.min(marq.x0, marq.x1) * VP.k + VP.x, sy = Math.min(marq.y0, marq.y1) * VP.k + VP.y;
+    marquee.style.left = sx + "px"; marquee.style.top = sy + "px";
+    marquee.style.width = Math.abs(marq.x1 - marq.x0) * VP.k + "px";
+    marquee.style.height = Math.abs(marq.y1 - marq.y0) * VP.k + "px";
+    return;
+  }
+  if (pan) {
+    VP.x = pan.vx + (e.clientX - pan.sx); VP.y = pan.vy + (e.clientY - pan.sy);
+    tween = null; applyVP();
+  }
+});
+
+function endPointer(e) {
+  if (drag) {
+    drag.ids.forEach(id => cardEls.get(id) && cardEls.get(id).classList.remove("dragging"));
+    if (drag.moved) {
+      if (S.writeMode === "settle") commitWrite(drag.ids.length);
+      // a member dragged far out of its explicit cluster silently leaves it
+      if (drag.fromCluster && drag.ids.length === 1) {
+        const c = S.cards.find(x => x.id === drag.ids[0]);
+        const sibs = S.cards.filter(x => x.clusterId === drag.fromCluster && x.id !== c.id);
+        if (sibs.length) {
+          const near = Math.min(...sibs.map(s => rectGap(cardRect(c), cardRect(s))));
+          if (near > 170) {
+            c.clusterId = null;
+            toast(`Left "${S.clusters.find(x=>x.id===drag.fromCluster).name}" — dragged too far from it`, true);
+            reconcileClusters();
+          }
+        }
+      }
+    } else if (!drag.moved) {
+      const lead = S.cards.find(x => x.id === drag.lead);
+      if (kind() === "vote" && lead) castVote(lead, e);
+      else if (!e.shiftKey) { S.selection.clear(); S.selection.add(drag.lead); }
+    }
+    drag = null; renderAll(); return;
+  }
+  if (marq) {
+    const x0 = Math.min(marq.x0, marq.x1), x1 = Math.max(marq.x0, marq.x1);
+    const y0 = Math.min(marq.y0, marq.y1), y1 = Math.max(marq.y0, marq.y1);
+    for (const c of S.cards) {
+      const r = cardRect(c);
+      if (r.x + r.w > x0 && r.x < x1 && r.y + r.h > y0 && r.y < y1) S.selection.add(c.id);
+    }
+    marquee.style.display = "none"; marq = null; renderAll(); return;
+  }
+  if (pan) { pan = null; canvas.classList.remove("panning"); }
+}
+canvas.addEventListener("pointerup", endPointer);
+canvas.addEventListener("pointercancel", endPointer);
+
+/* trackpad: two-finger scroll pans, ctrl/cmd + scroll zooms (browsers map
+   trackpad pinch to ctrlKey wheel events, so this is the real pinch path) */
+canvas.addEventListener("wheel", e => {
+  e.preventDefault();
+  tween = null;
+  if (e.ctrlKey || e.metaKey) {
+    zoomAt(e.clientX, e.clientY, Math.exp(-e.deltaY * 0.0075));
+  } else {
+    VP.x -= e.deltaX; VP.y -= e.deltaY; applyVP();
+  }
+}, { passive: false });
+
+/* touch pinch */
+const activeTouches = new Map();
+canvas.addEventListener("pointerdown", e => { if (e.pointerType === "touch") activeTouches.set(e.pointerId, e); });
+canvas.addEventListener("pointermove", e => {
+  if (e.pointerType !== "touch") return;
+  if (!activeTouches.has(e.pointerId)) return;
+  activeTouches.set(e.pointerId, e);
+  if (activeTouches.size === 2) {
+    const [a, b] = [...activeTouches.values()];
+    const d = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+    const cx = (a.clientX + b.clientX) / 2, cy = (a.clientY + b.clientY) / 2;
+    if (pinch) { zoomAt(cx, cy, d / pinch.d); pan = null; drag = null; canvas.classList.remove("panning"); }
+    pinch = { d, cx, cy };
+  }
+});
+["pointerup", "pointercancel"].forEach(t => canvas.addEventListener(t, e => {
+  if (e.pointerType === "touch") { activeTouches.delete(e.pointerId); if (activeTouches.size < 2) pinch = null; }
+}));
+
+/* ============================================================= selection == */
+function toggleSelect(id) { S.selection.has(id) ? S.selection.delete(id) : S.selection.add(id); }
+
+/* ============================================================== grouping == */
+const CLUSTER_HUES = [250, 150, 25, 85, 310, 195, 120, 340, 270, 60];
+function newClusterColor(i) { const h = CLUSTER_HUES[i % CLUSTER_HUES.length]; return { color: `oklch(0.52 0.15 ${h})`, soft: `oklch(0.52 0.15 ${h} / 0.13)` }; }
+
+function nameProximityGroup(grp, suggested) {
+  const name = prompt("Name this cluster", suggested || "");
+  if (!name) return;
+  const { color, soft } = newClusterColor(S.clusters.length);
+  const cl = { id: "cl" + S.nextCluster++, name, color, soft };
+  S.clusters.push(cl);
+  grp.forEach(c => c.clusterId = cl.id);
+  commitWrite(grp.length + 1);
+  toast(`Named "${name}" — it is now a real object with an id, not a shape`);
+  renderAll();
+}
+
+/* Non-drag grouping (the teardown's unclaimed wedge). On a spatial board this
+   has to answer a question a column board never asks: where do the cards GO? */
+function groupSelection() {
+  const ids = [...S.selection];
+  if (ids.length < 2) { toast("Select at least two cards first (Shift-click, or Shift-drag a box)", true); return; }
+  const cards = ids.map(id => S.cards.find(c => c.id === id));
+  const name = prompt(`Name this cluster (${cards.length} cards)`, "");
+  if (!name) return;
+  const { color, soft } = newClusterColor(S.clusters.length);
+  const cl = { id: "cl" + S.nextCluster++, name, color, soft };
+  S.clusters.push(cl);
+  const bb = bboxOf(cards);
+  const W = cardW(), cols = Math.min(3, cards.length);
+  const startX = bb.cx - (cols * (W + 22) - 22) / 2, startY = bb.cy - 60;
+  let moved = 0;
+  cards.forEach((c, i) => {
+    c.clusterId = cl.id;
+    const tx = startX + (i % cols) * (W + 22), ty = startY + Math.floor(i / cols) * 132;
+    if (Math.hypot(tx - c.x, ty - c.y) > 4) moved++;
+    const el = cardEls.get(c.id);
+    if (el) { el.classList.add("tween"); setTimeout(() => el.classList.remove("tween"), 500); }
+    c.x = tx; c.y = ty;
+  });
+  commitWrite(cards.length + 1);
+  S.selection.clear();
+  toast(`Grouped ${cards.length} cards — and moved ${moved} of them to do it`, moved > 0);
+  renderAll();
+}
+function ungroupSelection() {
+  const ids = [...S.selection];
+  const targets = ids.length ? ids.map(id => S.cards.find(c => c.id === id)).filter(c => c && c.clusterId) : [];
+  if (!targets.length) { toast("Select cards inside a cluster to ungroup them", true); return; }
+  targets.forEach(c => c.clusterId = null);
+  commitWrite(targets.length);
+  reconcileClusters();
+  toast(`Removed ${targets.length} card${targets.length===1?"":"s"} from their cluster`);
+  renderAll();
+}
+function reconcileClusters() {
+  S.clusters = S.clusters.filter(cl => {
+    const n = S.cards.filter(c => c.clusterId === cl.id).length;
+    if (n === 0) return false;
+    if (n === 1) { S.cards.find(c => c.clusterId === cl.id).clusterId = null; return false; }
+    return true;
+  });
+}
+
+/* ================================================================= voting == */
+function castVote(c, e) {
+  const key = targetKeyOfCard(c);
+  const mine = myVotesFor(key);
+  if (e.altKey || e.button === 2) { if (mine > 0) { S.votes[ME.id][key] = mine - 1; commitWrite(1); } }
+  else {
+    if (mySpent() >= VOTE_BUDGET) { toast(`All ${VOTE_BUDGET} dots spent. Alt-click to take one back.`, true); return; }
+    S.votes[ME.id][key] = mine + 1; commitWrite(1);
+  }
+  renderAll();
+}
+
+/* =================================================================== walk == */
+/* Order is snapshotted on ENTERING discuss — by votes descending if a vote
+   stage ran, creation order otherwise (ADR-0010 / ADR-0007's snapshot shape).
+   Votes cast later are still accepted; they never reshuffle a walk in flight. */
+function snapshotWalk() {
+  const keys = new Set();
+  for (const cl of S.clusters) keys.add("cl:" + cl.id);
+  for (const c of S.cards) if (!c.clusterId) {
+    const k = "cd:" + c.id;
+    if (votesFor(k) > 0) keys.add(k);
+  }
+  const voteRan = STAGE_LIST.slice(0, S.sharedStage).some(s => s.kind === "vote");
+  let order = [...keys];
+  if (voteRan) order.sort((a, b) => votesFor(b) - votesFor(a) || a.localeCompare(b));
+  else order.sort((a, b) => {
+    const ca = walkTargetCards(a)[0], cb = walkTargetCards(b)[0];
+    return (ca ? ca.createdAt : 0) - (cb ? cb.createdAt : 0);
+  });
+  S.walk = { order, cursor: 0, visited: new Set(order.length ? [order[0]] : []), covered: new Set(), at: Date.now(), voteRan };
+  if (order.length) goToStop(0, 0);
+}
+function goToStop(i, ms) {
+  if (!S.walk || !S.walk.order.length) return;
+  S.walk.cursor = Math.max(0, Math.min(S.walk.order.length - 1, i));
+  const key = S.walk.order[S.walk.cursor];
+  S.walk.visited.add(key);
+  const cs = walkTargetCards(key);
+  if (cs.length) {
+    const bb = bboxOf(cs);
+    flyTo(viewportFor({ x: bb.x - 130, y: bb.y - 130, w: bb.w + 260, h: bb.h + 260 }, 1.05), ms);
+  }
+  renderAll();
+}
+function nextStop() { if (S.walk) goToStop(S.walk.cursor + 1); }
+function prevStop() { if (S.walk) goToStop(S.walk.cursor - 1); }
+function markCovered() {
+  if (!S.walk) return;
+  const k = S.walk.order[S.walk.cursor];
+  S.walk.covered.has(k) ? S.walk.covered.delete(k) : S.walk.covered.add(k);
+  commitWrite(1); renderAll();
+}
+function uncoveredCount() { return S.walk ? S.walk.order.filter(k => !S.walk.covered.has(k)).length : 0; }
+
+/* ================================================================= stages == */
+function setStage(i, byMe) {
+  i = Math.max(0, Math.min(STAGE_LIST.length - 1, i));
+  if (byMe) {
+    S.sharedStage = i; S.viewStage = i; S.following = true;
+    PEOPLE.forEach(p => S.readiness[p.id] = false); // readiness clears on advance
+    S.tbLeft = STAGE_LIST[i].timebox; S.tbRunning = STAGE_LIST[i].kind !== "collect";
+    S.reveal = STAGE_LIST[i].reveal;
+    if (STAGE_LIST[i].kind === "discuss") snapshotWalk();
+    if (STAGE_LIST[i].kind !== "discuss") { /* walk survives a rewind: nothing destroyed */ }
+    commitWrite(1);
+    $("#followbar").classList.remove("on");
+  } else {
+    S.viewStage = i;
+    S.following = i === S.sharedStage;
+    if (STAGE_LIST[i].kind === "discuss" && !S.walk) snapshotWalk();
+  }
+  S.selection.clear();
+  renderAll();
+}
+function simulateSomeoneElseAdvances() {
+  const next = Math.min(STAGE_LIST.length - 1, S.sharedStage + 1);
+  if (next === S.sharedStage) return;
+  S.sharedStage = next;
+  PEOPLE.forEach(p => S.readiness[p.id] = false);
+  const typing = S.editing != null;
+  if (S.following && !typing) { setStage(next, false); toast(`Marcus advanced to ${STAGE_LIST[next].label} — your view followed`); }
+  else {
+    $("#followtxt").textContent = typing
+      ? `Marcus advanced to ${STAGE_LIST[next].label}. You're mid-sentence, so you stayed.`
+      : `The team is on ${STAGE_LIST[next].label}. You're viewing ${stage().label}.`;
+    $("#followbar").classList.add("on");
+  }
+  renderAll();
+}
+
+/* ================================================================= cards ==== */
+function addCard(atWorld) {
+  const p = atWorld || screenToWorld(canvas.getBoundingClientRect().width / 2, canvas.getBoundingClientRect().height / 2);
+  const c = { id: "c" + S.nextCard++, author: ME.id, txt: "", x: Math.round(p.x - cardW()/2), y: Math.round(p.y - 46), clusterId: null, createdAt: Date.now(), isNew: true, lockedBy: null };
+  S.cards.push(c);
+  commitWrite(1);
+  renderAll();
+  startEdit(c.id);
+}
+function startEdit(id) {
+  const c = S.cards.find(x => x.id === id); if (!c) return;
+  S.editing = id;
+  const el = cardEls.get(id); if (!el) return;
+  el.dataset.sig = "editing";
+  el.innerHTML = `<textarea placeholder="What did you notice?"></textarea><div class="meta"><span class="who"><i style="background:${ME.color}"></i><span>${ME.short}</span></span></div>`;
+  const ta = el.querySelector("textarea");
+  ta.value = c.txt; ta.focus();
+  ta.addEventListener("blur", () => { c.txt = ta.value.trim() || "(empty card)"; S.editing = null; commitWrite(1); renderAll(); });
+  ta.addEventListener("keydown", ev => { ev.stopPropagation(); if (ev.key === "Enter" && (ev.metaKey || ev.ctrlKey)) ta.blur(); if (ev.key === "Escape") ta.blur(); });
+}
+
+/* ============================================================ simulation === */
+/* Eight people moving cards at once. Bots pick a card, drag it along an eased
+   path toward somewhere plausible, hold a soft lock while they do, and
+   occasionally add a card or spend a dot. Each settle is a real write.       */
+const bots = PEOPLE.filter(p => p.id !== ME.id).map(p => ({
+  p, state: "idle", until: performance.now() + Math.random() * 2200,
+  card: null, from: null, to: null, t0: 0, dur: 0,
+  cursor: { x: 400 + Math.random() * 1600, y: 300 + Math.random() * 900 },
+  target: null, lastWrite: 0,
+}));
+
+function botPickTarget(b) {
+  const pool = S.cards.filter(c => !c.lockedBy && c.author !== ME.id);
+  if (!pool.length) return null;
+  const c = pool[(Math.random() * pool.length) | 0];
+  // move it toward a card that shares a word — crude affinity, but it makes the
+  // churn look like grouping work rather than Brownian motion
+  const words = new Set(c.txt.toLowerCase().split(/\W+/).filter(w => w.length > 5));
+  let best = null, bestScore = 0;
+  for (const o of S.cards) {
+    if (o.id === c.id) continue;
+    let s = 0;
+    for (const w of o.txt.toLowerCase().split(/\W+/)) if (words.has(w)) s++;
+    if (s > bestScore) { bestScore = s; best = o; }
+  }
+  const anchor = best && Math.random() < 0.75 ? best : S.cards[(Math.random() * S.cards.length) | 0];
+  const ang = Math.random() * Math.PI * 2, rad = 30 + Math.random() * 90;
+  return { c, tx: anchor.x + Math.cos(ang) * (cardW() + rad), ty: anchor.y + Math.sin(ang) * (110 + rad) };
+}
+
+function stepBots(now) {
+  if (!S.sim) return;
+  for (const b of bots) {
+    if (b.state === "idle") {
+      if (now < b.until) continue;
+      const roll = Math.random();
+      if (kind() === "collect" && roll < 0.09) { botAddCard(b); b.until = now + 900 + Math.random() * 2600; continue; }
+      if (kind() === "vote" && roll < 0.35) { botVote(b); b.until = now + 500 + Math.random() * 1400; continue; }
+      if (roll < 0.10) { S.readiness[b.p.id] = !S.readiness[b.p.id]; b.until = now + 2000 + Math.random() * 4000; renderRoster(); continue; }
+      const pick = botPickTarget(b);
+      if (!pick) { b.until = now + 800; continue; }
+      pick.c.lockedBy = b.p.id;
+      b.card = pick.c; b.from = { x: pick.c.x, y: pick.c.y }; b.to = { x: pick.tx, y: pick.ty };
+      b.t0 = now; b.dur = 700 + Math.random() * 1100; b.state = "drag"; b.lastWrite = 0;
+    } else if (b.state === "drag") {
+      const t = Math.min(1, (now - b.t0) / b.dur);
+      const e = 1 - Math.pow(1 - t, 3);
+      b.card.x = b.from.x + (b.to.x - b.from.x) * e;
+      b.card.y = b.from.y + (b.to.y - b.from.y) * e;
+      b.cursor.x = b.card.x + cardW() * 0.4; b.cursor.y = b.card.y + 24;
+      if (S.writeMode === "frame") commitWrite(1);
+      else if (S.writeMode === "throttle" && now - b.lastWrite > 100) { b.lastWrite = now; commitWrite(1); }
+      if (t >= 1) {
+        if (S.writeMode === "settle") commitWrite(1);
+        b.card.lockedBy = null; b.card = null; b.state = "idle";
+        b.until = now + 400 + Math.random() * 2400;
+      }
+    }
+  }
+}
+function botAddCard(b) {
+  const lines = [
+    "The deploy docs still reference the old cluster name.",
+    "I never know which Slack channel an incident lives in.",
+    "Estimating in the middle of the sprint doesn't work for me.",
+    "We shipped the flag but never cleaned up the branch.",
+    "Two of us built the same helper this sprint.",
+    "Handover notes saved me twice this week.",
+  ];
+  const z = ZONES[(Math.random() * ZONES.length) | 0];
+  const c = {
+    id: "c" + S.nextCard++, author: b.p.id, txt: lines[(Math.random() * lines.length) | 0],
+    x: z.x + 40 + Math.random() * (z.w - 260), y: z.y + 40 + Math.random() * (z.h - 140),
+    clusterId: null, createdAt: Date.now(), isNew: true, lockedBy: null,
+  };
+  S.cards.push(c); commitWrite(1);
+  setTimeout(() => { c.isNew = false; }, 9000);
+}
+function botVote(b) {
+  const spent = Object.values(S.votes[b.p.id]).reduce((a, x) => a + x, 0);
+  if (spent >= VOTE_BUDGET) return;
+  const keys = [...S.clusters.map(c => "cl:" + c.id), ...S.cards.filter(c => !c.clusterId).map(c => "cd:" + c.id)];
+  if (!keys.length) return;
+  const k = keys[(Math.random() * keys.length) | 0];
+  S.votes[b.p.id][k] = (S.votes[b.p.id][k] || 0) + 1;
+  commitWrite(1);
+}
+function renderGhosts() {
+  for (const b of bots) {
+    let g = ghostEls.get(b.p.id);
+    if (!S.sim) { if (g) { g.remove(); ghostEls.delete(b.p.id); } continue; }
+    if (!g) {
+      g = document.createElement("div"); g.className = "peercur";
+      g.innerHTML = `<svg width="14" height="18" viewBox="0 0 14 18"><path d="M1 1 L1 15 L4.6 11.6 L7 17 L9.4 15.8 L7 10.6 L12 10.6 Z" fill="${b.p.color}" stroke="oklch(1 0 0)" stroke-width="1"/></svg><b style="background:${b.p.color}">${b.p.short}</b>`;
+      world.appendChild(g); ghostEls.set(b.p.id, g);
+    }
+    g.style.transform = `translate(${b.cursor.x}px, ${b.cursor.y}px) scale(${1 / VP.k})`;
+    g.style.transformOrigin = "0 0";
+  }
+}
+
+/* =============================================================== stress ==== */
+const STRESS_LINES = [
+  "Ticket estimates drifted after refinement",
+  "Rollback took four attempts",
+  "Nobody read the RFC before the meeting",
+  "The dashboard alert fires on every deploy",
+  "Docs are three sprints behind the code",
+  "Onboarding still needs a person for two days",
+  "We shipped without a feature flag again",
+  "Contract tests catch nothing useful",
+  "Design review is a bottleneck on Fridays",
+  "Cross-team dependency slipped a week",
+];
+function toggleStress() {
+  S.stress = !S.stress;
+  $("#stressbtn").setAttribute("aria-pressed", String(S.stress));
+  if (S.stress) {
+    const bb = boardBounds();
+    for (let i = 0; i < 160; i++) {
+      S.cards.push({
+        id: "c" + S.nextCard++, author: PEOPLE[i % 8].id,
+        txt: STRESS_LINES[i % STRESS_LINES.length] + " (" + (i + 1) + ")",
+        x: bb.x + 60 + Math.random() * (bb.w - 300), y: bb.y + 60 + Math.random() * (bb.h - 200),
+        clusterId: null, createdAt: Date.now() - i * 1000, isNew: false, lockedBy: null,
+      });
+    }
+    toast("200 cards on the board. Try panning now.", true);
+  } else {
+    const keep = new Set(SEED.map((_, i) => "c" + (i + 1)));
+    for (const c of S.cards) if (!keep.has(c.id)) { const el = cardEls.get(c.id); if (el) el.remove(); cardEls.delete(c.id); }
+    S.cards = S.cards.filter(c => keep.has(c.id));
+    reconcileClusters();
+  }
+  renderAll();
+}
+
+/* ================================================================= toast === */
+function toast(msg, warn) {
+  const t = document.createElement("div");
+  t.className = "toast" + (warn ? " warn" : "");
+  t.textContent = msg;
+  toasts.appendChild(t);
+  setTimeout(() => { t.style.transition = "opacity 300ms"; t.style.opacity = "0"; setTimeout(() => t.remove(), 320); }, 3200);
+}
+
+/* ================================================================ roster === */
+function renderRoster() {
+  const r = $("#roster");
+  r.replaceChildren();
+  for (const p of PEOPLE) {
+    const a = document.createElement("div");
+    a.className = "av" + (S.readiness[p.id] && kind() !== "collect" ? " ready" : "");
+    a.style.background = p.color;
+    a.title = p.name + (p.id === ME.id ? " (you)" : "");
+    a.textContent = initials(p.name);
+    r.appendChild(a);
+  }
+}
+
+/* ============================================================= stage bar === */
+function renderStages() {
+  const s = $("#stages");
+  s.replaceChildren();
+  STAGE_LIST.forEach((st, i) => {
+    const b = document.createElement("button");
+    b.className = "stage-chip" + (i === S.sharedStage ? " current" : "") + (i < S.sharedStage ? " done" : "") + (i === S.viewStage ? " viewing" : "");
+    b.innerHTML = `<span class="dot"></span>${st.label}`;
+    b.title = i === S.sharedStage ? "The team is here" : "Jump your view here — nothing is locked";
+    b.onclick = () => setStage(i, false);
+    s.appendChild(b);
+  });
+  const over = S.tbLeft < 0;
+  $("#timebox").className = "timebox" + (over ? " over" : "");
+  const abs = Math.abs(S.tbLeft);
+  $("#tbclock").textContent = (over ? "+" : "") + String(Math.floor(abs / 60)).padStart(2, "0") + ":" + String(abs % 60).padStart(2, "0");
+}
+
+/* =================================================================== rail == */
+function renderRail() {
+  const st = stage(), k = st.kind;
+  const loose = S.cards.filter(c => !c.clusterId).length;
+  const prox = lastProximity.length;
+  const wps = writesPerSec();
+  const payload = boardPayloadBytes();
+  const pushKB = (payload * PEOPLE.length / 1024);
+
+  let html = "";
+
+  /* ---- what stage am I in ---- */
+  html += `<div class="panel">
+    <h3>Stage <span class="n">${S.viewStage + 1}/6</span> ${S.following ? "" : `<span class="sp" style="color:var(--warning-fg);font-size:10px">viewing off-pointer</span>`}</h3>
+    <div class="prompt"><b>${st.label}.</b> ${st.prompt}</div>
+    ${!S.following ? `<div class="warnbox" style="margin-top:9px">The team's pointer is on <b>${sharedStage().label}</b>. You can write, group and vote from here anyway — a stage never forbids.</div>` : ""}
+    <div class="row" style="margin-top:10px">
+      <button class="btn sm" id="r-rewind">◀ Rewind</button>
+      <button class="btn sm primary" id="r-advance" style="flex:1;justify-content:center">Advance ▶</button>
+    </div>
+    <div class="row">
+      <button class="btn sm ghost block" id="r-else" title="Simulate another facilitator advancing the shared pointer">Someone else advances ↷</button>
+    </div>
+    <div class="note">Nothing here auto-advances and the timebox never fires one. Advancing or rewinding destroys, hides and finalises nothing.</div>
+  </div>`;
+
+  /* ---- stage-specific ---- */
+  if (k === "collect") {
+    html += `<div class="panel">
+      <h3>Collection window</h3>
+      <button class="btn accent block" id="r-add">Write a card</button>
+      <div class="hint">Drops in the middle of your view. Drag it anywhere — a zone, between two zones, or nowhere near one.</div>
+      <div class="field" style="margin-top:10px">
+        <label>Other people's cards<span class="sub">Still open: #262 / #270</span></label>
+        <div class="seg">
+          <button id="rv-h" aria-pressed="${S.reveal === "hidden"}">Hidden</button>
+          <button id="rv-s" aria-pressed="${S.reveal === "shown"}">Shown</button>
+        </div>
+      </div>
+      <div class="note">Readiness is deliberately <b>absent</b> during collect. The only signal is whether someone has written a card, so no record of who declared themselves finished is ever made.</div>
+    </div>`;
+  }
+
+  if (k === "review") {
+    html += `<div class="panel"><h3>Carried over <span class="n">${CARRYOVER.filter(c=>c.state==="open").length} open</span></h3>`;
+    for (const a of CARRYOVER) {
+      html += `<div class="carry"><span class="badge ${a.state}">${a.state}</span><div><div>${esc(a.txt)}</div><div style="color:var(--muted-fg);font-size:11px;margin-top:2px">${byId[a.owner].short} · ${a.age}</div></div></div>`;
+    }
+    html += `<div class="note">This sits at the head of the synchronous session precisely because collection already happened asynchronously — it can't anchor generation that is already done.</div></div>`;
+  }
+
+  if (k === "group") {
+    html += `<div class="panel">
+      <h3>Proximity <span class="n">${prox} shape${prox===1?"":"s"}</span></h3>
+      <div class="prompt" style="font-size:12.5px">${prox
+        ? `${prox} loose shape${prox===1?" is":"s are"} being read as a group right now, purely from distance. None of them has a name, an id, or a vote target.`
+        : `No proximity shapes. Cards are further apart than the threshold.`}</div>
+      ${lastProximity.map((g, i) => `<div class="crow"><span class="sw" style="background:var(--muted-fg)"></span><span class="nm">${g.length} cards · unnamed</span><button class="btn sm" data-nameprox="${i}">Name it</button></div>`).join("")}
+      <div class="field" style="margin-top:8px">
+        <label>Proximity threshold<span class="sub">${S.proximityGap}px gap</span></label>
+        <input type="range" min="20" max="130" value="${S.proximityGap}" id="r-gap" style="width:110px">
+      </div>
+      <div class="note">Drag the threshold and watch the number of groups swing. That instability <b>is</b> the finding: distance alone has no stable answer to "how many groups are there".</div>
+    </div>`;
+
+    html += `<div class="panel">
+      <h3>Clusters <span class="n">${S.clusters.length}</span><span class="sp" style="font-weight:500;text-transform:none;letter-spacing:0">${loose} loose</span></h3>
+      ${S.clusters.length ? S.clusters.map(cl => {
+        const n = S.cards.filter(c => c.clusterId === cl.id).length;
+        return `<div class="crow"><span class="sw" style="background:${cl.color}"></span><span class="nm">${esc(cl.name)}</span><span class="ct">${n}</span><button class="btn sm ghost" data-focuscl="${cl.id}">Go</button></div>`;
+      }).join("") : `<div class="emptystate">No named clusters yet. Push cards together and name a shape, or select cards and press <code>G</code>.</div>`}
+      <div class="row" style="margin-top:10px">
+        <button class="btn sm" id="r-group">Group selection (${S.selection.size})</button>
+        <button class="btn sm ghost" id="r-ungroup">Ungroup</button>
+      </div>
+      <div class="note">Non-drag path: Shift-click or Shift-drag a box, then <code>G</code>. It works — but it has to <b>move the cards</b> to make the cluster visible, which overwrites wherever their author put them.</div>
+    </div>`;
+  }
+
+  if (k === "vote") {
+    const targets = S.clusters.length + loose;
+    html += `<div class="panel">
+      <h3>Your dots <span class="n">${VOTE_BUDGET - mySpent()}/${VOTE_BUDGET} left</span></h3>
+      <div class="prompt" style="font-size:12.5px">Click a card to spend a dot. Alt-click takes one back. A card inside a cluster votes for the whole cluster.</div>
+      <div class="cov">${Array.from({length: VOTE_BUDGET}).map((_, i) => `<i class="${i < mySpent() ? "covered" : ""}"></i>`).join("")}</div>
+      <div class="note">${targets} vote targets on the board: ${S.clusters.length} clusters and ${loose} loose cards. On a free canvas the target list is whatever grouping happened to leave behind — a column board always knows.</div>
+    </div>`;
+    const ranked = [...S.clusters.map(c => "cl:" + c.id), ...S.cards.filter(c => !c.clusterId).map(c => "cd:" + c.id)]
+      .map(k2 => ({ k: k2, v: votesFor(k2) })).filter(x => x.v > 0).sort((a, b) => b.v - a.v).slice(0, 8);
+    html += `<div class="panel"><h3>Standings</h3>${ranked.length ? ranked.map(r =>
+      `<div class="crow"><span class="ct" style="min-width:16px">${r.v}</span><span class="nm">${esc(walkTargetTitle(r.k))}</span><button class="btn sm ghost" data-focuskey="${r.k}">Go</button></div>`
+    ).join("") : `<div class="emptystate">Nothing voted on yet.</div>`}</div>`;
+  }
+
+  if (k === "discuss") {
+    if (!S.walk || !S.walk.order.length) {
+      html += `<div class="panel"><h3>Discussion walk</h3><div class="emptystate">Nothing to walk yet — no clusters and no voted cards. This is an empty state, not a locked door: write a card or group some, and the walk fills in.</div></div>`;
+    } else {
+      const cur = S.walk.order[S.walk.cursor];
+      const uncov = uncoveredCount();
+      html += `<div class="panel">
+        <h3>Discussion walk <span class="n">${S.walk.cursor + 1}/${S.walk.order.length}</span></h3>
+        <div class="walkcard">
+          <div class="top"><span class="idx">${String(S.walk.cursor + 1).padStart(2, "0")}</span><span class="ttl">${esc(walkTargetTitle(cur))}</span><span class="vt">${votesFor(cur)}▮</span></div>
+          <div class="row" style="margin-top:9px">
+            <button class="btn sm" id="w-prev">◀</button>
+            <button class="btn sm ${S.walk.covered.has(cur) ? "" : "accent"}" id="w-cover" style="flex:1;justify-content:center">${S.walk.covered.has(cur) ? "Covered ✓" : "Mark covered"}</button>
+            <button class="btn sm" id="w-next">▶</button>
+          </div>
+        </div>
+        <div class="cov">${S.walk.order.map((kk, i) =>
+          `<i class="${i === S.walk.cursor ? "current" : (S.walk.covered.has(kk) ? "covered" : (S.walk.visited.has(kk) ? "visited" : ""))}" title="${esc(walkTargetTitle(kk))}"></i>`
+        ).join("")}</div>
+        <div class="prompt" style="font-size:12.5px">
+          <b class="mono">${uncov}</b> of ${S.walk.order.length} topic${S.walk.order.length===1?"":"s"} not yet covered.
+          ${S.walk.visited.size - S.walk.covered.size > 0 ? `<span style="color:var(--muted-fg)"> ${S.walk.visited.size - S.walk.covered.size} visited but not marked.</span>` : ""}
+        </div>
+        <div class="field" style="margin-top:8px">
+          <label>Viewport move<span class="sub">Try both — this is the disorientation test</span></label>
+          <div class="seg"><button id="fl-on" aria-pressed="${S.flight}">Flight</button><button id="fl-off" aria-pressed="${!S.flight}">Cut</button></div>
+        </div>
+        <div class="field">
+          <label>Walk line<span class="sub">The traverse drawn across the board</span></label>
+          <div class="seg"><button id="wl-on" aria-pressed="${S.showWalkLine}">On</button><button id="wl-off" aria-pressed="${!S.showWalkLine}">Off</button></div>
+        </div>
+        <div class="note">Order was snapshotted when the stage was entered${S.walk.voteRan ? ", by votes descending" : " in creation order (no vote stage ran)"}. Votes cast now are still accepted — they just don't reshuffle a walk in progress.</div>
+      </div>`;
+      const late = S.cards.filter(c => c.createdAt > S.walk.at);
+      html += `<div class="panel"><h3>Written after the snapshot <span class="n">${late.length}</span></h3>
+        ${late.length
+          ? `<div class="warnbox">${late.length} card${late.length===1?"":"s"} arrived after the walk order was fixed, so ${late.length===1?"it is":"they are"} not a stop. On a canvas ${late.length===1?"it is":"they are"} also somewhere you may never pan to.</div>` +
+            late.slice(0, 6).map(c => `<div class="crow"><span class="sw" style="background:${byId[c.author].color}"></span><span class="nm">${esc(c.txt.slice(0, 44))}</span><button class="btn sm ghost" data-focuscard="${c.id}">Go</button></div>`).join("")
+          : `<div class="emptystate">Nothing new since the walk started. Press <code>Enter</code> or <code>＋ Card</code> to write one and see what happens to it.</div>`}
+      </div>`;
+      html += `<div class="panel"><h3>Route</h3>${S.walk.order.map((kk, i) =>
+        `<div class="crow"><span class="ct" style="min-width:18px">${String(i+1).padStart(2,"0")}</span><span class="nm" style="${i===S.walk.cursor?"font-weight:600":""}${S.walk.covered.has(kk)?";color:var(--muted-fg);text-decoration:line-through":""}">${esc(walkTargetTitle(kk))}</span><span class="ct">${votesFor(kk)}</span><button class="btn sm ghost" data-gostop="${i}">→</button></div>`
+      ).join("")}</div>`;
+    }
+    html += `<div class="panel"><h3>Actions from this walk <span class="n">${S.actions.length}</span></h3>
+      ${S.actions.length ? S.actions.map(a => `<div class="action-item"><span class="badge open">open</span><div><div>${esc(a.txt)}</div><div class="own">${byId[a.owner].short}</div></div></div>`).join("") : `<div class="emptystate">None yet.</div>`}
+      <button class="btn sm block" id="r-action" style="margin-top:9px">Turn current topic into an action</button></div>`;
+  }
+
+  if (k === "close") {
+    const covered = S.walk ? S.walk.covered.size : 0;
+    const total = S.walk ? S.walk.order.length : 0;
+    html += `<div class="panel"><h3>Where it landed</h3>
+      <div class="prompt" style="font-size:12.5px">${total ? `<b class="mono">${covered}/${total}</b> topics covered. <b class="mono">${total - covered}</b> never got discussed and are still sitting on the board.` : `No walk ran.`}</div>
+      ${total - covered > 0 ? `<div class="warnbox" style="margin-top:9px">The uncovered topics don't disappear. A retro rests where it was left — there is no finished state.</div>` : ""}
+    </div>`;
+    html += `<div class="panel"><h3>Actions <span class="n">${S.actions.length}</span></h3>
+      ${S.actions.length ? S.actions.map(a => `<div class="action-item"><span class="badge open">open</span><div><div>${esc(a.txt)}</div><div class="own">${byId[a.owner].short}</div></div></div>`).join("") : `<div class="emptystate">No actions were created. That's allowed; nothing forced you to.</div>`}
+    </div>`;
+  }
+
+  /* ---- readiness ---- */
+  html += `<div class="panel"><h3>Readiness</h3>`;
+  if (k === "collect") {
+    html += `<div class="emptystate">Off during collect, on purpose. No durable record of who said they were finished writing.</div>`;
+  } else {
+    html += PEOPLE.map(p => {
+      const isTyping = S.sim && bots.find(b => b.p.id === p.id && b.state === "drag");
+      const st2 = S.readiness[p.id] ? "ready" : (isTyping ? "typing" : "working");
+      const lbl = S.readiness[p.id] ? "ready" : (isTyping ? "moving a card" : "working");
+      return `<div class="member"><span class="av" style="width:20px;height:20px;font-size:9px;margin:0;background:${p.color}">${initials(p.name)}</span><span class="nm">${p.short}${p.id===ME.id?" (you)":""}</span><span class="st ${st2}">${lbl}</span></div>`;
+    }).join("");
+    html += `<button class="btn sm block" id="r-ready" style="margin-top:9px">${S.readiness[ME.id] ? "I'm not done after all" : "I'm done with this stage"}</button>`;
+    html += `<div class="note">Named per person, never summed into a ring. Advisory only — it clears when the pointer moves and never triggers an advance.</div>`;
+  }
+  html += `</div>`;
+
+  /* ---- board controls ---- */
+  html += `<div class="panel"><h3>Board</h3>
+    <div class="field"><label>Card text<span class="sub">Reveal is a projection, not a stage effect</span></label>
+      <div class="seg"><button id="rv2-h" aria-pressed="${S.reveal === "hidden"}">Hidden</button><button id="rv2-s" aria-pressed="${S.reveal === "shown"}">Shown</button></div></div>
+    <div class="field"><label>Proximity hulls</label>
+      <div class="seg"><button id="hu-on" aria-pressed="${S.showHulls}">On</button><button id="hu-off" aria-pressed="${!S.showHulls}">Off</button></div></div>
+  </div>`;
+
+  /* ---- telemetry ---- */
+  const pushRate = wps * PEOPLE.length;
+  html += `<div class="panel"><h3>Realtime cost <span class="sp" style="font-weight:500;text-transform:none;letter-spacing:0;color:var(--muted-fg)">modelled</span></h3>
+    <div class="field" style="padding-top:0"><label>Position writes<span class="sub">When a drag commits</span></label>
+      <div class="seg">
+        <button id="wm-s" aria-pressed="${S.writeMode==="settle"}">Settle</button>
+        <button id="wm-t" aria-pressed="${S.writeMode==="throttle"}">100ms</button>
+        <button id="wm-f" aria-pressed="${S.writeMode==="frame"}">Frame</button>
+      </div></div>
+    <dl class="tel" style="margin-top:8px">
+      <dt>Cards</dt><dd>${S.cards.length}</dd>
+      <dt>Frame rate</dt><dd class="${S.tel.fps < 30 ? "bad" : S.tel.fps < 50 ? "warn" : ""}">${S.tel.fps} fps</dd>
+      <dt>Writes / sec</dt><dd class="${wps > 30 ? "bad" : wps > 10 ? "warn" : ""}">${wps}</dd>
+      <dt>Writes total</dt><dd>${S.tel.writes}</dd>
+      <dt>Board result</dt><dd>${(payload/1024).toFixed(1)} KB</dd>
+      <dt>Pushed / sec</dt><dd class="${pushRate*payload/1024 > 2000 ? "bad" : pushRate*payload/1024 > 500 ? "warn" : ""}">${(pushRate * payload / 1024).toFixed(0)} KB</dd>
+    </dl>
+    <div class="note">Convex has <b>no delta protocol</b> — every invalidation re-sends the whole query result to every subscriber, and the client re-renders even when the value is identical (<code>convex-realtime-board.md §5.1</code>). One card move × ${PEOPLE.length} members = ${(payload*PEOPLE.length/1024).toFixed(0)} KB on the wire at this board size.</div>
+    <div class="note">Every settle would also patch the shared <code>rooms</code> row through the activity chokepoint (ADR-0005), so eight draggers contend on one document.</div>
+  </div>`;
+
+  html += `<div class="panel"><h3>Prototype</h3>
+    <div class="emptystate">Throwaway, in memory, nothing saved. Ticket #260, branch <code>prototype/board-canvas</code>. Read <code>board-c-canvas-NOTES.md</code> for the honest verdict.</div>
+  </div>`;
+
+  railEl.innerHTML = html;
+  wireRail();
+}
+
+function wireRail() {
+  const on = (sel, fn) => { const e = railEl.querySelector(sel); if (e) e.onclick = fn; };
+  on("#r-rewind", () => setStage(S.viewStage - 1, true));
+  on("#r-advance", () => setStage(S.viewStage + 1, true));
+  on("#r-else", simulateSomeoneElseAdvances);
+  on("#r-add", () => addCard());
+  on("#rv-h", () => { S.reveal = "hidden"; renderAll(); });
+  on("#rv-s", () => { S.reveal = "shown"; renderAll(); });
+  on("#rv2-h", () => { S.reveal = "hidden"; renderAll(); });
+  on("#rv2-s", () => { S.reveal = "shown"; renderAll(); });
+  on("#hu-on", () => { S.showHulls = true; renderAll(); });
+  on("#hu-off", () => { S.showHulls = false; renderAll(); });
+  on("#fl-on", () => { S.flight = true; renderRail(); });
+  on("#fl-off", () => { S.flight = false; renderRail(); });
+  on("#wl-on", () => { S.showWalkLine = true; renderAll(); });
+  on("#wl-off", () => { S.showWalkLine = false; renderAll(); });
+  on("#wm-s", () => { S.writeMode = "settle"; renderRail(); });
+  on("#wm-t", () => { S.writeMode = "throttle"; renderRail(); });
+  on("#wm-f", () => { S.writeMode = "frame"; renderRail(); });
+  on("#r-group", groupSelection);
+  on("#r-ungroup", ungroupSelection);
+  on("#w-next", nextStop);
+  on("#w-prev", prevStop);
+  on("#w-cover", markCovered);
+  on("#r-ready", () => { S.readiness[ME.id] = !S.readiness[ME.id]; renderAll(); });
+  on("#r-action", () => {
+    if (!S.walk || !S.walk.order.length) return;
+    const t = walkTargetTitle(S.walk.order[S.walk.cursor]);
+    const txt = prompt("What are we actually going to do?", "");
+    if (!txt) return;
+    S.actions.push({ txt, owner: ME.id, from: t });
+    commitWrite(1); renderAll();
+  });
+  const gap = railEl.querySelector("#r-gap");
+  if (gap) gap.oninput = () => { S.proximityGap = +gap.value; renderUnder(); renderRail(); };
+  railEl.querySelectorAll("[data-nameprox]").forEach(b => b.onclick = () => {
+    const g = lastProximity[+b.dataset.nameprox]; if (g) nameProximityGroup(g);
+  });
+  railEl.querySelectorAll("[data-focuscl]").forEach(b => b.onclick = () => {
+    const cs = S.cards.filter(c => c.clusterId === b.dataset.focuscl);
+    if (cs.length) { const bb = bboxOf(cs); flyTo(viewportFor({x:bb.x-120,y:bb.y-120,w:bb.w+240,h:bb.h+240}, 1.05)); }
+  });
+  railEl.querySelectorAll("[data-focuskey]").forEach(b => b.onclick = () => {
+    const cs = walkTargetCards(b.dataset.focuskey);
+    if (cs.length) { const bb = bboxOf(cs); flyTo(viewportFor({x:bb.x-120,y:bb.y-120,w:bb.w+240,h:bb.h+240}, 1.05)); }
+  });
+  railEl.querySelectorAll("[data-gostop]").forEach(b => b.onclick = () => goToStop(+b.dataset.gostop));
+  railEl.querySelectorAll("[data-focuscard]").forEach(b => b.onclick = () => {
+    const c = S.cards.find(x => x.id === b.dataset.focuscard); if (!c) return;
+    const bb = bboxOf([c]);
+    flyTo(viewportFor({ x: bb.x - 200, y: bb.y - 200, w: bb.w + 400, h: bb.h + 400 }, 1.05));
+  });
+}
+
+/* ================================================================ minimap == */
+function renderMinimap() {
+  const bb = boardBounds();
+  const W = mm.width, H = mm.height;
+  const s = Math.min(W / bb.w, H / bb.h) * 0.94;
+  const ox = (W - bb.w * s) / 2 - bb.x * s, oy = (H - bb.h * s) / 2 - bb.y * s;
+  mm._m = { s, ox, oy };
+  const css = getComputedStyle(document.documentElement);
+  mmx.clearRect(0, 0, W, H);
+  mmx.fillStyle = css.getPropertyValue("--surface-1"); mmx.fillRect(0, 0, W, H);
+  mmx.strokeStyle = css.getPropertyValue("--hairline"); mmx.lineWidth = 1;
+  mmx.setLineDash([3, 3]);
+  for (const z of ZONES) mmx.strokeRect(z.x * s + ox, z.y * s + oy, z.w * s, z.h * s);
+  mmx.setLineDash([]);
+  for (const cl of S.clusters) {
+    const cs = S.cards.filter(c => c.clusterId === cl.id); if (!cs.length) continue;
+    const b2 = bboxOf(cs);
+    mmx.fillStyle = cl.soft;
+    mmx.fillRect(b2.x * s + ox - 3, b2.y * s + oy - 3, b2.w * s + 6, b2.h * s + 6);
+  }
+  for (const c of S.cards) {
+    const cl = c.clusterId ? S.clusters.find(x => x.id === c.clusterId) : null;
+    mmx.fillStyle = cl ? cl.color : (c.author === ME.id ? css.getPropertyValue("--blue") : css.getPropertyValue("--muted-fg"));
+    mmx.fillRect(c.x * s + ox, c.y * s + oy, Math.max(2, cardW() * s), Math.max(1.5, 92 * s));
+  }
+  if (S.walk && S.showWalkLine && kind() === "discuss") {
+    const pts = S.walk.order.map(k => walkTargetCenter(k)).filter(Boolean);
+    mmx.strokeStyle = css.getPropertyValue("--blue"); mmx.lineWidth = 1;
+    mmx.beginPath();
+    pts.forEach((p, i) => { const X = p.x*s+ox, Y = p.y*s+oy; i ? mmx.lineTo(X, Y) : mmx.moveTo(X, Y); });
+    mmx.stroke();
+  }
+  const r = canvas.getBoundingClientRect();
+  const vx = (-VP.x / VP.k) * s + ox, vy = (-VP.y / VP.k) * s + oy;
+  mmx.strokeStyle = css.getPropertyValue("--ink"); mmx.lineWidth = 1.5;
+  mmx.strokeRect(vx, vy, (r.width / VP.k) * s, (r.height / VP.k) * s);
+}
+$("#minimap").addEventListener("pointerdown", e => {
+  const rect = mm.getBoundingClientRect();
+  const m = mm._m; if (!m) return;
+  const wx = (e.clientX - rect.left - m.ox) / m.s, wy = (e.clientY - rect.top - m.oy) / m.s;
+  const cr = canvas.getBoundingClientRect();
+  flyTo({ k: VP.k, x: cr.width / 2 - wx * VP.k, y: cr.height / 2 - wy * VP.k }, 320);
+});
+
+/* =============================================================== keyboard == */
+window.addEventListener("keydown", e => {
+  if (e.target.tagName === "TEXTAREA" || e.target.tagName === "INPUT") return;
+  if (e.code === "Space") { spaceHeld = true; canvas.style.cursor = "grab"; e.preventDefault(); return; }
+  const k = e.key.toLowerCase();
+  if (k === "g") { groupSelection(); e.preventDefault(); }
+  else if (k === "u") { ungroupSelection(); e.preventDefault(); }
+  else if (k === "n") { if (kind() === "discuss") { nextStop(); e.preventDefault(); } }
+  else if (k === "p") { if (kind() === "discuss") { prevStop(); e.preventDefault(); } }
+  else if (k === "c") { if (kind() === "discuss") { markCovered(); e.preventDefault(); } }
+  else if (k === "0") { fitBoard(); e.preventDefault(); }
+  else if (k === "+" || k === "=") { const r = canvas.getBoundingClientRect(); zoomAt(r.left + r.width/2, r.top + r.height/2, 1.2); }
+  else if (k === "-") { const r = canvas.getBoundingClientRect(); zoomAt(r.left + r.width/2, r.top + r.height/2, 1/1.2); }
+  else if (k === "escape") { S.selection.clear(); renderAll(); }
+  else if (k === "enter") { addCard(); e.preventDefault(); }   // every stage. Nothing forbids.
+  else if (e.key.startsWith("Arrow") && S.selection.size) {
+    const d = e.shiftKey ? 40 : 8;
+    const dx = e.key === "ArrowLeft" ? -d : e.key === "ArrowRight" ? d : 0;
+    const dy = e.key === "ArrowUp" ? -d : e.key === "ArrowDown" ? d : 0;
+    for (const id of S.selection) { const c = S.cards.find(x => x.id === id); c.x += dx; c.y += dy; }
+    commitWrite(S.selection.size);
+    renderAll(); e.preventDefault();
+  }
+});
+window.addEventListener("keyup", e => { if (e.code === "Space") { spaceHeld = false; canvas.style.cursor = ""; } });
+canvas.addEventListener("dblclick", e => {
+  if (e.target.closest(".card")) { const c = S.cards.find(x => x.id === e.target.closest(".card").dataset.id); if (c && c.author === ME.id) startEdit(c.id); return; }
+  if (kind() === "collect") addCard(screenToWorld(e.clientX, e.clientY));
+});
+canvas.addEventListener("contextmenu", e => { if (kind() === "vote" && e.target.closest(".card")) e.preventDefault(); });
+
+/* ================================================================= chrome == */
+$("#advance").onclick = () => setStage(S.viewStage + 1, true);
+$("#rewind").onclick = () => setStage(S.viewStage - 1, true);
+$("#zin").onclick = () => { const r = canvas.getBoundingClientRect(); zoomAt(r.left + r.width/2, r.top + r.height/2, 1.25); };
+$("#zout").onclick = () => { const r = canvas.getBoundingClientRect(); zoomAt(r.left + r.width/2, r.top + r.height/2, 1/1.25); };
+$("#zfit").onclick = () => fitBoard();
+$("#simbtn").onclick = () => {
+  S.sim = !S.sim;
+  $("#simbtn").setAttribute("aria-pressed", String(S.sim));
+  if (!S.sim) { for (const b of bots) { if (b.card) b.card.lockedBy = null; b.card = null; b.state = "idle"; } }
+  else toast("Eight people are now moving cards. Try to keep working.");
+  renderAll();
+};
+$("#stressbtn").onclick = toggleStress;
+$("#hudadd").onclick = () => addCard();
+canvas.addEventListener("dblclick", e => { if (!e.target.closest(".card") && kind() !== "collect") addCard(screenToWorld(e.clientX, e.clientY)); });
+$("#followbtn").onclick = () => { setStage(S.sharedStage, false); S.following = true; $("#followbar").classList.remove("on"); renderAll(); };
+$("#staybtn").onclick = () => { S.following = false; $("#followbar").classList.remove("on"); renderAll(); };
+$("#railtoggle").onclick = () => railEl.classList.toggle("open");
+$("#helpbtn").onclick = () => $("#intro").classList.remove("off");
+$("#introgo").onclick = () => { $("#intro").classList.add("off"); canvas.focus({ preventScroll: true }); };
+$("#themebtn").onclick = () => {
+  const cur = document.documentElement.getAttribute("data-theme");
+  const sysDark = matchMedia("(prefers-color-scheme: dark)").matches;
+  const next = cur ? (cur === "dark" ? "light" : "dark") : (sysDark ? "light" : "dark");
+  document.documentElement.setAttribute("data-theme", next);
+};
+
+/* ================================================================== loop === */
+function renderAll() { renderCards(); renderUnder(); renderStages(); renderRoster(); renderRail(); }
+
+let railTick = 0, underTick = 0, mmTick = 0, tbTick = 0;
+function railHasFocus() { return railEl.contains(document.activeElement) && document.activeElement !== document.body; }
+function frame(now) {
+  stepTween(now);
+  stepBots(now);
+  if (S.sim || drag || tween) renderCards();
+  if (S.sim) renderGhosts();
+  /* hulls re-derive at ~6 fps under churn: proximity is expensive to compute
+     and jittery to look at if you recompute it every frame */
+  if ((S.sim || drag) && now - underTick > 160) { underTick = now; renderUnder(); }
+  if (now - mmTick > 70) { mmTick = now; renderMinimap(); }
+
+  S.tel.frames++;
+  if (now - S.tel.fpsAt > 500) {
+    S.tel.fps = Math.round(S.tel.frames * 1000 / (now - S.tel.fpsAt));
+    S.tel.frames = 0; S.tel.fpsAt = now;
+  }
+  if (now - railTick > 600) {
+    railTick = now;
+    if ((S.sim || writesPerSec()) && !railHasFocus() && !drag) renderRail();
+  }
+  if (S.tbRunning && now - tbTick > 1000) { tbTick = now; S.tbLeft--; renderStages(); }
+  requestAnimationFrame(frame);
+}
+
+/* ================================================================== boot === */
+renderAll();                       // first paint measures every card's height
+let booted = false;
+function boot() {
+  if (booted) return; booted = true;
+  relaxSeed(70);                   // then settle the seed against real heights
+  renderAll();
+  /* Open at a readable zoom over the board's north-west, not fit-to-all.
+     Fit-to-all on 40 cards lands near 35%, where nothing is legible — press
+     Fit (or 0) to see that for yourself. It is a finding, not a default. */
+  const bb = boardBounds();
+  VP.k = 0.62;
+  VP.x = 40 - bb.x * VP.k;
+  VP.y = 30 - bb.y * VP.k;
+  applyVP();
+  renderMinimap();
+}
+requestAnimationFrame(boot);
+setTimeout(boot, 150);             // rAF never fires in a background tab
+window.addEventListener("resize", () => { renderAll(); });
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
