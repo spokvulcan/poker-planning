@@ -1,0 +1,2287 @@
+<!doctype html>
+<html lang="en" data-theme="auto">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Board direction B — guided single-focus flow (AgileKit retro prototype)</title>
+<style>
+/* ==========================================================================
+   AgileKit design tokens, lifted from src/app/globals.css.
+   Light values are :root; dark values mirror the app's .dark block and are
+   applied via prefers-color-scheme, with a manual override on [data-theme].
+   The only value that is NOT from the app is --focus, and even that is the
+   app's --sidebar-primary. It is reserved here for exactly one meaning:
+   "this is where the team's shared attention is". Nothing else may use it.
+   ========================================================================== */
+:root {
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --border: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+  --radius: 0.5rem;
+
+  --surface-1: oklch(1 0 0);
+  --surface-2: oklch(0.985 0 0);
+  --surface-3: oklch(0.967 0.001 286.375);
+
+  --status-info-bg: oklch(0.95 0.02 250);
+  --status-success-bg: oklch(0.95 0.02 150);
+  --status-warning-bg: oklch(0.95 0.03 85);
+  --status-error-bg: oklch(0.95 0.03 25);
+  --status-info-fg: oklch(0.45 0.15 250);
+  --status-success-fg: oklch(0.45 0.15 150);
+  --status-warning-fg: oklch(0.45 0.15 85);
+  --status-error-fg: oklch(0.50 0.20 25);
+
+  /* the shared-attention accent (app token --sidebar-primary) */
+  --focus: oklch(0.488 0.243 264.376);
+  --focus-soft: oklch(0.488 0.243 264.376 / 0.10);
+  --focus-line: oklch(0.488 0.243 264.376 / 0.35);
+
+  --font-sans: "Outfit", "Avenir Next", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --background: oklch(0.145 0 0);
+    --foreground: oklch(0.985 0 0);
+    --card: oklch(0.205 0 0);
+    --primary: oklch(0.922 0 0);
+    --primary-foreground: oklch(0.205 0 0);
+    --secondary: oklch(0.269 0 0);
+    --muted: oklch(0.269 0 0);
+    --muted-foreground: oklch(0.708 0 0);
+    --border: oklch(1 0 0 / 12%);
+    --ring: oklch(0.556 0 0);
+    --surface-1: oklch(0.145 0 0);
+    --surface-2: oklch(0.185 0 0);
+    --surface-3: oklch(0.225 0 0);
+    --status-info-bg: oklch(0.18 0.04 250);
+    --status-success-bg: oklch(0.18 0.04 150);
+    --status-warning-bg: oklch(0.18 0.05 85);
+    --status-error-bg: oklch(0.18 0.05 25);
+    --status-info-fg: oklch(0.80 0.15 250);
+    --status-success-fg: oklch(0.80 0.15 150);
+    --status-warning-fg: oklch(0.85 0.15 85);
+    --status-error-fg: oklch(0.80 0.18 25);
+    --focus: oklch(0.70 0.16 264.376);
+    --focus-soft: oklch(0.70 0.16 264.376 / 0.14);
+    --focus-line: oklch(0.70 0.16 264.376 / 0.45);
+  }
+}
+:root[data-theme="dark"] {
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --border: oklch(1 0 0 / 12%);
+  --ring: oklch(0.556 0 0);
+  --surface-1: oklch(0.145 0 0);
+  --surface-2: oklch(0.185 0 0);
+  --surface-3: oklch(0.225 0 0);
+  --status-info-bg: oklch(0.18 0.04 250);
+  --status-success-bg: oklch(0.18 0.04 150);
+  --status-warning-bg: oklch(0.18 0.05 85);
+  --status-error-bg: oklch(0.18 0.05 25);
+  --status-info-fg: oklch(0.80 0.15 250);
+  --status-success-fg: oklch(0.80 0.15 150);
+  --status-warning-fg: oklch(0.85 0.15 85);
+  --status-error-fg: oklch(0.80 0.18 25);
+  --focus: oklch(0.70 0.16 264.376);
+  --focus-soft: oklch(0.70 0.16 264.376 / 0.14);
+  --focus-line: oklch(0.70 0.16 264.376 / 0.45);
+}
+
+/* --- reset-ish ------------------------------------------------------ */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; height: 100%; }
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+button, input, select, textarea { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; border-radius: 4px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+
+/* --- shell ---------------------------------------------------------- */
+.shell { display: grid; grid-template-rows: auto auto 1fr auto; grid-template-columns: minmax(0, 1fr); height: 100%; }
+.shell > * { min-width: 0; }
+
+/* --- app bar -------------------------------------------------------- */
+.appbar {
+  display: flex; align-items: center; gap: 16px;
+  padding: 10px 20px; border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+}
+.brand { display: flex; align-items: baseline; gap: 10px; flex: 0 0 auto; }
+.brand-mark { font-weight: 700; letter-spacing: -0.02em; font-size: 16px; }
+.brand-sub {
+  font-family: var(--font-mono); font-size: 10.5px; text-transform: uppercase;
+  letter-spacing: 0.1em; color: var(--muted-foreground);
+}
+.roster { display: flex; align-items: center; gap: 5px; flex: 1 1 auto; flex-wrap: wrap; min-width: 0; }
+.who { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+
+.avatar {
+  position: relative; width: 30px; height: 30px; border-radius: 999px;
+  display: grid; place-items: center;
+  font-family: var(--font-mono); font-size: 10.5px; font-weight: 600;
+  border: 1px solid var(--border); cursor: help; user-select: none;
+}
+.avatar.is-me { box-shadow: 0 0 0 2px var(--foreground); }
+.avatar.is-away { opacity: 0.42; }
+.avatar-pip {
+  position: absolute; right: -2px; bottom: -2px; width: 12px; height: 12px;
+  border-radius: 999px; border: 2px solid var(--surface-2);
+  display: grid; place-items: center; font-size: 8px; line-height: 1;
+}
+.pip-ready { background: var(--status-success-fg); color: var(--background); }
+.pip-typing { background: var(--status-info-fg); }
+.pip-elsewhere { background: var(--muted-foreground); }
+
+/* --- controls ------------------------------------------------------- */
+.btn {
+  border: 1px solid var(--border); background: var(--surface-1); color: var(--foreground);
+  border-radius: calc(var(--radius) - 2px); padding: 6px 11px; font-size: 13px;
+  cursor: pointer; white-space: nowrap; transition: background 120ms ease, border-color 120ms ease;
+}
+.btn:hover { background: var(--surface-3); }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn-primary { background: var(--primary); color: var(--primary-foreground); border-color: var(--primary); }
+.btn-primary:hover { background: var(--primary); opacity: 0.88; }
+.btn-quiet { border-color: transparent; background: transparent; }
+.btn-quiet:hover { background: var(--surface-3); }
+.btn-sm { padding: 3px 8px; font-size: 12px; }
+.btn-focus { border-color: var(--focus-line); color: var(--focus); background: var(--focus-soft); }
+.select {
+  border: 1px solid var(--border); background: var(--surface-1); border-radius: calc(var(--radius) - 2px);
+  padding: 5px 8px; font-size: 13px;
+}
+.field {
+  width: 100%; border: 1px solid var(--border); background: var(--surface-1);
+  border-radius: calc(var(--radius) - 2px); padding: 8px 10px; font-size: 14px; resize: vertical;
+}
+.field:focus { border-color: var(--ring); }
+
+/* --- stage rail ----------------------------------------------------- */
+.rail-wrap { border-bottom: 1px solid var(--border); background: var(--surface-1); }
+.rail { display: flex; align-items: center; gap: 10px; padding: 9px 20px; min-width: 0; }
+.rail-chips { display: flex; align-items: stretch; gap: 6px; overflow-x: auto; flex: 1 1 auto; min-width: 0; padding-bottom: 1px; }
+.rail-chip {
+  position: relative; display: flex; align-items: center; gap: 9px;
+  padding: 7px 13px 7px 9px; border: 1px solid var(--border); background: var(--surface-2);
+  border-radius: calc(var(--radius) - 2px); cursor: pointer; flex: 0 0 auto;
+  transition: background 120ms ease;
+}
+.rail-chip:hover { background: var(--surface-3); }
+.rail-chip.is-pointer { background: var(--focus-soft); border-color: var(--focus-line); }
+.rail-chip.is-myview { border-style: dashed; border-color: var(--muted-foreground); }
+.rail-chip.is-pointer.is-myview { border-style: solid; }
+.rail-chip.is-skipped { opacity: 0.35; }
+.chip-n {
+  font-family: var(--font-mono); font-size: 10px; width: 18px; height: 18px;
+  display: grid; place-items: center; border-radius: 4px;
+  background: var(--surface-3); color: var(--muted-foreground);
+}
+.rail-chip.is-pointer .chip-n { background: var(--focus); color: var(--background); }
+.chip-body { display: flex; flex-direction: column; line-height: 1.25; }
+.chip-name {
+  font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.09em;
+}
+.rail-chip.is-pointer .chip-name { color: var(--focus); }
+.chip-meta { font-size: 10.5px; color: var(--muted-foreground); }
+.chip-take {
+  font-family: var(--font-mono); font-size: 10px; padding: 2px 5px; border-radius: 4px;
+  border: 1px solid var(--border); background: var(--surface-1); color: var(--muted-foreground);
+  cursor: pointer; opacity: 0; transition: opacity 120ms ease;
+}
+.rail-chip:hover .chip-take, .chip-take:focus-visible { opacity: 1; }
+.rail-side { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+.timebox {
+  font-family: var(--font-mono); font-size: 10.5px; color: var(--muted-foreground);
+  display: flex; align-items: center; gap: 6px; white-space: nowrap;
+}
+.timebox.is-over { color: var(--status-warning-fg); }
+
+/* --- divergence strip ---------------------------------------------- */
+.away-strip {
+  display: flex; align-items: center; gap: 12px; padding: 8px 20px;
+  background: var(--status-warning-bg); color: var(--status-warning-fg);
+  border-bottom: 1px solid var(--border); font-size: 13px;
+}
+.away-strip .btn { background: transparent; border-color: currentColor; color: inherit; }
+
+/* --- focus panel ---------------------------------------------------- */
+.focus-scroll { overflow-y: auto; background: var(--background); }
+.focus {
+  max-width: 1000px; margin: 0 auto; padding: 26px 20px 48px;
+}
+.focus-top {
+  border-top: 3px solid var(--accent-live, var(--border));
+  margin: 0 auto; max-width: 1000px;
+}
+.stage-head { display: flex; align-items: flex-start; gap: 16px; margin-bottom: 4px; }
+.stage-title { font-size: 27px; font-weight: 600; letter-spacing: -0.025em; margin: 0; }
+.stage-kicker {
+  font-family: var(--font-mono); font-size: 10.5px; text-transform: uppercase;
+  letter-spacing: 0.12em; color: var(--muted-foreground); margin-bottom: 3px;
+}
+.stage-lede { color: var(--muted-foreground); font-size: 14.5px; max-width: 62ch; margin: 6px 0 22px; }
+
+.panel {
+  border: 1px solid var(--border); background: var(--surface-2);
+  border-radius: var(--radius); padding: 16px; margin-bottom: 16px;
+}
+.panel-flush { padding: 0; overflow: hidden; }
+.panel-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  margin-bottom: 11px;
+}
+.panel-title {
+  font-family: var(--font-mono); font-size: 10.5px; text-transform: uppercase;
+  letter-spacing: 0.11em; color: var(--muted-foreground);
+}
+.note {
+  font-size: 12.5px; color: var(--muted-foreground); line-height: 1.45;
+}
+.note-inline { border-left: 2px solid var(--border); padding-left: 10px; margin: 10px 0; }
+
+.callout {
+  border-radius: calc(var(--radius) - 2px); padding: 10px 12px; font-size: 13px;
+  margin-bottom: 14px; display: flex; gap: 10px; align-items: flex-start;
+}
+.callout-info { background: var(--status-info-bg); color: var(--status-info-fg); }
+.callout-warn { background: var(--status-warning-bg); color: var(--status-warning-fg); }
+.callout-ok { background: var(--status-success-bg); color: var(--status-success-fg); }
+.callout-mark {
+  font-family: var(--font-mono); font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.1em; flex: 0 0 auto; padding-top: 2px;
+}
+
+/* --- cards ---------------------------------------------------------- */
+.cards { display: grid; gap: 8px; }
+.cards-2 { grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
+.rcard {
+  border: 1px solid var(--border); background: var(--surface-1);
+  border-radius: calc(var(--radius) - 2px); padding: 10px 12px;
+}
+.rcard-text { font-size: 13.5px; line-height: 1.45; }
+.rcard-foot {
+  display: flex; align-items: center; gap: 8px; margin-top: 7px;
+  font-family: var(--font-mono); font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.07em; color: var(--muted-foreground);
+}
+.rcard.is-late { border-color: var(--status-warning-fg); }
+.tag {
+  font-family: var(--font-mono); font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.08em;
+  padding: 2px 6px; border-radius: 4px; background: var(--surface-3); color: var(--muted-foreground);
+}
+.tag-late { background: var(--status-warning-bg); color: var(--status-warning-fg); }
+.tag-mine { background: var(--surface-3); color: var(--foreground); }
+
+.chit {
+  border: 1px solid var(--border); background: var(--surface-3);
+  border-radius: calc(var(--radius) - 2px); padding: 11px 12px;
+}
+.chit-line { height: 7px; border-radius: 3px; background: var(--border); margin-bottom: 6px; }
+.chit-line:last-child { margin-bottom: 0; width: 62%; }
+
+/* --- prompt tabs ---------------------------------------------------- */
+.tabs { display: flex; gap: 4px; flex-wrap: wrap; }
+.tab {
+  border: 1px solid var(--border); background: var(--surface-1);
+  border-radius: 999px; padding: 5px 12px; font-size: 12.5px; cursor: pointer;
+}
+.tab.is-on { background: var(--primary); color: var(--primary-foreground); border-color: var(--primary); }
+
+/* --- deck (grouping triage) ----------------------------------------- */
+.deck {
+  border: 1px solid var(--border); background: var(--surface-1); border-radius: var(--radius);
+  padding: 30px 26px; text-align: center; margin-bottom: 14px;
+}
+.deck-text { font-size: 20px; line-height: 1.42; letter-spacing: -0.01em; max-width: 46ch; margin: 0 auto; }
+.deck-meta {
+  font-family: var(--font-mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.1em;
+  color: var(--muted-foreground); margin-top: 14px;
+}
+.targets { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 7px; }
+.target {
+  display: flex; align-items: center; gap: 9px; text-align: left;
+  border: 1px solid var(--border); background: var(--surface-1);
+  border-radius: calc(var(--radius) - 2px); padding: 9px 11px; cursor: pointer; width: 100%;
+}
+.target:hover { background: var(--surface-3); }
+.key {
+  font-family: var(--font-mono); font-size: 10px; min-width: 20px; height: 20px;
+  display: inline-grid; vertical-align: -4px; place-items: center; border-radius: 4px;
+  border: 1px solid var(--border); background: var(--surface-2); color: var(--muted-foreground);
+  flex: 0 0 auto; padding: 0 4px;
+}
+.target-name { font-size: 13px; line-height: 1.3; }
+.target-count { margin-left: auto; font-family: var(--font-mono); font-size: 10.5px; color: var(--muted-foreground); }
+
+/* --- meters --------------------------------------------------------- */
+.meter { height: 6px; border-radius: 3px; background: var(--surface-3); overflow: hidden; display: flex; }
+.meter-fill { background: var(--foreground); }
+.meter-fill.is-accent { background: var(--accent-live, var(--foreground)); }
+.coverage { display: flex; gap: 3px; flex-wrap: wrap; }
+.cov-cell { width: 15px; height: 15px; border-radius: 3px; background: var(--surface-3); border: 1px solid var(--border); }
+.cov-cell.is-covered { background: var(--status-success-fg); border-color: var(--status-success-fg); }
+.cov-cell.is-current { box-shadow: inset 0 0 0 2px var(--accent-live, var(--foreground)); }
+.cov-cell.is-late { border-color: var(--status-warning-fg); border-style: dashed; }
+
+/* --- ballot --------------------------------------------------------- */
+.ballot { display: grid; gap: 6px; }
+.ballot-row {
+  display: flex; align-items: center; gap: 12px;
+  border: 1px solid var(--border); background: var(--surface-1);
+  border-radius: calc(var(--radius) - 2px); padding: 9px 12px;
+}
+.ballot-name { flex: 1 1 auto; font-size: 13.5px; }
+.ballot-sub { font-family: var(--font-mono); font-size: 10px; color: var(--muted-foreground); text-transform: uppercase; letter-spacing: 0.07em; }
+.stepper { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+.stepper-val { font-family: var(--font-mono); font-size: 13px; min-width: 16px; text-align: center; }
+.pips { display: flex; gap: 3px; }
+.pip { width: 9px; height: 9px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface-3); }
+.pip.is-spent { background: var(--foreground); border-color: var(--foreground); }
+
+/* --- walk ----------------------------------------------------------- */
+.walk-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
+.walk-title { font-size: 23px; font-weight: 600; letter-spacing: -0.02em; margin: 0; }
+.walk-pos { font-family: var(--font-mono); font-size: 11px; color: var(--muted-foreground); letter-spacing: 0.08em; text-transform: uppercase; }
+.jumplist { display: grid; gap: 3px; max-height: 260px; overflow-y: auto; }
+.jump {
+  display: flex; align-items: center; gap: 9px; text-align: left; width: 100%;
+  border: 1px solid transparent; background: transparent; border-radius: 5px;
+  padding: 5px 8px; cursor: pointer; font-size: 12.5px;
+}
+.jump:hover { background: var(--surface-3); }
+.jump.is-current { border-color: var(--focus-line); background: var(--focus-soft); }
+.jump-dot { width: 8px; height: 8px; border-radius: 999px; background: var(--surface-3); border: 1px solid var(--border); flex: 0 0 auto; }
+.jump.is-covered .jump-dot { background: var(--status-success-fg); border-color: var(--status-success-fg); }
+.jump-votes { margin-left: auto; font-family: var(--font-mono); font-size: 10.5px; color: var(--muted-foreground); }
+
+/* --- action capture ------------------------------------------------- */
+.action-form { display: grid; gap: 8px; }
+.action-grid { display: grid; grid-template-columns: minmax(200px, 2fr) minmax(130px, 1fr) auto; gap: 8px; align-items: center; }
+.act {
+  display: flex; gap: 10px; align-items: flex-start;
+  border: 1px solid var(--border); background: var(--surface-1);
+  border-radius: calc(var(--radius) - 2px); padding: 10px 12px;
+}
+.act-body { flex: 1 1 auto; }
+.act-trigger { font-size: 12.5px; color: var(--muted-foreground); font-style: italic; }
+.act-owner {
+  font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--muted-foreground);
+}
+
+/* --- dock ----------------------------------------------------------- */
+.dock {
+  display: flex; align-items: center; gap: 10px; padding: 9px 20px;
+  border-top: 1px solid var(--border); background: var(--surface-2); flex-wrap: wrap;
+}
+.dock-spacer { flex: 1 1 auto; }
+.dock-state {
+  font-family: var(--font-mono); font-size: 10.5px; color: var(--muted-foreground);
+  text-transform: uppercase; letter-spacing: 0.08em;
+}
+.dock-drawer {
+  padding: 12px 20px 14px; border-top: 1px solid var(--border); background: var(--surface-1);
+}
+.ready-pip { width: 8px; height: 8px; border-radius: 999px; background: var(--muted-foreground); display: inline-block; }
+.ready-pip.is-on { background: var(--status-success-fg); }
+
+/* --- instruments ---------------------------------------------------- */
+.inst-tab {
+  position: fixed; right: 0; top: 50%; transform: translateY(-50%) translateX(0);
+  writing-mode: vertical-rl; padding: 14px 7px; border: 1px solid var(--border); border-right: none;
+  background: var(--surface-2); border-radius: var(--radius) 0 0 var(--radius);
+  font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase;
+  cursor: pointer; z-index: 40;
+}
+.inst {
+  position: fixed; top: 0; right: 0; bottom: 0; width: min(460px, 100vw);
+  background: var(--surface-2); border-left: 1px solid var(--border);
+  z-index: 50; display: flex; flex-direction: column;
+  transform: translateX(101%); transition: transform 180ms ease;
+  box-shadow: -18px 0 40px oklch(0 0 0 / 0.10);
+}
+.inst.is-open { transform: translateX(0); }
+.inst-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 12px 16px; border-bottom: 1px solid var(--border);
+}
+.inst-body { overflow-y: auto; padding: 14px 16px 40px; }
+.inst-sec { margin-bottom: 22px; }
+.inst-h {
+  font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.13em;
+  color: var(--muted-foreground); margin-bottom: 9px; padding-bottom: 5px; border-bottom: 1px solid var(--border);
+}
+.kv { display: grid; grid-template-columns: 148px 1fr; gap: 3px 10px; font-size: 12.5px; }
+.kv-k { color: var(--muted-foreground); font-family: var(--font-mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.06em; padding-top: 2px; }
+.kv-v { font-family: var(--font-mono); font-size: 12px; word-break: break-word; }
+.freeplay { display: flex; flex-wrap: wrap; gap: 5px; }
+.freeplay .btn { font-size: 12px; padding: 4px 9px; }
+.wt-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 11px; }
+.wt-tab {
+  border: 1px solid var(--border); background: var(--surface-1); border-radius: 999px;
+  padding: 4px 10px; font-size: 12px; cursor: pointer;
+}
+.wt-tab.is-on { background: var(--foreground); color: var(--background); border-color: var(--foreground); }
+.wt-desc { font-size: 12.5px; color: var(--muted-foreground); margin-bottom: 11px; line-height: 1.5; }
+.wt-step {
+  display: flex; gap: 10px; align-items: flex-start; width: 100%; text-align: left;
+  border: 1px solid var(--border); background: var(--surface-1); border-radius: calc(var(--radius) - 2px);
+  padding: 8px 10px; margin-bottom: 5px; cursor: pointer;
+}
+.wt-step:hover:not(:disabled) { background: var(--surface-3); }
+.wt-step:disabled { opacity: 0.4; cursor: default; }
+.wt-step.is-next { border-color: var(--focus-line); background: var(--focus-soft); }
+.wt-n { font-family: var(--font-mono); font-size: 10px; color: var(--muted-foreground); padding-top: 2px; min-width: 14px; }
+.wt-label { font-size: 12.5px; line-height: 1.4; }
+.wt-note { font-size: 11.5px; color: var(--muted-foreground); margin-top: 3px; line-height: 1.4; }
+.log { font-family: var(--font-mono); font-size: 11px; color: var(--muted-foreground); display: grid; gap: 2px; }
+.log-new { color: var(--foreground); }
+
+.switchrow { display: flex; align-items: center; gap: 10px; padding: 6px 0; font-size: 13px; }
+.switchrow label { flex: 1 1 auto; }
+.hint {
+  font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.09em;
+  color: var(--muted-foreground);
+}
+.split { display: grid; grid-template-columns: 1.35fr 1fr; gap: 16px; align-items: start; }
+@media (max-width: 860px) {
+  .split { grid-template-columns: 1fr; }
+  .action-grid { grid-template-columns: 1fr; }
+  .appbar { flex-wrap: wrap; }
+}
+@media (max-width: 560px) {
+  .focus { padding: 18px 14px 44px; }
+  .focus-top { margin: 0 14px; }
+  .stage-title { font-size: 22px; }
+  .stage-lede { font-size: 13.5px; margin-bottom: 16px; }
+  .deck { padding: 22px 16px; }
+  .deck-text { font-size: 17px; }
+  .walk-title { font-size: 19px; }
+  .kv { grid-template-columns: 1fr; gap: 1px 0; }
+  .kv-v { margin-bottom: 7px; }
+  .targets { grid-template-columns: 1fr; }
+  .dock, .rail, .appbar { padding-left: 14px; padding-right: 14px; }
+  .roster { order: 3; width: 100%; }
+}
+.scrim { position: fixed; inset: 0; background: oklch(0 0 0 / 0.25); z-index: 45; display: none; }
+.scrim.is-open { display: block; }
+@media (min-width: 1100px) { .scrim.is-open { display: none; } }
+</style>
+</head>
+<body>
+<div class="shell">
+  <header class="appbar">
+    <div class="brand">
+      <span class="brand-mark">AgileKit</span>
+      <span class="brand-sub">Retro · Sprint 42</span>
+    </div>
+    <div class="roster" id="roster"></div>
+    <div class="who">
+      <span class="hint">You are</span>
+      <select class="select" id="actor"></select>
+      <button class="btn btn-sm" id="theme" title="Toggle light / dark">Theme</button>
+    </div>
+  </header>
+
+  <div class="rail-wrap">
+    <div class="rail" id="rail"></div>
+    <div id="awayStrip"></div>
+  </div>
+
+  <div class="focus-scroll" id="focusScroll">
+    <div class="focus-top" id="focusTop"></div>
+    <main class="focus" id="focus"></main>
+  </div>
+
+  <footer>
+    <div id="dockDrawer"></div>
+    <div class="dock" id="dock"></div>
+  </footer>
+</div>
+
+<div class="scrim" id="scrim"></div>
+<button class="inst-tab" id="instTab">Prototype instruments</button>
+<aside class="inst" id="inst" aria-label="Prototype instruments">
+  <div class="inst-head">
+    <strong style="font-size:14px">Prototype instruments</strong>
+    <button class="btn btn-sm btn-quiet" id="instClose">Close</button>
+  </div>
+  <div class="inst-body" id="instBody"></div>
+</aside>
+
+<script>
+/* ==========================================================================
+   PART 1 — the liftable module.
+
+   A pure retro-stage machine. No DOM, no timers, no globals reaching in.
+   createInitialState() + reduce(state, action) + a set of pure selectors.
+   Everything below PART 2 is throwaway page shell.
+
+   The question this prototype exists to answer:
+
+     Can a single-focus board be SOFT? Single-focus gets its power from
+     taking everything else off the screen. ADR-0010 says a stage projects
+     and defaults but NEVER forbids: writing, grouping and voting stay open
+     in every stage, navigation is free in both directions, and nobody is
+     ever yanked out of what they are typing. So does "one thing at a time"
+     survive as a default, or does it only work when it is enforced?
+   ========================================================================== */
+
+const RetroStages = (() => {
+  "use strict";
+
+  const STAGE_META = {
+    collect:  { name: "Collect",  irreducible: true,  timebox: 10,
+                lede: "Everyone writes, in parallel, at the same time. Nobody reads out loud. The collection window opened when the retro was created, so cards can already be here." },
+    review:   { name: "Review",   irreducible: false, timebox: 6,
+                lede: "What did we commit to last time, and what happened to it? This sits at the head of the synchronous session because collection already happened." },
+    group:    { name: "Group",    irreducible: false, timebox: 8,
+                lede: "One card at a time, dealt out so everyone triages in parallel. File it under a theme, start a new one, or leave it loose." },
+    vote:     { name: "Vote",     irreducible: false, timebox: 4,
+                lede: "Spend a small budget across the themes. Your ballot is shuffled independently of everyone else's." },
+    discuss:  { name: "Discuss",  irreducible: true,  timebox: 25,
+                lede: "One theme at a time, in an order snapshotted when the stage was entered. Coverage is the goal, not airtime." },
+    close:    { name: "Close",    irreducible: false, timebox: 3,
+                lede: "What we are going to do, who owns it, and an honest count of what never got discussed." },
+  };
+
+  const PROMPTS = [
+    { id: "kept",   label: "Kept us moving" },
+    { id: "slowed", label: "Slowed us down" },
+    { id: "try",    label: "Worth trying" },
+  ];
+
+  /* ---- deterministic shuffle so a person's ballot order is stable ------ */
+  function mulberry32(a) {
+    return function () {
+      a |= 0; a = (a + 0x6D2B79F5) | 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  function seedFrom(str) {
+    let h = 2166136261;
+    for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
+    return h >>> 0;
+  }
+  function shuffleFor(list, seedStr) {
+    const rnd = mulberry32(seedFrom(seedStr));
+    const out = list.slice();
+    for (let i = out.length - 1; i > 0; i--) {
+      const j = Math.floor(rnd() * (i + 1));
+      [out[i], out[j]] = [out[j], out[i]];
+    }
+    return out;
+  }
+
+  /* ---- selectors ------------------------------------------------------- */
+
+  const entryById = (s, id) => s.stageList.find((e) => e.id === id) || null;
+  const pointerEntry = (s) => entryById(s, s.pointerEntryId);
+  const pointerKind = (s) => (pointerEntry(s) ? pointerEntry(s).kind : "collect");
+  const myEntry = (s) => entryById(s, s.viewEntryId) || pointerEntry(s);
+  const myKind = (s) => (myEntry(s) ? myEntry(s).kind : "collect");
+  const isFollowing = (s) => s.viewEntryId === s.pointerEntryId;
+  const person = (s, id) => s.people.find((p) => p.id === id);
+  const stageIndex = (s, id) => s.stageList.findIndex((e) => e.id === id);
+
+  /** Has the shared pointer ever left collect? That is what drives reveal. */
+  function collectionRevealed(s) { return s.pointerHasLeftCollect; }
+
+  /** Cards this person may read right now, given the visibility switches. */
+  function visibleCards(s) {
+    if (!s.visibility.hideUntilPointerLeavesCollect) return s.cards;
+    if (collectionRevealed(s)) return s.cards;
+    return s.cards.filter((c) => c.authorId === s.actorId);
+  }
+  function hiddenCardCount(s) { return s.cards.length - visibleCards(s).length; }
+  function hiddenAuthorCount(s) {
+    const ids = new Set(s.cards.filter((c) => c.authorId !== s.actorId).map((c) => c.authorId));
+    return ids.size;
+  }
+
+  /**
+   * A topic is a theme, or a card that belongs to no theme. Works whether or
+   * not the group stage ever ran, which is what "skippable" requires.
+   */
+  function topics(s) {
+    const out = s.groups.map((g) => ({
+      id: "grp:" + g.id,
+      kind: "group",
+      title: g.title,
+      cardIds: s.cards.filter((c) => c.groupId === g.id).map((c) => c.id),
+    })).filter((t) => t.cardIds.length > 0);
+    s.cards.filter((c) => c.groupId === null).forEach((c) => {
+      out.push({ id: "card:" + c.id, kind: "card", title: c.text, cardIds: [c.id] });
+    });
+    return out.map((t) => ({
+      ...t,
+      votes: tallyFor(s, t.id),
+      myVotes: (s.votes[s.actorId] || {})[t.id] || 0,
+      afterSnapshot: s.walk ? !s.walk.order.includes(t.id) : false,
+    }));
+  }
+  function topicById(s, id) { return topics(s).find((t) => t.id === id) || null; }
+  function tallyFor(s, topicId) {
+    return Object.values(s.votes).reduce((sum, b) => sum + (b[topicId] || 0), 0);
+  }
+  function spent(s, personId) {
+    return Object.values(s.votes[personId] || {}).reduce((a, b) => a + b, 0);
+  }
+  /** Retrium computes sqrt(topics) and refuses an override. We suggest it. */
+  function suggestedBudget(s) { return Math.max(3, Math.round(Math.sqrt(topics(s).length))); }
+
+  /** My ballot, shuffled per person. Anchoring is immune to warnings; only
+      sequence is a real lever, so nobody shares a first item. */
+  function myBallot(s) {
+    const list = topics(s);
+    return shuffleFor(list, s.actorId + ":" + s.pointerEntryId);
+  }
+
+  function unfiledCards(s) { return s.cards.filter((c) => c.groupId === null && !c.triaged); }
+  /** Cards are dealt, not queued: each triager gets a different one. */
+  function deckCardFor(s, personId) {
+    const pool = unfiledCards(s);
+    if (pool.length === 0) return null;
+    const idx = s.people.filter((p) => p.present).findIndex((p) => p.id === personId);
+    return pool[Math.min(idx < 0 ? 0 : idx, pool.length - 1)] || null;
+  }
+
+  function walkCoverage(s) {
+    if (!s.walk) return null;
+    const live = topics(s);
+    const liveIds = new Set(live.map((t) => t.id));
+    const inOrder = s.walk.order.filter((id) => liveIds.has(id));
+    const late = live.filter((t) => !s.walk.order.includes(t.id)).map((t) => t.id);
+    const covered = s.walk.covered.filter((id) => liveIds.has(id));
+    return {
+      order: inOrder,
+      late,
+      all: inOrder.concat(late),
+      covered,
+      coveredCount: covered.length,
+      total: inOrder.length + late.length,
+      remaining: inOrder.length + late.length - covered.length,
+      lateCount: late.length,
+      currentId: s.walk.currentId,
+    };
+  }
+
+  /** Honest arithmetic, not a prediction: minutes left / topics left. */
+  function pace(s) {
+    const cov = walkCoverage(s);
+    const entry = pointerEntry(s);
+    if (!cov || !entry) return null;
+    const usedMs = s.clock - (s.timeboxStartedAt ?? s.clock);
+    const budgetMs = entry.timeboxMinutes * 60000;
+    const leftMs = budgetMs - usedMs;
+    const perTopicMs = cov.coveredCount > 0 ? usedMs / cov.coveredCount : null;
+    const projected = perTopicMs && perTopicMs > 0
+      ? cov.coveredCount + Math.max(0, Math.floor(leftMs / perTopicMs))
+      : null;
+    return { leftMs, usedMs, budgetMs, perTopicMs, projected: projected === null ? null : Math.min(projected, cov.total) };
+  }
+
+  function readyNames(s) {
+    const map = s.readiness[s.pointerEntryId] || {};
+    return s.people.filter((p) => p.present && map[p.id]).map((p) => p.name);
+  }
+  /** Readiness is deliberately absent in collect. */
+  function readinessApplies(s) { return pointerKind(s) !== "collect"; }
+
+  function elsewherePeople(s) {
+    return s.people.filter((p) => p.present && p.viewEntryId && p.viewEntryId !== s.pointerEntryId);
+  }
+
+  /* ---- reducer --------------------------------------------------------- */
+
+  function reduce(prev, action) {
+    const s = structuredClone(prev);
+    s.log = s.log.slice(0, 11);
+    const note = (msg) => s.log.unshift(msg);
+
+    switch (action.type) {
+
+      /* ---- the stage pointer. A person always moves it. --------------- */
+      case "advance":
+      case "rewind": {
+        const dir = action.type === "advance" ? 1 : -1;
+        const i = stageIndex(s, s.pointerEntryId);
+        const next = s.stageList[i + dir];
+        if (!next) { note("Nothing to " + action.type + " to."); break; }
+        applyPointer(s, next.id, note, action.by || s.actorId);
+        break;
+      }
+      case "movePointerTo": {
+        if (!entryById(s, action.entryId)) break;
+        applyPointer(s, action.entryId, note, action.by || s.actorId);
+        break;
+      }
+
+      /* ---- personal navigation. Free, both directions, never forced. --- */
+      case "lookAt": {
+        if (!entryById(s, action.entryId)) break;
+        s.viewEntryId = action.entryId;
+        const me = person(s, s.actorId); if (me) me.viewEntryId = action.entryId;
+        note(s.viewEntryId === s.pointerEntryId
+          ? "You rejoined the team's stage."
+          : "You are looking at " + STAGE_META[entryById(s, action.entryId).kind].name + " on your own.");
+        break;
+      }
+      case "followShared": {
+        s.viewEntryId = s.pointerEntryId;
+        const me = person(s, s.actorId); if (me) me.viewEntryId = s.pointerEntryId;
+        s.pendingMoveNotice = null;
+        note("You rejoined the team's stage.");
+        break;
+      }
+      case "dismissMoveNotice": { s.pendingMoveNotice = null; break; }
+
+      /* ---- writing. Legal in EVERY stage. ----------------------------- */
+      case "writeCard": {
+        const text = (action.text || "").trim();
+        if (!text) break;
+        const kind = pointerKind(s);
+        s.seq += 1;
+        s.cards.push({
+          id: "c" + s.seq, authorId: action.authorId || s.actorId, text,
+          prompt: action.prompt || "slowed", groupId: null, triaged: false,
+          createdAt: s.seq, writtenInKind: kind,
+          afterWalkStarted: !!s.walk,
+        });
+        const who = person(s, action.authorId || s.actorId);
+        note(who.name + " wrote a card during " + STAGE_META[kind].name + ".");
+        if (kind !== "collect") {
+          s.softnessEvents.push({ what: "card-written-outside-collect", stage: kind, seq: s.seq });
+        }
+        break;
+      }
+      case "editCard": {
+        const c = s.cards.find((x) => x.id === action.cardId);
+        if (c) { c.text = action.text; note("Card edited."); }
+        break;
+      }
+      case "deleteCard": {
+        s.cards = s.cards.filter((x) => x.id !== action.cardId);
+        note("Card removed.");
+        break;
+      }
+      case "setTyping": {
+        const p = person(s, action.personId);
+        if (p) { p.typing = !!action.on; p.typingAt = s.clock; }
+        break;
+      }
+
+      /* ---- grouping. Legal in every stage, and reversible. ------------ */
+      case "fileCard": {
+        const c = s.cards.find((x) => x.id === action.cardId);
+        if (!c) break;
+        c.groupId = action.groupId; c.triaged = true;
+        note("Filed under " + (s.groups.find((g) => g.id === action.groupId) || {}).title + ".");
+        break;
+      }
+      case "fileCardToNew": {
+        const c = s.cards.find((x) => x.id === action.cardId);
+        if (!c) break;
+        s.seq += 1;
+        const g = { id: "g" + s.seq, title: (action.title || "").trim() || defaultTitle(c.text) };
+        s.groups.push(g); c.groupId = g.id; c.triaged = true;
+        note('New theme "' + g.title + '".');
+        break;
+      }
+      case "leaveLoose": {
+        const c = s.cards.find((x) => x.id === action.cardId);
+        if (c) { c.triaged = true; c.groupId = null; note("Left loose — it stays a topic on its own."); }
+        break;
+      }
+      case "unfile": {
+        const c = s.cards.find((x) => x.id === action.cardId);
+        if (c) { c.groupId = null; c.triaged = false; note("Pulled back out of its theme."); }
+        break;
+      }
+      case "renameGroup": {
+        const g = s.groups.find((x) => x.id === action.groupId);
+        if (g) { g.title = action.title; g.titleIsUserDefined = true; }
+        break;
+      }
+      case "fileRemaining": {
+        let filed = 0;
+        s.cards.forEach((c) => {
+          if (c.groupId !== null || c.triaged) return;
+          const key = c.seedGroup;
+          c.triaged = true;
+          if (!key) return;
+          let g = s.groups.find((x) => x.seedKey === key);
+          if (!g) { g = { id: "g-" + key, seedKey: key, title: SEED_GROUP_TITLES[key] }; s.groups.push(g); }
+          c.groupId = g.id; filed += 1;
+        });
+        note("Prototype shortcut: filed " + filed + " remaining cards.");
+        break;
+      }
+
+      /* ---- voting. Legal in every stage. ------------------------------ */
+      case "setBudget": {
+        s.voteBudget = Math.max(1, Math.min(12, action.n));
+        note("Vote budget set to " + s.voteBudget + ".");
+        break;
+      }
+      case "castVote": {
+        const b = (s.votes[s.actorId] = s.votes[s.actorId] || {});
+        const used = Object.values(b).reduce((a, c) => a + c, 0);
+        if (used >= s.voteBudget) { note("No votes left. Retract one first."); break; }
+        if ((b[action.topicId] || 0) >= s.maxPerTopic) { note("That is the per-topic maximum."); break; }
+        b[action.topicId] = (b[action.topicId] || 0) + 1;
+        if (s.walk) s.softnessEvents.push({ what: "vote-after-walk-started", topicId: action.topicId });
+        note("Vote cast" + (s.walk ? " — after the walk order was snapshotted, so it does not reshuffle." : "."));
+        break;
+      }
+      case "retractVote": {
+        const b = (s.votes[s.actorId] = s.votes[s.actorId] || {});
+        if (!b[action.topicId]) break;
+        b[action.topicId] -= 1;
+        if (b[action.topicId] <= 0) delete b[action.topicId];
+        note("Vote retracted.");
+        break;
+      }
+      case "simulateTeamVotes": {
+        const list = topics(s);
+        s.people.filter((p) => p.present && p.id !== s.actorId).forEach((p) => {
+          const b = (s.votes[p.id] = s.votes[p.id] || {});
+          if (Object.keys(b).length) return;
+          // shared bias plus per-person taste, so the tally has a real tail
+          const rnd = mulberry32(seedFrom(p.id + ":bias"));
+          const ranked = list.map((t) => ({ t, w: (SEED_VOTE_BIAS[t.id] || 0.6) + rnd() * 3 }))
+            .sort((a, b2) => b2.w - a.w);
+          let left = s.voteBudget;
+          for (const r of ranked) {
+            if (left <= 0) break;
+            const n = Math.min(left, r.w >= 6 ? 2 : 1, s.maxPerTopic);
+            if (n <= 0) continue;
+            b[r.t.id] = (b[r.t.id] || 0) + n; left -= n;
+          }
+        });
+        note("Everyone else has voted.");
+        break;
+      }
+
+      /* ---- the discussion walk ---------------------------------------- */
+      case "walkNext":
+      case "walkPrev": {
+        if (!s.walk) break;
+        const cov = walkCoverage(s);
+        const all = cov.all;
+        const i = all.indexOf(s.walk.currentId);
+        if (action.type === "walkNext" && action.markCovered !== false && s.walk.currentId
+            && !s.walk.covered.includes(s.walk.currentId)) {
+          s.walk.covered.push(s.walk.currentId);
+        }
+        const j = i + (action.type === "walkNext" ? 1 : -1);
+        if (j < 0 || j >= all.length) { note("End of the walk."); break; }
+        s.walk.currentId = all[j];
+        note("Moved to topic " + (j + 1) + " of " + all.length + ".");
+        break;
+      }
+      case "walkGoto": {
+        if (!s.walk) break;
+        s.walk.currentId = action.topicId;
+        note("Jumped to a topic out of order.");
+        break;
+      }
+      case "markCovered": {
+        if (!s.walk) break;
+        const id = action.topicId || s.walk.currentId;
+        const at = s.walk.covered.indexOf(id);
+        if (action.covered === false) { if (at >= 0) s.walk.covered.splice(at, 1); }
+        else if (at < 0) s.walk.covered.push(id);
+        note("Coverage updated.");
+        break;
+      }
+      case "resnapshotWalk": {
+        s.walk = buildWalk(s);
+        note("Walk order re-snapshotted by hand.");
+        break;
+      }
+
+      /* ---- actions ----------------------------------------------------- */
+      case "addAction": {
+        const text = (action.text || "").trim();
+        if (!text) break;
+        s.seq += 1;
+        s.actions.push({
+          id: "a" + s.seq, text, ownerId: action.ownerId || null,
+          trigger: (action.trigger || "").trim(), topicId: action.topicId || null,
+          stageKind: pointerKind(s), done: false,
+        });
+        note("Action captured.");
+        break;
+      }
+      case "toggleCarryAction": {
+        const a = s.carried.find((x) => x.id === action.id);
+        if (a) { a.status = action.status; note("Carried action marked " + action.status + "."); }
+        break;
+      }
+      case "toggleAction": {
+        const a = s.actions.find((x) => x.id === action.id);
+        if (a) a.done = !a.done;
+        break;
+      }
+
+      /* ---- readiness. Ephemeral, advisory, never gates an advance. ----- */
+      case "setReady": {
+        if (!readinessApplies(s)) { note("Collect has no readiness signal, by design."); break; }
+        const map = (s.readiness[s.pointerEntryId] = s.readiness[s.pointerEntryId] || {});
+        const id = action.personId || s.actorId;
+        if (action.on) map[id] = true; else delete map[id];
+        note(person(s, id).name + (action.on ? " is ready." : " is no longer ready."));
+        break;
+      }
+
+      /* ---- open questions #262 / #270, exposed as switches ------------- */
+      case "setVisibility": {
+        s.visibility[action.key] = action.value;
+        note("Visibility switch changed: " + action.key + " = " + action.value + ".");
+        break;
+      }
+
+      /* ---- the stage list is data ------------------------------------- */
+      case "skipStage": {
+        const e = entryById(s, action.entryId);
+        if (!e) break;
+        if (STAGE_META[e.kind].irreducible) { note(STAGE_META[e.kind].name + " cannot be removed."); break; }
+        const i = stageIndex(s, e.id);
+        s.removed.push({ kind: e.kind, at: i });
+        s.stageList.splice(i, 1);
+        if (s.pointerEntryId === e.id) s.pointerEntryId = (s.stageList[i] || s.stageList[i - 1]).id;
+        if (s.viewEntryId === e.id) s.viewEntryId = s.pointerEntryId;
+        note(STAGE_META[e.kind].name + " removed from the stage list. The rail renumbers.");
+        break;
+      }
+      case "restoreStage": {
+        const rec = s.removed.find((r) => r.kind === action.kind);
+        if (!rec) break;
+        s.removed = s.removed.filter((r) => r !== rec);
+        s.seq += 1;
+        s.stageList.splice(Math.min(rec.at, s.stageList.length), 0, {
+          id: "e" + s.seq, kind: rec.kind, timeboxMinutes: STAGE_META[rec.kind].timebox,
+        });
+        note(STAGE_META[rec.kind].name + " put back.");
+        break;
+      }
+      case "moveStage": {
+        const i = stageIndex(s, action.entryId);
+        const j = i + action.dir;
+        if (i < 0 || j < 0 || j >= s.stageList.length) break;
+        const [e] = s.stageList.splice(i, 1);
+        s.stageList.splice(j, 0, e);
+        note("Stage list reordered.");
+        break;
+      }
+      case "setTimebox": {
+        const e = entryById(s, action.entryId || s.pointerEntryId);
+        if (e) { e.timeboxMinutes = Math.max(1, action.minutes); note("Advisory timebox set."); }
+        break;
+      }
+      case "startTimebox": { s.timeboxRunning = true; note("Timebox running (advisory)."); break; }
+      case "pauseTimebox": { s.timeboxRunning = false; note("Timebox paused."); break; }
+
+      /* ---- people ------------------------------------------------------ */
+      case "setActor": {
+        if (!person(s, action.personId)) break;
+        s.actorId = action.personId;
+        const p = person(s, s.actorId);
+        s.viewEntryId = p.viewEntryId || s.pointerEntryId;
+        note("You are now " + p.name + ".");
+        break;
+      }
+      case "arriveLate": {
+        const p = person(s, action.personId);
+        if (!p) break;
+        p.present = true; p.arrivedAtStage = pointerKind(s);
+        s.actorId = p.id; s.viewEntryId = s.pointerEntryId; p.viewEntryId = s.pointerEntryId;
+        note(p.name + " just joined, during " + STAGE_META[pointerKind(s)].name + ".");
+        break;
+      }
+      case "personLooksAt": {
+        const p = person(s, action.personId);
+        if (p) { p.viewEntryId = action.entryId; p.wanders = true; note(p.short + " wandered off on their own."); }
+        break;
+      }
+
+      case "tick": { if (s.timeboxRunning) s.clock += action.ms; break; }
+      case "noop": break;
+      default: break;
+    }
+    return s;
+  }
+
+  /** Moving the shared pointer. Destroys nothing, finalises nothing,
+      hides nothing, and never yanks anyone. */
+  function applyPointer(s, entryId, note, byId) {
+    const from = pointerEntry(s);
+    const wasFollowing = s.viewEntryId === s.pointerEntryId;
+    const me = person(s, s.actorId);
+    const wasTyping = me && me.typing;
+
+    s.pointerEntryId = entryId;
+    s.pointerMovedBy = byId;
+    s.readiness = {};                      // ephemeral: clears on every move
+    s.timeboxStartedAt = s.clock;
+    s.timeboxRunning = true;
+
+    const to = pointerEntry(s);
+    if (from && from.kind === "collect" && to.kind !== "collect") s.pointerHasLeftCollect = true;
+
+    if (to.kind === "discuss" && !s.walk) s.walk = buildWalk(s);
+
+    // Views follow by default — but never at the cost of interrupting.
+    if (wasFollowing && !wasTyping) {
+      s.viewEntryId = entryId;
+      if (me) me.viewEntryId = entryId;
+      note("The team is now in " + STAGE_META[to.kind].name + ". Your view followed.");
+    } else if (wasTyping) {
+      s.pendingMoveNotice = { entryId, kind: to.kind, reason: "typing" };
+      s.softnessEvents.push({ what: "advance-while-typing", stage: to.kind });
+      note("The team moved to " + STAGE_META[to.kind].name + ". You were typing, so nothing moved.");
+    } else {
+      s.pendingMoveNotice = { entryId, kind: to.kind, reason: "away" };
+      note("The team moved to " + STAGE_META[to.kind].name + ". You were looking elsewhere, so nothing moved.");
+    }
+    // Everyone else who was following, follows.
+    s.people.forEach((p) => { if (p.id !== s.actorId && p.present && !p.typing && !p.wanders) p.viewEntryId = entryId; });
+  }
+
+  /** Order snapshotted on entry: by votes descending if a vote stage ran,
+      creation order otherwise. Votes cast later count but never reshuffle. */
+  function buildWalk(s) {
+    const list = topics(s);
+    const voteRan = s.stageList.some((e) => e.kind === "vote")
+      && stageIndex(s, s.stageList.find((e) => e.kind === "vote").id) < stageIndex(s, s.pointerEntryId)
+      && Object.keys(s.votes).length > 0;
+    const ordered = voteRan
+      ? list.slice().sort((a, b) => b.votes - a.votes || a.title.localeCompare(b.title))
+      : list.slice().sort((a, b) => {
+          const ac = a.cardIds[0] || "", bc = b.cardIds[0] || "";
+          return ac.localeCompare(bc, undefined, { numeric: true });
+        });
+    return {
+      order: ordered.map((t) => t.id),
+      orderedBy: voteRan ? "votes" : "creation",
+      currentId: ordered.length ? ordered[0].id : null,
+      covered: [],
+      snapshotAt: s.clock,
+    };
+  }
+
+  function defaultTitle(text) {
+    return text.split(/\s+/).filter((w) => w.length > 3).slice(0, 3).join(" ") || text.slice(0, 24);
+  }
+
+  /* ---- seed ------------------------------------------------------------ */
+
+  const SEED_GROUP_TITLES = {
+    release:   "The release train has no driver",
+    deps:      "Dependency upgrades ambush us",
+    review:    "Reviews sit",
+    tests:     "Tests we do not trust",
+    visible:   "Nobody knows who is on what",
+    unplanned: "Unplanned work is invisible",
+    written:   "Writing decisions down paid off",
+    stack:     "The stack is doing its job",
+    standup:   "Standup absorbed design",
+  };
+
+  const SEED_VOTE_BIAS = {}; // filled after ids are known, in createInitialState
+
+  const PEOPLE = [
+    { id: "p1", name: "Mira Halvorsen",  short: "Mira",  initials: "MH", hue: 264, facilitator: true },
+    { id: "p2", name: "Toby Renn",       short: "Toby",  initials: "TR", hue: 20 },
+    { id: "p3", name: "Aditi Rao",       short: "Aditi", initials: "AR", hue: 150 },
+    { id: "p4", name: "Lars Petersen",   short: "Lars",  initials: "LP", hue: 85 },
+    { id: "p5", name: "Nkechi Obi",      short: "Nkechi",initials: "NO", hue: 310 },
+    { id: "p6", name: "Sam Whitfield",   short: "Sam",   initials: "SW", hue: 200 },
+    { id: "p7", name: "Priya Nadar",     short: "Priya", initials: "PN", hue: 45 },
+    { id: "p8", name: "Dan Kowalczyk",   short: "Dan",   initials: "DK", hue: 120 },
+  ];
+
+  // [author, prompt, seedGroup|null, preFiled, text]
+  const CARDS = [
+    ["p2","kept","stack",1,"Convex dev and next dev in one script finally works, no more “which terminal was that”"],
+    ["p3","kept","written",0,"The permission decision module landed and I stopped guessing where auth lives"],
+    ["p1","kept","release",0,"Release-please cut 2.9.5 and 2.9.6 with no manual changelog editing"],
+    ["p5","kept","visible",0,"Pairing on the Base UI migration was faster than either of us alone"],
+    ["p4","kept","written",1,"ADR-0007 meant I answered the analytics question in five minutes instead of a day"],
+    ["p6","kept","stack",1,"Convex reactivity means the room just updates, we wrote no polling code all sprint"],
+    ["p7","kept",null,0,"Playwright page objects made the room tests readable enough to hand to a new person"],
+    ["p2","kept","written",0,"Nobody had to ask permission to fix a typo in the docs"],
+    ["p3","kept",null,0,"The demo iframe consent bug got a repro in 20 minutes because the demo is client-side"],
+    ["p5","kept","stack",0,"Design tokens meant dark mode was free on the changelog page"],
+    ["p1","kept",null,0,"We shipped on Thursday and nothing paged anyone over the weekend"],
+    ["p4","kept","written",1,"The CONTEXT.md glossary settled two naming arguments before they started"],
+    ["p6","kept","stack",0,"Anonymous link-join still works, nobody had to make an account to test the room"],
+
+    ["p7","slowed","tests",1,"Three Playwright runs failed on port 3000 before anyone said “is your dev server up”"],
+    ["p2","slowed","deps",1,"npm install fought us over legacy-peer-deps again and nobody wrote it down the first time"],
+    ["p5","slowed","visible",0,"Two of us refactored useCanvasNodes in the same week without knowing"],
+    ["p3","slowed","deps",1,"The lightningcss linux binary broke the Vercel build and it was invisible locally"],
+    ["p1","slowed","standup",0,"Standup ran 25 minutes on Tuesday because we did design in it"],
+    ["p4","slowed","deps",0,"I spent a day on a TypeScript 7 upgrade that passes ts:check and fails next build"],
+    ["p6","slowed","release",0,"Convex schema narrow got pushed from a laptop instead of CI and now the deploy state is unclear"],
+    ["p7","slowed","review",1,"Reviews sat for two days because everyone assumed someone else had it"],
+    ["p2","slowed","deps",1,"The eslint 10 bump broke eslint-config-next and cost half a day to back out"],
+    ["p5","slowed","tests",1,"We had no way to tell whether the room canvas infinite loop was fixed or just quiet"],
+    ["p1","slowed","unplanned",0,"Estimates on the analytics ticket were off by 3x and we never talked about why"],
+    ["p3","slowed","visible",0,"I could not tell from the board who was actually working on the demo migration"],
+    ["p4","slowed","release",1,"Two release PRs were open at once and I merged the wrong one first"],
+    ["p6","slowed","tests",0,"The Jira integration tests need a real token so nobody runs them locally"],
+    ["p7","slowed","unplanned",0,"Half the sprint was “unplanned but obviously necessary” and it never got named"],
+    ["p2","slowed","review",1,"I asked a question in the channel on Monday and got an answer on Thursday"],
+
+    ["p7","try","tests",0,"Write the flaky-test runbook the first time it bites, not the fourth"],
+    ["p6","try","release",0,"Put the deploy state of every Convex migration on one page anyone can read"],
+    ["p1","try","standup",0,"A 15 minute design slot before standup so standup stays standup"],
+    ["p4","try","release",1,"Rotate who watches the release PR queue each sprint"],
+    ["p7","try","unplanned",0,"Name unplanned work on the sprint board instead of absorbing it silently"],
+    ["p5","try","review",0,"Two-day review SLA, and anything older gets read out on Friday"],
+    ["p2","try",null,0,"Try trunk-based for the docs directory and see if anything breaks"],
+    ["p3","try","deps",0,"One person owns the dependency upgrade lane for a whole sprint"],
+    ["p4","try","deps",0,"Record the why for every version pin in the memory file, not in someone's head"],
+    ["p3","try","deps",0,"Add a smoke check that fails the build when the linux native binary is missing"],
+    ["p6","try",null,0,"Try a written pre-read for the sprint review instead of a live demo"],
+  ];
+
+  const CARRIED = [
+    { id: "k1", text: "Write the flaky-test runbook",                    ownerId: "p7", from: "Sprint 40", status: "open" },
+    { id: "k2", text: "Split the release checklist into a doc anyone can run", ownerId: "p4", from: "Sprint 41", status: "open" },
+    { id: "k3", text: "Cap standup at 15 minutes",                        ownerId: "p1", from: "Sprint 39", status: "done" },
+  ];
+
+  function createInitialState() {
+    const kinds = ["collect", "review", "group", "vote", "discuss", "close"];
+    const stageList = kinds.map((k, i) => ({
+      id: "e" + (i + 1), kind: k, timeboxMinutes: STAGE_META[k].timebox,
+    }));
+
+    const people = PEOPLE.map((p, i) => ({
+      ...p, present: p.id !== "p8", typing: false, typingAt: 0,
+      viewEntryId: "e1", wanders: false, arrivedAtStage: null,
+    }));
+
+    const groups = [];
+    const cards = [];
+    let seq = 0;
+    CARDS.forEach(([authorId, prompt, seedGroup, preFiled, text]) => {
+      seq += 1;
+      let groupId = null;
+      if (preFiled && seedGroup) {
+        let g = groups.find((x) => x.seedKey === seedGroup);
+        if (!g) { g = { id: "g-" + seedGroup, seedKey: seedGroup, title: SEED_GROUP_TITLES[seedGroup] }; groups.push(g); }
+        groupId = g.id;
+      }
+      cards.push({
+        id: "c" + seq, authorId, text, prompt, seedGroup: seedGroup || null,
+        groupId, triaged: !!groupId, createdAt: seq, writtenInKind: "collect", afterWalkStarted: false,
+      });
+    });
+
+    // A bias so the simulated team vote lands somewhere plausible rather
+    // than uniformly. Keyed by the seed theme, not by anything the UI shows.
+    Object.assign(SEED_VOTE_BIAS, {
+      "grp:g-release": 3, "grp:g-deps": 3.5, "grp:g-review": 2, "grp:g-tests": 2.5,
+      "grp:g-visible": 1.5, "grp:g-unplanned": 2, "grp:g-written": 0.5, "grp:g-stack": 0.5,
+      "grp:g-standup": 1,
+    });
+
+    return {
+      title: "Sprint 42 retro",
+      stageList,
+      pointerEntryId: "e1",
+      viewEntryId: "e1",
+      pointerMovedBy: "p1",
+      pointerHasLeftCollect: false,
+      pendingMoveNotice: null,
+      people,
+      actorId: "p3",                       // you are Aditi
+      cards, groups, seq,
+      votes: {},
+      voteBudget: 4,
+      maxPerTopic: 3,
+      walk: null,
+      actions: [],
+      carried: structuredClone(CARRIED),
+      readiness: {},
+      visibility: {
+        // #270 — reveal policy. Is anything hidden before the pointer leaves collect?
+        hideUntilPointerLeavesCollect: true,
+        // #262 — anonymity. Are card authors shown at all?
+        showAuthors: true,
+        // Are running vote tallies visible while voting?
+        hideTalliesDuringVote: true,
+      },
+      clock: 0,
+      timeboxStartedAt: 0,
+      timeboxRunning: false,
+      removed: [],
+      softnessEvents: [],
+      log: ["Retro created. The collection window is open."],
+    };
+  }
+
+  return {
+    STAGE_META, PROMPTS, SEED_GROUP_TITLES,
+    createInitialState, reduce,
+    entryById, pointerEntry, pointerKind, myEntry, myKind, isFollowing, person, stageIndex,
+    collectionRevealed, visibleCards, hiddenCardCount, hiddenAuthorCount,
+    topics, topicById, tallyFor, spent, suggestedBudget, myBallot,
+    unfiledCards, deckCardFor, walkCoverage, pace, readyNames, readinessApplies, elsewherePeople,
+  };
+})();
+</script>
+
+<script>
+/* ==========================================================================
+   PART 2 — throwaway page shell. Thin over the module above: it reads
+   selectors, dispatches actions, and draws. It never computes domain facts
+   for itself.
+   ========================================================================== */
+(() => {
+"use strict";
+const M = RetroStages;
+const S = M.STAGE_META;
+
+let state = M.createInitialState();
+
+const ui = {
+  draft: "", draftPrompt: "kept",
+  dockOpen: false, dockDraft: "", dockPrompt: "slowed",
+  instOpen: true, visOpen: false, wt: "softness", wtIdx: {},
+  newGroupTitle: "", showAllThemes: false,
+  actText: "", actOwner: "", actTrigger: "",
+  typingTimer: null,
+};
+
+/* ---- tiny helpers ---------------------------------------------------- */
+const el = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const mmss = (ms) => {
+  const neg = ms < 0; const t = Math.abs(Math.round(ms / 1000));
+  return (neg ? "-" : "") + String(Math.floor(t / 60)).padStart(2, "0") + ":" + String(t % 60).padStart(2, "0");
+};
+const plural = (n, one, many) => n + " " + (n === 1 ? one : (many || one + "s"));
+const nameOf = (id) => (M.person(state, id) || { short: "?" }).short;
+const promptLabel = (id) => (M.PROMPTS.find((p) => p.id === id) || {}).label || id;
+
+function dispatch(action) { state = M.reduce(state, action); render(); }
+function dispatchMany(actions) { actions.forEach((a) => { state = M.reduce(state, a); }); render(); }
+
+/* focus survives innerHTML replacement */
+function captureFocus() {
+  const a = document.activeElement;
+  if (!a || !a.dataset || !a.dataset.fk) return null;
+  return { fk: a.dataset.fk, s: a.selectionStart, e: a.selectionEnd };
+}
+function restoreFocus(f) {
+  if (!f) return;
+  const n = document.querySelector('[data-fk="' + f.fk + '"]');
+  if (!n) return;
+  n.focus();
+  if (f.s != null && n.setSelectionRange) { try { n.setSelectionRange(f.s, f.e); } catch (_) {} }
+}
+
+/* ---- roster ---------------------------------------------------------- */
+function avatarHTML(p) {
+  const away = p.present && p.viewEntryId && p.viewEntryId !== state.pointerEntryId;
+  const ready = (state.readiness[state.pointerEntryId] || {})[p.id];
+  let pip = "";
+  if (p.typing) pip = '<span class="avatar-pip pip-typing" title="typing"></span>';
+  else if (ready) pip = '<span class="avatar-pip pip-ready" title="ready">&#10003;</span>';
+  else if (away) pip = '<span class="avatar-pip pip-elsewhere" title="looking elsewhere"></span>';
+  const t = [p.name, p.facilitator ? "facilitator" : null, p.typing ? "typing now" : null,
+    ready ? "ready" : null,
+    away ? "looking at " + S[M.entryById(state, p.viewEntryId).kind].name : null,
+    p.arrivedAtStage ? "joined during " + S[p.arrivedAtStage].name : null].filter(Boolean).join(" · ");
+  return '<span class="avatar' + (p.id === state.actorId ? " is-me" : "") + (away ? " is-away" : "") +
+    '" style="background:oklch(0.92 0.045 ' + p.hue + ');color:oklch(0.32 0.09 ' + p.hue + ')" ' +
+    'title="' + esc(t) + '">' + esc(p.initials) + pip + "</span>";
+}
+function renderRoster() {
+  const present = state.people.filter((p) => p.present);
+  el("roster").innerHTML = present.map(avatarHTML).join("") +
+    '<span class="hint" style="margin-left:8px">' + present.length + " here" +
+    (state.people.length > present.length ? " · " + (state.people.length - present.length) + " not joined" : "") + "</span>";
+  el("actor").innerHTML = state.people.filter((p) => p.present)
+    .map((p) => '<option value="' + p.id + '"' + (p.id === state.actorId ? " selected" : "") + ">" +
+      esc(p.short) + (p.facilitator ? " (facilitator)" : "") + "</option>").join("");
+}
+
+/* ---- stage rail ------------------------------------------------------ */
+function chipMeta(entry) {
+  const k = entry.kind;
+  if (k === "collect") return plural(state.cards.length, "card");
+  if (k === "review") return plural(state.carried.filter((c) => c.status === "open").length, "open action");
+  if (k === "group") return plural(state.groups.filter((g) => state.cards.some((c) => c.groupId === g.id)).length, "theme") +
+    ", " + M.unfiledCards(state).length + " loose";
+  if (k === "vote") return plural(M.topics(state).length, "topic");
+  if (k === "discuss") { const c = M.walkCoverage(state); return c ? c.coveredCount + " of " + c.total + " covered" : plural(M.topics(state).length, "topic"); }
+  if (k === "close") return plural(state.actions.length, "action");
+  return "";
+}
+function renderRail() {
+  const entry = M.pointerEntry(state);
+  const usedMs = state.clock - state.timeboxStartedAt;
+  const budget = entry ? entry.timeboxMinutes * 60000 : 0;
+  const over = usedMs > budget;
+  el("rail").innerHTML =
+    '<div class="rail-side">' +
+      '<button class="btn btn-sm" data-act="rewind" title="Move the team back a stage">&#9664; Rewind</button>' +
+    "</div>" +
+    '<div class="rail-chips">' +
+    state.stageList.map((e, i) => {
+      const isP = e.id === state.pointerEntryId;
+      const isV = e.id === state.viewEntryId;
+      return '<div class="rail-chip' + (isP ? " is-pointer" : "") + (isV && !isP ? " is-myview" : "") +
+        '" data-act="lookAt" data-entry="' + e.id + '" role="button" tabindex="0" ' +
+        'title="Click to look here on your own. It does not move the team.">' +
+        '<span class="chip-n">' + (i + 1) + "</span>" +
+        '<span class="chip-body"><span class="chip-name">' + esc(S[e.kind].name) + "</span>" +
+        '<span class="chip-meta">' + esc(chipMeta(e)) + "</span></span>" +
+        (isP ? "" : '<button class="chip-take" data-act="movePointer" data-entry="' + e.id +
+          '" title="Move the whole team here">take team</button>') +
+        "</div>";
+    }).join("") + "</div>" +
+    '<div class="rail-side">' +
+      '<span class="timebox' + (over ? " is-over" : "") + '" title="A timebox never fires an advance. Nothing happens when it runs out.">' +
+        "<span>" + mmss(usedMs) + " / " + (entry ? entry.timeboxMinutes : 0) + ":00 advisory</span>" +
+        '<button class="btn btn-sm btn-quiet" data-act="toggleTimebox">' + (state.timeboxRunning ? "pause" : "start") + "</button>" +
+      "</span>" +
+      '<button class="btn btn-sm btn-primary" data-act="advance" title="Move the team on a stage">Advance &#9654;</button>' +
+    "</div>";
+  const cur = el("rail").querySelector(".rail-chip.is-pointer") || el("rail").querySelector(".rail-chip.is-myview");
+  if (cur) cur.scrollIntoView({ block: "nearest", inline: "nearest" });
+}
+
+function renderAway() {
+  const parts = [];
+  if (!M.isFollowing(state)) {
+    const mine = M.myEntry(state), theirs = M.pointerEntry(state);
+    parts.push('<div class="away-strip">' +
+      "<span>You are looking at <strong>" + esc(S[mine.kind].name) + "</strong>. The team is in <strong>" +
+      esc(S[theirs.kind].name) + "</strong>." + (state.pendingMoveNotice && state.pendingMoveNotice.reason === "typing"
+        ? " You were mid-sentence, so nothing moved you." : "") + "</span>" +
+      '<button class="btn btn-sm" data-act="followShared">Rejoin the team</button>' +
+      "</div>");
+  } else if (state.pendingMoveNotice) {
+    parts.push('<div class="away-strip">' +
+      "<span>The team moved to <strong>" + esc(S[state.pendingMoveNotice.kind].name) + "</strong>.</span>" +
+      '<button class="btn btn-sm" data-act="dismissNotice">Got it</button></div>');
+  }
+  el("awayStrip").innerHTML = parts.join("");
+}
+
+/* ---- cards ----------------------------------------------------------- */
+function cardHTML(c, opts) {
+  opts = opts || {};
+  const late = c.writtenInKind !== "collect";
+  const author = state.visibility.showAuthors ? nameOf(c.authorId) : "anonymous";
+  return '<div class="rcard' + (late ? " is-late" : "") + '">' +
+    '<div class="rcard-text">' + esc(c.text) + "</div>" +
+    '<div class="rcard-foot">' +
+      '<span class="tag' + (c.authorId === state.actorId ? " tag-mine" : "") + '">' + esc(author) + "</span>" +
+      "<span>" + esc(promptLabel(c.prompt)) + "</span>" +
+      (late ? '<span class="tag tag-late">written during ' + esc(S[c.writtenInKind].name) + "</span>" : "") +
+      (opts.actions || "") +
+    "</div></div>";
+}
+function chitsHTML(n) {
+  let out = "";
+  for (let i = 0; i < Math.min(n, 9); i++) {
+    out += '<div class="chit"><div class="chit-line"></div><div class="chit-line"></div></div>';
+  }
+  return out;
+}
+
+/* ---- the one focus panel --------------------------------------------- */
+function renderFocus() {
+  const entry = M.myEntry(state);
+  const idx = M.stageIndex(state, entry.id);
+  const meta = S[entry.kind];
+  const body = { collect: viewCollect, review: viewReview, group: viewGroup,
+                 vote: viewVote, discuss: viewDiscuss, close: viewClose }[entry.kind]();
+
+  el("focus").innerHTML =
+    '<div class="stage-kicker">Stage ' + (idx + 1) + " of " + state.stageList.length +
+      (M.isFollowing(state) ? " &#183; the team is here" : " &#183; you are here on your own") + "</div>" +
+    '<div class="stage-head"><h1 class="stage-title">' + esc(meta.name) + "</h1></div>" +
+    '<p class="stage-lede">' + esc(meta.lede) + "</p>" +
+    body;
+  document.body.style.setProperty("--accent-live", M.isFollowing(state) ? "var(--focus)" : "var(--muted-foreground)");
+}
+
+/* ---- COLLECT --------------------------------------------------------- */
+function viewCollect() {
+  const mine = state.cards.filter((c) => c.authorId === state.actorId);
+  const visible = M.visibleCards(state).filter((c) => c.authorId !== state.actorId);
+  const hidden = M.hiddenCardCount(state);
+  const typingNow = state.people.filter((p) => p.present && p.typing && p.id !== state.actorId);
+
+  const composer =
+    '<div class="panel">' +
+      '<div class="panel-head"><span class="panel-title">Write a card</span>' +
+        '<span class="hint">' + mine.length + " from you</span></div>" +
+      '<div class="tabs" style="margin-bottom:10px">' +
+        M.PROMPTS.map((p) => '<button class="tab' + (ui.draftPrompt === p.id ? " is-on" : "") +
+          '" data-act="setPrompt" data-prompt="' + p.id + '">' + esc(p.label) + "</button>").join("") +
+      "</div>" +
+      '<textarea class="field" rows="3" data-fk="composer" data-bind="draft" placeholder="' +
+        esc(promptLabel(ui.draftPrompt)) + '&#8230;">' + esc(ui.draft) + "</textarea>" +
+      '<div style="display:flex;gap:10px;align-items:center;margin-top:9px">' +
+        '<button class="btn btn-primary" data-act="postCard">Add card</button>' +
+        '<span class="hint">&#8984;&#8629; to add</span>' +
+        '<span style="flex:1"></span>' +
+        '<span class="hint">' + (typingNow.length ? esc(typingNow.map((p) => p.short).join(", ")) + " writing now" : "") + "</span>" +
+      "</div>" +
+    "</div>";
+
+  const team = state.visibility.hideUntilPointerLeavesCollect && !M.collectionRevealed(state)
+    ? '<div class="panel"><div class="panel-head"><span class="panel-title">The team</span>' +
+        '<span class="hint">hidden &#183; open question #270</span></div>' +
+        '<div class="cards cards-2">' + chitsHTML(hidden) + "</div>" +
+        '<p class="note" style="margin-top:11px">' + hidden + " cards from " + M.hiddenAuthorCount(state) +
+        " people. They appear when the team leaves Collect. Nobody has to press reveal." +
+        (typingNow.length ? " " + typingNow.length + " being written right now." : "") + "</p></div>"
+    : '<div class="panel"><div class="panel-head"><span class="panel-title">The team</span>' +
+        '<span class="hint">' + visible.length + " cards &#183; visible</span></div>" +
+        '<div class="cards">' + visible.slice(0, 8).map((c) => cardHTML(c)).join("") +
+        (visible.length > 8 ? '<p class="note">and ' + (visible.length - 8) + " more</p>" : "") + "</div></div>";
+
+  const yours = '<div class="panel"><div class="panel-head"><span class="panel-title">Your cards</span>' +
+    '<span class="hint">' + mine.length + "</span></div>" +
+    (mine.length ? '<div class="cards">' + mine.map((c) => cardHTML(c, {
+      actions: '<button class="btn btn-sm btn-quiet" data-act="deleteCard" data-card="' + c.id + '">remove</button>',
+    })).join("") + "</div>" : '<p class="note">Nothing yet. Whatever is bugging you is a fine first card.</p>') + "</div>";
+
+  return composer +
+    '<div class="split">' + team + yours + "</div>" +
+    '<p class="note note-inline">Collect has no readiness signal, deliberately. The only signal here is whether you have ' +
+    "written a card, so no record of who declared themselves finished is ever created.</p>";
+}
+
+/* ---- REVIEW ---------------------------------------------------------- */
+function viewReview() {
+  const open = state.carried.filter((c) => c.status === "open");
+  const revealed = M.collectionRevealed(state) && state.visibility.hideUntilPointerLeavesCollect;
+  const banner = revealed
+    ? '<div class="callout callout-ok"><span class="callout-mark">reveal</span><span>' +
+      state.cards.length + " cards from " + new Set(state.cards.map((c) => c.authorId)).size +
+      " people became visible when the team left Collect. The stage machine hid nothing and revealed nothing; " +
+      "visibility is a read-time projection, and which projection is still open (#270).</span></div>"
+    : "";
+
+  return banner +
+    '<div class="panel"><div class="panel-head"><span class="panel-title">Carried in</span>' +
+      '<span class="hint">' + open.length + " still open</span></div>" +
+      state.carried.map((a) => '<div class="act" style="margin-bottom:6px">' +
+        '<div class="act-body"><div>' + esc(a.text) + "</div>" +
+        '<div class="act-owner">' + esc(nameOf(a.ownerId)) + " &#183; opened " + esc(a.from) + " &#183; " + esc(a.status) + "</div></div>" +
+        '<div style="display:flex;gap:4px">' +
+          '<button class="btn btn-sm" data-act="carry" data-id="' + a.id + '" data-status="done">Done</button>' +
+          '<button class="btn btn-sm" data-act="carry" data-id="' + a.id + '" data-status="open">Still open</button>' +
+          '<button class="btn btn-sm" data-act="carry" data-id="' + a.id + '" data-status="dropped">Drop</button>' +
+        "</div></div>").join("") +
+      '<p class="note" style="margin-top:10px">Review sits before generation only because collection already happened ' +
+      "asynchronously. Reading last sprint's commitments first would anchor the writing if the writing had not finished.</p>" +
+    "</div>" +
+    '<div class="panel"><div class="panel-head"><span class="panel-title">What arrived</span>' +
+      '<span class="hint">' + state.cards.length + " cards &#183; " + state.groups.length + " themes so far</span></div>" +
+      '<div class="cards cards-2">' + state.cards.slice(0, 6).map((c) => cardHTML(c)).join("") + "</div>" +
+      '<p class="note" style="margin-top:10px">Review is skippable. Removing it from the stage list does not change ' +
+      "when cards appear, because visibility keys off the pointer leaving Collect, not off arriving anywhere in particular.</p>" +
+    "</div>";
+}
+
+/* ---- GROUP ----------------------------------------------------------- */
+function viewGroup() {
+  const card = M.deckCardFor(state, state.actorId);
+  const loose = M.unfiledCards(state).length;
+  const filed = state.cards.filter((c) => c.groupId !== null).length;
+  const others = state.people.filter((p) => p.present && p.id !== state.actorId).slice(0, 4)
+    .map((p) => { const c = M.deckCardFor(state, p.id); return c ? p.short : null; }).filter(Boolean);
+
+  const themes = state.groups.map((g) => ({ g, n: state.cards.filter((c) => c.groupId === g.id).length }))
+    .filter((x) => x.n > 0).sort((a, b) => b.n - a.n);
+  const shown = ui.showAllThemes ? themes : themes.slice(0, 8);
+
+  const deck = card
+    ? '<div class="deck"><div class="deck-text">' + esc(card.text) + "</div>" +
+      '<div class="deck-meta">' + esc(state.visibility.showAuthors ? nameOf(card.authorId) : "anonymous") +
+      " &#183; " + esc(promptLabel(card.prompt)) + " &#183; " + loose + " still loose</div></div>"
+    : '<div class="deck"><div class="deck-text" style="color:var(--muted-foreground);font-size:16px">' +
+      "Nothing left in the deck. Every card has been looked at once.</div></div>";
+
+  const targets = card
+    ? '<div class="panel"><div class="panel-head"><span class="panel-title">File it</span>' +
+        '<span class="hint">number keys work &#183; n new &#183; s leave loose</span></div>' +
+        '<div class="targets">' +
+          shown.map((x, i) => '<button class="target" data-act="file" data-card="' + card.id + '" data-group="' + x.g.id + '">' +
+            '<span class="key">' + (i < 9 ? i + 1 : "&#183;") + "</span>" +
+            '<span class="target-name">' + esc(x.g.title) + "</span>" +
+            '<span class="target-count">' + x.n + "</span></button>").join("") +
+        "</div>" +
+        (themes.length > 8 ? '<button class="btn btn-sm btn-quiet" style="margin-top:7px" data-act="toggleThemes">' +
+          (ui.showAllThemes ? "Show fewer" : "Show all " + themes.length + " themes") + "</button>" : "") +
+        '<div style="display:flex;gap:7px;margin-top:11px;flex-wrap:wrap;align-items:center">' +
+          '<input class="field" style="flex:1 1 220px;width:auto" data-fk="newtheme" data-bind="newGroupTitle" ' +
+            'placeholder="Start a new theme&#8230;" value="' + esc(ui.newGroupTitle) + '">' +
+          '<button class="btn" data-act="fileNew" data-card="' + card.id + '"><span class="key">n</span> New theme</button>' +
+          '<button class="btn" data-act="loose" data-card="' + card.id + '"><span class="key">s</span> Leave loose</button>' +
+        "</div></div>"
+    : "";
+
+  const pct = Math.round((filed / Math.max(1, state.cards.length)) * 100);
+
+  return deck + targets +
+    '<div class="panel">' +
+      '<div class="panel-head"><span class="panel-title">Progress</span>' +
+        '<span class="hint">' + filed + " of " + state.cards.length + " filed &#183; " +
+        state.groups.length + " themes</span></div>" +
+      '<div class="meter"><div class="meter-fill is-accent" style="width:' + pct + '%"></div></div>' +
+      '<p class="note" style="margin-top:10px">' +
+        (others.length ? "Cards are dealt, not queued. " + esc(others.join(", ")) +
+          " each have a different card in front of them right now, so everyone triages in parallel instead of watching one person drag." :
+          "You are the only one triaging.") +
+      "</p>" +
+      '<div style="display:flex;gap:7px;margin-top:10px;flex-wrap:wrap">' +
+        '<button class="btn btn-sm" data-act="fileRemaining">Prototype shortcut: file the rest</button>' +
+        '<button class="btn btn-sm btn-quiet" data-act="lookAt" data-entry="' +
+          (state.stageList.find((e) => e.kind === "collect") || state.stageList[0]).id + '">Go read the raw cards</button>' +
+      "</div>" +
+    "</div>" +
+    '<p class="note note-inline">No drag anywhere. Every path here is a button or a key, which is the one thing every ' +
+    "incumbent's grouping is missing. Filing is reversible from the theme list at any time, in any stage.</p>";
+}
+
+/* ---- VOTE ------------------------------------------------------------ */
+function viewVote() {
+  const ballot = M.myBallot(state);
+  const spent = M.spent(state, state.actorId);
+  const left = state.voteBudget - spent;
+  const suggested = M.suggestedBudget(state);
+  const hideTallies = state.visibility.hideTalliesDuringVote && M.pointerKind(state) === "vote";
+  const voters = Object.keys(state.votes).length;
+
+  let pips = "";
+  for (let i = 0; i < state.voteBudget; i++) pips += '<span class="pip' + (i < spent ? " is-spent" : "") + '"></span>';
+
+  return '<div class="panel">' +
+      '<div class="panel-head"><span class="panel-title">Your budget</span>' +
+        '<span class="hint">' + voters + " of " + state.people.filter((p) => p.present).length + " have voted</span></div>" +
+      '<div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">' +
+        '<div class="pips">' + pips + "</div>" +
+        "<strong>" + left + " left</strong>" +
+        '<span style="flex:1"></span>' +
+        '<span class="hint">suggested ' + suggested + " for " + ballot.length + " topics</span>" +
+        '<button class="btn btn-sm" data-act="budget" data-n="' + (state.voteBudget - 1) + '">&#8722;</button>' +
+        '<span class="stepper-val">' + state.voteBudget + "</span>" +
+        '<button class="btn btn-sm" data-act="budget" data-n="' + (state.voteBudget + 1) + '">+</button>' +
+      "</div>" +
+      '<p class="note" style="margin-top:9px">Retrium computes &#8730;topics and refuses to let you change it. ' +
+      "This suggests the same number and lets you change it. Max " + state.maxPerTopic + " on any one topic.</p>" +
+    "</div>" +
+    '<div class="panel">' +
+      '<div class="panel-head"><span class="panel-title">Ballot</span>' +
+        '<span class="hint">shuffled for you</span></div>' +
+      '<div class="ballot">' +
+        ballot.map((t) => '<div class="ballot-row">' +
+          '<span class="ballot-name">' + esc(t.title) +
+            '<br><span class="ballot-sub">' + (t.kind === "group" ? plural(t.cardIds.length, "card") : "1 card, on its own") +
+            (hideTallies ? "" : " &#183; " + t.votes + " votes") + "</span></span>" +
+          '<span class="stepper">' +
+            '<button class="btn btn-sm" data-act="retract" data-topic="' + t.id + '" ' + (t.myVotes ? "" : "disabled") + ">&#8722;</button>" +
+            '<span class="stepper-val">' + t.myVotes + "</span>" +
+            '<button class="btn btn-sm" data-act="cast" data-topic="' + t.id + '" ' + (left > 0 && t.myVotes < state.maxPerTopic ? "" : "disabled") + ">+</button>" +
+          "</span></div>").join("") +
+      "</div>" +
+      '<p class="note" style="margin-top:11px">Your ballot order is shuffled independently of everyone else&#39;s. ' +
+      "Anchoring is immune to warnings, incentives and expertise, so a &#8220;don&#39;t be swayed by the top item&#8221; note " +
+      "would do nothing. Sequence is the only lever there is, so nobody shares a first item." +
+      (hideTallies ? " Running tallies are hidden while voting; that is a switch, not a law." : "") + "</p>" +
+      '<div style="display:flex;gap:7px;margin-top:10px;flex-wrap:wrap">' +
+        '<button class="btn btn-sm" data-act="simVotes">Let everyone else vote</button>' +
+        '<button class="btn btn-sm btn-quiet" data-act="toggleVis" data-key="hideTalliesDuringVote">' +
+          (state.visibility.hideTalliesDuringVote ? "Show tallies while voting" : "Hide tallies while voting") + "</button>" +
+      "</div>" +
+    "</div>";
+}
+
+/* ---- DISCUSS --------------------------------------------------------- */
+function viewDiscuss() {
+  const cov = M.walkCoverage(state);
+  if (!cov) {
+    return '<div class="panel"><p class="note">The walk is snapshotted when the team enters Discuss. ' +
+      "The team has not been here yet, so there is no order to show.</p>" +
+      '<button class="btn" data-act="movePointer" data-entry="' + M.myEntry(state).id + '">Bring the team here</button></div>';
+  }
+  const topic = M.topicById(state, cov.currentId);
+  const p = M.pace(state);
+  const pos = cov.all.indexOf(cov.currentId);
+  const isCovered = cov.covered.includes(cov.currentId);
+
+  const cells = cov.all.map((id) => '<span class="cov-cell' +
+    (cov.covered.includes(id) ? " is-covered" : "") +
+    (id === cov.currentId ? " is-current" : "") +
+    (cov.late.includes(id) ? " is-late" : "") + '" title="' + esc((M.topicById(state, id) || {}).title || "") + '"></span>').join("");
+
+  const coverage =
+    '<div class="panel"><div class="panel-head"><span class="panel-title">Coverage</span>' +
+      '<span class="hint">order set by ' + esc(state.walk.orderedBy) + ", snapshotted on entry</span></div>" +
+      '<div class="coverage">' + cells + "</div>" +
+      '<p class="note" style="margin-top:10px"><strong>' + cov.coveredCount + " of " + cov.total + " covered</strong> &#183; " +
+        cov.remaining + " not yet discussed" +
+        (cov.lateCount ? " &#183; " + cov.lateCount + " arrived after the order was set" : "") +
+        (p && p.leftMs <= 0
+          ? " &#183; the advisory timebox ran out " + mmss(-p.leftMs) + " ago and the walk carried on"
+          : (p && p.projected !== null ? " &#183; at this pace you will reach " + p.projected + " of " + cov.total : "")) +
+      "</p>" +
+    "</div>";
+
+  // a topic of one already shows its text as the heading; do not print it twice
+  const cards = topic && topic.kind === "group"
+    ? topic.cardIds.map((id) => state.cards.find((c) => c.id === id)).filter(Boolean) : [];
+  const solo = topic && topic.kind === "card" ? state.cards.find((c) => c.id === topic.cardIds[0]) : null;
+
+  const head =
+    '<div class="panel">' +
+      '<div class="walk-head">' +
+        "<div><h2 class=\"walk-title\">" + esc(topic ? topic.title : "&#8212;") + "</h2>" +
+        '<span class="walk-pos">Topic ' + (pos + 1) + " of " + cov.total +
+          (topic && topic.votes ? " &#183; " + topic.votes + " votes" : " &#183; no votes") +
+          (topic && topic.afterSnapshot ? " &#183; arrived after the order was set" : "") + "</span></div>" +
+        '<div style="display:flex;gap:6px;flex-wrap:wrap">' +
+          '<button class="btn btn-sm" data-act="walkPrev">&#9664; Back</button>' +
+          '<button class="btn btn-sm" data-act="markCovered" data-covered="' + (isCovered ? "0" : "1") + '">' +
+            (isCovered ? "Un-cover" : "Mark covered") + "</button>" +
+          '<button class="btn btn-sm btn-quiet" data-act="skipTopic">Skip, not covered</button>' +
+          '<button class="btn btn-sm btn-primary" data-act="walkNext">Covered, next &#9654;</button>' +
+        "</div>" +
+      "</div>" +
+      (cards.length ? '<div class="cards" style="margin-top:14px">' + cards.map((c) => cardHTML(c)).join("") + "</div>" : "") +
+      (solo ? '<p class="note" style="margin-top:12px">One card, from ' +
+        esc(state.visibility.showAuthors ? nameOf(solo.authorId) : "someone") + ", under " + esc(promptLabel(solo.prompt)) +
+        (solo.writtenInKind !== "collect" ? ". Written during " + esc(S[solo.writtenInKind].name) + "." : ".") +
+        " It never got grouped, so it walks on its own.</p>" : "") +
+      (p ? '<p class="note" style="margin-top:11px">' +
+        (p.leftMs >= 0 ? mmss(p.leftMs) + " left in the advisory timebox"
+                       : "Over the advisory timebox by " + mmss(-p.leftMs)) +
+        (p.perTopicMs ? " &#183; " + mmss(p.perTopicMs) + " per topic so far" : "") +
+        ". Nothing happens either way.</p>" : "") +
+    "</div>";
+
+  const capture =
+    '<div class="panel"><div class="panel-head"><span class="panel-title">Capture an action</span>' +
+      '<span class="hint">on this topic</span></div>' +
+      '<div class="action-form">' +
+        '<input class="field" data-fk="acttext" data-bind="actText" placeholder="What will we do?" value="' + esc(ui.actText) + '">' +
+        '<div class="action-grid">' +
+          '<input class="field" data-fk="acttrig" data-bind="actTrigger" placeholder="When or if&#8230; (optional)" value="' + esc(ui.actTrigger) + '">' +
+          '<select class="select" data-bind="actOwner" data-fk="actowner"><option value="">No owner yet</option>' +
+            state.people.filter((x) => x.present).map((x) => '<option value="' + x.id + '"' +
+              (ui.actOwner === x.id ? " selected" : "") + ">" + esc(x.short) + "</option>").join("") + "</select>" +
+          '<button class="btn btn-primary" data-act="addAction">Capture</button>' +
+        "</div>" +
+      "</div>" +
+      '<p class="note" style="margin-top:9px">If-then phrasing outperforms vague intent, and a named owner is the ' +
+      "best-supported accountability mechanism there is. Both are invited, neither is required.</p>" +
+      (state.actions.length ? '<div style="margin-top:11px;display:grid;gap:6px">' +
+        state.actions.map((a) => '<div class="act"><div class="act-body"><div>' + esc(a.text) + "</div>" +
+          (a.trigger ? '<div class="act-trigger">when ' + esc(a.trigger) + "</div>" : "") +
+          '<div class="act-owner">' + (a.ownerId ? esc(nameOf(a.ownerId)) : "unowned") +
+          " &#183; captured in " + esc(S[a.stageKind].name) + "</div></div></div>").join("") + "</div>" : "") +
+    "</div>";
+
+  const jump =
+    '<div class="panel"><div class="panel-head"><span class="panel-title">The walk</span>' +
+      '<span class="hint">jump anywhere</span></div>' +
+      '<div class="jumplist">' +
+        cov.all.map((id, i) => {
+          const t = M.topicById(state, id);
+          if (!t) return "";
+          return '<button class="jump' + (id === cov.currentId ? " is-current" : "") +
+            (cov.covered.includes(id) ? " is-covered" : "") + '" data-act="walkGoto" data-topic="' + id + '">' +
+            '<span class="jump-dot"></span><span>' + (i + 1) + ". " + esc(t.title.slice(0, 46)) +
+            (t.afterSnapshot ? ' <span class="tag tag-late">late</span>' : "") + "</span>" +
+            '<span class="jump-votes">' + t.votes + "</span></button>";
+        }).join("") +
+      "</div>" +
+      '<p class="note" style="margin-top:10px">Votes cast now still count and still show. They do not reshuffle a walk ' +
+      "in progress, because the order was snapshotted on entry.</p>" +
+    "</div>";
+
+  return coverage + '<div class="split"><div>' + head + "</div>" + jump + "</div>" + capture;
+}
+
+/* ---- CLOSE ----------------------------------------------------------- */
+function viewClose() {
+  const cov = M.walkCoverage(state);
+  const missed = cov ? cov.all.filter((id) => !cov.covered.includes(id)).map((id) => M.topicById(state, id)).filter(Boolean) : [];
+
+  return '<div class="panel">' +
+      '<div class="panel-head"><span class="panel-title">What we are going to do</span>' +
+        '<span class="hint">' + plural(state.actions.length, "action") + "</span></div>" +
+      (state.actions.length
+        ? '<div style="display:grid;gap:6px">' + state.actions.map((a) => '<div class="act">' +
+            '<div class="act-body"><div>' + esc(a.text) + "</div>" +
+            (a.trigger ? '<div class="act-trigger">when ' + esc(a.trigger) + "</div>" : "") +
+            '<div class="act-owner">' + (a.ownerId ? esc(nameOf(a.ownerId)) : "unowned &#8212; nobody will do this") + "</div></div></div>").join("") + "</div>"
+        : '<p class="note">Nothing was captured. That is allowed, and it is worth noticing.</p>') +
+      '<p class="note" style="margin-top:10px">No count limit is enforced. &#8220;One to three action items&#8221; is folklore ' +
+      "and the only relevant meta-analytic table puts three in its worst cell.</p>" +
+    "</div>" +
+    (cov ? '<div class="panel"><div class="panel-head"><span class="panel-title">What we did not get to</span>' +
+      '<span class="hint">' + cov.coveredCount + " of " + cov.total + " covered</span></div>" +
+      (missed.length
+        ? '<div class="jumplist">' + missed.map((t) => '<button class="jump" data-act="gotoDiscuss" data-topic="' + t.id + '">' +
+            '<span class="jump-dot"></span><span>' + esc(t.title.slice(0, 60)) + "</span>" +
+            '<span class="jump-votes">' + t.votes + "</span></button>").join("") + "</div>"
+        : '<p class="note">Everything was covered.</p>') +
+      '<p class="note" style="margin-top:10px">These are not lost. Nothing was destroyed, finalised or hidden by ' +
+      "arriving here, and any of them can be picked up by rewinding to Discuss.</p></div>" : "") +
+    '<div class="panel"><div class="panel-head"><span class="panel-title">Where this rests</span></div>' +
+      '<p class="note">There is no finished state. The retro sits on Close the way a room sits where it was left, and ' +
+      "anyone can rewind and keep going. There is no &#8220;was this worth your time?&#8221; score either: satisfaction " +
+      "tracks how productive a group felt, which is systematically higher than how productive it was.</p>" +
+    "</div>";
+}
+
+/* ---- the quiet dock: everything the stage is not foregrounding -------- */
+function renderDock() {
+  const ready = (state.readiness[state.pointerEntryId] || {})[state.actorId];
+  const readyNames = M.readyNames(state);
+  const applies = M.readinessApplies(state);
+  const cov = M.walkCoverage(state);
+
+  el("dock").innerHTML =
+    '<button class="btn' + (ui.dockOpen ? " btn-focus" : "") + '" data-act="toggleDock">' +
+      (ui.dockOpen ? "Close" : "Add a card") + "</button>" +
+    '<select class="select" data-bind="lookElsewhere" data-fk="lookel">' +
+      '<option value="">Look elsewhere&#8230;</option>' +
+      state.stageList.map((e, i) => '<option value="' + e.id + '"' + (e.id === state.viewEntryId ? " selected" : "") + ">" +
+        (i + 1) + ". " + esc(S[e.kind].name) + (e.id === state.pointerEntryId ? " (the team)" : "") + "</option>").join("") +
+    "</select>" +
+    (applies
+      ? '<button class="btn" data-act="ready" data-on="' + (ready ? "0" : "1") + '">' +
+        '<span class="ready-pip' + (ready ? " is-on" : "") + '"></span> ' + (ready ? "I&#39;m ready" : "I&#39;m ready") + "</button>" +
+        '<span class="dock-state">' + (readyNames.length ? esc(readyNames.join(", ")) + " ready" : "nobody ready yet") + "</span>"
+      : '<span class="dock-state">no readiness in Collect</span>') +
+    '<span class="dock-spacer"></span>' +
+    '<button class="btn btn-sm btn-quiet" data-act="visMenu">Visibility</button>' +
+    '<span class="dock-state">' + state.cards.length + " cards &#183; " + M.topics(state).length + " topics" +
+      (cov ? " &#183; " + cov.coveredCount + " covered" : "") + "</span>";
+
+  el("dockDrawer").innerHTML = ui.dockOpen ? dockDrawerHTML() : (ui.visOpen ? visDrawerHTML() : "");
+}
+
+function dockDrawerHTML() {
+  const kind = M.pointerKind(state);
+  const outside = kind !== "collect";
+  return '<div class="dock-drawer">' +
+    '<div class="tabs" style="margin-bottom:8px">' +
+      M.PROMPTS.map((p) => '<button class="tab' + (ui.dockPrompt === p.id ? " is-on" : "") +
+        '" data-act="setDockPrompt" data-prompt="' + p.id + '">' + esc(p.label) + "</button>").join("") +
+    "</div>" +
+    '<div style="display:flex;gap:8px;align-items:flex-start">' +
+      '<textarea class="field" rows="2" data-fk="dockdraft" data-bind="dockDraft" placeholder="Write a card, in any stage&#8230;">' +
+        esc(ui.dockDraft) + "</textarea>" +
+      '<button class="btn btn-primary" data-act="postDockCard">Add</button>' +
+    "</div>" +
+    (outside ? '<p class="note" style="margin-top:8px">The team is in <strong>' + esc(S[kind].name) +
+      "</strong>. This card will be written anyway, because a stage never forbids a write. It will land ungrouped" +
+      (state.walk ? ", off the ballot, and outside the walk order that was already snapshotted" : " and unvoted") +
+      ".</p>" : "") +
+    "</div>";
+}
+
+function visDrawerHTML() {
+  const v = state.visibility;
+  const row = (key, label, note) => '<div class="switchrow">' +
+    "<label>" + label + '<br><span class="note">' + note + "</span></label>" +
+    '<button class="btn btn-sm' + (v[key] ? " btn-focus" : "") + '" data-act="toggleVis" data-key="' + key + '">' +
+    (v[key] ? "on" : "off") + "</button></div>";
+  return '<div class="dock-drawer">' +
+    '<div class="panel-title" style="margin-bottom:6px">Visibility &#8212; still open, flip it and see</div>' +
+    row("hideUntilPointerLeavesCollect", "Hide other people&#39;s cards until the team leaves Collect",
+        "Ticket #270. Exposure during generation narrows the categories explored while leaving the count intact, so the damage is invisible in any metric a tool would track.") +
+    row("showAuthors", "Show who wrote each card",
+        "Ticket #262. Nobody in the category ships anonymous-while-writing, attributed-while-discussing. Turning this off here turns it off everywhere, which is the crude version.") +
+    row("hideTalliesDuringVote", "Hide running tallies while voting",
+        "Not a locked decision. Retrium hides them and reveals on entering Discuss; Parabol reveals implicitly by advancing.") +
+    "</div>";
+}
+
+/* ==========================================================================
+   Guided walkthroughs
+   ========================================================================== */
+function ff(kind) {
+  // fast-forward the shared pointer to a stage, doing the obvious setup
+  const acts = [];
+  const target = state.stageList.find((e) => e.kind === kind);
+  if (!target) return acts;
+  if (["vote", "discuss", "close"].includes(kind)) acts.push({ type: "fileRemaining" });
+  acts.push({ type: "movePointerTo", entryId: state.stageList.find((e) => e.kind === "review").id, by: "p1" });
+  if (["vote", "discuss", "close"].includes(kind)) acts.push({ type: "simulateTeamVotes" });
+  acts.push({ type: "movePointerTo", entryId: target.id, by: "p1" });
+  return acts;
+}
+
+const WALKTHROUGHS = [
+  {
+    id: "softness", name: "Softness stress test",
+    desc: "The question this direction exists to answer. Write during Vote, wander off, get advanced past, come back. Watch what survives of &#8220;one thing at a time&#8221;.",
+    steps: [
+      { label: "Reset, then run the team to Vote", note: "Cards filed, seven people voted, ballot up.",
+        run: () => { state = M.createInitialState(); dispatchMany(ff("vote")); } },
+      { label: "Write a card during Vote", note: "Nothing refuses it. No warning, no friction. Watch where it lands.",
+        run: () => dispatch({ type: "writeCard", text: "We never decided who owns the Convex migration runbook", prompt: "slowed" }) },
+      { label: "Look at the ballot again", note: "It is there, as a topic of one, at zero votes. Everyone who already voted has spent their budget and will not come back for it. The write was accepted and the flow still guarantees it loses.",
+        run: () => dispatch({ type: "noop" }) },
+      { label: "Go and look at Collect on your own", note: "The team stays in Vote. The accent above the panel drains to grey and an amber strip appears; that is the whole of the signal.",
+        run: () => dispatch({ type: "lookAt", entryId: state.stageList.find((e) => e.kind === "collect").id }) },
+      { label: "Mira advances the team to Discuss", note: "You are not yanked. You do not see the walk begin. The order is snapshotted without you in the room.",
+        run: () => dispatch({ type: "movePointerTo", entryId: state.stageList.find((e) => e.kind === "discuss").id, by: "p1" }) },
+      { label: "Rejoin the team", note: "You land mid-walk. Coverage tells you what you missed; nothing tells you what was said.",
+        run: () => dispatch({ type: "followShared" }) },
+      { label: "Find the card you wrote during Vote", note: "It did make the snapshot, and it sits near the bottom on zero votes. Sorted honestly into the position guaranteed by the moment it was written.",
+        run: () => {
+          const t = M.topics(state).find((x) => x.kind === "card" && (state.cards.find((c) => c.id === x.cardIds[0]) || {}).writtenInKind === "vote");
+          if (t) dispatch({ type: "walkGoto", topicId: t.id });
+        } },
+      { label: "Now write one during the walk itself", note: "Accepted again. This one missed the snapshot entirely.",
+        run: () => dispatch({ type: "writeCard", text: "Nobody said out loud that we shipped the schema narrow from a laptop", prompt: "slowed" }) },
+      { label: "Look at where it went", note: "Appended after the whole snapshotted order, dashed in the coverage strip, counted separately as “arrived after the order was set”. Honest, and last in the queue behind everything nobody has reached yet.",
+        run: () => {
+          const cov = M.walkCoverage(state);
+          if (cov && cov.late.length) dispatch({ type: "walkGoto", topicId: cov.late[cov.late.length - 1] });
+        } },
+    ],
+  },
+  {
+    id: "typing", name: "Typing when the team advances",
+    desc: "Parabol yanks you out of Reflect mid-sentence. This is the fixed version of that bug.",
+    steps: [
+      { label: "Reset to Collect", run: () => { state = M.createInitialState(); render(); } },
+      { label: "Start typing a card", note: "A typing dot appears on your avatar. You are mid-sentence.",
+        run: () => { ui.draft = "The thing nobody has said out loud is that the demo migration"; dispatch({ type: "setTyping", personId: state.actorId, on: true }); } },
+      { label: "Mira advances the team to Review", note: "Your view does not move. Your draft is intact. A strip appears saying where everyone went.",
+        run: () => dispatch({ type: "movePointerTo", entryId: state.stageList.find((e) => e.kind === "review").id, by: "p1" }) },
+      { label: "Finish the card", note: "It posts, tagged as written during Review, and everyone else's cards are now visible to you because the pointer left Collect.",
+        run: () => { const t = ui.draft + " left the schema half-narrowed"; ui.draft = ""; dispatchMany([{ type: "setTyping", personId: state.actorId, on: false }, { type: "writeCard", text: t, prompt: "slowed" }]); } },
+      { label: "Catch up with the team", run: () => dispatch({ type: "followShared" }) },
+    ],
+  },
+  {
+    id: "stagelist", name: "Skip and reorder",
+    desc: "The sequence is data, not code. Skipping is absence from the list, reordering is a reordered list, and the two irreducible stages refuse.",
+    steps: [
+      { label: "Reset", run: () => { state = M.createInitialState(); render(); } },
+      { label: "Drop Review from this retro", note: "The rail renumbers. Stage 1 of 5 now.",
+        run: () => dispatch({ type: "skipStage", entryId: state.stageList.find((e) => e.kind === "review").id }) },
+      { label: "Drop Group too", note: "Every card becomes its own topic. Nothing breaks; the walk just gets longer.",
+        run: () => dispatch({ type: "skipStage", entryId: state.stageList.find((e) => e.kind === "group").id }) },
+      { label: "Try to drop Discuss", note: "Refused. Collect and Discuss are irreducible. Check the log in this panel.",
+        run: () => dispatch({ type: "skipStage", entryId: state.stageList.find((e) => e.kind === "discuss").id }) },
+      { label: "Move Vote after Discuss", note: "Now the walk order falls back to creation order, because no vote stage ran before it.",
+        run: () => dispatch({ type: "moveStage", entryId: state.stageList.find((e) => e.kind === "vote").id, dir: 1 }) },
+      { label: "Put Group back", run: () => dispatch({ type: "restoreStage", kind: "group" }) },
+    ],
+  },
+  {
+    id: "latecomer", name: "The latecomer",
+    desc: "Dan was on support and joins during Discuss. Everything already happened. What does the board give him?",
+    steps: [
+      { label: "Reset and run the team to Discuss", run: () => { state = M.createInitialState(); dispatchMany(ff("discuss")); } },
+      { label: "Cover three topics without him", run: () => dispatchMany([{ type: "walkNext" }, { type: "walkNext" }, { type: "walkNext" }]) },
+      { label: "Dan joins now", note: "He lands on the shared stage, mid-walk, with a coverage bar that tells him exactly what he missed and what is left.",
+        run: () => dispatch({ type: "arriveLate", personId: "p8" }) },
+      { label: "Dan reads back through Collect", note: "Free navigation is what makes catching up possible at all. He is not blocked and nobody has to stop.",
+        run: () => dispatch({ type: "lookAt", entryId: state.stageList.find((e) => e.kind === "collect").id }) },
+      { label: "Dan writes the card he had in his head", note: "Accepted, tagged, and appended to the walk as a late arrival.",
+        run: () => dispatch({ type: "writeCard", text: "Support rotation ate two days and it was not on the board anywhere", prompt: "slowed" }) },
+      { label: "Dan rejoins the walk", run: () => dispatch({ type: "followShared" }) },
+    ],
+  },
+  {
+    id: "coverage", name: "The walk runs out of time",
+    desc: "Coverage beats airtime. Watch the pace line say, in advance, how many topics you are not going to reach.",
+    steps: [
+      { label: "Reset and run the team to Discuss", run: () => { state = M.createInitialState(); dispatchMany(ff("discuss")); } },
+      { label: "Cut the timebox to 8 minutes", run: () => dispatch({ type: "setTimebox", minutes: 8 }) },
+      { label: "Spend four minutes on two topics", note: "The pace projection appears: at this rate you reach a fraction of the list.",
+        run: () => dispatchMany([{ type: "startTimebox" }, { type: "tick", ms: 120000 }, { type: "walkNext" }, { type: "tick", ms: 120000 }, { type: "walkNext" }]) },
+      { label: "Blow straight through the timebox", note: "It goes amber. Nothing else happens. No advance fires.",
+        run: () => dispatch({ type: "tick", ms: 400000 }) },
+      { label: "Skip a topic without covering it", note: "Position and coverage are different axes, and the readout keeps them apart.",
+        run: () => dispatch({ type: "walkNext", markCovered: false }) },
+      { label: "Close anyway", note: "Close counts what never got discussed instead of pretending the retro finished.",
+        run: () => dispatch({ type: "movePointerTo", entryId: state.stageList.find((e) => e.kind === "close").id, by: "p1" }) },
+    ],
+  },
+  {
+    id: "straight", name: "The straight run",
+    desc: "The direction working as intended, start to finish, with nobody wandering.",
+    steps: [
+      { label: "Reset", run: () => { state = M.createInitialState(); render(); } },
+      { label: "Write a card", run: () => dispatch({ type: "writeCard", text: "Convex schema pushes need to come from CI, not a laptop", prompt: "try" }) },
+      { label: "Advance to Review", note: "40 cards from 7 people become visible in one moment.",
+        run: () => dispatch({ type: "advance", by: "p1" }) },
+      { label: "Mark the release checklist still open", run: () => dispatch({ type: "toggleCarryAction", id: "k2", status: "open" }) },
+      { label: "Advance to Group", note: "One card at a time, dealt out. Try the number keys.", run: () => dispatch({ type: "advance", by: "p1" }) },
+      { label: "File the rest", run: () => dispatch({ type: "fileRemaining" }) },
+      { label: "Advance to Vote", run: () => dispatch({ type: "advance", by: "p1" }) },
+      { label: "Let everyone else vote", run: () => dispatch({ type: "simulateTeamVotes" }) },
+      { label: "Spend your budget", run: () => { const b = M.myBallot(state); dispatchMany([0, 1, 2, 3].map((i) => ({ type: "castVote", topicId: (b[i] || b[0]).id })).filter(Boolean)); } },
+      { label: "Advance to Discuss", note: "The order snapshots here, by votes descending.", run: () => dispatch({ type: "advance", by: "p1" }) },
+      { label: "Capture an action on the top topic", run: () => dispatch({ type: "addAction", text: "Move every Convex schema push into CI", ownerId: "p6", trigger: "the next migration lands" }) },
+      { label: "Cover three topics", run: () => dispatchMany([{ type: "walkNext" }, { type: "walkNext" }, { type: "walkNext" }]) },
+      { label: "Advance to Close", run: () => dispatch({ type: "movePointerTo", entryId: state.stageList.find((e) => e.kind === "close").id, by: "p1" }) },
+    ],
+  },
+];
+
+/* ==========================================================================
+   Instruments panel
+   ========================================================================== */
+function renderInstruments() {
+  const cov = M.walkCoverage(state);
+  const entry = M.pointerEntry(state);
+  const kv = (k, v) => '<div class="kv-k">' + k + '</div><div class="kv-v">' + v + "</div>";
+
+  const stageListStr = state.stageList.map((e, i) =>
+    (e.id === state.pointerEntryId ? "[" : "") + (i + 1) + " " + e.kind + (e.id === state.pointerEntryId ? "]" : "") +
+    (e.id === state.viewEntryId && e.id !== state.pointerEntryId ? "*" : "")).join("  ");
+
+  const stateBlock = '<div class="kv">' +
+    kv("stage list", esc(stageListStr) + (state.removed.length ? "<br>removed: " + esc(state.removed.map((r) => r.kind).join(", ")) : "")) +
+    kv("shared pointer", esc(entry ? entry.kind : "-") + " (moved by " + esc(nameOf(state.pointerMovedBy)) + ")") +
+    kv("your view", esc(M.myKind(state)) + (M.isFollowing(state) ? " &#8212; following" : " &#8212; DIVERGED")) +
+    kv("collect left?", state.pointerHasLeftCollect ? "yes" : "no") +
+    kv("cards", state.cards.length + " total, " + M.visibleCards(state).length + " visible to you, " +
+       state.cards.filter((c) => c.writtenInKind !== "collect").length + " written outside Collect") +
+    kv("themes", state.groups.filter((g) => state.cards.some((c) => c.groupId === g.id)).length +
+       ", " + M.unfiledCards(state).length + " untriaged") +
+    kv("topics", M.topics(state).length) +
+    kv("vote budget", state.voteBudget + " (suggested " + M.suggestedBudget(state) + "), you spent " +
+       M.spent(state, state.actorId) + ", " + Object.keys(state.votes).length + " people voted") +
+    kv("walk", cov ? ("ordered by " + state.walk.orderedBy + "<br>" + cov.coveredCount + "/" + cov.total +
+       " covered, " + cov.lateCount + " late<br>on: " + esc(((M.topicById(state, cov.currentId) || {}).title || "-").slice(0, 34))) : "not snapshotted") +
+    kv("readiness", M.readinessApplies(state) ? (M.readyNames(state).join(", ") || "nobody") : "n/a in collect") +
+    kv("visibility", "hideUntilLeaveCollect=" + state.visibility.hideUntilPointerLeavesCollect +
+       "<br>showAuthors=" + state.visibility.showAuthors +
+       "<br>hideTalliesDuringVote=" + state.visibility.hideTalliesDuringVote) +
+    kv("timebox", mmss(state.clock - state.timeboxStartedAt) + " / " + (entry ? entry.timeboxMinutes : 0) + ":00 " +
+       (state.timeboxRunning ? "running" : "paused") + " &#8212; advisory") +
+    kv("actions", state.actions.length + " captured, " + state.actions.filter((a) => a.ownerId).length + " owned") +
+    kv("softness events", state.softnessEvents.length + " (writes outside Collect, advances over a typist, votes after snapshot)") +
+    "</div>";
+
+  const freeplay = (label, act, data) => '<button class="btn" data-act="' + act + '"' +
+    (data ? Object.entries(data).map(([k, v]) => ' data-' + k + '="' + v + '"').join("") : "") + ">" + label + "</button>";
+
+  const stageBtns = state.stageList.map((e, i) => freeplay("take team &#8594; " + e.kind, "movePointer", { entry: e.id })).join("") +
+    state.stageList.map((e) => freeplay("look at " + e.kind, "lookAt", { entry: e.id })).join("");
+
+  const play =
+    '<div class="inst-sec"><div class="inst-h">Free play &#183; the shared pointer</div><div class="freeplay">' +
+      freeplay("Advance", "advance") + freeplay("Rewind", "rewind") + freeplay("Rejoin the team", "followShared") +
+      stageBtns + "</div></div>" +
+    '<div class="inst-sec"><div class="inst-h">Free play &#183; writing (legal in every stage)</div><div class="freeplay">' +
+      freeplay("Write a card as you", "playWrite") +
+      freeplay("Toby writes one now", "playWriteOther") +
+      freeplay("Nkechi starts typing", "playTypeOther") +
+      freeplay("Nkechi stops", "playStopOther") +
+      freeplay("You start typing", "playTypeMe") +
+      "</div></div>" +
+    '<div class="inst-sec"><div class="inst-h">Free play &#183; grouping and voting</div><div class="freeplay">' +
+      freeplay("File the rest", "fileRemaining") +
+      freeplay("Unfile a filed card", "playUnfile") +
+      freeplay("Budget = suggested", "budgetSuggested") +
+      freeplay("Everyone else votes", "simVotes") +
+      "</div></div>" +
+    '<div class="inst-sec"><div class="inst-h">Free play &#183; the walk</div><div class="freeplay">' +
+      freeplay("Next topic", "walkNext") + freeplay("Back", "walkPrev") +
+      freeplay("Skip, not covered", "skipTopic") +
+      freeplay("Re-snapshot the order", "resnapshot") +
+      "</div></div>" +
+    '<div class="inst-sec"><div class="inst-h">Free play &#183; people, readiness, time</div><div class="freeplay">' +
+      freeplay("Everyone declares ready", "playAllReady") +
+      freeplay("Dan joins late", "playDanJoins") +
+      freeplay("Toby wanders to Collect", "playTobyWanders") +
+      freeplay("+1 min", "tick", { ms: 60000 }) + freeplay("+5 min", "tick", { ms: 300000 }) +
+      freeplay(state.timeboxRunning ? "Pause timebox" : "Start timebox", "toggleTimebox") +
+      "</div></div>" +
+    '<div class="inst-sec"><div class="inst-h">Free play &#183; the stage list is data</div><div class="freeplay">' +
+      state.stageList.filter((e) => !S[e.kind].irreducible).map((e) => freeplay("skip " + e.kind, "skipStage", { entry: e.id })).join("") +
+      state.removed.map((r) => freeplay("restore " + r.kind, "restoreStage", { kind: r.kind })).join("") +
+      freeplay("try to skip discuss", "skipStage", { entry: (state.stageList.find((e) => e.kind === "discuss") || {}).id }) +
+      "</div></div>" +
+    '<div class="inst-sec"><div class="inst-h">Free play &#183; visibility (open questions)</div><div class="freeplay">' +
+      freeplay("hide until leave Collect: " + state.visibility.hideUntilPointerLeavesCollect, "toggleVis", { key: "hideUntilPointerLeavesCollect" }) +
+      freeplay("show authors: " + state.visibility.showAuthors, "toggleVis", { key: "showAuthors" }) +
+      freeplay("hide tallies in Vote: " + state.visibility.hideTalliesDuringVote, "toggleVis", { key: "hideTalliesDuringVote" }) +
+      "</div></div>" +
+    '<div class="inst-sec"><div class="inst-h">Reset</div><div class="freeplay">' +
+      freeplay("Start over", "reset") + "</div></div>";
+
+  const wt = WALKTHROUGHS.find((w) => w.id === ui.wt) || WALKTHROUGHS[0];
+  const at = ui.wtIdx[wt.id] || 0;
+  const walkthroughs =
+    '<div class="inst-sec"><div class="inst-h">Guided walkthroughs</div>' +
+      '<div class="wt-tabs">' + WALKTHROUGHS.map((w) => '<button class="wt-tab' + (w.id === ui.wt ? " is-on" : "") +
+        '" data-act="wtPick" data-wt="' + w.id + '">' + esc(w.name) + "</button>").join("") + "</div>" +
+      '<p class="wt-desc">' + wt.desc + "</p>" +
+      wt.steps.map((s, i) => '<button class="wt-step' + (i === at ? " is-next" : "") + '" data-act="wtStep" data-i="' + i + '"' +
+        (i > at ? " disabled" : "") + '><span class="wt-n">' + (i + 1) + "</span>" +
+        '<span><span class="wt-label">' + esc(s.label) + "</span>" +
+        (s.note ? '<span class="wt-note">' + esc(s.note) + "</span>" : "") + "</span></button>").join("") +
+      '<button class="btn btn-sm btn-quiet" style="margin-top:4px" data-act="wtRestart">Restart this scenario</button>' +
+    "</div>";
+
+  el("instBody").innerHTML =
+    '<div class="inst-sec"><div class="inst-h">The question this answers</div>' +
+      '<p class="wt-desc"><strong>Can a single-focus board be soft?</strong> Single-focus draws its power from taking ' +
+      "everything else off the screen. ADR-0010 says a stage projects and defaults but never forbids: writing, grouping " +
+      "and voting stay open in every stage, navigation is free both ways, and nobody is yanked out of what they are typing. " +
+      "So does &#8220;one thing at a time&#8221; survive as a <em>default</em>, or only when it is enforced? " +
+      "Start with the <strong>Softness stress test</strong> below. Close this panel to judge how the board actually " +
+      "feels, then read <code>board-b-focus-NOTES.md</code> for the honest answer.</p></div>" +
+    '<div class="inst-sec"><div class="inst-h">Current state</div>' + stateBlock + "</div>" +
+    walkthroughs + play +
+    '<div class="inst-sec"><div class="inst-h">What just happened</div>' +
+      '<div class="log">' + state.log.map((l, i) => '<div class="' + (i === 0 ? "log-new" : "") + '">' + esc(l) + "</div>").join("") + "</div></div>";
+
+  el("inst").classList.toggle("is-open", ui.instOpen);
+  el("scrim").classList.toggle("is-open", ui.instOpen);
+  el("instTab").style.display = ui.instOpen ? "none" : "block";
+}
+
+/* ==========================================================================
+   Render
+   ========================================================================== */
+function render() {
+  const f = captureFocus();
+  renderRoster(); renderRail(); renderAway(); renderFocus(); renderDock(); renderInstruments();
+  restoreFocus(f);
+}
+
+/* ==========================================================================
+   Events
+   ========================================================================== */
+const SAMPLE_CARDS = [
+  "Nobody owns the Convex migration runbook and it shows",
+  "The retro board should probably not need eight tabs open",
+  "We keep discovering the same lockfile problem every third sprint",
+  "Two people fixed the same flake in different ways this week",
+];
+let sampleAt = 0;
+
+document.addEventListener("click", (ev) => {
+  const t = ev.target.closest("[data-act]");
+  if (!t) return;
+  const d = t.dataset;
+  const stage = (kind) => (state.stageList.find((e) => e.kind === kind) || {}).id;
+
+  switch (d.act) {
+    case "advance": dispatch({ type: "advance", by: "p1" }); break;
+    case "rewind": dispatch({ type: "rewind", by: "p1" }); break;
+    case "movePointer": ev.stopPropagation(); dispatch({ type: "movePointerTo", entryId: d.entry, by: state.actorId }); break;
+    case "lookAt": dispatch({ type: "lookAt", entryId: d.entry }); break;
+    case "followShared": dispatch({ type: "followShared" }); break;
+    case "dismissNotice": dispatch({ type: "dismissMoveNotice" }); break;
+
+    case "setPrompt": ui.draftPrompt = d.prompt; render(); break;
+    case "setDockPrompt": ui.dockPrompt = d.prompt; render(); break;
+    case "postCard": postCard(); break;
+    case "postDockCard": postDockCard(); break;
+    case "deleteCard": dispatch({ type: "deleteCard", cardId: d.card }); break;
+    case "toggleDock": ui.dockOpen = !ui.dockOpen; ui.visOpen = false; render(); break;
+    case "visMenu": ui.visOpen = !ui.visOpen; ui.dockOpen = false; render(); break;
+    case "toggleVis": dispatch({ type: "setVisibility", key: d.key, value: !state.visibility[d.key] }); break;
+
+    case "carry": dispatch({ type: "toggleCarryAction", id: d.id, status: d.status }); break;
+
+    case "file": dispatch({ type: "fileCard", cardId: d.card, groupId: d.group }); break;
+    case "fileNew": { const title = ui.newGroupTitle; ui.newGroupTitle = ""; dispatch({ type: "fileCardToNew", cardId: d.card, title }); break; }
+    case "loose": dispatch({ type: "leaveLoose", cardId: d.card }); break;
+    case "toggleThemes": ui.showAllThemes = !ui.showAllThemes; render(); break;
+    case "fileRemaining": dispatch({ type: "fileRemaining" }); break;
+    case "playUnfile": { const c = state.cards.find((x) => x.groupId !== null); if (c) dispatch({ type: "unfile", cardId: c.id }); break; }
+
+    case "budget": dispatch({ type: "setBudget", n: Number(d.n) }); break;
+    case "budgetSuggested": dispatch({ type: "setBudget", n: M.suggestedBudget(state) }); break;
+    case "cast": dispatch({ type: "castVote", topicId: d.topic }); break;
+    case "retract": dispatch({ type: "retractVote", topicId: d.topic }); break;
+    case "simVotes": dispatch({ type: "simulateTeamVotes" }); break;
+
+    case "walkNext": dispatch({ type: "walkNext" }); break;
+    case "walkPrev": dispatch({ type: "walkPrev" }); break;
+    case "skipTopic": dispatch({ type: "walkNext", markCovered: false }); break;
+    case "walkGoto": dispatch({ type: "walkGoto", topicId: d.topic }); break;
+    case "markCovered": dispatch({ type: "markCovered", covered: d.covered === "1" }); break;
+    case "resnapshot": dispatch({ type: "resnapshotWalk" }); break;
+    case "gotoDiscuss": dispatchMany([{ type: "lookAt", entryId: stage("discuss") }, { type: "walkGoto", topicId: d.topic }]); break;
+
+    case "addAction": {
+      const text = ui.actText, owner = ui.actOwner, trig = ui.actTrigger;
+      ui.actText = ""; ui.actTrigger = "";
+      dispatch({ type: "addAction", text, ownerId: owner, trigger: trig,
+                 topicId: state.walk ? state.walk.currentId : null });
+      break;
+    }
+
+    case "ready": dispatch({ type: "setReady", on: d.on === "1" }); break;
+    case "playAllReady": dispatchMany(state.people.filter((p) => p.present).map((p) => ({ type: "setReady", personId: p.id, on: true }))); break;
+
+    case "skipStage": dispatch({ type: "skipStage", entryId: d.entry }); break;
+    case "restoreStage": dispatch({ type: "restoreStage", kind: d.kind }); break;
+    case "toggleTimebox": dispatch({ type: state.timeboxRunning ? "pauseTimebox" : "startTimebox" }); break;
+    case "tick": dispatchMany([{ type: "startTimebox" }, { type: "tick", ms: Number(d.ms) }]); break;
+
+    case "playWrite": dispatch({ type: "writeCard", text: SAMPLE_CARDS[sampleAt++ % SAMPLE_CARDS.length], prompt: "slowed" }); break;
+    case "playWriteOther": dispatch({ type: "writeCard", authorId: "p2", text: "One more: the docs build broke and nobody noticed for a day", prompt: "slowed" }); break;
+    case "playTypeOther": dispatch({ type: "setTyping", personId: "p5", on: true }); break;
+    case "playStopOther": dispatch({ type: "setTyping", personId: "p5", on: false }); break;
+    case "playTypeMe": dispatch({ type: "setTyping", personId: state.actorId, on: true }); break;
+    case "playDanJoins": dispatch({ type: "arriveLate", personId: "p8" }); break;
+    case "playTobyWanders": dispatch({ type: "personLooksAt", personId: "p2", entryId: stage("collect") }); break;
+
+    case "wtPick": ui.wt = d.wt; render(); break;
+    case "wtRestart": ui.wtIdx[ui.wt] = 0; render(); break;
+    case "wtStep": {
+      const w = WALKTHROUGHS.find((x) => x.id === ui.wt);
+      const i = Number(d.i);
+      w.steps[i].run();
+      ui.wtIdx[w.id] = Math.min(i + 1, w.steps.length);
+      render();
+      break;
+    }
+    case "reset": state = M.createInitialState(); ui.draft = ""; ui.wtIdx = {}; render(); break;
+    default: break;
+  }
+});
+
+function postCard() {
+  const text = ui.draft.trim();
+  if (!text) return;
+  ui.draft = "";
+  dispatchMany([{ type: "setTyping", personId: state.actorId, on: false },
+                { type: "writeCard", text, prompt: ui.draftPrompt }]);
+}
+function postDockCard() {
+  const text = ui.dockDraft.trim();
+  if (!text) return;
+  ui.dockDraft = "";
+  dispatch({ type: "writeCard", text, prompt: ui.dockPrompt });
+}
+
+document.addEventListener("input", (ev) => {
+  const b = ev.target.dataset && ev.target.dataset.bind;
+  if (!b) return;
+  if (b === "lookElsewhere") return;
+  ui[b] = ev.target.value;
+  if ((b === "draft" || b === "dockDraft") && ui[b].length > 0) {
+    const me = M.person(state, state.actorId);
+    if (me && !me.typing) dispatch({ type: "setTyping", personId: state.actorId, on: true });
+    clearTimeout(ui.typingTimer);
+    ui.typingTimer = setTimeout(() => {
+      const m = M.person(state, state.actorId);
+      if (m && m.typing) dispatch({ type: "setTyping", personId: state.actorId, on: false });
+    }, 4000);
+  }
+});
+
+document.addEventListener("change", (ev) => {
+  const b = ev.target.dataset && ev.target.dataset.bind;
+  if (b === "lookElsewhere" && ev.target.value) { dispatch({ type: "lookAt", entryId: ev.target.value }); return; }
+  if (b) { ui[b] = ev.target.value; }
+  if (ev.target.id === "actor") dispatch({ type: "setActor", personId: ev.target.value });
+});
+
+document.addEventListener("keydown", (ev) => {
+  const inField = /^(INPUT|TEXTAREA|SELECT)$/.test(ev.target.tagName);
+  if (inField && (ev.metaKey || ev.ctrlKey) && ev.key === "Enter") {
+    if (ev.target.dataset.fk === "composer") { ev.preventDefault(); postCard(); }
+    if (ev.target.dataset.fk === "dockdraft") { ev.preventDefault(); postDockCard(); }
+    if (ev.target.dataset.fk === "acttext" || ev.target.dataset.fk === "acttrig") {
+      ev.preventDefault();
+      const text = ui.actText, owner = ui.actOwner, trig = ui.actTrigger;
+      ui.actText = ""; ui.actTrigger = "";
+      dispatch({ type: "addAction", text, ownerId: owner, trigger: trig, topicId: state.walk ? state.walk.currentId : null });
+    }
+    return;
+  }
+  if (inField) return;
+
+  // grouping deck shortcuts
+  if (M.myKind(state) === "group") {
+    const card = M.deckCardFor(state, state.actorId);
+    if (!card) return;
+    const themes = state.groups.map((g) => ({ g, n: state.cards.filter((c) => c.groupId === g.id).length }))
+      .filter((x) => x.n > 0).sort((a, b) => b.n - a.n);
+    if (/^[1-9]$/.test(ev.key)) {
+      const pick = themes[Number(ev.key) - 1];
+      if (pick) { ev.preventDefault(); dispatch({ type: "fileCard", cardId: card.id, groupId: pick.g.id }); }
+      return;
+    }
+    if (ev.key === "n") { ev.preventDefault(); const t = ui.newGroupTitle; ui.newGroupTitle = ""; dispatch({ type: "fileCardToNew", cardId: card.id, title: t }); return; }
+    if (ev.key === "s") { ev.preventDefault(); dispatch({ type: "leaveLoose", cardId: card.id }); return; }
+  }
+  // walk shortcuts
+  if (M.myKind(state) === "discuss" && state.walk) {
+    if (ev.key === "ArrowRight" || ev.key === "j") { ev.preventDefault(); dispatch({ type: "walkNext" }); }
+    if (ev.key === "ArrowLeft" || ev.key === "k") { ev.preventDefault(); dispatch({ type: "walkPrev" }); }
+  }
+});
+
+el("instTab").addEventListener("click", () => { ui.instOpen = true; render(); });
+el("instClose").addEventListener("click", () => { ui.instOpen = false; render(); });
+el("scrim").addEventListener("click", () => { ui.instOpen = false; render(); });
+el("theme").addEventListener("click", () => {
+  const cur = document.documentElement.getAttribute("data-theme");
+  const next = cur === "dark" ? "light" : cur === "light" ? "auto" : "dark";
+  document.documentElement.setAttribute("data-theme", next);
+  el("theme").textContent = next === "auto" ? "Theme" : next === "dark" ? "Dark" : "Light";
+});
+
+/* a slow, quiet clock so the advisory timebox is real */
+setInterval(() => {
+  if (!state.timeboxRunning) return;
+  state = M.reduce(state, { type: "tick", ms: 1000 });
+  const a = document.activeElement;
+  if (a && a.dataset && a.dataset.fk) renderRail(); else render();
+}, 1000);
+
+render();
+})();
+</script>
+</body>
+</html>
