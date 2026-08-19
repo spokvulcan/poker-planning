@@ -76,6 +76,34 @@ _Avoid_: visibility (that is the property being protected), read permission
 Is this person *in* this room — a `roomMemberships` row, which is what puts them on the roster, in the presence list, and in the non-spectator count a **voting round** reads. Enforced by `requireRoomMember`, which every mutation keeps. A team member reading a retro they never joined has **room access** without attendance, and is deliberately never made an attendee (see [ADR-0009](docs/adr/0009-room-access-and-room-attendance-are-separate-guards.md)).
 _Avoid_: presence (that is the live connection signal), participation
 
+### Retro stages
+
+Decided on [map #253](https://github.com/spokvulcan/poker-planning/issues/253) and not yet built. See [ADR-0010](docs/adr/0010-a-retro-stage-projects-and-defaults-but-never-forbids.md).
+
+**Stage**:
+One step of a retro's guided sequence — `collect`, `review`, `group`, `vote`, `discuss` or `close`. Unlike the voting round's **phase**, a stage is *stored*, is moved by a person, and carries state of its own: an advisory timebox, and the reveal and voting defaults that apply while it is current. What it never does is forbid — a stage projects and defaults, it does not gate ([ADR-0010](docs/adr/0010-a-retro-stage-projects-and-defaults-but-never-forbids.md)).
+_Avoid_: phase (that is the **voting round**'s derived lifecycle), step, mode, meeting state
+
+**Stage list**:
+The ordered sequence of stage entries stamped onto a retro when it is created, seeded from its format. Skipping a stage means it is absent from the list, reordering means the list is reordered, a different format means a different seed — one mechanism rather than three. Each entry carries its own identity and a kind may repeat, so per-stage state hangs off the **entry**, never off the kind. Copied rather than referenced, so a retro read years later still renders with the sequence it was actually run with. `collect` and `discuss` cannot be removed; everything else can.
+_Avoid_: agenda, template, phase config
+
+**Advance**:
+Moving a retro's shared stage pointer. Always a human act — there is no auto-advance, because "everyone has finished writing" is not a completing predicate the way "every non-spectator has voted" is (contrast the **auto-reveal countdown**). It moves in both directions, it never destroys or finalises anything, and it never yanks a participant out of what they are typing: views follow by default, and a person may navigate away from the shared pointer freely, forward or back.
+_Avoid_: transition (that is the **voting round**'s control action), next, progress
+
+**Collection window**:
+The period a retro's stage is `collect` — open from the moment the retro is created, closed by **advancing** out of it. There is no "not started" state before it and no "finished" state after `close`: a retro rests wherever it was left, exactly as a room does.
+_Avoid_: draft, pre-meeting, brainstorm phase
+
+**Discussion walk**:
+The ordered cursor over topics inside the `discuss` stage, plus the record of which have been visited — coverage is the point, so a walk that has not reached everything says so. Its order is snapshotted when the stage is entered (by votes descending if a `vote` stage ran, creation order otherwise), so votes cast later are still accepted but never reshuffle a walk in progress — the same write-time-snapshot shape as [ADR-0007](docs/adr/0007-analytics-read-from-a-write-time-snapshot.md). Topic-ordered, never person-ordered.
+_Avoid_: agenda, round-robin, turn order
+
+**Readiness**:
+A person's live "I am done with this stage" signal, held in the presence payload and shown named against each member rather than summed into an aggregate. Ephemeral and advisory: it never gates or triggers an **advance**, and it clears whenever the shared pointer moves. Deliberately absent during `collect` — there the only signal is whether a person has written a card, so no durable record of who declared themselves finished is ever created.
+_Avoid_: done, vote to advance, quorum
+
 ### Voting round
 
 **Voting round** (or **round**):
@@ -92,7 +120,7 @@ _Avoid_: ad-hoc vote, anonymous round
 
 **Phase**:
 A round's derived lifecycle state — `voting`, `countingDown` (auto-reveal armed), or `revealed`. Computed from existing room and issue fields; never stored as its own column. A room is *always* running a round (a **Quick Vote** by default), so there is no idle phase: a target-less, unrevealed room is simply a Quick Vote in `voting`.
-_Avoid_: game state, mode, idle; do not conflate with issue **status**
+_Avoid_: game state, mode, idle; do not conflate with issue **status**, nor with a retro **stage** (stored, human-advanced, and the retro's word for this idea)
 
 **Transition**:
 A control action that moves the **phase**: **start** (begin a round on a target), **reveal** (settle and compute results), **reset** (begin a fresh round on the same target), **abandon** (drop the issue target, falling back to a target-less **Quick Vote**, still `voting`). Gated by the **game flow** / **reveal cards** permission categories. Casting or retracting a vote is a participant action, not a transition, though it may arm or cancel the countdown.
