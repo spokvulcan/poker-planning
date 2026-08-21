@@ -104,6 +104,26 @@ _Avoid_: agenda, round-robin, turn order
 A person's live "I am done with this stage" signal, held in the presence payload and shown named against each member rather than summed into an aggregate. Ephemeral and advisory: it never gates or triggers an **advance**, and it clears whenever the shared pointer moves. Deliberately absent during `collect` — there the only signal is whether a person has written a card, so no durable record of who declared themselves finished is ever created.
 _Avoid_: done, vote to advance, quorum
 
+### Retro board
+
+Decided on [map #253](https://github.com/spokvulcan/poker-planning/issues/253) and not yet built. See [ADR-0011](docs/adr/0011-the-retro-board-is-one-canvas-with-semantic-zoom.md).
+
+**Retro board**:
+The single surface a retro happens on: a spatial canvas with free 2D card placement, pan and zoom, where proximity is how grouping is *performed*. Deliberately **one view** — there is no list, outline or twin rendering of the same retro, and the same canvas serves phone and desktop. Legibility at scale is carried by **zoom level**, not by a second view ([ADR-0011](docs/adr/0011-the-retro-board-is-one-canvas-with-semantic-zoom.md)).
+_Avoid_: whiteboard (implies formless; the board carries **stage** state), outline view, list view, mobile view (there is only the one board)
+
+**Zoom level**:
+How much of a card the **retro board** draws, as a function of scale — *detail* (full card, votes, meta), *headline* (clamped first line, meta dropped), or *shape* (cards as tinted blocks, with **cluster** labels held at constant screen size). Shape level is where the board is read as a whole and where **discussion walk** coverage shows, so zooming out is a change of resolution rather than a loss of information.
+_Avoid_: level of detail (that is the technique, this is the state), overview mode, minimap
+
+**Cluster**:
+A named group of cards with its own identity — the thing that can carry a name, a vote total and a slot in the **discussion walk**. A cluster is an *identity, not a location*: its members keep the positions their authors gave them, and a cluster whose members are scattered renders as tinted cards with label chips rather than a drawn shape. Gathering members together is **tidy**, an explicit action someone chooses, because authored position is content and is never rewritten silently.
+_Avoid_: group (too near the `group` **stage**), theme, affinity group, hull (that is the transient shape, below)
+
+**Proximity hull**:
+The transient shape drawn around cards that happen to sit close together. An affordance for *forming* a **cluster**, never a representation of one — it has no identity, dissolves when a member moves, and is shown only during the `group` **stage**. Naming a hull is what promotes it into a cluster; after that, proximity ignores those cards.
+_Avoid_: cluster (a hull has no identity), auto-group, smart group
+
 ### Voting round
 
 **Voting round** (or **round**):
