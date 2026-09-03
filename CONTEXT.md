@@ -150,7 +150,7 @@ _Avoid_: anonymity (the setting is about what is recorded), anonymous mode, priv
 
 **Anonymous card**:
 A card in an `anonymous` retro. No author is stored on it — not projected away at read time, absent from the row — so no reader, facilitator or owner included, can attribute it. Its author still sees it as theirs through an **edit key**. Anonymity is *content* anonymity only: who is present and who is ready stay visible, and during `collect` the per-person "has written a card" signal collapses to a total count. It never reaches an **action item**, whose creator and owner are always named.
-_Avoid_: hidden author, masked card, private card (that is the reveal policy's axis, not this one)
+_Avoid_: hidden author, masked card, private card (that is the **Reveal policy**'s axis, not this one)
 
 **Edit key**:
 The browser-held capability that makes an **anonymous card** editable and deletable by the person who wrote it. Minted by the server once per card, kept only by the client, and stored server-side only as a hash — so it proves "mine" without recording who "me" is. Device-bound by design: an anonymous card is edited from the device it was written on. A card written while the retro was `named` and later anonymised has no key.
@@ -159,6 +159,22 @@ _Avoid_: author token, pseudonym (a pseudonym is a stored link and was rejected)
 **Ratchet**:
 The one-way move of a retro's **Attribution** from `named` to `anonymous`. Strips the author from every existing card in the retro in one act, which is why it cannot be undone; leaves the voter on retro votes in place, because the per-person vote budget depends on it, and hides those at the read boundary instead. Applies to a retro at rest as much as a live one.
 _Avoid_: anonymise (as a verb it hides the irreversibility), toggle, switch
+
+### Retro reveal
+
+Decided on [map #253](https://github.com/spokvulcan/poker-planning/issues/253) and not yet built. See [ADR-0015](docs/adr/0015-a-hidden-retro-card-is-a-silhouette-projected-by-the-shared-stage.md).
+
+**Reveal policy**:
+Whether other people can read a retro's cards while a given **stage** is current — `hidden` or `visible`, carried on each **stage list** entry and seeded from the format (`collect` hidden, everything else visible). It governs *reading*, never writing: a stage still never forbids. The entry that applies is always the shared pointer's, so navigating your own view ahead reveals nothing. It is a separate axis from **Attribution** — one says who may read a card, the other whether the card records who wrote it.
+_Avoid_: private mode, blur, privacy setting, anonymity (that is **Attribution**)
+
+**Silhouette**:
+What a reader who is not the author sees of a card under a `hidden` **reveal policy**: its position and a tint, and nothing else — no text, no author, in either attribution mode. Produced by the server's read projection, so the content never reaches that reader's browser. The board still shows its shape — how many cards sit under each prompt — without showing a word of them.
+_Avoid_: blurred card, masked card, placeholder, hidden card (say what is *shown*, not what is not)
+
+**Reveal**:
+The moment cards stop being **silhouettes** for everyone at once. In the default flow it *is* **advancing** out of `collect`; a facilitator may also flip the current entry's **reveal policy** in place, in either direction (a **stage flow** act). Always global — there is no per-author or one-card-at-a-time reveal, and nobody at any role reads a hidden card that is not their own before it.
+_Avoid_: reveal cards (that is the poker **permission category**), unblur, show mine, force reveal
 
 ### Retro permissions
 
