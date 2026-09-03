@@ -124,6 +124,26 @@ _Avoid_: group (too near the `group` **stage**), theme, affinity group, hull (th
 The transient shape drawn around cards that happen to sit close together. An affordance for *forming* a **cluster**, never a representation of one — it has no identity, dissolves when a member moves, and is shown only during the `group` **stage**. Naming a hull is what promotes it into a cluster; after that, proximity ignores those cards.
 _Avoid_: cluster (a hull has no identity), auto-group, smart group
 
+### Retro attribution
+
+Decided on [map #253](https://github.com/spokvulcan/poker-planning/issues/253) and not yet built. See [ADR-0012](docs/adr/0012-an-anonymous-retro-card-has-no-stored-author.md).
+
+**Attribution**:
+Whether a retro's cards carry their author — a per-retro property, `named` or `anonymous`, stamped at creation from the **Team**'s default by copy (a teamless retro is `named`). It is constant across every **stage** — whatever the composer promised at write time stays true for the life of the card — and it moves one way only: a named retro may be made anonymous, even long after it was left at rest, and an anonymous retro can never be made named. It names what is *recorded*, not what is hidden: an **anonymous card** has no author to hide.
+_Avoid_: anonymity (the setting is about what is recorded), anonymous mode, privacy mode, incognito; do not confuse `anonymous` attribution with the `anonymous` *account type*, which is a separate axis and changes nothing about the promise
+
+**Anonymous card**:
+A card in an `anonymous` retro. No author is stored on it — not projected away at read time, absent from the row — so no reader, facilitator or owner included, can attribute it. Its author still sees it as theirs through an **edit key**. Anonymity is *content* anonymity only: who is present and who is ready stay visible, and during `collect` the per-person "has written a card" signal collapses to a total count. It never reaches an **action item**, whose creator and owner are always named.
+_Avoid_: hidden author, masked card, private card (that is the reveal policy's axis, not this one)
+
+**Edit key**:
+The browser-held capability that makes an **anonymous card** editable and deletable by the person who wrote it. Minted by the server once per card, kept only by the client, and stored server-side only as a hash — so it proves "mine" without recording who "me" is. Device-bound by design: an anonymous card is edited from the device it was written on. A card written while the retro was `named` and later anonymised has no key.
+_Avoid_: author token, pseudonym (a pseudonym is a stored link and was rejected), ownership record
+
+**Ratchet**:
+The one-way move of a retro's **Attribution** from `named` to `anonymous`. Strips the author from every existing card in the retro in one act, which is why it cannot be undone; leaves the voter on retro votes in place, because the per-person vote budget depends on it, and hides those at the read boundary instead. Applies to a retro at rest as much as a live one.
+_Avoid_: anonymise (as a verb it hides the irreversibility), toggle, switch
+
 ### Voting round
 
 **Voting round** (or **round**):
@@ -189,6 +209,7 @@ _Avoid_: service layer, plugin, provider factory
 - **"Team" vs "the team"**: bare "team" means the people currently in a room ("the team voted") and is fine in copy; capital-T **Team** is the entity that owns retro history and fixes who may read it. The `teams` table and `teamId` always mean the entity.
 - **"Permission"** is overloaded: the **permissions** config (the levels an owner sets) versus a **permission decision** (the runtime verdict). Always qualify which one. The bare table/field name `permissions` always means the config.
 - **"Owner absent" vs "owner offline"**: only an explicit *leave* causes **lockdown**. Going offline (disconnect, tab close) is cosmetic presence and changes no permissions.
+- **"Anonymous" is two axes**: `anonymous` **Attribution** is a retro's promise about what its cards record; an `anonymous` *account* is a browser-session identity. An anonymous-account user in a `named` retro is attributed by the name they typed; a permanent-account user in an `anonymous` retro leaves no author at all. Neither axis alters the other.
 - **"Phase" vs "status"**: a **voting round** has a derived **phase**; an **issue** has a stored **status** (`pending` / `voting` / `completed`). They correlate but are different axes — a **Quick Vote** round has a phase but no issue status.
 - **"Round" vs round number**: each **reset** opens a new timing record (`votingTimestamps.roundNumber`) for the same issue. The module concept **round** is one start-to-settle cycle; the round number counts them within an issue.
 - **"Demo room" is retired**: the `/demo` page is a **Demo simulation**, not a room. There is no `isDemoRoom` flag, no seeded room, no bot membership — those were removed when the demo moved fully client-side. Any reference to a "demo room" predates that change.
