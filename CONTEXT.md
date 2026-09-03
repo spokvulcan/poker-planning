@@ -140,6 +140,30 @@ _Avoid_: group (too near the `group` **stage**), theme, affinity group, hull (th
 The transient shape drawn around cards that happen to sit close together. An affordance for *forming* a **cluster**, never a representation of one — it has no identity, dissolves when a member moves, and is shown only during the `group` **stage**. Naming a hull is what promotes it into a cluster; after that, proximity ignores those cards.
 _Avoid_: cluster (a hull has no identity), auto-group, smart group
 
+### Retro data
+
+Decided on [map #253](https://github.com/spokvulcan/poker-planning/issues/253) and not yet built. See [ADR-0016](docs/adr/0016-a-retro-is-one-room-with-its-ceremony-state-beside-it.md).
+
+**Card**:
+One written contribution to a retro: text, the **prompt** it answers, and the position its author gave it on the **retro board**. Its author is recorded or not per **Attribution**; it may belong to at most one **cluster**. Position is layout and the prompt is content — moving a card never changes which prompt it answers.
+_Avoid_: note (that is the poker canvas's `note` node), sticky, item, post-it, reflection (Parabol's word)
+
+**Prompt**:
+One of the questions a retro's **format** asks — "What went well?", "What should we start?" — carrying a label, an optional hint and a tint. A card answers exactly one prompt, chosen when it is written. On the board a prompt has a soft zone that hints where its cards belong and never constrains them.
+_Avoid_: column (there are no columns on a canvas), category, lane, bucket
+
+**Format**:
+The template a retro is created from: its named set of **prompts** and the seed for its **stage list**, including each stage's reveal policy, tally visibility and vote budget. Copied whole onto the retro at creation and never referenced afterwards, so a retro renders forever with the prompts and stages it was actually run with. A Team keeps no default format; the picker offers what the team used last.
+_Avoid_: template (in UI), activity (TeamRetro's word), phase config
+
+**Topic**:
+The unit a retro votes on and walks through in `discuss`: a named **cluster**, or a **card** that belongs to none. The **discussion walk** is an ordered list of topics.
+_Avoid_: theme, group, item
+
+**Dot**:
+One retro vote, placed by a named voter on a **topic** during a given `vote` **stage** entry. A person's budget for that entry is a count of their dots; two vote stages are two independent budgets. Dots on a card follow it into a cluster; dots on a cluster are re-pointed when clusters merge and deleted when a cluster is dissolved. Always stores the voter, even in an anonymous retro (see **Ratchet**), and is hidden at the read boundary instead.
+_Avoid_: vote (that is the poker **voting round**'s ballot, a different table and a different meaning), like, upvote, point
+
 ### Retro attribution
 
 Decided on [map #253](https://github.com/spokvulcan/poker-planning/issues/253) and not yet built. See [ADR-0012](docs/adr/0012-an-anonymous-retro-card-has-no-stored-author.md).
