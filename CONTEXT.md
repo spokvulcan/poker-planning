@@ -52,6 +52,22 @@ _Avoid_: permission group, scope; reusing a poker category name for a retro act
 The state after the owner *explicitly leaves* (membership deleted), detected at query time as "`ownerId` set, but no membership for that user". Owner-level and owner-only actions become unavailable. **Invariant:** lockdown is a *reason refinement, not a separate gate* — an absent owner already fails the role check, so lockdown only changes the **denial reason** to `owner-absent` (and thus the message/banner), never the allow/deny outcome (see [ADR-0001](docs/adr/0001-lockdown-is-a-denial-reason-not-a-gate.md)). Network disconnects do not trigger it. A room a **Team** owns has a way out of it — **claim** — because a permanent room, unlike a poker room, does not expire.
 _Avoid_: orphaned, locked, frozen
 
+### Ceremonies
+
+Decided on [map #253](https://github.com/spokvulcan/poker-planning/issues/253) and not yet built. See [ADR-0014](docs/adr/0014-retro-is-the-second-ceremony-of-one-toolkit.md).
+
+**Ceremony**:
+One of the Scrum meetings AgileKit hosts — today **Planning poker**, next **Retro**. A room has exactly one, named by its `roomType`. A documentation word only: it never appears in the product, where each ceremony is called by its own name.
+_Avoid_: mode, game type, product (there is one product), session type
+
+**Planning poker**:
+The estimation ceremony: a **room** running **voting rounds** over **issues**. The user-facing name for `roomType: "canvas"`.
+_Avoid_: session (retired as a category word — it was poker rooms wearing a generic hat), game (survives only in legacy copy such as "Create New Game")
+
+**Retro**:
+The reflection ceremony: a **room** of `roomType: "retro"` running a **retro board** through its **stages**, optionally kept by a **Team**. "Retro" is the product word everywhere a user reads it; "retrospective" is reserved for long-form copy, titles and metadata.
+_Avoid_: retrospective (in UI), retro room (a retro *is* a room), meeting
+
 ### Teams
 
 Decided on [map #253](https://github.com/spokvulcan/poker-planning/issues/253) and not yet built. See [ADR-0008](docs/adr/0008-a-team-is-the-permanent-visibility-boundary.md) and [ADR-0009](docs/adr/0009-room-access-and-room-attendance-are-separate-guards.md).
@@ -231,6 +247,7 @@ _Avoid_: service layer, plugin, provider factory
 - **"Owner absent" vs "owner offline"**: only an explicit *leave* causes **lockdown**. Going offline (disconnect, tab close) is cosmetic presence and changes no permissions.
 - **"Anonymous" is two axes**: `anonymous` **Attribution** is a retro's promise about what its cards record; an `anonymous` *account* is a browser-session identity. An anonymous-account user in a `named` retro is attributed by the name they typed; a permanent-account user in an `anonymous` retro leaves no author at all. Neither axis alters the other.
 - **"The facilitator" vs the facilitator Role**: in copy and research, "the facilitator" is the person running the retro, who is usually the room **owner**. The **facilitator** *Role* is the promoted-helper rank. A retro category defaulting to `facilitators` includes the owner; nothing requires the person running the retro to hold the facilitator Role.
+- **"Session"** is not a category word any more. In old copy and in the dashboard's `Sessions` route it means a poker **room**; a **Retro** is never a session, and a **Ceremony** is the level above both.
 - **"Phase" vs "status"**: a **voting round** has a derived **phase**; an **issue** has a stored **status** (`pending` / `voting` / `completed`). They correlate but are different axes — a **Quick Vote** round has a phase but no issue status.
 - **"Round" vs round number**: each **reset** opens a new timing record (`votingTimestamps.roundNumber`) for the same issue. The module concept **round** is one start-to-settle cycle; the round number counts them within an issue.
 - **"Demo room" is retired**: the `/demo` page is a **Demo simulation**, not a room. There is no `isDemoRoom` flag, no seeded room, no bot membership — those were removed when the demo moved fully client-side. Any reference to a "demo room" predates that change.
