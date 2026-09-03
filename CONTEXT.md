@@ -15,7 +15,7 @@ The value a **permission decision** returns: `{ allowed: true }` or `{ allowed: 
 _Avoid_: result, verdict, outcome
 
 **Action**:
-What an actor is attempting. Either a **category action** (one of the four configurable categories) or a **relationship action** (`remove` / `promote` / `demote`, which constrain the target's role; `transfer` / `changePerms`, which do not).
+What an actor is attempting. Either a **category action** (one of the room type's configurable categories) or a **relationship action** (`remove` / `promote` / `demote`, which constrain the target's role; `transfer` / `changePerms` / `ratchet`, which do not; `claim`, which constrains the *owner's* standing rather than a target's).
 _Avoid_: operation, command, capability
 
 **Permission guard**:
@@ -27,7 +27,7 @@ The backend adapter (`requireActingUser`) for "authenticated ∧ room member ∧
 _Avoid_: self-check, impersonation check
 
 **Denial reason**:
-Why a **Decision** was `allowed: false` — `insufficient-role`, `owner-absent`, or `target-rank` (acting on a target whose role forbids it). One reason maps to one message via a shared pure function used by both backend throws and frontend tooltips.
+Why a **Decision** was `allowed: false` — `insufficient-role`, `owner-absent`, `target-rank` (acting on a target whose role forbids it), or `owner-present` (a **claim** while the owner is still here and still in the **Team**). One reason maps to one message via a shared pure function used by both backend throws and frontend tooltips.
 _Avoid_: error code, status
 
 **Resolved decision**:
@@ -45,11 +45,11 @@ The configurable threshold on a **permission category**: `everyone`, `facilitato
 _Avoid_: access level, role requirement
 
 **Permission category**:
-One of the four owner-configurable buckets of actions: **reveal cards**, **game flow**, **issue management**, **room settings**. Each carries one **permission level**.
-_Avoid_: permission group, scope
+One of the four owner-configurable buckets of actions a room type has. A poker room's are **reveal cards**, **game flow**, **issue management**, **room settings**; a retro's are **stage flow**, **card management**, **action management**, **retro settings** ([ADR-0013](docs/adr/0013-retro-permissions-extend-the-one-decision.md)). The set is chosen by `roomType`; the **permission decision** is the same function over either. Each category carries one **permission level**.
+_Avoid_: permission group, scope; reusing a poker category name for a retro act
 
 **Lockdown**:
-The state after the owner *explicitly leaves* (membership deleted), detected at query time as "`ownerId` set, but no membership for that user". Owner-level and owner-only actions become unavailable. **Invariant:** lockdown is a *reason refinement, not a separate gate* — an absent owner already fails the role check, so lockdown only changes the **denial reason** to `owner-absent` (and thus the message/banner), never the allow/deny outcome (see [ADR-0001](docs/adr/0001-lockdown-is-a-denial-reason-not-a-gate.md)). Network disconnects do not trigger it.
+The state after the owner *explicitly leaves* (membership deleted), detected at query time as "`ownerId` set, but no membership for that user". Owner-level and owner-only actions become unavailable. **Invariant:** lockdown is a *reason refinement, not a separate gate* — an absent owner already fails the role check, so lockdown only changes the **denial reason** to `owner-absent` (and thus the message/banner), never the allow/deny outcome (see [ADR-0001](docs/adr/0001-lockdown-is-a-denial-reason-not-a-gate.md)). Network disconnects do not trigger it. A room a **Team** owns has a way out of it — **claim** — because a permanent room, unlike a poker room, does not expire.
 _Avoid_: orphaned, locked, frozen
 
 ### Teams
@@ -65,7 +65,7 @@ A person's standing in one **Team** — the durable relationship granting **room
 _Avoid_: seat, licence, subscription
 
 **Team role**:
-A **Team membership**'s standing: **admin** (invite, remove, rename, delete) or **member**. A separate axis from **Role**, which is per-room — a team admin holds no room powers by virtue of being one. A **Team** may never be left without an admin; unlike a room it cannot enter **lockdown**, because a permanent object nobody can administer is a leak rather than a denial reason (see [ADR-0008](docs/adr/0008-a-team-is-the-permanent-visibility-boundary.md)).
+A **Team membership**'s standing: **admin** (invite, remove, rename, delete) or **member**. A separate axis from **Role**, which is per-room — a team admin holds no room powers by virtue of being one, with exactly one exception: **claim**, the recovery of a team room whose owner is gone. A **Team** may never be left without an admin; unlike a room it cannot enter **lockdown**, because a permanent object nobody can administer is a leak rather than a denial reason (see [ADR-0008](docs/adr/0008-a-team-is-the-permanent-visibility-boundary.md)).
 _Avoid_: owner (reserve that for the per-room **Role**), permission level (that is the room's configurable threshold)
 
 **Room access**:
@@ -144,6 +144,26 @@ _Avoid_: author token, pseudonym (a pseudonym is a stored link and was rejected)
 The one-way move of a retro's **Attribution** from `named` to `anonymous`. Strips the author from every existing card in the retro in one act, which is why it cannot be undone; leaves the voter on retro votes in place, because the per-person vote budget depends on it, and hides those at the read boundary instead. Applies to a retro at rest as much as a live one.
 _Avoid_: anonymise (as a verb it hides the irreversibility), toggle, switch
 
+### Retro permissions
+
+Decided on [map #253](https://github.com/spokvulcan/poker-planning/issues/253) and not yet built. See [ADR-0013](docs/adr/0013-retro-permissions-extend-the-one-decision.md).
+
+**Join policy**:
+A room's admission rule — `anyone`, `permanentAccounts`, or `teamMembers` (offered only when the room has a **Team**). Decides who may *become* an attendee; it says nothing about **room access**, and a **Team membership** satisfies every value because reading the archive is the stronger claim. Stamped at creation by copy from the Team's **retro defaults**; a teamless room is `anyone`. Edited through the **retro settings** category.
+_Avoid_: privacy setting, lock room (that is closing the door to everyone), access level
+
+**Join decision**:
+The pure verdict for "may this person become an attendee of this room" — a small sibling of the **permission decision**, not a branch of it, because a joiner has no membership and no **Role** for `evaluate` to look at. One function feeds both the backend refusal in the join flow and the join page's disabled state and copy, so admission is decided in exactly one place.
+_Avoid_: join check, gate
+
+**Claim**:
+The one room power a **Team role** confers: a team admin taking ownership of a team room whose owner is *gone* — absent from the room (**lockdown**) or no longer in the Team. A recovery verb, not a rank: while the owner is present and in the Team it is denied with `owner-present`, and the route is an ordinary transfer. Requires **room attendance** like every other mutation. The room-level form of the rule that a permanent object may never be left with nobody who can administer it.
+_Avoid_: takeover, hijack, override, admin mode
+
+**Retro defaults**:
+The bundle a **Team** carries — default **Attribution**, **join policy** and retro **permission levels** — copied by value onto every retro created in it. Edited by a team admin on the team page; changing it never rewrites a retro already running, exactly as a room's stored `permissions` are authoritative over any default.
+_Avoid_: team settings (broader), template (that is a format), policy
+
 ### Voting round
 
 **Voting round** (or **round**):
@@ -210,6 +230,7 @@ _Avoid_: service layer, plugin, provider factory
 - **"Permission"** is overloaded: the **permissions** config (the levels an owner sets) versus a **permission decision** (the runtime verdict). Always qualify which one. The bare table/field name `permissions` always means the config.
 - **"Owner absent" vs "owner offline"**: only an explicit *leave* causes **lockdown**. Going offline (disconnect, tab close) is cosmetic presence and changes no permissions.
 - **"Anonymous" is two axes**: `anonymous` **Attribution** is a retro's promise about what its cards record; an `anonymous` *account* is a browser-session identity. An anonymous-account user in a `named` retro is attributed by the name they typed; a permanent-account user in an `anonymous` retro leaves no author at all. Neither axis alters the other.
+- **"The facilitator" vs the facilitator Role**: in copy and research, "the facilitator" is the person running the retro, who is usually the room **owner**. The **facilitator** *Role* is the promoted-helper rank. A retro category defaulting to `facilitators` includes the owner; nothing requires the person running the retro to hold the facilitator Role.
 - **"Phase" vs "status"**: a **voting round** has a derived **phase**; an **issue** has a stored **status** (`pending` / `voting` / `completed`). They correlate but are different axes — a **Quick Vote** round has a phase but no issue status.
 - **"Round" vs round number**: each **reset** opens a new timing record (`votingTimestamps.roundNumber`) for the same issue. The module concept **round** is one start-to-settle cycle; the round number counts them within an issue.
 - **"Demo room" is retired**: the `/demo` page is a **Demo simulation**, not a room. There is no `isDemoRoom` flag, no seeded room, no bot membership — those were removed when the demo moved fully client-side. Any reference to a "demo room" predates that change.
