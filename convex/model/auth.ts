@@ -10,6 +10,7 @@ import {
   getEffectiveRole,
 } from "../permissions";
 import { isRoomOwnerAbsent } from "./permissions";
+import { getMembership } from "./users";
 
 /**
  * Auth identity returned by ctx.auth.getUserIdentity().
@@ -112,12 +113,7 @@ export async function requireRoomReader(
   const { identity, user } = await requireAuthUser(ctx);
   const [room, membership] = await Promise.all([
     ctx.db.get(roomId),
-    ctx.db
-      .query("roomMemberships")
-      .withIndex("by_room_user", (q) =>
-        q.eq("roomId", roomId).eq("userId", user._id)
-      )
-      .first(),
+    getMembership(ctx, roomId, user._id),
   ]);
   if (!room) {
     throw new Error("Room not found");
@@ -268,8 +264,7 @@ async function guardRoomAction(
   let target: Doc<"roomMemberships"> | undefined;
 
   if (spec.kind === "category") {
-    // Narrow on the ceremony before indexing: a category from the other
-    // ceremony has no level here and is refused outright (ADR-0013).
+    // A category from the other ceremony has no level here (ADR-0013).
     const level = categoryLevel(effective, spec.category);
     if (level === undefined) {
       throw new Error("This action does not apply to this room type.");
@@ -316,14 +311,14 @@ async function guardRoomAction(
     ? await isRoomOwnerAbsent(ctx, room)
     : false;
 
-  // Team inputs (ADR-0013): populated only for rooms with a `teamId`, which
-  // #287 introduces. Until then no actor holds a team role, so `claim` is
-  // insufficient-role for everyone, and `ownerInTeam` is vacuously false.
+  // Team inputs (ADR-0013): `actorTeamRole` is populated only for rooms with
+  // a `teamId`, which #287 introduces. Until then no actor holds a team role,
+  // so `claim` is insufficient-role for everyone, and `ownerInTeam` is
+  // vacuously false.
   const decision = resolve(action, {
     actorRole,
     permissions: effective.permissions,
     ownerAbsent,
-    actorTeamRole: undefined,
     ownerInTeam: false,
   });
   if (!decision.allowed) {

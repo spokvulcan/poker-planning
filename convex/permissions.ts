@@ -6,17 +6,6 @@ export type MemberRole = "owner" | "facilitator" | "participant";
 
 export type PermissionLevel = "everyone" | "facilitators" | "owner";
 
-/**
- * The ceremony a room runs (CONTEXT.md): planning poker or retro. Derived from
- * the stored `roomType` — undefined and "canvas" are poker, "retro" is a retro
- * (ADR-0013). Keys the category set everywhere a category is looked up.
- */
-export type Ceremony = "poker" | "retro";
-
-export function ceremonyOf(roomType: Doc<"rooms">["roomType"]): Ceremony {
-  return roomType === "retro" ? "retro" : "poker";
-}
-
 /** The poker room's four owner-configurable categories. */
 export type PokerPermissionCategory =
   | "revealCards"
@@ -49,9 +38,9 @@ export type RetroPermissions = {
 };
 
 /**
- * The effective permissions of a room, discriminated on its ceremony so a
- * caller narrows before indexing a category. Returned by
- * `getEffectivePermissions`.
+ * The effective permissions of a room, discriminated on its ceremony
+ * (CONTEXT.md: planning poker or retro, named by `roomType`) so a caller
+ * narrows before indexing a category. Returned by `getEffectivePermissions`.
  */
 export type EffectivePermissions =
   | { ceremony: "poker"; permissions: RoomPermissions }
@@ -231,9 +220,9 @@ export function evaluate(action: Action, ctx: DecisionContext): Decision {
   }
 }
 
-/** Exhaustiveness guard — unreachable for a well-typed Action. */
-function assertNever(action: never): never {
-  throw new Error(`Unhandled action: ${JSON.stringify(action)}`);
+/** Exhaustiveness guard — unreachable for a well-typed input. */
+function assertNever(value: never): never {
+  throw new Error(`Unhandled value: ${JSON.stringify(value)}`);
 }
 
 /**
@@ -350,37 +339,6 @@ function decideRole(
 
 // --- Helpers ---
 
-// Each ceremony's category set, derived from its defaults so the four names
-// are spelled once per ceremony.
-const POKER_CATEGORIES: ReadonlySet<string> = new Set(Object.keys(DEFAULT_PERMISSIONS));
-const RETRO_CATEGORIES: ReadonlySet<string> = new Set(
-  Object.keys(DEFAULT_RETRO_PERMISSIONS)
-);
-
-function isPokerCategory(
-  category: PermissionCategory
-): category is PokerPermissionCategory {
-  return POKER_CATEGORIES.has(category);
-}
-
-function isRetroCategory(
-  category: PermissionCategory
-): category is RetroPermissionCategory {
-  return RETRO_CATEGORIES.has(category);
-}
-
-function isPokerPermissions(
-  p: Doc<"rooms">["permissions"]
-): p is RoomPermissions {
-  return p !== undefined && "revealCards" in p;
-}
-
-function isRetroPermissions(
-  p: Doc<"rooms">["permissions"]
-): p is RetroPermissions {
-  return p !== undefined && "stageFlow" in p;
-}
-
 /**
  * Returns the effective permissions for a room, keyed by its ceremony: the
  * poker set for roomType "canvas" or undefined, the retro set for "retro".
@@ -391,36 +349,34 @@ function isRetroPermissions(
 export function getEffectivePermissions(
   room: Pick<Doc<"rooms">, "roomType" | "permissions">
 ): EffectivePermissions {
-  if (ceremonyOf(room.roomType) === "retro") {
+  const stored = room.permissions;
+  if (room.roomType === "retro") {
     return {
       ceremony: "retro",
-      permissions: isRetroPermissions(room.permissions)
-        ? room.permissions
-        : DEFAULT_RETRO_PERMISSIONS,
+      permissions:
+        stored && "stageFlow" in stored ? stored : DEFAULT_RETRO_PERMISSIONS,
     };
   }
   return {
     ceremony: "poker",
-    permissions: isPokerPermissions(room.permissions)
-      ? room.permissions
-      : DEFAULT_PERMISSIONS,
+    permissions:
+      stored && "revealCards" in stored ? stored : DEFAULT_PERMISSIONS,
   };
 }
 
 /**
  * The level a category resolves to in a room's effective permissions, or
  * undefined when the category belongs to the other ceremony (a poker
- * mutation invoked on a retro room, or vice versa). Narrows on the ceremony
- * before indexing so `evaluate` never sees a level from the wrong set.
+ * mutation invoked on a retro room, or vice versa). The permissions object
+ * *is* the ceremony's category set, so an absent key is the narrowing.
  */
 export function categoryLevel(
   effective: EffectivePermissions,
   category: PermissionCategory
 ): PermissionLevel | undefined {
-  if (effective.ceremony === "poker") {
-    return isPokerCategory(category) ? effective.permissions[category] : undefined;
-  }
-  return isRetroCategory(category) ? effective.permissions[category] : undefined;
+  const levels: Partial<Record<PermissionCategory, PermissionLevel>> =
+    effective.permissions;
+  return levels[category];
 }
 
 // --- Join decision (pure) ---
@@ -459,12 +415,8 @@ export function evaluateJoin(
     case "teamMembers":
       return { allowed: false, reason: "team-members-only" };
     default:
-      return assertNeverPolicy(policy);
+      return assertNever(policy);
   }
-}
-
-function assertNeverPolicy(policy: never): never {
-  throw new Error(`Unhandled join policy: ${JSON.stringify(policy)}`);
 }
 
 /**

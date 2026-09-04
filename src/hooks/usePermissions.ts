@@ -6,8 +6,8 @@ import {
   type RoomPermissions,
   type RetroPermissions,
   type ResolvedDecision,
-  type PokerPermissionCategory,
-  type RetroPermissionCategory,
+  type PermissionCategory,
+  type PermissionLevel,
   type DecisionContext,
   type EffectivePermissions,
   DEFAULT_PERMISSIONS,
@@ -224,52 +224,54 @@ export function computePermissions(
     ...relationshipDecisions(ctx),
   };
 
-  // Narrow on the ceremony before indexing a category, so each arm resolves
-  // only its own set (ADR-0013).
+  const category = (c: PermissionCategory, level: PermissionLevel): ResolvedDecision =>
+    resolve({ kind: "category", category: c, level }, ctx);
+
+  // Each arm resolves only its own category set (ADR-0013).
   if (effective.ceremony === "retro") {
     const { permissions } = effective;
-    const category = (c: RetroPermissionCategory): ResolvedDecision =>
-      resolve({ kind: "category", category: c, level: permissions[c] }, ctx);
     return {
       ceremony: "retro",
       ...shared,
-      stageFlow: category("stageFlow"),
-      cardManagement: category("cardManagement"),
-      actionManagement: category("actionManagement"),
-      retroSettings: category("retroSettings"),
+      stageFlow: category("stageFlow", permissions.stageFlow),
+      cardManagement: category("cardManagement", permissions.cardManagement),
+      actionManagement: category("actionManagement", permissions.actionManagement),
+      retroSettings: category("retroSettings", permissions.retroSettings),
       permissions,
     };
   }
 
   const { permissions } = effective;
-  const category = (c: PokerPermissionCategory): ResolvedDecision =>
-    resolve({ kind: "category", category: c, level: permissions[c] }, ctx);
   return {
     ceremony: "poker",
     ...shared,
-    revealCards: category("revealCards"),
-    gameFlow: category("gameFlow"),
-    issueManagement: category("issueManagement"),
-    roomSettings: category("roomSettings"),
+    revealCards: category("revealCards", permissions.revealCards),
+    gameFlow: category("gameFlow", permissions.gameFlow),
+    issueManagement: category("issueManagement", permissions.issueManagement),
+    roomSettings: category("roomSettings", permissions.roomSettings),
     permissions,
   };
 }
 
 /**
- * The poker consumers' narrowing of `computePermissions`: the poker arm, or a
- * throw when the room is a retro. A poker surface (the canvas, the settings
- * panel) is never rendered for a retro room, so the throw marks a routing bug
- * rather than a state to handle.
+ * The poker consumers' narrowing: the poker arm, or a throw when the room is
+ * a retro. A poker surface (the canvas, the settings panel) is never rendered
+ * for a retro room, so the throw marks a routing bug rather than a state to
+ * handle.
  */
-export function computePokerPermissions(
-  roomData: RoomWithRelatedData | null | undefined,
-  currentUserId: Id<"users"> | string | undefined
-): PokerPermissionsReturn {
-  const result = computePermissions(roomData, currentUserId);
+function narrowToPoker(result: UsePermissionsReturn): PokerPermissionsReturn {
   if (result.ceremony !== "poker") {
     throw new Error("Poker permissions requested for a non-poker room");
   }
   return result;
+}
+
+/** `computePermissions` narrowed to the poker arm; see `narrowToPoker`. */
+export function computePokerPermissions(
+  roomData: RoomWithRelatedData | null | undefined,
+  currentUserId: Id<"users"> | string | undefined
+): PokerPermissionsReturn {
+  return narrowToPoker(computePermissions(roomData, currentUserId));
 }
 
 /**
@@ -288,15 +290,12 @@ export function usePermissions(
 }
 
 /**
- * `usePermissions` narrowed to the poker arm for the poker surfaces. Same
- * memoization contract; see `computePokerPermissions` for the throw.
+ * `usePermissions` narrowed to the poker arm for the poker surfaces. Reuses
+ * the same memo — narrowing is a type check, not a recompute.
  */
 export function usePokerPermissions(
   roomData: RoomWithRelatedData | null | undefined,
   currentUserId: Id<"users"> | string | undefined
 ): PokerPermissionsReturn {
-  return useMemo(
-    () => computePokerPermissions(roomData, currentUserId),
-    [roomData, currentUserId]
-  );
+  return narrowToPoker(usePermissions(roomData, currentUserId));
 }

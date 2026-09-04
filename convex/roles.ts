@@ -1,6 +1,7 @@
 import { mutation } from "./_generated/server";
 import { v } from "convex/values";
 import * as Roles from "./model/roles";
+import { pokerPermissionsValidator } from "./schema";
 
 export const promoteFacilitator = mutation({
   args: {
@@ -35,28 +36,7 @@ export const transferOwnership = mutation({
 export const updatePermissions = mutation({
   args: {
     roomId: v.id("rooms"),
-    permissions: v.object({
-      revealCards: v.union(
-        v.literal("everyone"),
-        v.literal("facilitators"),
-        v.literal("owner")
-      ),
-      gameFlow: v.union(
-        v.literal("everyone"),
-        v.literal("facilitators"),
-        v.literal("owner")
-      ),
-      issueManagement: v.union(
-        v.literal("everyone"),
-        v.literal("facilitators"),
-        v.literal("owner")
-      ),
-      roomSettings: v.union(
-        v.literal("everyone"),
-        v.literal("facilitators"),
-        v.literal("owner")
-      ),
-    }),
+    permissions: pokerPermissionsValidator,
   },
   handler: async (ctx, args) => {
     await Roles.updatePermissions(ctx, args);
