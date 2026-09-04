@@ -384,6 +384,19 @@ export function categoryLevel(
 /** Who may join a room (ADR-0013, spec §4.4). */
 export type JoinPolicy = "anyone" | "permanentAccounts" | "teamMembers";
 
+/** Whether a retro's cards carry their author (ADR-0012). */
+export type Attribution = "named" | "anonymous";
+
+/**
+ * The bundle a Team carries and copies by value onto every retro created in
+ * it (ADR-0013, spec §5). Shared by the schema, the model and the client.
+ */
+export type RetroDefaults = {
+  attribution: Attribution;
+  joinPolicy: JoinPolicy;
+  permissions: RetroPermissions;
+};
+
 export type AccountType = "anonymous" | "permanent";
 
 export type JoinDenialReason = "permanent-account-required" | "team-members-only";

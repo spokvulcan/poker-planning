@@ -42,6 +42,29 @@ export const joinPolicyValidator = v.union(
   v.literal("teamMembers")
 );
 
+/** Whether a retro's cards carry their author (ADR-0012). */
+export const attributionValidator = v.union(
+  v.literal("named"),
+  v.literal("anonymous")
+);
+
+/**
+ * The bundle a Team carries and copies by value onto every retro created in
+ * it (ADR-0013, spec §5): default attribution, join policy and the four retro
+ * permission levels.
+ */
+export const retroDefaultsValidator = v.object({
+  attribution: attributionValidator,
+  joinPolicy: joinPolicyValidator,
+  permissions: retroPermissionsValidator,
+});
+
+/** A Team membership's standing (ADR-0008). */
+export const teamRoleValidator = v.union(
+  v.literal("admin"),
+  v.literal("member")
+);
+
 export default defineSchema({
   rooms: defineTable({
     name: v.string(),
@@ -87,8 +110,12 @@ export default defineSchema({
     // "teamMembers" is only meaningful once the room has a Team. Read by
     // evaluateJoin; written by nothing yet.
     joinPolicy: v.optional(joinPolicyValidator),
+    // The owning Team (ADR-0008): set once at creation or adoption, never
+    // changed or cleared. Undefined on poker rooms and teamless retros.
+    teamId: v.optional(v.id("teams")),
   })
     .index("by_retention_activity", ["retained", "lastActivityAt"]) // The sweep: non-retained rooms by staleness
+    .index("by_team", ["teamId"]) // A Team's history and its deletion cascade
     .index("by_created", ["createdAt"]) // For querying recent rooms
     .index("by_owner", ["ownerId"]), // For transferring ownership on account linking
 
@@ -130,6 +157,28 @@ export default defineSchema({
   })
     .index("by_auth_user", ["authUserId"])
     .index("by_email", ["email"]),
+
+  // A Team (ADR-0008): the permanent visibility boundary that owns retro
+  // history. Deliberately minimal — a name, a rotatable invite token and the
+  // retro defaults it stamps onto new retros.
+  teams: defineTable({
+    name: v.string(),
+    inviteToken: v.string(), // Rotated by any admin; rotation invalidates the old link
+    retroDefaults: retroDefaultsValidator,
+    createdAt: v.number(),
+  }).index("by_invite_token", ["inviteToken"]),
+
+  // Team memberships (user <-> team relationship). Permanent accounts only,
+  // enforced in the model layer; written only by consuming the invite link.
+  teamMemberships: defineTable({
+    teamId: v.id("teams"),
+    userId: v.id("users"),
+    role: teamRoleValidator,
+    joinedAt: v.number(),
+  })
+    .index("by_team", ["teamId"])
+    .index("by_user", ["userId"])
+    .index("by_team_user", ["teamId", "userId"]),
 
   // Room memberships (user <-> room relationship)
   roomMemberships: defineTable({

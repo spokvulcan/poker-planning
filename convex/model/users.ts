@@ -4,6 +4,7 @@ import * as Analytics from "./analytics";
 import * as Canvas from "./canvas";
 import * as Rooms from "./rooms";
 import * as VotingRound from "./votingRound";
+import * as Teams from "./teams";
 import type { MemberRole } from "../permissions";
 
 export interface JoinRoomArgs {
@@ -378,6 +379,10 @@ export async function deleteUserByAuthUserId(
     .first();
 
   if (!user) return;
+
+  // Team memberships first: this can refuse the whole deletion (the
+  // last-admin rule), and a refusal must leave every row untouched.
+  await Teams.releaseMembershipsOfDeletedUser(ctx, user._id);
 
   // Find all memberships for this user
   const memberships = await ctx.db

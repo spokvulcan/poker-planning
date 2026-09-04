@@ -41,7 +41,7 @@ The authentication system consists of three layers:
 | `convex/schema.ts` | Database schema with `users` and `roomMemberships` tables |
 | `convex/users.ts` | User/membership API (join, leave, edit, queries, linkAccount) |
 | `convex/model/users.ts` | User/membership business logic & account linking logic |
-| `convex/model/auth.ts` | Auth guard helpers (`requireAuth`, `requireAuthUser`, `requireRoomMember`, `requireRoomReader`, `getOptionalAuthUser`) |
+| `convex/model/auth.ts` | Auth guard helpers (`requireAuth`, `requireAuthUser`, `requireRoomMember`, `requireRoomReader`, `requireTeamRole`, `getOptionalAuthUser`) |
 | `convex/email.ts` | Internal actions to send Magic Link emails via Resend |
 
 ### Frontend (Next.js)
@@ -99,7 +99,8 @@ All Convex mutations must enforce authorization using helpers from `convex/model
 | `requireAuth(ctx)` | `{ subject }` (auth identity) | You only need to confirm the user is logged in |
 | `requireAuthUser(ctx)` | `{ identity, user }` | You need the app-level `users` record |
 | `requireRoomMember(ctx, roomId)` | `{ identity, user, membership }` | The mutation is scoped to a room (room *attendance*) |
-| `requireRoomReader(ctx, roomId)` | `{ identity, user, room }` | A read-only query on room-owned data (room *access*, ADR-0009). Passes a room member; never returns a membership |
+| `requireRoomReader(ctx, roomId)` | `{ identity, user, room }` | A read-only query on room-owned data (room *access*, ADR-0009). Passes a room member or a member of the room's Team (ADR-0008); denies when the Team row is gone; never returns a membership |
+| `requireTeamRole(ctx, teamId, "admin" \| "member")` | `{ identity, user, team, membership }` | Every team mutation and the members-only team reads (ADR-0008). Team role grants no room power; `claim` is decided by the room guard from the Team inputs it reads |
 | `getOptionalAuthUser(ctx)` | `user \| null` | Queries that should degrade gracefully for unauthenticated users |
 
 ### Which guard to use
