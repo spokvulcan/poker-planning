@@ -19,9 +19,12 @@ export default defineConfig({
     alias: [
       {
         find: /^@\/convex\/(.*)$/,
-        replacement: path.resolve(__dirname, "./convex/$1"),
+        replacement: path.resolve(import.meta.dirname, "./convex/$1"),
       },
-      { find: /^@\/(.*)$/, replacement: path.resolve(__dirname, "./src/$1") },
+      {
+        find: /^@\/(.*)$/,
+        replacement: path.resolve(import.meta.dirname, "./src/$1"),
+      },
     ],
   },
   test: {

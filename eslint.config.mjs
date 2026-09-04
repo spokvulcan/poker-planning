@@ -10,6 +10,11 @@ const eslintConfig = defineConfig([
   {
     rules: {
       "@typescript-eslint/no-unused-vars": "off",
+      // Added as "error" in @convex-dev/eslint-plugin 4.0. Wants every
+      // `db.get(id)` / `db.patch(id, ...)` / etc. rewritten to the explicit
+      // `db.get("table", id)` form — ~200 call sites under convex/. Turned off
+      // until that migration lands as its own change (#302).
+      "@convex-dev/explicit-table-ids": "off",
     },
   },
   // Override default ignores of eslint-config-next.
