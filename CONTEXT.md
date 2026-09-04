@@ -354,6 +354,18 @@ _Avoid_: touch point, heartbeat, keep-alive
 The per-room materialized completed-issue history (`roomAnalyticsSnapshots`), written in the reveal mutation when a **target** issue completes. The analytics queries project purely from it; a missing or stale row falls back to the on-the-fly scan with identical results. Freshness is keyed on **room activity** (`computedAt >= lastActivityAt`), which is why every history-changing write must go through the activity chokepoint. See [ADR-0007](docs/adr/0007-analytics-read-from-a-write-time-snapshot.md).
 _Avoid_: cache (the scan is the fallback, not the steady-state source), materialized view
 
+### Testing
+
+Decided on [map #253](https://github.com/spokvulcan/poker-planning/issues/253) and not yet built. See [ADR-0025](docs/adr/0025-tests-sign-in-through-a-guarded-seam-and-prove-each-guarantee-in-the-cheapest-layer.md).
+
+**Test seam**:
+The one secret-guarded backend module a test run uses to sign in as a permanent account (by capturing the real magic link instead of sending it), seed a **retro** at a named **stage** through the domain's own functions, and delete everything a run created. Deployed everywhere, inert without the secret, and the only test-specific code the backend carries.
+_Avoid_: backdoor, mock auth, fixture endpoint, test mode
+
+**Layer rule**:
+Every guarantee is proven in the cheapest layer that can prove it: backend rules in `convex-test`, client state in jsdom, pure copy and seeds in node, and only facts that need two real browsers against one deployment in Playwright. A Playwright scenario names the cross-browser fact it exists for.
+_Avoid_: test pyramid (the shape is the consequence, not the rule), coverage target
+
 ### Integrations
 
 **Token vault**:
