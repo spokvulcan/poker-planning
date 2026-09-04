@@ -27,6 +27,7 @@ async function seedRoom(
       isGameOver: false,
       createdAt: Date.now(),
       lastActivityAt: Date.now(),
+      retained: false,
       ...overrides,
     })
   );

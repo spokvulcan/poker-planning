@@ -12,47 +12,40 @@ const modules = import.meta.glob("./**/*.*s");
 type T = TestConvex<typeof schema>;
 
 /**
- * Retention flag, widen release (#284, ADR-0019). Every writer stamps
- * `retained` on new rows; legacy rows are stamped by the self-scheduling
- * backfill. The sweep is untouched here — its tests live in
- * roomAggregate.test.ts and still read `by_activity`.
+ * Retention (ADR-0019): `retained` is the sweep's only discriminator. Every
+ * writer stamps it on new rows, and the sweep deletes a non-retained room
+ * after five quiet days while leaving a retained one alone regardless of
+ * age or room type.
  */
 
-/** A legacy row: written before the field existed, so `retained` is absent. */
-async function seedLegacyRoom(t: T, name: string): Promise<Id<"rooms">> {
+const TEN_DAYS_AGO = Date.now() - 10 * 24 * 60 * 60 * 1000;
+
+async function seedStaleRoom(
+  t: T,
+  opts: { retained: boolean; roomType?: "canvas" }
+): Promise<Id<"rooms">> {
   return t.run((ctx) =>
     ctx.db.insert("rooms", {
-      name,
+      name: opts.retained ? "kept" : "stale",
       autoCompleteVoting: false,
       isGameOver: false,
-      createdAt: Date.now(),
-      lastActivityAt: Date.now(),
+      createdAt: TEN_DAYS_AGO,
+      lastActivityAt: TEN_DAYS_AGO,
+      retained: opts.retained,
+      ...(opts.roomType ? { roomType: opts.roomType } : {}),
     })
   );
 }
 
-async function retainedById(t: T): Promise<Map<Id<"rooms">, boolean | undefined>> {
-  const rooms = await t.run((ctx) => ctx.db.query("rooms").collect());
-  return new Map(rooms.map((r) => [r._id, r.retained]));
-}
-
-async function pendingBackfills(t: T): Promise<number> {
+async function scheduledCascadeRoomIds(t: T): Promise<Set<string>> {
   const jobs = await t.run((ctx) =>
     ctx.db.system.query("_scheduled_functions").collect()
   );
-  return jobs.filter(
-    (j) => j.name.endsWith("backfillRoomsRetained") && j.state.kind === "pending"
-  ).length;
-}
-
-/** Fires runAfter(0) continuations until none are pending. */
-async function drainScheduled(t: T): Promise<void> {
-  for (let i = 0; i < 50; i++) {
-    await new Promise((r) => setTimeout(r, 5));
-    await t.finishInProgressScheduledFunctions();
-    if ((await pendingBackfills(t)) === 0) return;
-  }
-  throw new Error("backfill continuations did not drain");
+  return new Set(
+    jobs
+      .filter((j) => j.name.endsWith(":deleteRoomAggregateChunk"))
+      .map((j) => (j.args as [{ roomId: string }])[0].roomId)
+  );
 }
 
 describe("retained: writers", () => {
@@ -73,74 +66,42 @@ describe("retained: writers", () => {
   });
 });
 
-describe("backfillRoomsRetained", () => {
-  it("stamps only rows where retained is undefined, batching until done", async () => {
+describe("removeInactiveRooms: retention", () => {
+  it("a retained room outlives five quiet days", async () => {
     const t = convexTest(schema, modules);
-    const legacy = await Promise.all(
-      ["L1", "L2", "L3"].map((name) => seedLegacyRoom(t, name))
-    );
-    const alreadyTrue = await t.run((ctx) =>
-      ctx.db.insert("rooms", {
-        name: "kept",
-        autoCompleteVoting: false,
-        isGameOver: false,
-        createdAt: Date.now(),
-        lastActivityAt: Date.now(),
-        retained: true,
-      })
-    );
-    const alreadyFalse = await seedRoom(t, "fresh");
+    const keptId = await seedStaleRoom(t, { retained: true });
 
-    const first = await t.mutation(internal.migrations.backfillRoomsRetained, {
-      batchSize: 2,
-    });
-    expect(first).toEqual({ found: 2, stamped: 2, rescheduled: true });
-    expect(await pendingBackfills(t)).toBe(1);
+    const result = await t.mutation(internal.cleanup.removeInactiveRooms, {});
 
-    await drainScheduled(t);
-
-    const retained = await retainedById(t);
-    for (const id of legacy) expect(retained.get(id)).toBe(false);
-    expect(retained.get(alreadyTrue)).toBe(true);
-    expect(retained.get(alreadyFalse)).toBe(false);
-    expect(await pendingBackfills(t)).toBe(0);
+    expect(result.roomsScheduled).toBe(0);
+    expect(await scheduledCascadeRoomIds(t)).toEqual(new Set());
+    expect(await t.run((ctx) => ctx.db.get(keptId))).not.toBeNull();
   });
 
-  it("terminates without rescheduling once the batch comes back short", async () => {
+  it("a non-retained room is scheduled for deletion after five quiet days", async () => {
     const t = convexTest(schema, modules);
-    await seedLegacyRoom(t, "L1");
+    const staleId = await seedStaleRoom(t, { retained: false });
+    const activeId = await seedRoom(t, "active");
 
-    const result = await t.mutation(internal.migrations.backfillRoomsRetained, {
-      batchSize: 2,
-    });
-    expect(result).toEqual({ found: 1, stamped: 1, rescheduled: false });
-    expect(await pendingBackfills(t)).toBe(0);
+    const result = await t.mutation(internal.cleanup.removeInactiveRooms, {});
 
-    // Idempotent: a re-run finds nothing left to stamp.
-    const again = await t.mutation(internal.migrations.backfillRoomsRetained, {});
-    expect(again).toEqual({ found: 0, stamped: 0, rescheduled: false });
+    expect(result.roomsScheduled).toBe(1);
+    expect(await scheduledCascadeRoomIds(t)).toEqual(new Set([staleId]));
+    expect(await t.run((ctx) => ctx.db.get(activeId))).not.toBeNull();
   });
 
-  it("dryRun reports the unstamped count, bounded by batchSize, and writes nothing", async () => {
+  it("retention is the only discriminator: roomType does not matter", async () => {
     const t = convexTest(schema, modules);
-    const legacy = await Promise.all(
-      ["L1", "L2", "L3"].map((name) => seedLegacyRoom(t, name))
+    const staleCanvas = await seedStaleRoom(t, { retained: false, roomType: "canvas" });
+    const staleUntyped = await seedStaleRoom(t, { retained: false });
+    await seedStaleRoom(t, { retained: true, roomType: "canvas" });
+    await seedStaleRoom(t, { retained: true });
+
+    const result = await t.mutation(internal.cleanup.removeInactiveRooms, {});
+
+    expect(result.roomsScheduled).toBe(2);
+    expect(await scheduledCascadeRoomIds(t)).toEqual(
+      new Set([staleCanvas, staleUntyped])
     );
-    await seedRoom(t, "fresh");
-
-    const result = await t.mutation(internal.migrations.backfillRoomsRetained, {
-      dryRun: true,
-    });
-    expect(result).toEqual({ found: 3, stamped: 0, rescheduled: false });
-
-    const bounded = await t.mutation(internal.migrations.backfillRoomsRetained, {
-      dryRun: true,
-      batchSize: 2,
-    });
-    expect(bounded).toEqual({ found: 2, stamped: 0, rescheduled: false });
-
-    const retained = await retainedById(t);
-    for (const id of legacy) expect(retained.get(id)).toBeUndefined();
-    expect(await pendingBackfills(t)).toBe(0);
   });
 });

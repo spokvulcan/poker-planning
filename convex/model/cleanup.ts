@@ -16,8 +16,10 @@ export interface RemoveInactiveRoomsResult {
 const INACTIVE_ROOMS_PER_TICK = 100;
 
 /**
- * Schedules deletion of inactive rooms (default 5 days of inactivity). Each
- * room's cascade runs as its own scheduled mutation
+ * Schedules deletion of non-retained inactive rooms (default 5 days of
+ * inactivity). A retained room (ADR-0019: one that belongs to a Team) is
+ * never swept, whatever its age or type. Each room's cascade runs as its own
+ * scheduled mutation
  * (internal.maintenance.deleteRoomAggregateChunk), so one oversized or
  * failing room can neither blow the cron's transaction limits nor take the
  * other rooms down with it.
@@ -30,7 +32,9 @@ export async function removeInactiveRooms(
 
   const inactiveRooms = await ctx.db
     .query("rooms")
-    .withIndex("by_activity", (q) => q.lt("lastActivityAt", cutoffTime))
+    .withIndex("by_retention_activity", (q) =>
+      q.eq("retained", false).lt("lastActivityAt", cutoffTime)
+    )
     .take(INACTIVE_ROOMS_PER_TICK);
 
   console.log(`Scheduling ${inactiveRooms.length} inactive rooms for cleanup`);

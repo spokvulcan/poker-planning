@@ -85,6 +85,7 @@ function buildRoom(state: DemoSimulationState): Doc<"rooms"> {
     name: "Planning Poker Demo",
     roomType: "canvas",
     autoCompleteVoting: true,
+    retained: false,
     // `isGameOver` is this codebase's per-round reveal toggle, NOT a terminal
     // "session done" flag: reveal sets it true and the next round's reset clears
     // it (votingRound.ts reveal/reset), and phaseOf returns "revealed" iff it is
