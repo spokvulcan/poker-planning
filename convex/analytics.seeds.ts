@@ -29,6 +29,7 @@ export async function seedRoom(t: T, name = "R"): Promise<Id<"rooms">> {
       isGameOver: false,
       createdAt: Date.now(),
       lastActivityAt: Date.now(),
+      retained: false,
     })
   );
 }

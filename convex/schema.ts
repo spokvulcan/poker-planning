@@ -35,6 +35,11 @@ export default defineSchema({
     nextIssueNumber: v.optional(v.number()), // Counter for sequential IDs (1, 2, 3...)
     createdAt: v.number(),
     lastActivityAt: v.number(),
+    // Retention (ADR-0019): true iff the room belongs to a Team, so the
+    // five-day sweep leaves it alone. Optional during the widen release;
+    // migrations.backfillRoomsRetained stamps legacy rows `false`, then the
+    // narrow release (#285) makes it required and drops `by_activity`.
+    retained: v.optional(v.boolean()),
     // Room permissions & ownership
     ownerId: v.optional(v.id("users")),
     permissions: v.optional(
@@ -62,7 +67,8 @@ export default defineSchema({
       })
     ),
   })
-    .index("by_activity", ["lastActivityAt"])
+    .index("by_activity", ["lastActivityAt"]) // Sweep reads this until #285
+    .index("by_retention_activity", ["retained", "lastActivityAt"]) // Sweep's next read path; backfill reads the undefined range
     .index("by_created", ["createdAt"]) // For querying recent rooms
     .index("by_owner", ["ownerId"]), // For transferring ownership on account linking
 

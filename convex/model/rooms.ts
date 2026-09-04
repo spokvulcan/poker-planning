@@ -96,6 +96,8 @@ export async function createRoom(
     votingScale,
     createdAt: Date.now(),
     lastActivityAt: Date.now(),
+    // Always false until rooms can belong to a Team (ADR-0019).
+    retained: false,
     ...(args.ownerId ? { ownerId: args.ownerId } : {}),
   });
 
