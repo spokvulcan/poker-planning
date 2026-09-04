@@ -509,6 +509,7 @@ describe("team reads", () => {
     expect(page.name).toBe("Acme");
     expect(page.inviteToken).toBe(await inviteToken(t, teamId));
     expect(page.myRole).toBe("member");
+    expect(page.myUserId).toBe(memberId);
     expect(page.roomCount).toBe(2);
     expect(page.retroDefaults.attribution).toBe("named");
     expect(page.members.map((m) => [m.userId, m.name, m.role])).toEqual([

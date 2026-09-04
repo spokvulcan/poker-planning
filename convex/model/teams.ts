@@ -336,6 +336,8 @@ export interface TeamPage {
   inviteToken: string;
   retroDefaults: RetroDefaults;
   createdAt: number;
+  /** The caller, so the page needs no second query to find its own row. */
+  myUserId: Id<"users">;
   myRole: TeamRole;
   /** Rooms the Team owns — the `{n} retros` in the delete confirmation. */
   roomCount: number;
@@ -377,6 +379,7 @@ export async function getTeamPage(
     inviteToken: team.inviteToken,
     retroDefaults: team.retroDefaults,
     createdAt: team.createdAt,
+    myUserId: membership.userId,
     myRole: membership.role,
     roomCount: rooms.length,
     members,
