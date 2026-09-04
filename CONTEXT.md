@@ -256,6 +256,26 @@ _Avoid_: archive, close (a retro has no finished state), remove (that is the rel
 A retro as Markdown, or a **Team**'s history as JSON, rendered through the same **reveal**, **Attribution** and **room access** projections as the board — so it never shows the requester anything the board would not, and no role sees more than a member. Sharing is a download the sharer sends; there is no read-only link, because that would widen visibility.
 _Avoid_: share page, public link, report (that is analytics)
 
+### Retro notifications
+
+Decided on [map #253](https://github.com/spokvulcan/poker-planning/issues/253) and not yet built. See [ADR-0020](docs/adr/0020-a-nudge-is-sent-by-a-person-and-a-reminder-by-a-date.md).
+
+**Nudge**:
+The email a person sends to their **Team** asking for cards while a retro's **collection window** is open. Always a human act by someone who may **advance** the stage, never scheduled, at most once a day per retro. In a named retro it goes only to team members who have not written; in an anonymous retro it goes to everyone, because no one can tell. It counts cards and names its sender; it never quotes a card or names who has not written. A teamless retro has no nudge, because it has no addressable audience.
+_Avoid_: notification, reminder (that is the **action item**'s email), alert, ping
+
+**Reminder**:
+The email an **action item** sends to its **owner**: once when they are made owner by someone else, and once at a fixed hour on the due date. Fired by the commitment itself, cancelled the moment the date, owner or state changes; never repeated, never "overdue". The `review` stage remains the ask.
+_Avoid_: nudge (that is the collection email), overdue notice, digest
+
+**Cards-due date**:
+An optional advisory date on a retro saying when the team means to stop collecting. Shown on the board, in listings and in a **nudge**; it never closes the **collection window** itself and never sends anything, exactly as a **stage**'s timebox never fires an **advance**.
+_Avoid_: deadline (implies enforcement), closing time, end date
+
+**Email opt-out**:
+A person's single switch covering every **nudge** and **reminder**, flipped from Settings or from the one-click link in any such email. Sign-in emails are never covered by it.
+_Avoid_: notification preferences, subscription, mute
+
 ### Voting round
 
 **Voting round** (or **round**):
