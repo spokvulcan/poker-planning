@@ -70,6 +70,7 @@ async function seedRoomMidRound(t: T): Promise<{
       isGameOver: false,
       createdAt: Date.now(),
       lastActivityAt: Date.now(),
+      retained: false,
     });
     const issueId = await ctx.db.insert("issues", {
       roomId,

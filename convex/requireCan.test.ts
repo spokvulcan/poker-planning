@@ -34,6 +34,7 @@ async function seedRoom(
       isGameOver: false,
       createdAt: Date.now(),
       lastActivityAt: Date.now(),
+      retained: false,
       ...(opts.permissions ? { permissions: opts.permissions } : {}),
       ...(opts.ownerId ? { ownerId: opts.ownerId } : {}),
     })

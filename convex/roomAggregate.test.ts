@@ -109,6 +109,7 @@ async function seedRoom(t: T): Promise<Id<"rooms">> {
       isGameOver: false,
       createdAt: Date.now(),
       lastActivityAt: Date.now(),
+      retained: false,
     })
   );
 }
@@ -159,6 +160,7 @@ async function seedFullRoom(
       isGameOver: false,
       createdAt: Date.now(),
       lastActivityAt: Date.now(),
+      retained: false,
     });
     const userId = await ctx.db.insert("users", {
       authUserId: `auth-${crypto.randomUUID()}`,
@@ -350,6 +352,7 @@ describe("removeInactiveRooms", () => {
         isGameOver: false,
         createdAt: Date.now() - 10 * 24 * 60 * 60 * 1000,
         lastActivityAt: Date.now() - 10 * 24 * 60 * 60 * 1000,
+        retained: false,
       })
     );
     const activeId = await seedRoom(t);
@@ -381,6 +384,7 @@ describe("removeInactiveRooms", () => {
         isGameOver: false,
         createdAt: Date.now() - 10 * 24 * 60 * 60 * 1000,
         lastActivityAt: Date.now() - 10 * 24 * 60 * 60 * 1000,
+        retained: false,
       })
     );
     const userId = await t.run((ctx) =>
@@ -428,6 +432,7 @@ describe("removeInactiveRooms", () => {
         isGameOver: false,
         createdAt: Date.now() - 10 * 24 * 60 * 60 * 1000,
         lastActivityAt: Date.now() - 10 * 24 * 60 * 60 * 1000,
+        retained: false,
       })
     );
     const userId = await t.run((ctx) =>

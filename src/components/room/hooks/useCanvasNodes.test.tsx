@@ -63,6 +63,7 @@ const ROOM_DATA: RoomWithRelatedData = {
     isGameOver: false,
     createdAt: 0,
     lastActivityAt: 0,
+    retained: false,
   },
   users: [
     {
