@@ -15,7 +15,7 @@ The value a **permission decision** returns: `{ allowed: true }` or `{ allowed: 
 _Avoid_: result, verdict, outcome
 
 **Action**:
-What an actor is attempting. Either a **category action** (one of the room type's configurable categories) or a **relationship action** (`remove` / `promote` / `demote`, which constrain the target's role; `transfer` / `changePerms` / `ratchet`, which do not; `claim`, which constrains the *owner's* standing rather than a target's).
+What an actor is attempting. Either a **category action** (one of the room type's configurable categories) or a **relationship action** (`remove` / `promote` / `demote`, which constrain the target's role; `transfer` / `changePerms` / `ratchet` / `delete`, which do not; `claim`, which constrains the *owner's* standing rather than a target's).
 _Avoid_: operation, command, capability
 
 **Permission guard**:
@@ -239,6 +239,22 @@ _Avoid_: origin, parent, linked card
 **Carryover**:
 The fact that an **action item** still `open` from an earlier retro appears in the next one's `review` **stage** and on the team page. A query over the **Team**'s open action items, never a copy and never a pointer between retros — an action item has one home, and "carried over" means "still open". A teamless retro has nothing to carry to or from.
 _Avoid_: import, roll over, transfer, parking lot
+
+### Retro retention
+
+Decided on [map #253](https://github.com/spokvulcan/poker-planning/issues/253) and not yet built. See [ADR-0019](docs/adr/0019-retention-follows-the-team-and-export-never-widens-access.md).
+
+**Retained**:
+A room the five-day sweep leaves alone — true exactly when the room belongs to a **Team**, and for no other reason. Set when the room is created or adopted into a team; a teamless retro is a throwaway whoever created it, and keeping one means giving it a team. Stored as its own flag rather than derived, so it is the one field a future retention policy would flip. Retention is not visibility: what a retained retro's readers can see is fixed by **room access**, disclosed before the first card is written.
+_Avoid_: archived, permanent (the promise, not the property), exempt
+
+**Delete** (a room):
+The owner-level relationship action that removes a room and everything it owns, permanently, through the cascade. A team admin reaches it by **claim** when the owner is gone; nobody reaches it by rank. Distinct from a card's author deleting their own card (always allowed, a hole in the record is honest) and from account deletion (which unlinks a person from their content and never removes it).
+_Avoid_: archive, close (a retro has no finished state), remove (that is the relationship action on a person)
+
+**Export**:
+A retro as Markdown, or a **Team**'s history as JSON, rendered through the same **reveal**, **Attribution** and **room access** projections as the board — so it never shows the requester anything the board would not, and no role sees more than a member. Sharing is a download the sharer sends; there is no read-only link, because that would widen visibility.
+_Avoid_: share page, public link, report (that is analytics)
 
 ### Voting round
 
