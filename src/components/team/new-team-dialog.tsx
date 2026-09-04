@@ -40,14 +40,20 @@ export function NewTeamDialog({ open, onOpenChange, returnTo }: NewTeamDialogPro
 
   const isPermanent = accountType === "permanent";
 
+  // Closing for any reason drops the draft, so a cancelled name never
+  // reappears the next time the dialog opens.
+  const close = (next: boolean) => {
+    if (!next) setName("");
+    onOpenChange(next);
+  };
+
   const handleCreate = async () => {
     const trimmed = name.trim();
     if (!trimmed) return;
     setIsCreating(true);
     try {
       const teamId = await createTeam({ name: trimmed });
-      onOpenChange(false);
-      setName("");
+      close(false);
       router.push(`/team/${teamId}`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to create team");
@@ -57,7 +63,7 @@ export function NewTeamDialog({ open, onOpenChange, returnTo }: NewTeamDialogPro
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={close}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>New team</DialogTitle>
@@ -82,7 +88,7 @@ export function NewTeamDialog({ open, onOpenChange, returnTo }: NewTeamDialogPro
               aria-label="Team name"
             />
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              <Button type="button" variant="outline" onClick={() => close(false)}>
                 Cancel
               </Button>
               <Button type="submit" disabled={!name.trim() || isCreating}>
@@ -94,7 +100,7 @@ export function NewTeamDialog({ open, onOpenChange, returnTo }: NewTeamDialogPro
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">{SIGN_IN_TO_CREATE}</p>
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              <Button type="button" variant="outline" onClick={() => close(false)}>
                 Cancel
               </Button>
               <Button render={<Link href={`/auth/signin?from=${encodeURIComponent(returnTo)}`} />} nativeButton={false}>

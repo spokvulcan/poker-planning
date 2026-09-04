@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import type { PermissionLevel, RetroPermissionCategory } from "@/convex/permissions";
 import type { RetroDefaults } from "@/convex/model/teams";
 import { cn } from "@/lib/utils";
@@ -149,8 +150,16 @@ function Row({
  * value — the server replaces the stored object, never patches a key, so a
  * retro created a moment later copies exactly what is shown here.
  */
-export function RetroDefaultsPanel({ value, canEdit, onChange }: RetroDefaultsPanelProps) {
+export function RetroDefaultsPanel({ value: stored, canEdit, onChange }: RetroDefaultsPanelProps) {
+  // Each write replaces the whole stored object, so two quick changes must
+  // build on each other rather than both on the prop the query last pushed.
+  // The draft is keyed to the stored bundle it was written over: once the
+  // query pushes a new one (carrying the writes), the draft is dropped.
+  const [draft, setDraft] = useState<{ base: RetroDefaults; value: RetroDefaults } | null>(null);
+  const value = draft && draft.base === stored ? draft.value : stored;
+
   const write = (next: RetroDefaults) => {
+    setDraft({ base: stored, value: next });
     void onChange(next);
   };
 
