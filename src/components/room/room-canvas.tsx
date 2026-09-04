@@ -3,8 +3,6 @@
 import {
   ReactFlow,
   Edge,
-  Background,
-  BackgroundVariant,
   useEdgesState,
   NodeTypes,
   ReactFlowProvider,
@@ -16,6 +14,7 @@ import "@xyflow/react/dist/style.css";
 import type { NodeChange, EdgeChange } from "@xyflow/react";
 
 import { CanvasNavigation } from "./canvas-navigation";
+import { CanvasDotsBackground } from "@/components/canvas-dots-background";
 import { RoomPresenceProvider } from "./room-presence";
 import { RoomSettingsPanel } from "./room-settings-panel";
 import { IssuesPanel } from "./issues-panel";
@@ -267,12 +266,7 @@ function RoomCanvasInner({ roomData, currentUserId, isEmbedded = false }: RoomCa
           [2000, 2000],
         ]}
       >
-        <Background
-          variant={BackgroundVariant.Dots}
-          gap={20}
-          size={1}
-          className="*:stroke-gray-300 dark:*:stroke-surface-3"
-        />
+        <CanvasDotsBackground />
       </ReactFlow>
       <NodePickerToolbar
         currentIssueId={currentIssue?._id ?? null}

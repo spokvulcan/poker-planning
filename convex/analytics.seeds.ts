@@ -15,9 +15,19 @@ export const IN = Date.UTC(2026, 0, 10, 12); // 2026-01-10
 export const OUT = Date.UTC(2026, 1, 10, 12); // 2026-02-10
 export const RANGE = { from: Date.UTC(2026, 0, 1), to: Date.UTC(2026, 0, 31, 23, 59, 59) };
 
-export async function seedUser(t: T, authUserId: string, name = "U"): Promise<Id<"users">> {
+export async function seedUser(
+  t: T,
+  authUserId: string,
+  name = "U",
+  accountType?: "anonymous" | "permanent"
+): Promise<Id<"users">> {
   return t.run((ctx) =>
-    ctx.db.insert("users", { authUserId, name, createdAt: Date.now() })
+    ctx.db.insert("users", {
+      authUserId,
+      name,
+      createdAt: Date.now(),
+      ...(accountType ? { accountType } : {}),
+    })
   );
 }
 

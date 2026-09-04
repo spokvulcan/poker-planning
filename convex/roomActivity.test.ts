@@ -8,6 +8,8 @@ import * as VotingRound from "./model/votingRound";
 import * as Issues from "./model/issues";
 import * as Canvas from "./model/canvas";
 import * as Timer from "./model/timer";
+import * as Rooms from "./model/rooms";
+import * as Retro from "./model/retro";
 
 const modules = import.meta.glob("./**/*.*s");
 
@@ -428,5 +430,72 @@ describe("room activity — role changes and rename bump (through the endpoints)
     await asA.mutation(api.rooms.rename, { roomId, name: "New name" });
 
     await expectBumped(t, roomId, stale);
+  });
+});
+
+describe("room activity — the chokepoint owns the clock's precision (ADR-0018)", () => {
+  const HOUR = Rooms.RETRO_ACTIVITY_GRANULARITY_MS;
+
+  async function seedRetroRoom(t: T, lastActivityAt: number): Promise<Id<"rooms">> {
+    const roomId = await seedRoom(t, lastActivityAt);
+    await t.run((ctx) => ctx.db.patch(roomId, { roomType: "retro" }));
+    return roomId;
+  }
+
+  it("a retro whose clock is over an hour old is patched", async () => {
+    const t = convexTest(schema, modules);
+    const stale = Date.now() - HOUR - 60_000;
+    const roomId = await seedRetroRoom(t, stale);
+
+    await t.run((ctx) => Rooms.updateRoomActivity(ctx, roomId));
+
+    await expectBumped(t, roomId, stale);
+  });
+
+  it("a retro whose clock is a minute old is left untouched", async () => {
+    const t = convexTest(schema, modules);
+    const fresh = staleTimestamp();
+    const roomId = await seedRetroRoom(t, fresh);
+
+    await t.run((ctx) => Rooms.updateRoomActivity(ctx, roomId));
+
+    expect(await lastActivityAt(t, roomId)).toBe(fresh);
+  });
+
+  it("a poker room is patched every time, even a minute stale", async () => {
+    const t = convexTest(schema, modules);
+    const stale = staleTimestamp();
+    const roomId = await seedRoom(t, stale);
+
+    await t.run((ctx) => Rooms.updateRoomActivity(ctx, roomId));
+
+    await expectBumped(t, roomId, stale);
+  });
+
+  it("a room that is gone returns without patching (the join path bumps before it reads the room)", async () => {
+    const t = convexTest(schema, modules);
+    const roomId = await seedRoom(t, staleTimestamp());
+    await t.run((ctx) => ctx.db.delete(roomId));
+
+    // Throws if the chokepoint patches a missing document.
+    await t.run((ctx) => Rooms.updateRoomActivity(ctx, roomId));
+  });
+
+  it("creating a retro stamps a live clock", async () => {
+    const t = convexTest(schema, modules);
+    const before = Date.now();
+    const ownerId = await t.run((ctx) =>
+      ctx.db.insert("users", { authUserId: "auth-o", name: "O", createdAt: Date.now() })
+    );
+
+    const roomId = await t.run((ctx) =>
+      Retro.createRetro(ctx, {
+        name: "R",
+        ownerId,
+        formatName: "Went well, Do differently, Ideas",
+      })
+    );
+
+    expect(await lastActivityAt(t, roomId)).toBeGreaterThanOrEqual(before);
   });
 });

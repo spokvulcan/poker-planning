@@ -5,7 +5,9 @@ import * as Canvas from "./canvas";
 import * as Rooms from "./rooms";
 import * as VotingRound from "./votingRound";
 import * as Teams from "./teams";
-import type { MemberRole } from "../permissions";
+import { accountTypeOf, evaluateJoin, type MemberRole } from "../permissions";
+import { refusal } from "./refusal";
+import { JOIN_DENIED_PERMANENT, joinDeniedTeam } from "../retroCopy";
 
 export interface JoinRoomArgs {
   roomId: Id<"rooms">;
@@ -153,11 +155,21 @@ export async function joinRoom(
   const room = await ctx.db.get(args.roomId);
   const role = room?.ownerId === userId ? ("owner" as const) : undefined;
 
+  // The join decision (spec §4.4) runs before the membership insert; a Team
+  // member satisfies every policy, and a room without one admits anyone.
+  if (room) {
+    await requireJoinAllowed(ctx, room, userId);
+  }
+
+  // No spectator in retro (spec §4.2): the bit stays on the row, always
+  // false, whatever the client sent.
+  const isSpectator = room?.roomType === "retro" ? false : (args.isSpectator ?? false);
+
   // Create membership
   await ctx.db.insert("roomMemberships", {
     roomId: args.roomId,
     userId,
-    isSpectator: args.isSpectator ?? false,
+    isSpectator,
     joinedAt: Date.now(),
     ...(role ? { role } : {}),
   });
@@ -168,6 +180,33 @@ export async function joinRoom(
   }
 
   return userId;
+}
+
+/**
+ * Throws the `forbidden` refusal (spec §4.5) when the room's join policy
+ * denies this account. The user row is the one source of the account type.
+ */
+async function requireJoinAllowed(
+  ctx: MutationCtx,
+  room: Doc<"rooms">,
+  userId: Id<"users">
+): Promise<void> {
+  const user = await ctx.db.get(userId);
+  if (!user) throw new Error("User not found");
+  const teamMembership = room.teamId
+    ? await Teams.getTeamMembership(ctx, room.teamId, userId)
+    : null;
+  const decision = evaluateJoin(
+    room.joinPolicy ?? "anyone",
+    accountTypeOf(user),
+    teamMembership !== null
+  );
+  if (decision.allowed) return;
+  if (decision.reason === "permanent-account-required") {
+    throw refusal("forbidden", JOIN_DENIED_PERMANENT);
+  }
+  const team = room.teamId ? await ctx.db.get(room.teamId) : null;
+  throw refusal("forbidden", joinDeniedTeam(team?.name ?? "its team"));
 }
 
 /**

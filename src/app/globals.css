@@ -54,6 +54,24 @@
   --color-status-error-bg: var(--status-error-bg);
   --color-status-error-fg: var(--status-error-fg);
 
+  /* Retro prompt tints (ADR-0021): the eight-colour palette a prompt picks from */
+  --color-tint-red-bg: var(--tint-red-bg);
+  --color-tint-red-fg: var(--tint-red-fg);
+  --color-tint-orange-bg: var(--tint-orange-bg);
+  --color-tint-orange-fg: var(--tint-orange-fg);
+  --color-tint-amber-bg: var(--tint-amber-bg);
+  --color-tint-amber-fg: var(--tint-amber-fg);
+  --color-tint-green-bg: var(--tint-green-bg);
+  --color-tint-green-fg: var(--tint-green-fg);
+  --color-tint-teal-bg: var(--tint-teal-bg);
+  --color-tint-teal-fg: var(--tint-teal-fg);
+  --color-tint-blue-bg: var(--tint-blue-bg);
+  --color-tint-blue-fg: var(--tint-blue-fg);
+  --color-tint-violet-bg: var(--tint-violet-bg);
+  --color-tint-violet-fg: var(--tint-violet-fg);
+  --color-tint-pink-bg: var(--tint-pink-bg);
+  --color-tint-pink-fg: var(--tint-pink-fg);
+
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -113,6 +131,24 @@
   --status-success-fg: oklch(0.45 0.15 150);
   --status-warning-fg: oklch(0.45 0.15 85);
   --status-error-fg: oklch(0.50 0.20 25);
+
+  /* Retro prompt tints - soft zone fills and their label colour */
+  --tint-red-bg: oklch(0.95 0.035 25);
+  --tint-red-fg: oklch(0.45 0.14 25);
+  --tint-orange-bg: oklch(0.95 0.035 55);
+  --tint-orange-fg: oklch(0.45 0.14 55);
+  --tint-amber-bg: oklch(0.95 0.035 85);
+  --tint-amber-fg: oklch(0.45 0.14 85);
+  --tint-green-bg: oklch(0.95 0.035 150);
+  --tint-green-fg: oklch(0.45 0.14 150);
+  --tint-teal-bg: oklch(0.95 0.035 190);
+  --tint-teal-fg: oklch(0.45 0.14 190);
+  --tint-blue-bg: oklch(0.95 0.035 250);
+  --tint-blue-fg: oklch(0.45 0.14 250);
+  --tint-violet-bg: oklch(0.95 0.035 290);
+  --tint-violet-fg: oklch(0.45 0.14 290);
+  --tint-pink-bg: oklch(0.95 0.035 350);
+  --tint-pink-fg: oklch(0.45 0.14 350);
 }
 
 .dark {
@@ -164,6 +200,24 @@
   --status-success-fg: oklch(0.80 0.15 150);
   --status-warning-fg: oklch(0.85 0.15 85);
   --status-error-fg: oklch(0.80 0.18 25);
+
+  /* Retro prompt tints - deeper fills, brighter labels on dark */
+  --tint-red-bg: oklch(0.22 0.045 25);
+  --tint-red-fg: oklch(0.80 0.12 25);
+  --tint-orange-bg: oklch(0.22 0.045 55);
+  --tint-orange-fg: oklch(0.80 0.12 55);
+  --tint-amber-bg: oklch(0.22 0.045 85);
+  --tint-amber-fg: oklch(0.80 0.12 85);
+  --tint-green-bg: oklch(0.22 0.045 150);
+  --tint-green-fg: oklch(0.80 0.12 150);
+  --tint-teal-bg: oklch(0.22 0.045 190);
+  --tint-teal-fg: oklch(0.80 0.12 190);
+  --tint-blue-bg: oklch(0.22 0.045 250);
+  --tint-blue-fg: oklch(0.80 0.12 250);
+  --tint-violet-bg: oklch(0.22 0.045 290);
+  --tint-violet-fg: oklch(0.80 0.12 290);
+  --tint-pink-bg: oklch(0.22 0.045 350);
+  --tint-pink-fg: oklch(0.80 0.12 350);
 }
 
 @layer base {

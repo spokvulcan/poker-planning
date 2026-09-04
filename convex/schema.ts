@@ -65,6 +65,57 @@ export const teamRoleValidator = v.union(
   v.literal("member")
 );
 
+/** A retro stage entry's kind (ADR-0010, spec §2). */
+export const stageKindValidator = v.union(
+  v.literal("collect"),
+  v.literal("review"),
+  v.literal("group"),
+  v.literal("vote"),
+  v.literal("discuss"),
+  v.literal("close")
+);
+
+/** A per-entry reveal policy (ADR-0015): cards or tally, hidden or visible. */
+export const visibilityValidator = v.union(
+  v.literal("hidden"),
+  v.literal("visible")
+);
+
+/** What a dot, a walk entry or an action item points at: a card or a cluster. */
+export const topicRefValidator = v.union(
+  v.object({ kind: v.literal("card"), id: v.id("retroCards") }),
+  v.object({ kind: v.literal("cluster"), id: v.id("retroClusters") })
+);
+
+/**
+ * A retro's format, copied whole onto the retro at creation and never
+ * referenced (ADR-0021): a name and up to ten prompts. The picker line the
+ * library carries is not part of it.
+ */
+export const retroFormatValidator = v.object({
+  name: v.string(),
+  prompts: v.array(
+    v.object({
+      id: v.string(),
+      label: v.string(),
+      hint: v.optional(v.string()),
+      color: v.string(),
+      order: v.number(),
+    })
+  ),
+});
+
+/** One entry of the stamped stage list (ADR-0010, ADR-0015, ADR-0016). */
+export const retroStageValidator = v.object({
+  id: v.string(),
+  kind: stageKindValidator,
+  cardsVisible: visibilityValidator,
+  tallyVisible: visibilityValidator,
+  voteBudget: v.optional(v.number()),
+  maxPerTopic: v.optional(v.number()),
+  timeboxMinutes: v.optional(v.number()),
+});
+
 export default defineSchema({
   rooms: defineTable({
     name: v.string(),
@@ -179,6 +230,89 @@ export default defineSchema({
     .index("by_team", ["teamId"])
     .index("by_user", ["userId"])
     .index("by_team_user", ["teamId", "userId"]),
+
+  // The retro's ceremony state, one row beside its room (ADR-0016): written
+  // in the same mutation as the room, so the guards and the room
+  // subscription never see stage churn.
+  retros: defineTable({
+    roomId: v.id("rooms"),
+    attribution: attributionValidator, // ratchets named → anonymous only (ADR-0012)
+    format: retroFormatValidator, // copied whole at creation (ADR-0021)
+    stages: v.array(retroStageValidator), // the stamped stage list (ADR-0010); ≤ 10
+    currentStageId: v.string(), // the shared pointer
+    currentStageEnteredAt: v.number(), // re-stamped by every advance; the timebox counts from it
+    walk: v.optional(
+      v.object({
+        stageEntryId: v.string(),
+        snapshotAt: v.number(),
+        order: v.array(topicRefValidator),
+        cursor: v.number(),
+        covered: v.array(v.string()), // topic ids
+      })
+    ),
+    collectUntil: v.optional(v.number()), // advisory cards-due date (ADR-0020)
+    lastNudge: v.optional(v.object({ at: v.number(), by: v.id("users") })),
+  }).index("by_room", ["roomId"]),
+
+  // A retro card: the prompt answered is content, the position is layout
+  // (ADR-0016). Exactly one of authorId / editKeyHash (ADR-0012).
+  retroCards: defineTable({
+    roomId: v.id("rooms"),
+    clientId: v.string(), // client-minted UUID: node key and create dedupe key (ADR-0022)
+    text: v.string(),
+    promptId: v.string(),
+    position: v.object({ x: v.number(), y: v.number() }),
+    authorId: v.optional(v.id("users")),
+    editKeyHash: v.optional(v.string()),
+    clusterId: v.optional(v.id("retroClusters")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    committedAt: v.number(), // Date.now() inside the create mutation (spec §23)
+  })
+    .index("by_room", ["roomId"])
+    .index("by_room_author", ["roomId", "authorId"])
+    .index("by_room_client", ["roomId", "clientId"])
+    .index("by_cluster", ["clusterId"]),
+
+  // A cluster is a row with a name and nothing else (ADR-0016).
+  retroClusters: defineTable({
+    roomId: v.id("rooms"),
+    name: v.string(),
+    createdAt: v.number(),
+  }).index("by_room", ["roomId"]),
+
+  // One row per dot, scoped to the stage entry that collected it.
+  retroVotes: defineTable({
+    roomId: v.id("rooms"),
+    stageEntryId: v.string(),
+    voterId: v.id("users"), // always stored, projected away for other readers in an anonymous retro
+    target: topicRefValidator,
+  })
+    .index("by_room", ["roomId"]) // The cascade reads every room-owned table by this name
+    .index("by_room_entry", ["roomId", "stageEntryId"])
+    .index("by_room_entry_voter", ["roomId", "stageEntryId", "voterId"]),
+
+  // An action item (ADR-0017): one home, denormalised to the Team.
+  retroActions: defineTable({
+    roomId: v.id("rooms"),
+    teamId: v.optional(v.id("teams")),
+    text: v.string(),
+    ownerId: v.optional(v.id("users")), // zero or one, always named
+    dueAt: v.optional(v.number()),
+    source: v.optional(topicRefValidator), // nulled when the topic is gone
+    status: v.union(v.literal("open"), v.literal("done"), v.literal("dropped")),
+    note: v.optional(v.string()), // written only when status leaves open
+    createdBy: v.id("users"),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    reminderJobId: v.optional(v.id("_scheduled_functions")), // ADR-0020
+    // Seam only, never written in v1 (ADR-0017).
+    externalRef: v.optional(
+      v.object({ provider: providerValidator, key: v.string(), url: v.string() })
+    ),
+  })
+    .index("by_room", ["roomId"])
+    .index("by_team_status", ["teamId", "status"]),
 
   // Room memberships (user <-> room relationship)
   roomMemberships: defineTable({

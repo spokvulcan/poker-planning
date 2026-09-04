@@ -1,7 +1,7 @@
 import { MutationCtx } from "../_generated/server";
 import { Doc } from "../_generated/dataModel";
 import { internal } from "../_generated/api";
-import { ROOM_OWNED_TABLES, RoomOwnedTable } from "./roomAggregate";
+import { ORPHAN_SWEPT_TABLES, OrphanSweptTable } from "./roomAggregate";
 
 export interface RemoveInactiveRoomsResult {
   /** Rooms whose cascade was scheduled (each runs as its own mutation). */
@@ -69,10 +69,13 @@ export async function cleanupOrphanedData(ctx: MutationCtx): Promise<{
   const allRooms = await ctx.db.query("rooms").collect();
   const existingRoomIds = new Set(allRooms.map(room => room._id));
 
-  // Sweep every room-owned table — the same inventory the room cascade uses.
-  const swept = {} as Record<RoomOwnedTable, number>;
+  // Sweep the poker tables only. The retro tables are room-owned too (the
+  // cascade empties them) but are permanently retained data; a daily full
+  // scan of them against a fixed transaction budget is exactly what
+  // ADR-0016 rules out.
+  const swept = {} as Record<OrphanSweptTable, number>;
   await Promise.all(
-    ROOM_OWNED_TABLES.map(async (table) => {
+    ORPHAN_SWEPT_TABLES.map(async (table) => {
       swept[table] = await cleanupOrphanedRecords(
         ctx,
         table,
@@ -113,7 +116,7 @@ export async function cleanupOrphanedData(ctx: MutationCtx): Promise<{
  * option — Convex allows only one paginated query per function execution,
  * and the sweep touches several tables per run.
  */
-async function cleanupOrphanedRecords<Table extends RoomOwnedTable | "issueLinks">(
+async function cleanupOrphanedRecords<Table extends OrphanSweptTable | "issueLinks">(
   ctx: MutationCtx,
   tableName: Table,
   isOrphan: (doc: Doc<Table>) => boolean

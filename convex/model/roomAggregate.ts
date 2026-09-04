@@ -3,7 +3,36 @@ import { Doc, Id } from "../_generated/dataModel";
 import { scheduleWebhookDeregistration } from "./integrations";
 
 /**
- * The one inventory of what a room owns (derived from schema.ts).
+ * The retro's five tables (ADR-0016), room-owned like the rest — the cascade
+ * empties them — but permanently retained data the daily orphan sweep must
+ * never walk (model/cleanup.ts takes the explicit poker list instead).
+ */
+export const RETRO_TABLES = [
+  "retros",
+  "retroCards",
+  "retroClusters",
+  "retroVotes",
+  "retroActions",
+] as const;
+
+/**
+ * The room-owned tables the daily orphan sweep walks: the poker set. Bounded
+ * by the sweep's own transaction budget; the retro tables are excluded.
+ */
+export const ORPHAN_SWEPT_TABLES = [
+  "issues",
+  "roomMemberships",
+  "votes",
+  "canvasNodes",
+  "votingTimestamps",
+  "individualVotes",
+  "integrationMappings",
+  "roomAnalyticsSnapshots",
+] as const;
+
+/**
+ * The one inventory of what a room owns: the sweep's poker tables plus the
+ * retro tables.
  *
  * Every table keyed by `roomId` is a direct member. `issueLinks` is owned
  * transitively through its issue — rows written before it gained its own
@@ -15,16 +44,9 @@ import { scheduleWebhookDeregistration } from "./integrations";
  * There is no per-room presence/timer table — presence is connection-local
  * and canvas timers are `canvasNodes` rows.
  */
-export const ROOM_OWNED_TABLES = [
-  "issues",
-  "roomMemberships",
-  "votes",
-  "canvasNodes",
-  "votingTimestamps",
-  "individualVotes",
-  "integrationMappings",
-  "roomAnalyticsSnapshots",
-] as const;
+export const ROOM_OWNED_TABLES = [...ORPHAN_SWEPT_TABLES, ...RETRO_TABLES] as const;
+
+export type OrphanSweptTable = (typeof ORPHAN_SWEPT_TABLES)[number];
 
 export type RoomOwnedTable = (typeof ROOM_OWNED_TABLES)[number];
 
@@ -91,14 +113,20 @@ export async function deleteRoomAggregateChunk(
   }
 
   // Phase 2: the remaining room-owned tables, one batch per table per step.
+  // The reads are independent, so they go out together.
+  const tables = ROOM_OWNED_TABLES.filter((table) => table !== "issues");
+  const batches = await Promise.all(
+    tables.map((table) =>
+      ctx.db
+        .query(table)
+        .withIndex("by_room", (q) => q.eq("roomId", roomId))
+        .take(batchSize)
+    )
+  );
   let deleted = 0;
   let anyFullBatch = false;
-  for (const table of ROOM_OWNED_TABLES) {
-    if (table === "issues") continue;
-    const rows = await ctx.db
-      .query(table)
-      .withIndex("by_room", (q) => q.eq("roomId", roomId))
-      .take(batchSize);
+  for (const [i, table] of tables.entries()) {
+    const rows = batches[i];
 
     if (table === "integrationMappings") {
       for (const mapping of rows as Doc<"integrationMappings">[]) {

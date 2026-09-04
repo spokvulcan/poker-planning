@@ -4,8 +4,10 @@ import { describe, it, expect } from "vitest";
 import { internal } from "./_generated/api";
 import schema from "./schema";
 import type { Id } from "./_generated/dataModel";
+import type { MutationCtx } from "./_generated/server";
 import * as RoomAggregate from "./model/roomAggregate";
-import { ROOM_OWNED_TABLES, type RoomOwnedTable } from "./model/roomAggregate";
+import { ROOM_OWNED_TABLES, RETRO_TABLES, type RoomOwnedTable } from "./model/roomAggregate";
+import * as Cleanup from "./model/cleanup";
 import * as Timer from "./model/timer";
 import * as Canvas from "./model/canvas";
 
@@ -249,7 +251,57 @@ async function seedFullRoom(
       externalUrl: "https://example.atlassian.net/browse/PROJ-1",
       lastSyncedAt: Date.now(),
     });
+    await seedRetroRows(ctx, roomId, userId);
     return { roomId, userId, issueId };
+  });
+}
+
+/**
+ * One row in each of the five retro tables (ADR-0016), so the cascade test
+ * proves it empties them and the orphan test proves it never scans them.
+ */
+async function seedRetroRows(
+  ctx: MutationCtx,
+  roomId: Id<"rooms">,
+  userId: Id<"users">
+): Promise<void> {
+  const now = Date.now();
+  await ctx.db.insert("retros", {
+    roomId,
+    attribution: "named",
+    format: { name: "F", prompts: [] },
+    stages: [
+      { id: "collect", kind: "collect", cardsVisible: "hidden", tallyVisible: "visible" },
+    ],
+    currentStageId: "collect",
+    currentStageEnteredAt: now,
+  });
+  const clusterId = await ctx.db.insert("retroClusters", { roomId, name: "Group 1", createdAt: now });
+  const cardId = await ctx.db.insert("retroCards", {
+    roomId,
+    clientId: crypto.randomUUID(),
+    text: "card",
+    promptId: "p",
+    position: { x: 0, y: 0 },
+    authorId: userId,
+    clusterId,
+    createdAt: now,
+    updatedAt: now,
+    committedAt: now,
+  });
+  await ctx.db.insert("retroVotes", {
+    roomId,
+    stageEntryId: "vote",
+    voterId: userId,
+    target: { kind: "card", id: cardId },
+  });
+  await ctx.db.insert("retroActions", {
+    roomId,
+    text: "do it",
+    status: "open",
+    createdBy: userId,
+    createdAt: now,
+    updatedAt: now,
   });
 }
 
@@ -471,6 +523,23 @@ describe("removeInactiveRooms", () => {
 });
 
 describe("cleanupOrphanedData", () => {
+  it("never scans the retro tables: an orphaned retro row survives the sweep", async () => {
+    const t = convexTest(schema, modules);
+    const { roomId } = await seedFullRoom(t);
+    // Delete the room directly, bypassing the cascade, so every owned row is
+    // orphaned. The poker tables are swept; the five retro tables are
+    // permanently retained data the daily sweep must not walk (ADR-0016).
+    await t.run((ctx) => ctx.db.delete(roomId));
+
+    await t.run((ctx) => Cleanup.cleanupOrphanedData(ctx));
+
+    expect(await countRows(t, "issues")).toBe(0);
+    expect(await countRows(t, "votes")).toBe(0);
+    for (const table of RETRO_TABLES) {
+      expect(await countRows(t, table)).toBe(1);
+    }
+  });
+
   it("sweeps an issue whose room was deleted out from under it", async () => {
     const t = convexTest(schema, modules);
     const roomId = await seedRoom(t);
