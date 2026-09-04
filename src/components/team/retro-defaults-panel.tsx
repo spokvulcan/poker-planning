@@ -75,7 +75,7 @@ function SegmentedControl<V extends string>({
       aria-label={label}
       className="inline-flex rounded-lg border border-border bg-white p-0.5 dark:bg-surface-2"
     >
-      {options.map((option) => {
+      {options.map((option, index) => {
         const selected = option.value === value;
         return (
           <button
@@ -83,10 +83,30 @@ function SegmentedControl<V extends string>({
             type="button"
             role="radio"
             aria-checked={selected}
+            // Roving tabindex: Tab lands on the selected option, arrows move
+            // between the others (the ARIA radio-group pattern).
+            tabIndex={selected ? 0 : -1}
             disabled={disabled}
             onClick={() => {
               if (!selected) onSelect(option.value);
             }}
+            onKeyDown={(e) => {
+              const step =
+                e.key === "ArrowRight" || e.key === "ArrowDown"
+                  ? 1
+                  : e.key === "ArrowLeft" || e.key === "ArrowUp"
+                    ? -1
+                    : 0;
+              if (step === 0) return;
+              e.preventDefault();
+              const next = options[(index + step + options.length) % options.length];
+              onSelect(next.value);
+              const sibling = e.currentTarget.parentElement?.querySelector<HTMLButtonElement>(
+                `[data-value="${next.value}"]`
+              );
+              sibling?.focus();
+            }}
+            data-value={option.value}
             className={cn(
               "rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
               "disabled:cursor-default",
