@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useMutation, useQuery } from "convex/react";
@@ -85,12 +85,6 @@ export function TeamContent() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmLeave, setConfirmLeave] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
-
-  useEffect(() => {
-    if (!authLoading && !isAuthenticated) {
-      router.replace(`/auth/signin?from=${encodeURIComponent(`/team/${teamId}`)}`);
-    }
-  }, [authLoading, isAuthenticated, router, teamId]);
 
   if (authLoading || !isAuthenticated || team === undefined) {
     return <Centered title="Loading…" body="Fetching the team" />;

@@ -162,7 +162,7 @@ export function RetroDefaultsPanel({ value, canEdit, onChange }: RetroDefaultsPa
           options={ATTRIBUTION_OPTIONS}
           value={value.attribution}
           disabled={!canEdit}
-          onSelect={(attribution) => write({ ...value, permissions: { ...value.permissions }, attribution })}
+          onSelect={(attribution) => write({ ...value, attribution })}
         />
       </Row>
       <Row label="Who can join" description="Who may become an attendee of a new retro. Team members always can.">
@@ -171,7 +171,7 @@ export function RetroDefaultsPanel({ value, canEdit, onChange }: RetroDefaultsPa
           options={JOIN_POLICY_OPTIONS}
           value={value.joinPolicy}
           disabled={!canEdit}
-          onSelect={(joinPolicy) => write({ ...value, permissions: { ...value.permissions }, joinPolicy })}
+          onSelect={(joinPolicy) => write({ ...value, joinPolicy })}
         />
       </Row>
       {PERMISSION_ROWS.map((row) => (
