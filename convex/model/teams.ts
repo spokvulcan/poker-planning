@@ -281,8 +281,8 @@ export async function deleteTeamChunk(
  * Deletes a Team (spec §2, §5): schedules one room cascade per room the Team
  * owns (`by_team`), then runs the first membership step and schedules the
  * continuation when a full batch remains. The team row goes last, so a
- * member keeps reading the team page until the drain is through and no room
- * is ever left pointing at a Team with live memberships.
+ * member keeps reading the team page until their own membership row drains
+ * and no room is ever left pointing at a Team with live memberships.
  *
  * Every room is scheduled from this one mutation — the rooms still exist
  * (their cascades run later) and `teamId` never changes, so a continuation

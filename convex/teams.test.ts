@@ -255,6 +255,17 @@ describe("roles", () => {
     expect(await roleOf(t, teamId, adminId)).toBe("admin");
   });
 
+  it("the last admin cannot demote themselves either", async () => {
+    const t = convexTest(schema, modules);
+    const adminId = await seedUser(t, "solo", "permanent");
+    const teamId = await createTeam(t, "solo");
+
+    await expect(
+      as(t, "solo").mutation(api.teams.demote, { teamId, targetUserId: adminId })
+    ).rejects.toThrow("Make someone else an admin first, or delete the team.");
+    expect(await roleOf(t, teamId, adminId)).toBe("admin");
+  });
+
   it("the last admin cannot leave; a member can, and an admin can once another admin exists", async () => {
     const t = convexTest(schema, modules);
     const { adminId, memberId, teamId } = await seedTeamWithMember(t);
