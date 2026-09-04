@@ -9,10 +9,56 @@ import { JoinRoomDialog } from "@/components/room/join-room-dialog";
 import { useAuth } from "@/components/auth/auth-provider";
 import { Id } from "@/convex/_generated/dataModel";
 import { toast } from "@/lib/toast";
+import type { RoomWithRelatedData } from "@/convex/model/rooms";
+import { RetroRoomContent } from "./retro-room-content";
 
+/**
+ * `/room/[roomId]` serves both ceremonies (spec §18.1): it reads the room
+ * shell and branches on `roomType`. The poker branch keeps its automatic
+ * join; the retro branch never auto-joins.
+ */
 export function RoomContent() {
   const params = useParams();
   const roomId = params.roomId as Id<"rooms">;
+  // Room data query - currentUserId for vote unsanitization is derived server-side from auth context
+  const roomData = useQuery(api.rooms.get, { roomId });
+
+  if (!roomData) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <h2 className="text-2xl font-bold mb-2">Loading...</h2>
+          <p className="text-muted-foreground">Fetching room data</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!roomData.room) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <h2 className="text-2xl font-bold mb-2">Room Not Found</h2>
+          <p className="text-muted-foreground">This room doesn&apos;t exist or has been deleted</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (roomData.room.roomType === "retro") {
+    return <RetroRoomContent roomId={roomId} roomData={roomData} />;
+  }
+
+  return <PokerRoomContent roomId={roomId} roomData={roomData} />;
+}
+
+function PokerRoomContent({
+  roomId,
+  roomData,
+}: {
+  roomId: Id<"rooms">;
+  roomData: RoomWithRelatedData;
+}) {
   const { authUserId, isLoading: authLoading, isAuthenticated } = useAuth();
   const joinRoom = useMutation(api.users.join);
   const [isAutoJoining, setIsAutoJoining] = useState(false);
@@ -32,9 +78,6 @@ export function RoomContent() {
     api.users.getGlobalUser,
     isAuthenticated ? {} : "skip"
   );
-
-  // Room data query - currentUserId for vote unsanitization is derived server-side from auth context
-  const roomData = useQuery(api.rooms.get, { roomId });
 
   // User is in room if they have a membership in the database
   const isInRoom = existingMembership !== null && existingMembership !== undefined;
@@ -72,7 +115,6 @@ export function RoomContent() {
     const shouldAutoJoin =
       !autoJoinAttemptedRef.current &&
       !wasMemberRef.current && // don't re-add a user who was removed / left
-      roomData?.room &&
       globalUser &&
       existingMembership === null && // No membership in this room (query returned null, not undefined)
       authUserId;
@@ -83,29 +125,7 @@ export function RoomContent() {
         autoJoinAttemptedRef.current = false;
       });
     }
-  }, [roomData, globalUser, existingMembership, authUserId, performAutoJoin]);
-
-  if (!roomData) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <h2 className="text-2xl font-bold mb-2">Loading...</h2>
-          <p className="text-muted-foreground">Fetching room data</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (!roomData.room) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <h2 className="text-2xl font-bold mb-2">Room Not Found</h2>
-          <p className="text-muted-foreground">This room doesn&apos;t exist or has been deleted</p>
-        </div>
-      </div>
-    );
-  }
+  }, [globalUser, existingMembership, authUserId, performAutoJoin]);
 
   // Show loading while auto-joining
   if (isAutoJoining) {
