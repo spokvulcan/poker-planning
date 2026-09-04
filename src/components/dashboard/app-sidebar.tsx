@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
   History,
+  MessagesSquare,
   Settings,
   HelpCircle,
   Home,
@@ -32,9 +33,14 @@ const navMain = [
     icon: LayoutDashboard,
   },
   {
-    title: "Sessions",
+    title: "Planning poker",
     url: "/dashboard/sessions",
     icon: History,
+  },
+  {
+    title: "Retros",
+    url: "/dashboard/retros",
+    icon: MessagesSquare,
   },
 ];
 

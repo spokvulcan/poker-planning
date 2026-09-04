@@ -25,7 +25,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowDown01Icon } from "@hugeicons/core-free-icons";
-import { Moon, Sun, LogOut, UserPen, Monitor, Eye, LayoutDashboard, LogIn, History } from "lucide-react";
+import { Moon, Sun, LogOut, UserPen, Monitor, Eye, LayoutDashboard, LogIn, History, MessagesSquare, Users } from "lucide-react";
 import Link from "next/link";
 import type { Id } from "@/convex/_generated/dataModel";
 import { toast } from "@/lib/toast";
@@ -52,6 +52,9 @@ export function UserMenu() {
       ? { roomId }
       : "skip"
   );
+
+  // The person's Teams (ADR-0008): the menu links to each team page.
+  const teams = useQuery(api.teams.listMine, isAuthenticated ? {} : "skip");
 
   const editGlobalUser = useMutation(api.users.editGlobalUser);
   const editUser = useMutation(api.users.edit);
@@ -120,11 +123,30 @@ export function UserMenu() {
             Dashboard
           </DropdownMenuItem>
 
-          {/* Sessions link */}
+          {/* Planning poker sessions */}
           <DropdownMenuItem render={<Link href="/dashboard/sessions" />}>
             <History className="mr-2 size-4" />
-            Sessions
+            Planning poker
           </DropdownMenuItem>
+
+          {/* Retros */}
+          <DropdownMenuItem render={<Link href="/dashboard/retros" />}>
+            <MessagesSquare className="mr-2 size-4" />
+            Retros
+          </DropdownMenuItem>
+
+          {/* The person's team pages */}
+          {teams && teams.length > 0 && (
+            <>
+              <DropdownMenuSeparator />
+              {teams.map((team) => (
+                <DropdownMenuItem key={team._id} render={<Link href={`/team/${team._id}`} />}>
+                  <Users className="mr-2 size-4" />
+                  <span className="truncate">{team.name}</span>
+                </DropdownMenuItem>
+              ))}
+            </>
+          )}
 
           <DropdownMenuSeparator />
 
