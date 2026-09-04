@@ -70,7 +70,7 @@ _Avoid_: retrospective (in UI), retro room (a retro *is* a room), meeting
 
 ### Teams
 
-Decided on [map #253](https://github.com/spokvulcan/poker-planning/issues/253) and not yet built. See [ADR-0008](docs/adr/0008-a-team-is-the-permanent-visibility-boundary.md) and [ADR-0009](docs/adr/0009-room-access-and-room-attendance-are-separate-guards.md).
+Decided on [map #253](https://github.com/spokvulcan/poker-planning/issues/253); the Team itself (create, invite, roles, deletion, the reader guard's Team half) is built, retros in it are not yet. See [ADR-0008](docs/adr/0008-a-team-is-the-permanent-visibility-boundary.md) and [ADR-0009](docs/adr/0009-room-access-and-room-attendance-are-separate-guards.md).
 
 **Team**:
 The permanent boundary that owns retro history and fixes who may read it. Deliberately minimal — it exists to give retros continuity and a knowable set of readers, nothing else (no seats, billing, SSO or org roles). A room names its team through a set-once `teamId`, and the team *is* the series: its history is its rooms in creation order, with no separate series entity.

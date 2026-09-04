@@ -8,9 +8,11 @@ import {
   getEffectivePermissions,
   categoryLevel,
   getEffectiveRole,
+  TeamRole,
 } from "../permissions";
 import { isRoomOwnerAbsent } from "./permissions";
 import { getMembership } from "./users";
+import { getTeamMembership } from "./teams";
 
 /**
  * Auth identity returned by ctx.auth.getUserIdentity().
@@ -97,9 +99,9 @@ export async function requireRoomMember(
 
 /**
  * Room access (ADR-0009): may the authenticated user *read* this room's
- * contents? Passes a room member; #287 extends it to members of the room's
- * Team. Returns the identity, user and room — never a membership row, because
- * a reader need not be an attendee. Every read-only query on room-owned data
+ * contents? Passes a room member or a member of the room's Team (ADR-0008).
+ * Returns the identity, user and room — never a membership row, because a
+ * reader need not be an attendee. Every read-only query on room-owned data
  * takes this guard; every mutation keeps `requireRoomMember` (attendance).
  */
 export async function requireRoomReader(
@@ -118,13 +120,66 @@ export async function requireRoomReader(
   if (!room) {
     throw new Error("Room not found");
   }
-  if (!membership) {
-    // #287: a member of room.teamId also passes here. The copy speaks of
-    // access, not attendance — this guard never asks whether you are *in*
-    // the room (ADR-0009).
+  if (!membership && !(await isTeamMemberOfRoom(ctx, room, user._id))) {
+    // The copy speaks of access, not attendance — this guard never asks
+    // whether you are *in* the room (ADR-0009).
     throw new Error("You don't have access to this room");
   }
   return { identity, user, room };
+}
+
+/**
+ * The reader guard's Team half: the room has a Team, that Team's row still
+ * exists, and the user holds a membership in it. A room whose Team row is
+ * gone (mid-cascade, or after it) denies like any other non-member rather
+ * than throwing "Team not found" — the caller asked about access, and the
+ * answer is no.
+ */
+async function isTeamMemberOfRoom(
+  ctx: QueryCtx | MutationCtx,
+  room: Doc<"rooms">,
+  userId: Id<"users">
+): Promise<boolean> {
+  if (!room.teamId) return false;
+  const [team, teamMembership] = await Promise.all([
+    ctx.db.get(room.teamId),
+    getTeamMembership(ctx, room.teamId, userId),
+  ]);
+  return team !== null && teamMembership !== null;
+}
+
+/**
+ * The Team guard (ADR-0008, spec §4.1): may the authenticated user act on
+ * this Team? "member" passes any membership row; "admin" passes an admin's.
+ * Every team mutation and the members-only team reads run it. Team role
+ * grants no room power (the one exception, `claim`, goes through the room
+ * guard's DecisionContext, not through here).
+ */
+export async function requireTeamRole(
+  ctx: QueryCtx | MutationCtx,
+  teamId: Id<"teams">,
+  role: TeamRole
+): Promise<{
+  identity: AuthIdentity;
+  user: Doc<"users">;
+  team: Doc<"teams">;
+  membership: Doc<"teamMemberships">;
+}> {
+  const { identity, user } = await requireAuthUser(ctx);
+  const [team, membership] = await Promise.all([
+    ctx.db.get(teamId),
+    getTeamMembership(ctx, teamId, user._id),
+  ]);
+  if (!team) {
+    throw new Error("Team not found");
+  }
+  if (!membership) {
+    throw new Error("You are not a member of this team");
+  }
+  if (role === "admin" && membership.role !== "admin") {
+    throw new Error("Only a team admin can do that");
+  }
+  return { identity, user, team, membership };
 }
 
 /**
@@ -311,19 +366,43 @@ async function guardRoomAction(
     ? await isRoomOwnerAbsent(ctx, room)
     : false;
 
-  // Team inputs (ADR-0013): `actorTeamRole` is populated only for rooms with
-  // a `teamId`, which #287 introduces. Until then no actor holds a team role,
-  // so `claim` is insufficient-role for everyone, and `ownerInTeam` is
-  // vacuously false.
+  // Team inputs (ADR-0013): populated only for rooms with a `teamId`, and
+  // only when the action reads them (`claim`). A teamless room grants no
+  // team role, so `claim` is insufficient-role for everyone there.
+  const team = readsOwnerAbsence(action)
+    ? await readTeamInputs(ctx, room, user._id)
+    : { ownerInTeam: false };
   const decision = resolve(action, {
     actorRole,
     permissions: effective.permissions,
     ownerAbsent,
-    ownerInTeam: false,
+    ...(team.actorTeamRole ? { actorTeamRole: team.actorTeamRole } : {}),
+    ownerInTeam: team.ownerInTeam,
   });
   if (!decision.allowed) {
     throw new Error(decision.message);
   }
 
   return { user, membership, room, target };
+}
+
+/**
+ * The `claim` inputs (ADR-0013): the actor's team role and whether the room
+ * owner still holds a membership in the room's Team. Both are read from the
+ * Team the room names; a teamless room yields neither.
+ */
+async function readTeamInputs(
+  ctx: QueryCtx | MutationCtx,
+  room: Doc<"rooms">,
+  actorUserId: Id<"users">
+): Promise<{ actorTeamRole?: TeamRole; ownerInTeam: boolean }> {
+  if (!room.teamId) return { ownerInTeam: false };
+  const [actor, owner] = await Promise.all([
+    getTeamMembership(ctx, room.teamId, actorUserId),
+    room.ownerId ? getTeamMembership(ctx, room.teamId, room.ownerId) : null,
+  ]);
+  return {
+    ...(actor ? { actorTeamRole: actor.role } : {}),
+    ownerInTeam: owner !== null,
+  };
 }
