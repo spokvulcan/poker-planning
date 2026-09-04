@@ -153,8 +153,8 @@ One of the questions a retro's **format** asks — "What went well?", "What shou
 _Avoid_: column (there are no columns on a canvas), category, lane, bucket
 
 **Format**:
-The template a retro is created from: its named set of **prompts** and the seed for its **stage list**, including each stage's reveal policy, tally visibility and vote budget. Copied whole onto the retro at creation and never referenced afterwards, so a retro renders forever with the prompts and stages it was actually run with. A Team keeps no default format; the picker offers what the team used last.
-_Avoid_: template (in UI), activity (TeamRetro's word), phase config
+The template a retro is created from: a named set of **prompts** and the seed for its **stage list**, including each stage's reveal policy, tally visibility and vote budget. Copied whole onto the retro at creation and never referenced afterwards, so a retro renders forever with the prompts and stages it was actually run with. Six ship, chosen for familiarity rather than evidence; a team edits the copy on the create form, and that edited copy *is* its custom format — carried forward because the picker offers what the team used last. There is no format store (see [ADR-0021](docs/adr/0021-a-custom-format-is-the-last-retros-format.md)).
+_Avoid_: template (in UI), technique (Retrium's word), activity (TeamRetro's word), phase config
 
 **Topic**:
 The unit a retro votes on and walks through in `discuss`: a named **cluster**, or a **card** that belongs to none. The **discussion walk** is an ordered list of topics.
