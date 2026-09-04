@@ -1,6 +1,6 @@
 # Room activity has one model-layer chokepoint
 
-**Status:** accepted
+**Status:** accepted — amended by [ADR-0018](0018-the-activity-chokepoint-owns-the-clocks-precision.md): the chokepoint writes at hourly precision for retro rooms, exactly for every other room.
 
 `rooms.lastActivityAt` is the liveness clock the cleanup cascade reads to delete rooms silent for five days. It was previously bumped by convention at 14+ call sites across six modules — inline `db.patch`es next to the real write, a helper used only sometimes, and whole areas (timer ops, canvas node mutations, role changes, integration mapping changes) that never bumped at all. The failure mode was silent: a room used only via timer or canvas looked abandoned and was deletable mid-use.
 
