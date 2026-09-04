@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Navbar } from "@/components/navbar";
 import { Footer } from "@/components/footer";
 import { Button } from "@/components/ui/button";
+import { NOT_A_TEAM_MEMBER, TEAM_NOT_FOUND } from "@/convex/teamCopy";
 
 /**
  * The team page is members only: `teams.get` throws for anyone else, and the
@@ -11,7 +12,8 @@ import { Button } from "@/components/ui/button";
  * generic error page.
  */
 export default function TeamError({ error }: { error: Error }) {
-  const notMember = /not a member|Team not found/i.test(error.message);
+  const notMember =
+    error.message.includes(NOT_A_TEAM_MEMBER) || error.message.includes(TEAM_NOT_FOUND);
   return (
     <div className="flex min-h-screen flex-col">
       <Navbar />

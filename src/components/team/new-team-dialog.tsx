@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useMutation } from "convex/react";
 import Link from "next/link";
 import { api } from "@/convex/_generated/api";
+import { SIGN_IN_TO_CREATE } from "@/convex/teamCopy";
 import { useAuth } from "@/components/auth/auth-provider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -91,7 +92,7 @@ export function NewTeamDialog({ open, onOpenChange, returnTo }: NewTeamDialogPro
           </form>
         ) : (
           <div className="space-y-4">
-            <p className="text-sm text-muted-foreground">Sign in to create a team</p>
+            <p className="text-sm text-muted-foreground">{SIGN_IN_TO_CREATE}</p>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
                 Cancel
