@@ -272,6 +272,18 @@ _Avoid_: archive, close (a retro has no finished state), remove (that is the rel
 A retro as Markdown, or a **Team**'s history as JSON, rendered through the same **reveal**, **Attribution** and **room access** projections as the board — so it never shows the requester anything the board would not, and no role sees more than a member. Sharing is a download the sharer sends; there is no read-only link, because that would widen visibility.
 _Avoid_: share page, public link, report (that is analytics)
 
+### Retro facts
+
+Decided on [map #253](https://github.com/spokvulcan/poker-planning/issues/253) and not yet built. See [ADR-0024](docs/adr/0024-a-retro-shows-facts-and-never-a-measure-of-the-team.md).
+
+**Retro facts**:
+The small set of stored states and counts a retro shows about itself: name, **format**, created date, **Attribution**, resting **stage**, the coverage readout when a **discussion walk** exists, and its **action item** counts. Shown as labelled numbers with a unit, never aggregated into a rate, score or trend, never coloured by value, never per person in either **Attribution** mode, and never claimed to measure the team. A **Team** adds one line of action counts across its history and nothing else. Distinct from planning poker's **Analytics snapshot**, which is a report over completed rounds.
+_Avoid_: analytics (poker's feature), insights, metrics, report, health, dashboard
+
+**History row**:
+The one listing shape a retro's **retro facts** appear in, reused unchanged by the team page's history and the dashboard's Retros section. Card count is not on it; that lives only on the **retro board**, where the cards are already loaded.
+_Avoid_: summary card, tile, preview
+
 ### Retro notifications
 
 Decided on [map #253](https://github.com/spokvulcan/poker-planning/issues/253) and not yet built. See [ADR-0020](docs/adr/0020-a-nudge-is-sent-by-a-person-and-a-reminder-by-a-date.md).
