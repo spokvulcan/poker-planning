@@ -31,7 +31,8 @@ export const ORPHAN_SWEPT_TABLES = [
 ] as const;
 
 /**
- * The one inventory of what a room owns (derived from schema.ts).
+ * The one inventory of what a room owns: the sweep's poker tables plus the
+ * retro tables.
  *
  * Every table keyed by `roomId` is a direct member. `issueLinks` is owned
  * transitively through its issue — rows written before it gained its own
@@ -112,22 +113,20 @@ export async function deleteRoomAggregateChunk(
   }
 
   // Phase 2: the remaining room-owned tables, one batch per table per step.
+  // The reads are independent, so they go out together.
+  const tables = ROOM_OWNED_TABLES.filter((table) => table !== "issues");
+  const batches = await Promise.all(
+    tables.map((table) =>
+      ctx.db
+        .query(table)
+        .withIndex("by_room", (q) => q.eq("roomId", roomId))
+        .take(batchSize)
+    )
+  );
   let deleted = 0;
   let anyFullBatch = false;
-  for (const table of ROOM_OWNED_TABLES) {
-    if (table === "issues") continue;
-    // retroVotes has no by_room index of its own; its by_room_entry index
-    // is roomId-prefixed and serves the same read.
-    const rows =
-      table === "retroVotes"
-        ? await ctx.db
-            .query(table)
-            .withIndex("by_room_entry", (q) => q.eq("roomId", roomId))
-            .take(batchSize)
-        : await ctx.db
-            .query(table)
-            .withIndex("by_room", (q) => q.eq("roomId", roomId))
-            .take(batchSize);
+  for (const [i, table] of tables.entries()) {
+    const rows = batches[i];
 
     if (table === "integrationMappings") {
       for (const mapping of rows as Doc<"integrationMappings">[]) {

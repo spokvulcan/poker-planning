@@ -156,8 +156,8 @@ export async function joinRoom(
   const role = room?.ownerId === userId ? ("owner" as const) : undefined;
 
   // The join decision (spec §4.4) runs before the membership insert; a Team
-  // member satisfies every policy. Poker rooms carry no policy.
-  if (room?.roomType === "retro") {
+  // member satisfies every policy, and a room without one admits anyone.
+  if (room) {
     await requireJoinAllowed(ctx, room, userId);
   }
 

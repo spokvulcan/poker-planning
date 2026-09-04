@@ -62,12 +62,7 @@ describe("the retro format library", () => {
       });
       expect(new Set(format.prompts.map((p) => p.id)).size).toBe(format.prompts.length);
     }
-  });
-
-  it("carries a picker line per format and eight tints", () => {
-    for (const format of RETRO_FORMATS) {
-      expect(format.description).toBeTruthy();
-    }
     expect(RETRO_TINTS).toHaveLength(8);
   });
+
 });

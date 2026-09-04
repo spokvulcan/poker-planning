@@ -525,12 +525,11 @@ describe("removeInactiveRooms", () => {
 describe("cleanupOrphanedData", () => {
   it("never scans the retro tables: an orphaned retro row survives the sweep", async () => {
     const t = convexTest(schema, modules);
-    const { roomId, userId } = await seedFullRoom(t);
+    const { roomId } = await seedFullRoom(t);
     // Delete the room directly, bypassing the cascade, so every owned row is
     // orphaned. The poker tables are swept; the five retro tables are
     // permanently retained data the daily sweep must not walk (ADR-0016).
     await t.run((ctx) => ctx.db.delete(roomId));
-    expect(userId).toBeTruthy();
 
     await t.run((ctx) => Cleanup.cleanupOrphanedData(ctx));
 

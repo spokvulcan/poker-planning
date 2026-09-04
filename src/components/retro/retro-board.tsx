@@ -1,15 +1,10 @@
 "use client";
 
 import { useEffect, useMemo } from "react";
-import {
-  Background,
-  BackgroundVariant,
-  ReactFlow,
-  ReactFlowProvider,
-  type NodeTypes,
-} from "@xyflow/react";
+import { ReactFlow, ReactFlowProvider, type NodeTypes } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import type { Doc } from "@/convex/_generated/dataModel";
+import { CanvasDotsBackground } from "@/components/canvas-dots-background";
 import { RetroHeader } from "./retro-header";
 import { PromptZoneNodeView, type PromptZoneNode } from "./prompt-zone-node";
 import { layoutZones } from "./zones";
@@ -85,12 +80,7 @@ export function RetroBoard({ name, retro }: RetroBoardProps) {
             selectionOnDrag
             preventScrolling={false}
           >
-            <Background
-              variant={BackgroundVariant.Dots}
-              gap={20}
-              size={1}
-              className="*:stroke-gray-300 dark:*:stroke-surface-3"
-            />
+            <CanvasDotsBackground />
           </ReactFlow>
         </ReactFlowProvider>
       </div>

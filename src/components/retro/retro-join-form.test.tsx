@@ -13,7 +13,9 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("convex/react", () => ({ useMutation: () => mocks.join }));
 vi.mock("@/components/auth/auth-provider", () => ({ useAuth: () => mocks.auth }));
-vi.mock("@/lib/auth-client", () => ({ authClient: { signIn: { anonymous: vi.fn() } } }));
+vi.mock("@/hooks/useEnsureSession", () => ({
+  useEnsureSession: () => async () => mocks.auth.authUserId,
+}));
 vi.mock("next/link", () => ({
   default: ({ children, href }: { children: React.ReactNode; href: string }) => <a href={href}>{children}</a>,
 }));

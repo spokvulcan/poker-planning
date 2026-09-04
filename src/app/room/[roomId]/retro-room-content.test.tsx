@@ -1,7 +1,7 @@
 /**
- * The room page's retro branch (spec §18.1): never auto-joins, shows the
- * retro join form to a visitor without a membership, and mounts the board
- * once a membership exists.
+ * The room page's retro branch (spec §18.1): never auto-joins (it holds no
+ * join mutation at all), shows the retro join form to a visitor without a
+ * membership, and mounts the board once a membership exists.
  */
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import { render, screen, cleanup } from "@testing-library/react";
@@ -13,10 +13,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/convex/_generated/api", () => ({
-  api: {
-    users: { getMyMembership: "users.getMyMembership", getGlobalUser: "users.getGlobalUser", join: "users.join" },
-    retro: { board: "retro.board" },
-  },
+  api: { retro: { board: "retro.board" } },
 }));
 vi.mock("convex/react", () => ({
   useQuery: (ref: string, args: unknown) => (args === "skip" ? undefined : mocks.queries[ref]),
@@ -45,17 +42,13 @@ const roomData = {
 
 beforeEach(() => {
   mocks.join.mockReset();
-  mocks.queries = {
-    "users.getGlobalUser": { _id: "user1", name: "Ada" },
-    "users.getMyMembership": null,
-    "retro.board": { currentStageId: "collect" },
-  };
+  mocks.queries = { "retro.board": { currentStageId: "collect" } };
 });
 afterEach(cleanup);
 
 describe("RetroRoomContent", () => {
-  it("shows the join form to a visitor with an account but no membership, and never auto-joins", async () => {
-    render(<RetroRoomContent roomId={roomId} roomData={roomData} />);
+  it("shows the join form to a visitor without a membership, and never auto-joins", async () => {
+    render(<RetroRoomContent roomId={roomId} roomData={roomData} membership={null} />);
     expect(screen.getByTestId("join-form").textContent).toBe("Sprint 12");
     await new Promise((r) => setTimeout(r, 0));
     expect(mocks.join).not.toHaveBeenCalled();
@@ -63,8 +56,9 @@ describe("RetroRoomContent", () => {
   });
 
   it("mounts the board once a membership exists", () => {
-    mocks.queries["users.getMyMembership"] = { _id: "user1", name: "Ada", isSpectator: false };
-    render(<RetroRoomContent roomId={roomId} roomData={roomData} />);
+    render(
+      <RetroRoomContent roomId={roomId} roomData={roomData} membership={{ _id: "user1" as never }} />
+    );
     expect(screen.getByTestId("board").textContent).toBe("collect");
     expect(screen.queryByTestId("join-form")).toBeNull();
   });

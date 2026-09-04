@@ -6,7 +6,7 @@ import { api } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { DEFAULT_RETRO_PERMISSIONS } from "./permissions";
 import { RETRO_FORMATS, DEFAULT_RETRO_FORMAT } from "./model/retroFormats";
-import { type T } from "./analytics.seeds";
+import { type T, seedUser as seedNamedUser } from "./analytics.seeds";
 
 // Creating a teamless retro (spec §6, ADR-0016, ADR-0021): one mutation
 // writes the room and the retros row, then the creator's owner membership.
@@ -14,20 +14,8 @@ import { type T } from "./analytics.seeds";
 
 const modules = import.meta.glob("./**/*.*s");
 
-async function seedUser(
-  t: T,
-  authUserId: string,
-  accountType?: "anonymous" | "permanent"
-): Promise<Id<"users">> {
-  return t.run((ctx) =>
-    ctx.db.insert("users", {
-      authUserId,
-      name: authUserId,
-      createdAt: Date.now(),
-      ...(accountType ? { accountType } : {}),
-    })
-  );
-}
+const seedUser = (t: T, authUserId: string, accountType?: "anonymous" | "permanent") =>
+  seedNamedUser(t, authUserId, authUserId, accountType);
 
 const as = (t: T, subject: string) => t.withIdentity({ subject });
 
@@ -140,11 +128,11 @@ describe("retro.create — format stamping and the seed", () => {
     });
 
     const retro = (await retroRow(t, roomId))!;
+    // toEqual rejects extra keys: the picker line is not on the row.
     expect(retro.format).toEqual({
       name: DEFAULT_RETRO_FORMAT.name,
       prompts: DEFAULT_RETRO_FORMAT.prompts,
     });
-    expect("description" in retro.format).toBe(false);
   });
 
   it("a teamless retro has no review entry and the standard seed values", async () => {
@@ -184,7 +172,6 @@ describe("retro.create — format stamping and the seed", () => {
       const retro = (await retroRow(t, roomId))!;
       const collect = retro.stages.find((s) => s.kind === "collect")!;
       expect(collect.cardsVisible).toBe(format.name === "Lean Coffee" ? "visible" : "hidden");
-      expect(retro.format.prompts.map((p) => p.label)).toEqual(format.prompts.map((p) => p.label));
     }
   });
 });

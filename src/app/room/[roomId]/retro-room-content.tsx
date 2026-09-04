@@ -4,25 +4,20 @@ import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { useAuth } from "@/components/auth/auth-provider";
+import { CenteredMessage } from "@/components/centered-message";
 import { RetroJoinForm } from "@/components/retro/retro-join-form";
 import { RetroBoard } from "@/components/retro/retro-board";
 import type { RoomWithRelatedData } from "@/convex/model/rooms";
 import { CHECKING_SESSION, LOADING_BOARD, LOADING_TITLE } from "@/convex/retroCopy";
 
+/** What `api.users.getMyMembership` returns for a member. */
+export type MyMembership = { _id: Id<"users"> };
+
 interface RetroRoomContentProps {
   roomId: Id<"rooms">;
   roomData: RoomWithRelatedData;
-}
-
-function Centered({ title, body }: { title: string; body: string }) {
-  return (
-    <div className="flex min-h-screen items-center justify-center">
-      <div className="text-center">
-        <h2 className="mb-2 text-2xl font-bold">{title}</h2>
-        <p className="text-muted-foreground">{body}</p>
-      </div>
-    </div>
-  );
+  /** The visitor's membership: undefined while loading, null when none. */
+  membership: MyMembership | null | undefined;
 }
 
 /**
@@ -31,9 +26,8 @@ function Centered({ title, body }: { title: string; body: string }) {
  * membership the retro join form shows, with the join decision resolved
  * first; with one, the board mounts.
  */
-export function RetroRoomContent({ roomId, roomData }: RetroRoomContentProps) {
+export function RetroRoomContent({ roomId, roomData, membership }: RetroRoomContentProps) {
   const { isLoading: authLoading, isAuthenticated } = useAuth();
-  const membership = useQuery(api.users.getMyMembership, isAuthenticated ? { roomId } : "skip");
   const isMember = membership !== null && membership !== undefined;
   // The board read takes the reader guard; never subscribe before it passes.
   const retro = useQuery(api.retro.board, isMember ? { roomId } : "skip");
@@ -41,7 +35,7 @@ export function RetroRoomContent({ roomId, roomData }: RetroRoomContentProps) {
   const { room } = roomData;
 
   if (authLoading || (isAuthenticated && membership === undefined)) {
-    return <Centered title={LOADING_TITLE} body={CHECKING_SESSION} />;
+    return <CenteredMessage title={LOADING_TITLE} body={CHECKING_SESSION} />;
   }
 
   if (!isMember) {
@@ -58,7 +52,7 @@ export function RetroRoomContent({ roomId, roomData }: RetroRoomContentProps) {
   }
 
   if (retro === undefined) {
-    return <Centered title={LOADING_TITLE} body={LOADING_BOARD} />;
+    return <CenteredMessage title={LOADING_TITLE} body={LOADING_BOARD} />;
   }
 
   return <RetroBoard name={room.name} retro={retro} />;

@@ -77,7 +77,7 @@ export async function createRetro(
 }
 
 /** The retros row of a room, or null for a poker room. */
-export async function getRetro(
+async function getRetro(
   ctx: QueryCtx,
   roomId: Id<"rooms">
 ): Promise<Doc<"retros"> | null> {

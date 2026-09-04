@@ -434,7 +434,7 @@ describe("room activity — role changes and rename bump (through the endpoints)
 });
 
 describe("room activity — the chokepoint owns the clock's precision (ADR-0018)", () => {
-  const HOUR = 60 * 60 * 1000;
+  const HOUR = Rooms.RETRO_ACTIVITY_GRANULARITY_MS;
 
   async function seedRetroRoom(t: T, lastActivityAt: number): Promise<Id<"rooms">> {
     const roomId = await seedRoom(t, lastActivityAt);

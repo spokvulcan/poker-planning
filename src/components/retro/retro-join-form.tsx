@@ -6,7 +6,7 @@ import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { useAuth } from "@/components/auth/auth-provider";
-import { authClient } from "@/lib/auth-client";
+import { useEnsureSession } from "@/hooks/useEnsureSession";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -43,7 +43,8 @@ export function RetroJoinForm({
   isTeamMember,
   teamName,
 }: RetroJoinFormProps) {
-  const { authUserId, accountType } = useAuth();
+  const { accountType } = useAuth();
+  const ensureSession = useEnsureSession();
   const joinRoom = useMutation(api.users.join);
   const [userName, setUserName] = useState("");
   const [isJoining, setIsJoining] = useState(false);
@@ -59,19 +60,11 @@ export function RetroJoinForm({
     if (!userName.trim() || denial) return;
     setIsJoining(true);
     try {
-      let currentAuthUserId = authUserId;
-      if (!currentAuthUserId) {
-        const result = await authClient.signIn.anonymous();
-        if (result.error || !result.data?.user?.id) {
-          toast.error(result.error?.message || "Failed to create session. Please try again.");
-          return;
-        }
-        currentAuthUserId = result.data.user.id;
-      }
-      await joinRoom({ roomId, name: userName.trim(), authUserId: currentAuthUserId });
+      const authUserId = await ensureSession();
+      await joinRoom({ roomId, name: userName.trim(), authUserId });
     } catch (error) {
       console.error("Failed to join retro:", error);
-      toast.error(JOIN_FAILED);
+      toast.error(error instanceof Error ? error.message : JOIN_FAILED);
     } finally {
       setIsJoining(false);
     }

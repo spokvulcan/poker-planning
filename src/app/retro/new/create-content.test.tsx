@@ -8,20 +8,16 @@ import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/re
 
 const mocks = vi.hoisted(() => ({
   create: vi.fn(),
-  ensureGlobalUser: vi.fn(),
+  ensureSession: vi.fn(async () => "auth-1"),
   push: vi.fn(),
   auth: { isAuthenticated: true, isLoading: false },
 }));
 
-vi.mock("@/convex/_generated/api", () => ({
-  api: { retro: { create: "retro.create" }, users: { ensureGlobalUser: "users.ensureGlobalUser" } },
-}));
-vi.mock("convex/react", () => ({
-  useMutation: (ref: string) => (ref === "retro.create" ? mocks.create : mocks.ensureGlobalUser),
-}));
+vi.mock("@/convex/_generated/api", () => ({ api: { retro: { create: "retro.create" } } }));
+vi.mock("convex/react", () => ({ useMutation: () => mocks.create }));
+vi.mock("@/hooks/useEnsureSession", () => ({ useEnsureSession: () => mocks.ensureSession }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: mocks.push }) }));
 vi.mock("@/components/auth/auth-provider", () => ({ useAuth: () => mocks.auth }));
-vi.mock("@/lib/auth-client", () => ({ authClient: { signIn: { anonymous: vi.fn() } } }));
 vi.mock("@/components/navbar", () => ({ Navbar: () => null }));
 vi.mock("@/components/footer", () => ({ Footer: () => null }));
 

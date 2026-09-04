@@ -7,7 +7,7 @@ import { api } from "@/convex/_generated/api";
 import { ArrowRight } from "lucide-react";
 
 import { useAuth } from "@/components/auth/auth-provider";
-import { authClient } from "@/lib/auth-client";
+import { useEnsureSession } from "@/hooks/useEnsureSession";
 import { Navbar } from "@/components/navbar";
 import { Footer } from "@/components/footer";
 import { Button } from "@/components/ui/button";
@@ -23,7 +23,6 @@ import {
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
-import { generateGuestName } from "@/lib/guest-names";
 import { tintClasses } from "@/components/retro/tints";
 import {
   DEFAULT_RETRO_FORMAT,
@@ -58,18 +57,17 @@ function parseCollectUntil(value: string): number | undefined {
 function PromptList({ format }: { format: RetroFormat }) {
   return (
     <ul className="flex flex-wrap gap-1.5">
-      {format.prompts.map((prompt) => (
-        <li
-          key={prompt.id}
-          className={cn(
-            "rounded-md border px-2 py-0.5 text-xs font-medium",
-            tintClasses(prompt.color).zone,
-            tintClasses(prompt.color).label
-          )}
-        >
-          {prompt.label}
-        </li>
-      ))}
+      {format.prompts.map((prompt) => {
+        const tint = tintClasses(prompt.color);
+        return (
+          <li
+            key={prompt.id}
+            className={cn("rounded-md border px-2 py-0.5 text-xs font-medium", tint.zone, tint.label)}
+          >
+            {prompt.label}
+          </li>
+        );
+      })}
     </ul>
   );
 }
@@ -89,31 +87,21 @@ export function CreateRetroContent() {
   const [isCreating, setIsCreating] = useState(false);
 
   const router = useRouter();
-  const { isAuthenticated, isLoading: authLoading } = useAuth();
+  const { isLoading: authLoading } = useAuth();
+  const ensureSession = useEnsureSession();
   const createRetro = useMutation(api.retro.create);
-  const ensureGlobalUser = useMutation(api.users.ensureGlobalUser);
 
   const handleCreate = useCallback(async () => {
     setIsCreating(true);
 
-    // Ensure a session exists before creating; a retro room always has an owner.
-    if (!isAuthenticated) {
-      try {
-        const result = await authClient.signIn.anonymous();
-        if (result.error) {
-          toast.error(result.error.message || "Failed to create session. Please try again.");
-          setIsCreating(false);
-          return;
-        }
-        const newAuthUserId = result.data?.user?.id;
-        if (newAuthUserId) {
-          await ensureGlobalUser({ authUserId: newAuthUserId, name: generateGuestName() });
-        }
-      } catch {
-        toast.error("Failed to create session. Please try again.");
-        setIsCreating(false);
-        return;
-      }
+    // A retro room always has an owner, so the creator needs a session and a
+    // users row before the mutation.
+    try {
+      await ensureSession({ createGlobalUser: true });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to create session. Please try again.");
+      setIsCreating(false);
+      return;
     }
 
     try {
@@ -129,7 +117,7 @@ export function CreateRetroContent() {
       toast.error(CREATE_RETRO_FAILED);
       setIsCreating(false);
     }
-  }, [isAuthenticated, ensureGlobalUser, collectUntil, createRetro, name, format, router]);
+  }, [ensureSession, collectUntil, createRetro, name, format, router]);
 
   return (
     <div className="flex min-h-screen flex-col bg-white dark:bg-black">

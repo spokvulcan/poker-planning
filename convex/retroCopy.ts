@@ -8,13 +8,9 @@
 
 // --- Board header disclosures (ADR-0008, ADR-0019) ---
 
-/** Board header, teamless retro. */
+/** Board header, teamless retro. The team line arrives with #289. */
 export const TEAMLESS_DISCLOSURE =
   "Not kept by a team. This retro disappears after 5 quiet days.";
-
-/** Board header, team retro. */
-export const teamDisclosure = (teamName: string) =>
-  `Kept by ${teamName}. Its members can read this later, until the retro or the team is deleted.`;
 
 // --- Join (spec §4.4) ---
 
@@ -80,5 +76,3 @@ export const collectUntilLine = (date: string) => `Cards due ${date}`;
 export const LOADING_TITLE = "Loading...";
 export const CHECKING_SESSION = "Checking session";
 export const LOADING_BOARD = "Opening the board...";
-export const RETRO_NOT_FOUND_TITLE = "Retro not found";
-export const RETRO_NOT_FOUND_BODY = "This retro doesn't exist or has been deleted.";

@@ -288,6 +288,7 @@ export default defineSchema({
     voterId: v.id("users"), // always stored, projected away for other readers in an anonymous retro
     target: topicRefValidator,
   })
+    .index("by_room", ["roomId"]) // The cascade reads every room-owned table by this name
     .index("by_room_entry", ["roomId", "stageEntryId"])
     .index("by_room_entry_voter", ["roomId", "stageEntryId", "voterId"]),
 
