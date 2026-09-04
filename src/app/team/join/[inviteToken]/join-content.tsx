@@ -26,6 +26,8 @@ export function JoinTeamContent() {
   const team = useQuery(api.teams.getByInviteToken, { inviteToken });
   const joinByInvite = useMutation(api.teams.joinByInvite);
   const [error, setError] = useState<string | null>(null);
+  // Bumped by "Try again" so the join effect runs once more.
+  const [attempt, setAttempt] = useState(0);
   const attemptedRef = useRef(false);
 
   const isPermanent = isAuthenticated && accountType === "permanent";
@@ -40,7 +42,7 @@ export function JoinTeamContent() {
         attemptedRef.current = false;
         setError(e instanceof Error ? e.message : "Failed to join the team");
       });
-  }, [team, isPermanent, inviteToken, joinByInvite, router]);
+  }, [team, isPermanent, inviteToken, joinByInvite, router, attempt]);
 
   let body: React.ReactNode;
   if (team === undefined || authLoading || (isAuthenticated && accountType === null)) {
@@ -60,7 +62,15 @@ export function JoinTeamContent() {
     body = (
       <>
         <p className="text-sm text-destructive">{error}</p>
-        <Button onClick={() => { setError(null); attemptedRef.current = false; }}>Try again</Button>
+        <Button
+          onClick={() => {
+            setError(null);
+            attemptedRef.current = false;
+            setAttempt((n) => n + 1);
+          }}
+        >
+          Try again
+        </Button>
       </>
     );
   } else if (isPermanent) {
