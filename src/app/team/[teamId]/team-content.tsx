@@ -119,11 +119,9 @@ export function TeamContent() {
     }
   };
 
-  const handleRole = async (action: "promote" | "demote", userId: Id<"users">) => {
-    await run(
-      () => (action === "promote" ? promote : demote)({ teamId, targetUserId: userId }),
-      "Failed to change role"
-    );
+  const roleMutations = { promote, demote };
+  const handleRole = async (action: keyof typeof roleMutations, userId: Id<"users">) => {
+    await run(() => roleMutations[action]({ teamId, targetUserId: userId }), "Failed to change role");
   };
 
   const handleConfirmRemove = async () => {
@@ -146,6 +144,8 @@ export function TeamContent() {
     }
   };
 
+  // No success toast here on purpose: the control itself shows the new
+  // value, and a failure rolls it back (the panel's contract) with a toast.
   const handleRetroDefaults = (next: RetroDefaults) =>
     run(() => updateRetroDefaults({ teamId, retroDefaults: next }), "Failed to update retro defaults");
 
