@@ -369,9 +369,10 @@ async function guardRoomAction(
   // Team inputs (ADR-0013): populated only for rooms with a `teamId`, and
   // only when the action reads them (`claim`). A teamless room grants no
   // team role, so `claim` is insufficient-role for everyone there.
-  const team = readsOwnerAbsence(action)
-    ? await readTeamInputs(ctx, room, user._id)
-    : { ownerInTeam: false };
+  const team =
+    action.kind === "relationship" && action.verb === "claim"
+      ? await readTeamInputs(ctx, room, user._id)
+      : { ownerInTeam: false };
   const decision = resolve(action, {
     actorRole,
     permissions: effective.permissions,
