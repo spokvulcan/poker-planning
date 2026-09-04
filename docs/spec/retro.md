@@ -103,6 +103,7 @@ retros: {                                     // exactly one per retro room, wri
     timeboxMinutes: v.optional(v.number()),   // advisory (ADR-0010)
   })),
   currentStageId: v.string(),                 // the shared pointer
+  currentStageEnteredAt: v.number(),          // re-stamped by every advance; the timebox counts from it (§7)
   walk: v.optional(v.object({                 // snapshotted on entering a discuss entry (ADR-0010, ADR-0023)
     stageEntryId: v.string(),
     snapshotAt: v.number(),
@@ -178,7 +179,7 @@ Rules the schema carries (ADR-0016): one room is one retro and both rows are wri
 
 ## 3. Migration
 
-Only one field needs staged rollout. Everything else is additive (optional fields, a widened literal union, new tables) and ships in the phase that first writes it.
+Only one field needs staged rollout. Everything else is additive (optional fields, a widened literal union, new tables). The five retro tables (`retros`, `retroCards`, `retroClusters`, `retroVotes`, `retroActions`) ship together with the first retro creation ticket, because they reference one another (`clusterId`, `topicRef`, `source`) and a cascade list edited once is safer than five edits; each optional field ships in the phase that first writes it.
 
 **`rooms.retained`** (ADR-0019), three releases, never two of them in one release:
 
@@ -249,7 +250,7 @@ The retro model layer throws `ConvexError({ code, message? })` with exactly four
 - **Invite.** `/team/join/[inviteToken]` consumes the rotatable link: a permanent account becomes `member`; an anonymous account is shown "Sign in to join {team}" and returns after linking (`linkAnonymousToPermanent` needs no change). Any admin may rotate the token, which invalidates the old link. Membership is created by this route and nowhere else; joining a team retro never joins the team.
 - **Roles.** `admin` and `member`. Admins rename the team, rotate the invite, promote and demote, remove members, edit the retro-defaults bundle, delete the team. **A Team can never be left without an admin**: the last admin's leave and demote are refused with "Make someone else an admin first, or delete the team." Nobody is auto-promoted.
 - **Removal** deletes the `teamMemberships` row and nothing else: no cards, no attribution, no room ejection. The removed person keeps `roomMemberships` they earned and so keeps reading retros they attended (§4.1).
-- **`teamId` is set once.** `createRetro` sets it; `adoptIntoTeam(roomId, teamId)` sets it on a teamless retro (actor must be room owner and a member of the team; sets `retained: true`; never rewrites the stage list, the join policy, the attribution or the permissions). No mutation ever changes or clears it.
+- **`teamId` is set once.** `createRetro` sets it; `adoptIntoTeam(roomId, teamId)` sets it on a teamless retro (actor must be room owner and a member of the team; sets `retained: true`; stamps `teamId` onto the room's existing `retroActions` rows in the same mutation so earlier action items reach the team page and later reviews; never rewrites the stage list, the join policy, the attribution or the permissions). No mutation ever changes or clears it.
 - **Write-time disclosure** (with ADR-0019's retention half) is shown in the board header, before the first card is typed, and again in the create flow. It doubles as the link to the team page. Copy in §19.
 - **Team page** `/team/[teamId]`, members only: retro history as history rows in creation order (§17); open action items across the team's retros with done, drop, edit and reassign in place (§13); one count line (§17); members with roles, invite link and rotate; the retro-defaults panel (attribution, join policy, four permission levels); *New retro*; *Export history* (§15.4); admin-only *Delete team*. Nothing else.
 
@@ -293,7 +294,7 @@ Under `retroSettings`: prompt labels and hints at any stage; add a prompt at any
 - **Advance** is `stageFlow`: `advance({ toStageId })` sets `currentStageId` to any entry, forward or back. Leaving `collect` for a visible entry is the reveal (§8.3); entering a `discuss` entry with no walk keyed to it snapshots one (§12.1); re-entering keeps it. Advancing destroys, finalises and hides nothing beyond the read-time projection. Nothing advances itself; timeboxes and `collectUntil` never fire one.
 - **Own view.** Any member may navigate their own view to another entry; the projection still follows the shared pointer (§8.3). The board root shows the shared stage; a "Back to the team" affordance returns the view.
 - **Readiness** lives in the presence payload (`convex/presence.ts` room data), shown named per person in the roster, cleared when the pointer moves; `collect` has none. In `collect` the roster shows "has written" per person in a named retro and a total card count in an anonymous one.
-- **Timebox** is advisory: shown as a countdown on the stage pill using `calculateCurrentTime` from `convex/timerState.ts`, never the `TimerNode`; at zero it shows "Timebox over" and nothing else happens.
+- **Timebox** is advisory: shown as a countdown on the stage pill, `timeboxMinutes * 60` minus the seconds since `currentStageEnteredAt` computed with `calculateCurrentTime` from `convex/timerState.ts`, never the `TimerNode`; at zero it shows "Timebox over" and nothing else happens.
 - **No finished state.** A retro rests where it was left; the history row shows its resting stage.
 
 ## 8. Cards, attribution and reveal
@@ -427,7 +428,7 @@ On entering a `discuss` entry with no walk keyed to it, `advance` writes `walk =
 
 ### 16.4 Opt-out
 
-`users.emailOptOut`, toggled in Settings ("Email me about retros and action items") and by one-click unsubscribe: an HMAC-SHA256 over the user id with the Convex env secret `UNSUBSCRIBE_SECRET`, no expiry, in a `List-Unsubscribe` header (RFC 8058 one-click, `List-Unsubscribe-Post: List-Unsubscribe=One-Click`) and a footer link to `/unsubscribe?token=…`, which flips the flag without sign-in and shows "You won't get retro or action emails. Turn them back on in Settings."
+`users.emailOptOut`, toggled in Settings ("Email me about retros and action items") and by one-click unsubscribe. The token is `{userId}.{base64url(HMAC-SHA256(userId, UNSUBSCRIBE_SECRET))}` with the Convex env secret `UNSUBSCRIBE_SECRET`, no expiry; the unsubscribe mutation re-derives the MAC, compares it in constant time, flips the flag on a match and nothing on a mismatch, and is the one mutation that runs no auth guard because it must work signed out. It is reached two ways: a `List-Unsubscribe` header pointing at `/api/unsubscribe?token=…`, an API route that answers the RFC 8058 POST (`List-Unsubscribe-Post: List-Unsubscribe=One-Click`) by calling the mutation and returning 200, and a footer link to the `/unsubscribe?token=…` page, which calls the same mutation without sign-in and shows "You won't get retro or action emails. Turn them back on in Settings."
 
 ### 16.5 In-app
 
@@ -552,9 +553,9 @@ Each names the fact that needs two real browsers on one deployment. State before
 
 ### 21.3 The test seam
 
-One module `convex/retro.seeds.ts` beside `analytics.seeds.ts` (multi-dot names are skipped by the Convex CLI's codegen but deployed), every function checking `process.env.TEST_AUTH_SECRET` first and inert without it:
+One module `convex/testSeam.ts` (a single-dot name: the Convex bundler drops any `convex/` basename with more than one dot from its entry points entirely, so a multi-dot file such as `analytics.seeds.ts` never deploys and could not host the seam), every function checking `process.env.TEST_AUTH_SECRET` first and inert without it:
 
-- **Magic-link capture.** The `sendMagicLink` hook in `convex/auth.ts` writes `{ email, url }` to `testMagicLinks` instead of scheduling `internal.email.sendMagicLinkEmail` when the secret is set; `testMagicLinks.latest({ secret, email })` returns the newest row; the fixture visits the URL. Test accounts are addressed by a fixed email per fixture role and reused across runs.
+- **Magic-link capture.** The `sendMagicLink` hook in `convex/auth.ts` writes `{ email, url }` to `testMagicLinks` instead of scheduling `internal.email.sendMagicLinkEmail` when the secret is set; `testSeam.latestMagicLink({ secret, email })` returns the newest row; the fixture visits the URL. Test accounts are addressed by a fixed email per fixture role and reused across runs.
 - **Seeding.** `seedRetro({ secret, testRun, stage, team?, attribution?, format?, cards?, dots? })` builds a Team, memberships, the room and retro through the model layer's own functions (never raw inserts) and advances to the named stage, stamping `testRun` on the `teams` and `rooms` rows.
 - **Teardown.** `deleteTestRun({ secret, testRun })` deletes every team and room carrying the id through the cascades. Each fixture deletes the Team it created; `admin:dangerouslyDeleteAllData` is never called by a test.
 
@@ -594,4 +595,4 @@ Where two ADRs disagree or leave a seam, this spec takes the reading below. Item
 6. **`committedAt`.** ADR-0016 asks for "a commit-timestamp field per the Convex docs"; Convex exposes no commit timestamp to a mutation beyond `_creationTime`, and the research notes that does not reflect commit order. Spec stores `Date.now()` from inside the create mutation, which is the transaction's timestamp, and keeps the field so a later affordance has it.
 7. **`retro.tally` mount rule.** ADR-0016 mounts it only in `vote` and `discuss` while `tallyVisible` is `visible` on every non-vote entry (so at `close` and at rest dots are readable but not subscribed on the board). Spec keeps ADR-0016's rule; export still prints dot counts server-side.
 8. **`testRun` placement.** ADR-0025 says every seeded row carries it; the cascade makes the roots sufficient. Spec puts it on `teams` and `rooms` only.
-9. **Route and URL names not fixed by any ADR**, chosen here as engineering defaults: `/team/join/[inviteToken]`, `/dashboard/retros`, `/unsubscribe`, `/dashboard/sessions` keeps its URL under the new label, the env secret `UNSUBSCRIBE_SECRET`, and the seam file `convex/retro.seeds.ts`.
+9. **Route and URL names not fixed by any ADR**, chosen here as engineering defaults: `/team/join/[inviteToken]`, `/dashboard/retros`, `/unsubscribe`, `/dashboard/sessions` keeps its URL under the new label, the env secret `UNSUBSCRIBE_SECRET`, and the seam file `convex/testSeam.ts` (an earlier draft named it `convex/retro.seeds.ts`; corrected on 2026-09-04 because multi-dot basenames are not bundler entry points).
