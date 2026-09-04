@@ -2,6 +2,7 @@ import { MutationCtx, QueryCtx } from "../_generated/server";
 import { Doc, Id } from "../_generated/dataModel";
 import { internal } from "../_generated/api";
 import { DEFAULT_RETRO_PERMISSIONS, accountTypeOf, type TeamRole } from "../permissions";
+import { LAST_ADMIN_MESSAGE, SIGN_IN_TO_CREATE } from "../teamCopy";
 
 /**
  * The Team (ADR-0008): the permanent visibility boundary that owns retro
@@ -12,12 +13,6 @@ import { DEFAULT_RETRO_PERMISSIONS, accountTypeOf, type TeamRole } from "../perm
 
 export type { TeamRole };
 export type RetroDefaults = Doc<"teams">["retroDefaults"];
-
-/** The copy the last-admin rule refuses with (spec §19). */
-export const LAST_ADMIN_MESSAGE =
-  "Make someone else an admin first, or delete the team.";
-
-export const SIGN_IN_TO_CREATE = "Sign in to create a team";
 
 const MAX_TEAM_NAME_LENGTH = 100;
 
@@ -251,7 +246,10 @@ export const TEAM_DELETE_BATCH_SIZE = 500;
 export interface TeamDeleteStep {
   /** true once the team row itself is deleted — the cascade is complete. */
   done: boolean;
-  /** Membership rows deleted by this step. */
+  /**
+   * Membership rows deleted by this step. Unlike the room cascade's count,
+   * the team row itself is not included — `done` reports it.
+   */
   deleted: number;
 }
 

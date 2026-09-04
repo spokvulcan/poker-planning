@@ -13,6 +13,7 @@ import {
 import { isRoomOwnerAbsent } from "./permissions";
 import { getMembership } from "./users";
 import { getTeamMembership } from "./teams";
+import { NOT_A_TEAM_MEMBER, TEAM_ADMIN_ONLY, TEAM_NOT_FOUND } from "../teamCopy";
 
 /**
  * Auth identity returned by ctx.auth.getUserIdentity().
@@ -171,13 +172,13 @@ export async function requireTeamRole(
     getTeamMembership(ctx, teamId, user._id),
   ]);
   if (!team) {
-    throw new Error("Team not found");
+    throw new Error(TEAM_NOT_FOUND);
   }
   if (!membership) {
-    throw new Error("You are not a member of this team");
+    throw new Error(NOT_A_TEAM_MEMBER);
   }
   if (role === "admin" && membership.role !== "admin") {
-    throw new Error("Only a team admin can do that");
+    throw new Error(TEAM_ADMIN_ONLY);
   }
   return { identity, user, team, membership };
 }
