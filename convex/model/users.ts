@@ -153,11 +153,15 @@ export async function joinRoom(
   const room = await ctx.db.get(args.roomId);
   const role = room?.ownerId === userId ? ("owner" as const) : undefined;
 
+  // No spectator in retro (spec §4.2): the bit stays on the row, always
+  // false, whatever the client sent.
+  const isSpectator = room?.roomType === "retro" ? false : (args.isSpectator ?? false);
+
   // Create membership
   await ctx.db.insert("roomMemberships", {
     roomId: args.roomId,
     userId,
-    isSpectator: args.isSpectator ?? false,
+    isSpectator,
     joinedAt: Date.now(),
     ...(role ? { role } : {}),
   });

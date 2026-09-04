@@ -163,18 +163,40 @@ export function sanitizeVotes(
 }
 
 /**
- * The single chokepoint for room activity writes. Every user-initiated
- * mutation touching room-scoped state routes its bump through here, so the
- * cleanup cascade's inactivity window (model/cleanup.ts) reflects real use —
- * a room worked only via its timer or canvas must not read as abandoned.
+ * How stale a retro room's clock must be before the chokepoint patches it
+ * (ADR-0018). The sweep and the listings need day-level precision; the room
+ * row is every guard's read and every member's subscription, so a retro
+ * patches it at most once an hour instead of once per write.
+ */
+export const RETRO_ACTIVITY_GRANULARITY_MS = 60 * 60 * 1000;
+
+/**
+ * The single chokepoint for room activity writes (ADR-0005). Every
+ * user-initiated mutation touching room-scoped state routes its bump through
+ * here, so the cleanup cascade's inactivity window (model/cleanup.ts)
+ * reflects real use — a room worked only via its timer or canvas must not
+ * read as abandoned.
+ *
+ * The chokepoint owns the clock's precision (ADR-0018): a retro room is
+ * patched only when its stored clock is over an hour old; every other room
+ * unconditionally, because poker analytics compares `computedAt` to this
+ * clock exactly (ADR-0007). A room that is gone returns without patching —
+ * the join path bumps before it reads the room.
  */
 export async function updateRoomActivity(
   ctx: MutationCtx,
   roomId: Id<"rooms">
 ): Promise<void> {
-  await ctx.db.patch(roomId, {
-    lastActivityAt: Date.now(),
-  });
+  const room = await ctx.db.get(roomId);
+  if (!room) return;
+  const now = Date.now();
+  if (
+    room.roomType === "retro" &&
+    now - room.lastActivityAt <= RETRO_ACTIVITY_GRANULARITY_MS
+  ) {
+    return;
+  }
+  await ctx.db.patch(roomId, { lastActivityAt: now });
 }
 
 /**

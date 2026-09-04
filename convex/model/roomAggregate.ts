@@ -3,6 +3,34 @@ import { Doc, Id } from "../_generated/dataModel";
 import { scheduleWebhookDeregistration } from "./integrations";
 
 /**
+ * The retro's five tables (ADR-0016), room-owned like the rest — the cascade
+ * empties them — but permanently retained data the daily orphan sweep must
+ * never walk (model/cleanup.ts takes the explicit poker list instead).
+ */
+export const RETRO_TABLES = [
+  "retros",
+  "retroCards",
+  "retroClusters",
+  "retroVotes",
+  "retroActions",
+] as const;
+
+/**
+ * The room-owned tables the daily orphan sweep walks: the poker set. Bounded
+ * by the sweep's own transaction budget; the retro tables are excluded.
+ */
+export const ORPHAN_SWEPT_TABLES = [
+  "issues",
+  "roomMemberships",
+  "votes",
+  "canvasNodes",
+  "votingTimestamps",
+  "individualVotes",
+  "integrationMappings",
+  "roomAnalyticsSnapshots",
+] as const;
+
+/**
  * The one inventory of what a room owns (derived from schema.ts).
  *
  * Every table keyed by `roomId` is a direct member. `issueLinks` is owned
@@ -15,16 +43,9 @@ import { scheduleWebhookDeregistration } from "./integrations";
  * There is no per-room presence/timer table — presence is connection-local
  * and canvas timers are `canvasNodes` rows.
  */
-export const ROOM_OWNED_TABLES = [
-  "issues",
-  "roomMemberships",
-  "votes",
-  "canvasNodes",
-  "votingTimestamps",
-  "individualVotes",
-  "integrationMappings",
-  "roomAnalyticsSnapshots",
-] as const;
+export const ROOM_OWNED_TABLES = [...ORPHAN_SWEPT_TABLES, ...RETRO_TABLES] as const;
+
+export type OrphanSweptTable = (typeof ORPHAN_SWEPT_TABLES)[number];
 
 export type RoomOwnedTable = (typeof ROOM_OWNED_TABLES)[number];
 
@@ -95,10 +116,18 @@ export async function deleteRoomAggregateChunk(
   let anyFullBatch = false;
   for (const table of ROOM_OWNED_TABLES) {
     if (table === "issues") continue;
-    const rows = await ctx.db
-      .query(table)
-      .withIndex("by_room", (q) => q.eq("roomId", roomId))
-      .take(batchSize);
+    // retroVotes has no by_room index of its own; its by_room_entry index
+    // is roomId-prefixed and serves the same read.
+    const rows =
+      table === "retroVotes"
+        ? await ctx.db
+            .query(table)
+            .withIndex("by_room_entry", (q) => q.eq("roomId", roomId))
+            .take(batchSize)
+        : await ctx.db
+            .query(table)
+            .withIndex("by_room", (q) => q.eq("roomId", roomId))
+            .take(batchSize);
 
     if (table === "integrationMappings") {
       for (const mapping of rows as Doc<"integrationMappings">[]) {
