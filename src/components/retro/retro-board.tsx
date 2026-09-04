@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import {
   Background,
   BackgroundVariant,
@@ -15,7 +15,8 @@ import { PromptZoneNodeView, type PromptZoneNode } from "./prompt-zone-node";
 import { layoutZones } from "./zones";
 
 interface RetroBoardProps {
-  room: Doc<"rooms">;
+  /** The room shell's name; the board reads nothing else from it. */
+  name: string;
   retro: Doc<"retros">;
 }
 
@@ -30,9 +31,16 @@ const nodeTypes: NodeTypes = { zone: PromptZoneNodeView };
  * drawn from the stamped format; cards, clusters and the hand arrive with
  * their tickets.
  */
-export function RetroBoard({ room, retro }: RetroBoardProps) {
+export function RetroBoard({ name, retro }: RetroBoardProps) {
   const currentStage =
     retro.stages.find((stage) => stage.id === retro.currentStageId) ?? retro.stages[0];
+
+  // The page is titled by the retro's name (spec §18.1). Set here rather than
+  // in the route's metadata, which would have to fetch the room server-side
+  // on every room load, poker included, to learn the type.
+  useEffect(() => {
+    document.title = `${name} | AgileKit`;
+  }, [name]);
 
   const nodes = useMemo<PromptZoneNode[]>(
     () =>
@@ -40,13 +48,7 @@ export function RetroBoard({ room, retro }: RetroBoardProps) {
         id: `zone-${zone.promptId}`,
         type: "zone",
         position: { x: zone.x, y: zone.y },
-        data: {
-          promptId: zone.promptId,
-          label: zone.label,
-          color: zone.color,
-          width: zone.width,
-          height: zone.height,
-        },
+        data: zone,
         draggable: false,
         selectable: false,
         focusable: false,
@@ -62,7 +64,7 @@ export function RetroBoard({ room, retro }: RetroBoardProps) {
       data-stage={currentStage.kind}
     >
       <RetroHeader
-        name={room.name}
+        name={name}
         stageKind={currentStage.kind}
         collectUntil={retro.collectUntil}
       />

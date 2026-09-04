@@ -3,7 +3,8 @@ import { Doc, Id } from "../_generated/dataModel";
 import { DEFAULT_RETRO_PERMISSIONS } from "../permissions";
 import { validateRoomName } from "./rooms";
 import { findFormat, seedStages, stampFormat } from "./retroFormats";
-import { UNKNOWN_FORMAT } from "../retroCopy";
+import { NOT_A_RETRO, UNKNOWN_FORMAT } from "../retroCopy";
+import { refusal } from "./refusal";
 
 /**
  * The retro (ADR-0016): one room with its ceremony state in a `retros` row
@@ -35,7 +36,7 @@ export async function createRetro(
 ): Promise<Id<"rooms">> {
   const format = findFormat(args.formatName);
   if (!format) {
-    throw new Error(UNKNOWN_FORMAT);
+    throw refusal("missing", UNKNOWN_FORMAT);
   }
   const name = validateRoomName(args.name);
   const now = Date.now();
@@ -97,7 +98,7 @@ export async function getBoard(
 ): Promise<Doc<"retros">> {
   const retro = await getRetro(ctx, roomId);
   if (!retro) {
-    throw new Error("Not a retro");
+    throw refusal("missing", NOT_A_RETRO);
   }
   return retro;
 }

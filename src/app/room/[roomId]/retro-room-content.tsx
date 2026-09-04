@@ -7,7 +7,7 @@ import { useAuth } from "@/components/auth/auth-provider";
 import { RetroJoinForm } from "@/components/retro/retro-join-form";
 import { RetroBoard } from "@/components/retro/retro-board";
 import type { RoomWithRelatedData } from "@/convex/model/rooms";
-import { LOADING_BOARD } from "@/convex/retroCopy";
+import { CHECKING_SESSION, LOADING_BOARD, LOADING_TITLE } from "@/convex/retroCopy";
 
 interface RetroRoomContentProps {
   roomId: Id<"rooms">;
@@ -41,7 +41,7 @@ export function RetroRoomContent({ roomId, roomData }: RetroRoomContentProps) {
   const { room } = roomData;
 
   if (authLoading || (isAuthenticated && membership === undefined)) {
-    return <Centered title="Loading..." body="Checking session" />;
+    return <Centered title={LOADING_TITLE} body={CHECKING_SESSION} />;
   }
 
   if (!isMember) {
@@ -58,8 +58,8 @@ export function RetroRoomContent({ roomId, roomData }: RetroRoomContentProps) {
   }
 
   if (retro === undefined) {
-    return <Centered title="Loading..." body={LOADING_BOARD} />;
+    return <Centered title={LOADING_TITLE} body={LOADING_BOARD} />;
   }
 
-  return <RetroBoard room={room} retro={retro} />;
+  return <RetroBoard name={room.name} retro={retro} />;
 }

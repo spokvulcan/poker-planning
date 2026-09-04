@@ -201,7 +201,8 @@ describe("retro.board", () => {
 
     const board = await as(t, "owner").query(api.retro.board, { roomId });
     expect(board.roomId).toBe(roomId);
-    expect(board.currentStageId).toBe("collect");
+    expect(board.currentStageId).toBe(board.stages[0].id);
+    expect(board.stages[0].kind).toBe("collect");
     expect(board.format.name).toBe(DEFAULT_RETRO_FORMAT.name);
 
     await expect(
@@ -234,6 +235,30 @@ describe("joining a retro", () => {
       ctx.db.query("canvasNodes").withIndex("by_room", (q) => q.eq("roomId", roomId)).collect()
     );
     expect(nodes).toEqual([]);
+  });
+
+  it("the join policy is enforced before the insert with the forbidden refusal", async () => {
+    const t = convexTest(schema, modules);
+    await seedUser(t, "owner");
+    await seedUser(t, "anon", "anonymous");
+    await seedUser(t, "perm", "permanent");
+    const roomId = await as(t, "owner").mutation(api.retro.create, {
+      name: "R",
+      formatName: DEFAULT_RETRO_FORMAT.name,
+    });
+    await t.run((ctx) => ctx.db.patch(roomId, { joinPolicy: "permanentAccounts" }));
+
+    await expect(
+      as(t, "anon").mutation(api.users.join, { roomId, name: "A", authUserId: "anon" })
+    ).rejects.toThrow("This retro is for signed-in accounts. Sign in to join.");
+    expect((await membershipsOf(t, roomId)).map((row) => row.userId)).not.toContain(
+      await t.run((ctx) =>
+        ctx.db.query("users").withIndex("by_auth_user", (q) => q.eq("authUserId", "anon")).unique()
+      ).then((u) => u!._id)
+    );
+
+    await as(t, "perm").mutation(api.users.join, { roomId, name: "P", authUserId: "perm" });
+    expect(await membershipsOf(t, roomId)).toHaveLength(2);
   });
 
   it("a poker room still honours the spectator toggle", async () => {

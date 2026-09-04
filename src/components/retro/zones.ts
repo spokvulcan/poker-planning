@@ -9,14 +9,13 @@ export const ZONE_HEIGHT = 640;
 export const ZONE_GAP = 40;
 export const ZONES_PER_ROW = 5;
 
-export interface ZonePrompt {
-  id: string;
-  label: string;
-  color: string;
-  order: number;
-}
+import type { FormatPrompt } from "@/convex/model/retroFormats";
 
-export interface Zone {
+export type ZonePrompt = Pick<FormatPrompt, "id" | "label" | "color" | "order">;
+
+// A type alias, not an interface: React Flow node data must satisfy
+// Record<string, unknown>, which an interface's closed shape does not.
+export type Zone = {
   promptId: string;
   label: string;
   color: string;
@@ -24,7 +23,7 @@ export interface Zone {
   y: number;
   width: number;
   height: number;
-}
+};
 
 export function layoutZones(prompts: readonly ZonePrompt[]): Zone[] {
   return [...prompts]

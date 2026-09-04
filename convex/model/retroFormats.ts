@@ -61,8 +61,11 @@ export interface StageEntry {
   timeboxMinutes?: number;
 }
 
-export const MAX_PROMPTS = 10;
-export const MAX_STAGES = 10;
+/** A fresh stage entry id; per-stage state (dots, the walk) hangs off it. */
+export function newStageEntryId(): string {
+  return crypto.randomUUID();
+}
+
 export const DEFAULT_VOTE_BUDGET = 5;
 
 function prompts(
@@ -178,7 +181,9 @@ export function seedStages(
     .filter((kind) => options.hasTeam || kind !== "review")
     .map((kind) => {
       const entry: StageEntry = {
-        id: kind,
+        // An entry's identity is its own, never its kind: a kind may repeat
+        // (a second vote entry is a second round of dots, ADR-0010, spec §2).
+        id: newStageEntryId(),
         kind,
         cardsVisible: kind === "collect" && !format.collectVisible ? "hidden" : "visible",
         tallyVisible: kind === "vote" ? "hidden" : "visible",

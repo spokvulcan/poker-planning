@@ -34,12 +34,14 @@ import {
   COLLECT_UNTIL_DESCRIPTION,
   COLLECT_UNTIL_LABEL,
   CREATE_RETRO_BUTTON,
+  CREATE_RETRO_FAILED,
   CREATING_RETRO_BUTTON,
   FORMAT_CHANGE,
   FORMAT_COLLAPSE,
   FORMAT_LABEL,
   NEW_RETRO_DESCRIPTION,
   NEW_RETRO_TITLE,
+  RETRO_NAME_DESCRIPTION,
   RETRO_NAME_LABEL,
   RETRO_NAME_PLACEHOLDER,
   defaultRetroName,
@@ -124,7 +126,7 @@ export function CreateRetroContent() {
       router.push(`/room/${roomId}`);
     } catch (error) {
       console.error("Failed to create retro:", error);
-      toast.error("Failed to create retro. Please try again.");
+      toast.error(CREATE_RETRO_FAILED);
       setIsCreating(false);
     }
   }, [isAuthenticated, ensureGlobalUser, collectUntil, createRetro, name, format, router]);
@@ -153,7 +155,7 @@ export function CreateRetroContent() {
                       onChange={(e) => setName(e.target.value)}
                       maxLength={100}
                     />
-                    <FieldDescription>Leave empty for a dated name</FieldDescription>
+                    <FieldDescription>{RETRO_NAME_DESCRIPTION}</FieldDescription>
                   </Field>
 
                   <Field>

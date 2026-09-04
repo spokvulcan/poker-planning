@@ -14,6 +14,9 @@ import { toast } from "@/lib/toast";
 import { evaluateJoin, type JoinPolicy } from "@/convex/permissions";
 import {
   JOIN_DENIED_PERMANENT,
+  JOIN_FAILED,
+  JOIN_NAME_LABEL,
+  JOIN_NAME_PLACEHOLDER,
   JOIN_RETRO_BUTTON,
   JOIN_RETRO_TITLE,
   joinDeniedTeam,
@@ -68,7 +71,7 @@ export function RetroJoinForm({
       await joinRoom({ roomId, name: userName.trim(), authUserId: currentAuthUserId });
     } catch (error) {
       console.error("Failed to join retro:", error);
-      toast.error("Failed to join retro");
+      toast.error(JOIN_FAILED);
     } finally {
       setIsJoining(false);
     }
@@ -84,10 +87,10 @@ export function RetroJoinForm({
 
         <div className="space-y-4">
           <div className="grid w-full items-center gap-3">
-            <Label htmlFor="name">Your name</Label>
+            <Label htmlFor="name">{JOIN_NAME_LABEL}</Label>
             <Input
               id="name"
-              placeholder="Enter your name"
+              placeholder={JOIN_NAME_PLACEHOLDER}
               autoComplete="name"
               value={userName}
               onChange={(e) => setUserName(e.target.value)}

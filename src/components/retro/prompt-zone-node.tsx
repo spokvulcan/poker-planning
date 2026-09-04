@@ -2,11 +2,9 @@ import { memo } from "react";
 import type { Node, NodeProps } from "@xyflow/react";
 import { cn } from "@/lib/utils";
 import { tintClasses } from "./tints";
+import type { Zone } from "./zones";
 
-export type PromptZoneNode = Node<
-  { promptId: string; label: string; color: string; width: number; height: number },
-  "zone"
->;
+export type PromptZoneNode = Node<Zone, "zone">;
 
 /**
  * A prompt's soft zone (ADR-0011): a tinted area with the prompt's label,
