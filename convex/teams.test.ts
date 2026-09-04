@@ -556,3 +556,43 @@ describe("team reads", () => {
     expect(await as(t, "stranger").query(api.teams.listMine, {})).toEqual([]);
   });
 });
+
+describe("account deletion", () => {
+  it("a member's account deletion removes only their membership row", async () => {
+    const t = convexTest(schema, modules);
+    const { memberId, teamId } = await seedTeamWithMember(t);
+
+    await as(t, "member").mutation(api.users.deleteUser, {});
+
+    expect(await roleOf(t, teamId, memberId)).toBeNull();
+    expect(await memberships(t, teamId)).toHaveLength(1);
+    expect(await t.run((ctx) => ctx.db.get(teamId))).not.toBeNull();
+    expect(await t.run((ctx) => ctx.db.get(memberId))).toBeNull();
+  });
+
+  it("the last admin with other members behind them is refused, and nothing is deleted", async () => {
+    const t = convexTest(schema, modules);
+    const { adminId, teamId } = await seedTeamWithMember(t);
+
+    await expect(as(t, "admin").mutation(api.users.deleteUser, {})).rejects.toThrow(
+      "Make someone else an admin first, or delete the team."
+    );
+    expect(await roleOf(t, teamId, adminId)).toBe("admin");
+    expect(await t.run((ctx) => ctx.db.get(adminId))).not.toBeNull();
+  });
+
+  it("a sole member's team is deleted with the account", async () => {
+    const t = convexTest(schema, modules);
+    const soloId = await seedUser(t, "solo", "permanent");
+    const teamId = await createTeam(t, "solo", "Solo");
+    const roomId = await seedTeamRoom(t, teamId);
+
+    await as(t, "solo").mutation(api.users.deleteUser, {});
+
+    expect(await t.run((ctx) => ctx.db.get(teamId))).toBeNull();
+    expect(await memberships(t, teamId)).toHaveLength(0);
+    expect(await t.run((ctx) => ctx.db.get(soloId))).toBeNull();
+    const cascades = await scheduledJobs(t, ":deleteRoomAggregateChunk");
+    expect(cascades.map((j) => (j.args as [{ roomId: string }])[0].roomId)).toEqual([roomId]);
+  });
+});

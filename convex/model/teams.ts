@@ -418,3 +418,46 @@ export async function listTeamsForUser(
     return team ? [{ _id: team._id, name: team.name, role: row.role }] : [];
   });
 }
+
+/**
+ * Account deletion's Team half (ADR-0008): the memberships go with the
+ * account, and a Team is never left without an admin. A sole-member Team
+ * is deleted with its only member; a Team whose last admin is leaving
+ * other members behind refuses the account deletion with the last-admin
+ * copy — nobody is auto-promoted. Checks run before any write, so a
+ * refusal leaves everything as it was.
+ */
+export async function releaseMembershipsOfDeletedUser(
+  ctx: MutationCtx,
+  userId: Id<"users">
+): Promise<void> {
+  const mine = await ctx.db
+    .query("teamMemberships")
+    .withIndex("by_user", (q) => q.eq("userId", userId))
+    .collect();
+
+  const soleMemberTeams: Id<"teams">[] = [];
+  for (const membership of mine) {
+    if (membership.role !== "admin") continue;
+    const roster = await ctx.db
+      .query("teamMemberships")
+      .withIndex("by_team", (q) => q.eq("teamId", membership.teamId))
+      .collect();
+    const others = roster.filter((row) => row._id !== membership._id);
+    if (others.length === 0) {
+      soleMemberTeams.push(membership.teamId);
+    } else if (!others.some((row) => row.role === "admin")) {
+      throw new Error(LAST_ADMIN_MESSAGE);
+    }
+  }
+
+  for (const teamId of soleMemberTeams) {
+    await deleteTeam(ctx, teamId);
+  }
+  // deleteTeam already removed the sole-member rows; the rest go here.
+  await Promise.all(
+    mine
+      .filter((row) => !soleMemberTeams.includes(row.teamId))
+      .map((row) => ctx.db.delete(row._id))
+  );
+}
