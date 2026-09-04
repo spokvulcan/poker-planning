@@ -220,6 +220,26 @@ _Avoid_: takeover, hijack, override, admin mode
 The bundle a **Team** carries — default **Attribution**, **join policy** and retro **permission levels** — copied by value onto every retro created in it. Edited by a team admin on the team page; changing it never rewrites a retro already running, exactly as a room's stored `permissions` are authoritative over any default.
 _Avoid_: team settings (broader), template (that is a format), policy
 
+### Retro actions
+
+Decided on [map #253](https://github.com/spokvulcan/poker-planning/issues/253) and not yet built. See [ADR-0017](docs/adr/0017-an-action-item-has-one-home-and-carries-over-by-staying-open.md).
+
+**Action item**:
+A commitment a retro produces: a short text, at most one **owner**, an optional due date, and the **source topic** it answers. Always named, in both **Attribution** modes — anonymity stops at the card ([ADR-0012](docs/adr/0012-an-anonymous-retro-card-has-no-stored-author.md)). It lives in exactly one retro for its whole life, has three states (`open`, `done`, `dropped`, all reversible), and carries no priority, description, comments or count limit. Creating one is never refused by a **stage**; the board invites it only during `discuss` and `close`. Never bare "action" — that word is the **permission decision**'s subject.
+_Avoid_: action (see above), task, ticket, todo, commitment (the act, not the object)
+
+**Owner**:
+The one named person accountable for an **action item** — zero or one, never several and never "the team". Any room attendee may be one, anonymous accounts included; a missing user renders as "Former member" by reference. May always edit, complete, drop or reopen their own item; anyone the **action management** category allows may assign them, with no accept step. Unowned is a visible state the `close` and `review` stages surface, not a validation error.
+_Avoid_: assignee (fine in code, not in copy), ambassador, champion, DRI
+
+**Source topic**:
+The **topic** — a card or **cluster** — an **action item** was written against, kept as a link so the history shows what a commitment answered. Optional; a free-floating action item has none, and the link is cleared if its cluster is dissolved. In an anonymous retro the link shows the card's text, never an author.
+_Avoid_: origin, parent, linked card
+
+**Carryover**:
+The fact that an **action item** still `open` from an earlier retro appears in the next one's `review` **stage** and on the team page. A query over the **Team**'s open action items, never a copy and never a pointer between retros — an action item has one home, and "carried over" means "still open". A teamless retro has nothing to carry to or from.
+_Avoid_: import, roll over, transfer, parking lot
+
 ### Voting round
 
 **Voting round** (or **round**):
