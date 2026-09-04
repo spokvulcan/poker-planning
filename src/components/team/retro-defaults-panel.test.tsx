@@ -58,9 +58,12 @@ describe("RetroDefaultsPanel", () => {
     fireEvent.click(group("Who can join").getByRole("radio", { name: "Team members" }));
     expect(onChange).toHaveBeenLastCalledWith({ ...initial, joinPolicy: "teamMembers" });
 
+    // The second write carries the first: each write replaces the whole
+    // stored object, so it must build on what was just written.
     fireEvent.click(group("Card management").getByRole("radio", { name: "Owner only" }));
     expect(onChange).toHaveBeenLastCalledWith({
       ...initial,
+      joinPolicy: "teamMembers",
       permissions: { ...initial.permissions, cardManagement: "owner" },
     });
     expect(onChange).toHaveBeenCalledTimes(2);
@@ -102,5 +105,29 @@ describe("RetroDefaultsPanel — keyboard", () => {
     // Other keys are ignored.
     fireEvent.keyDown(named, { key: "Enter" });
     expect(onChange).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("RetroDefaultsPanel — quick successive changes", () => {
+  it("the second write builds on the first, not on the stale prop, until the query catches up", () => {
+    const onChange = vi.fn(() => Promise.resolve());
+    const { rerender } = render(<RetroDefaultsPanel value={initial} canEdit onChange={onChange} />);
+
+    fireEvent.click(group("Attribution").getByRole("radio", { name: "Anonymous" }));
+    fireEvent.click(group("Who can join").getByRole("radio", { name: "Team members" }));
+    expect(onChange).toHaveBeenNthCalledWith(1, { ...initial, attribution: "anonymous" });
+    expect(onChange).toHaveBeenNthCalledWith(2, {
+      ...initial,
+      attribution: "anonymous",
+      joinPolicy: "teamMembers",
+    });
+    // The UI shows both changes before the query has pushed anything back.
+    expect(checked(group("Attribution").getByRole("radio", { name: "Anonymous" }))).toBe(true);
+    expect(checked(group("Who can join").getByRole("radio", { name: "Team members" }))).toBe(true);
+
+    // The query pushes a new bundle: it wins over the draft.
+    const pushed: RetroDefaults = { ...initial, attribution: "anonymous" };
+    rerender(<RetroDefaultsPanel value={pushed} canEdit onChange={onChange} />);
+    expect(checked(group("Who can join").getByRole("radio", { name: "Anyone with the link" }))).toBe(true);
   });
 });

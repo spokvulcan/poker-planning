@@ -137,9 +137,11 @@ export function TeamContent() {
     }
   };
 
+  // Confirmations stay open on failure (the last-admin rule, most often),
+  // so the next attempt is one click away.
   const handleLeave = async () => {
-    setConfirmLeave(false);
     if (await run(() => leave({ teamId }), "Failed to leave the team")) {
+      setConfirmLeave(false);
       router.push("/dashboard/retros");
     }
   };
@@ -155,7 +157,6 @@ export function TeamContent() {
       router.push("/dashboard/retros");
     } else {
       setIsDeleting(false);
-      setConfirmDelete(false);
     }
   };
 
