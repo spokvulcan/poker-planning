@@ -1,8 +1,23 @@
 import { MutationCtx, QueryCtx } from "../_generated/server";
 import { Doc, Id } from "../_generated/dataModel";
 import { internal } from "../_generated/api";
-import { DEFAULT_RETRO_PERMISSIONS, accountTypeOf, type TeamRole } from "../permissions";
-import { LAST_ADMIN_MESSAGE, SIGN_IN_TO_CREATE } from "../teamCopy";
+import {
+  DEFAULT_RETRO_PERMISSIONS,
+  accountTypeOf,
+  type RetroDefaults,
+  type TeamRole,
+} from "../permissions";
+import {
+  INVITE_LINK_INVALID,
+  LAST_ADMIN_MESSAGE,
+  LEAVE_INSTEAD,
+  MAX_TEAM_NAME_LENGTH,
+  SIGN_IN_TO_CREATE,
+  TARGET_NOT_A_TEAM_MEMBER,
+  TEAM_NAME_EMPTY,
+  TEAM_NAME_TOO_LONG,
+  signInToJoin,
+} from "../teamCopy";
 
 /**
  * The Team (ADR-0008): the permanent visibility boundary that owns retro
@@ -11,10 +26,7 @@ import { LAST_ADMIN_MESSAGE, SIGN_IN_TO_CREATE } from "../teamCopy";
  * the guard in ./auth (`requireTeamRole`), which the API layer runs first.
  */
 
-export type { TeamRole };
-export type RetroDefaults = Doc<"teams">["retroDefaults"];
-
-const MAX_TEAM_NAME_LENGTH = 100;
+export type { RetroDefaults, TeamRole };
 
 /** The bundle a new Team starts with (spec §5). */
 export function initialRetroDefaults(): RetroDefaults {
@@ -28,10 +40,10 @@ export function initialRetroDefaults(): RetroDefaults {
 export function validateTeamName(name: string): string {
   const trimmed = name.trim();
   if (trimmed.length === 0) {
-    throw new Error("Team name cannot be empty");
+    throw new Error(TEAM_NAME_EMPTY);
   }
   if (trimmed.length > MAX_TEAM_NAME_LENGTH) {
-    throw new Error(`Team name cannot exceed ${MAX_TEAM_NAME_LENGTH} characters`);
+    throw new Error(TEAM_NAME_TOO_LONG);
   }
   return trimmed;
 }
@@ -116,9 +128,9 @@ export async function joinByInvite(
 ): Promise<Id<"teams">> {
   const team = await getTeamByInviteToken(ctx, args.inviteToken);
   if (!team) {
-    throw new Error("This invite link is no longer valid");
+    throw new Error(INVITE_LINK_INVALID);
   }
-  requirePermanentAccount(args.user, `Sign in to join ${team.name}`);
+  requirePermanentAccount(args.user, signInToJoin(team.name));
   const existing = await getTeamMembership(ctx, team._id, args.user._id);
   if (existing) {
     return team._id;
@@ -163,7 +175,7 @@ async function requireTargetMembership(
 ): Promise<Doc<"teamMemberships">> {
   const target = await getTeamMembership(ctx, teamId, targetUserId);
   if (!target) {
-    throw new Error("Not a member of this team");
+    throw new Error(TARGET_NOT_A_TEAM_MEMBER);
   }
   return target;
 }
@@ -222,7 +234,7 @@ export async function removeMember(
   args: { teamId: Id<"teams">; actorUserId: Id<"users">; targetUserId: Id<"users"> }
 ): Promise<void> {
   if (args.actorUserId === args.targetUserId) {
-    throw new Error("Leave the team instead");
+    throw new Error(LEAVE_INSTEAD);
   }
   const target = await requireTargetMembership(ctx, args.teamId, args.targetUserId);
   await ctx.db.delete(target._id);

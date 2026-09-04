@@ -76,12 +76,16 @@ describe("teams.create", () => {
     expect(await t.run((ctx) => ctx.db.query("teams").collect())).toEqual([]);
   });
 
-  it("a blank name is refused", async () => {
+  it("a blank name is refused, and so is one over 100 characters", async () => {
     const t = convexTest(schema, modules);
     await seedUser(t, "perm", "permanent");
     await expect(
       as(t, "perm").mutation(api.teams.create, { name: "   " })
     ).rejects.toThrow("Team name cannot be empty");
+    await expect(
+      as(t, "perm").mutation(api.teams.create, { name: "x".repeat(101) })
+    ).rejects.toThrow("Team name cannot exceed 100 characters");
+    await as(t, "perm").mutation(api.teams.create, { name: "x".repeat(100) });
   });
 });
 
@@ -234,9 +238,14 @@ describe("roles", () => {
     const t = convexTest(schema, modules);
     const { adminId, memberId, teamId } = await seedTeamWithMember(t);
 
+    // A genuine member is refused both, before any promotion happens.
     await expect(
       as(t, "member").mutation(api.teams.promote, { teamId, targetUserId: memberId })
     ).rejects.toThrow("Only a team admin can do that");
+    await expect(
+      as(t, "member").mutation(api.teams.demote, { teamId, targetUserId: adminId })
+    ).rejects.toThrow("Only a team admin can do that");
+    expect(await roleOf(t, teamId, adminId)).toBe("admin");
 
     await as(t, "admin").mutation(api.teams.promote, { teamId, targetUserId: memberId });
     expect(await roleOf(t, teamId, memberId)).toBe("admin");
