@@ -89,7 +89,7 @@ export function JoinTeamContent() {
   return (
     <div className="flex min-h-screen flex-col">
       <Navbar />
-      <main className="flex flex-1 items-center justify-center p-6">
+      <main className="flex flex-1 items-center justify-center px-6 pt-32 pb-16 sm:pt-40">
         <Card className="w-full max-w-md">
           <CardHeader>
             <CardTitle>{team ? `Join ${team.name}` : "Join team"}</CardTitle>

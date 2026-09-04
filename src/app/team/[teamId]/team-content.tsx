@@ -163,7 +163,7 @@ export function TeamContent() {
     <div className="flex min-h-screen flex-col">
       <Navbar />
       <main className="flex-1">
-        <div className="mx-auto w-full max-w-4xl space-y-6 px-4 py-8 sm:px-6">
+        <div className="mx-auto w-full max-w-4xl space-y-6 px-4 pt-32 pb-16 sm:px-6 sm:pt-40">
           {/* Header */}
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0 flex-1">
