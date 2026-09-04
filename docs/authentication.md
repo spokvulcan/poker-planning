@@ -41,7 +41,7 @@ The authentication system consists of three layers:
 | `convex/schema.ts` | Database schema with `users` and `roomMemberships` tables |
 | `convex/users.ts` | User/membership API (join, leave, edit, queries, linkAccount) |
 | `convex/model/users.ts` | User/membership business logic & account linking logic |
-| `convex/model/auth.ts` | Auth guard helpers (`requireAuth`, `requireAuthUser`, `requireRoomMember`, `getOptionalAuthUser`) |
+| `convex/model/auth.ts` | Auth guard helpers (`requireAuth`, `requireAuthUser`, `requireRoomMember`, `requireRoomReader`, `getOptionalAuthUser`) |
 | `convex/email.ts` | Internal actions to send Magic Link emails via Resend |
 
 ### Frontend (Next.js)
@@ -98,7 +98,8 @@ All Convex mutations must enforce authorization using helpers from `convex/model
 |--------|---------|-------------|
 | `requireAuth(ctx)` | `{ subject }` (auth identity) | You only need to confirm the user is logged in |
 | `requireAuthUser(ctx)` | `{ identity, user }` | You need the app-level `users` record |
-| `requireRoomMember(ctx, roomId)` | `{ identity, user, membership }` | The mutation is scoped to a room |
+| `requireRoomMember(ctx, roomId)` | `{ identity, user, membership }` | The mutation is scoped to a room (room *attendance*) |
+| `requireRoomReader(ctx, roomId)` | `{ identity, user, room }` | A read-only query on room-owned data (room *access*, ADR-0009). Passes a room member; never returns a membership |
 | `getOptionalAuthUser(ctx)` | `user \| null` | Queries that should degrade gracefully for unauthenticated users |
 
 ### Which guard to use
@@ -107,6 +108,7 @@ All Convex mutations must enforce authorization using helpers from `convex/model
 - **Room-scoped mutations without `userId`** (issues, room settings): Use `requireRoomMember`.
 - **Global mutations acting on own data** (editGlobalUser, deleteUser): Use `requireAuth` or `requireAuthUser`.
 - **Admin-style mutations** (users.remove — kick another user): Use `requireRoomMember` to verify the caller is at least in the room.
+- **Read-only queries on room-owned data** (canvas nodes, issue exports, retro contents): Use `requireRoomReader`. It answers "may you read this room?", not "are you in it?", and its return type carries no membership — a reader need not be an attendee (ADR-0009). Every new query on room contents picks `requireRoomReader` or `requireRoomMember` deliberately; one that takes neither is a bug.
 - **Queries**: Use `getOptionalAuthUser` for graceful degradation, or derive `currentUserId` from `ctx.auth.getUserIdentity()` server-side (see `rooms.get` for the pattern).
 
 ### Example: room-scoped mutation with userId

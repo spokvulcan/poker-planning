@@ -4,9 +4,12 @@ import type { Id } from "@/convex/_generated/dataModel";
 import {
   type MemberRole,
   type RoomPermissions,
+  type RetroPermissions,
   type ResolvedDecision,
-  type PermissionCategory,
+  type PokerPermissionCategory,
+  type RetroPermissionCategory,
   type DecisionContext,
+  type EffectivePermissions,
   DEFAULT_PERMISSIONS,
   RESOLVED_ALLOWED,
   getEffectivePermissions,
@@ -93,24 +96,50 @@ export function rosterControls(
   };
 }
 
-export interface UsePermissionsReturn {
+/**
+ * What both ceremonies share: the actor's role, the owner flags and the
+ * relationship decisions. Roles and relationship verbs are the same in a
+ * poker room and a retro (ADR-0013).
+ */
+export interface SharedPermissions {
   role: MemberRole;
   isOwner: boolean;
   isFacilitator: boolean;
   isOwnerAbsent: boolean;
-  /** Per-category resolved decisions. Consumers read `.allowed` / `.message`. */
-  revealCards: ResolvedDecision;
-  gameFlow: ResolvedDecision;
-  issueManagement: ResolvedDecision;
-  roomSettings: ResolvedDecision;
   /** Per-target relationship decisions — the target's role refines the verdict. */
   removeTarget: (targetRole: MemberRole) => ResolvedDecision;
   promoteTarget: (targetRole: MemberRole) => ResolvedDecision;
   demoteTarget: (targetRole: MemberRole) => ResolvedDecision;
   transfer: ResolvedDecision;
   changePermissions: ResolvedDecision;
+}
+
+/** The poker arm: the four poker category decisions and the poker shape. */
+export interface PokerPermissionsReturn extends SharedPermissions {
+  ceremony: "poker";
+  /** Per-category resolved decisions. Consumers read `.allowed` / `.message`. */
+  revealCards: ResolvedDecision;
+  gameFlow: ResolvedDecision;
+  issueManagement: ResolvedDecision;
+  roomSettings: ResolvedDecision;
   permissions: RoomPermissions;
 }
+
+/** The retro arm: the four retro category decisions and the retro shape. */
+export interface RetroPermissionsReturn extends SharedPermissions {
+  ceremony: "retro";
+  stageFlow: ResolvedDecision;
+  cardManagement: ResolvedDecision;
+  actionManagement: ResolvedDecision;
+  retroSettings: ResolvedDecision;
+  permissions: RetroPermissions;
+}
+
+/**
+ * The client permissions computation's result, discriminated on the room's
+ * ceremony. Poker consumers narrow via `usePokerPermissions`.
+ */
+export type UsePermissionsReturn = PokerPermissionsReturn | RetroPermissionsReturn;
 
 /**
  * Decision context for the optimistic-defaults branch (before room data loads):
@@ -125,7 +154,27 @@ const OPTIMISTIC_CTX: DecisionContext = {
   actorRole: "participant",
   permissions: DEFAULT_PERMISSIONS,
   ownerAbsent: false,
+  ownerInTeam: false,
 };
+
+/** The relationship decisions every arm carries, resolved against one context. */
+function relationshipDecisions(
+  ctx: DecisionContext
+): Pick<
+  SharedPermissions,
+  "removeTarget" | "promoteTarget" | "demoteTarget" | "transfer" | "changePermissions"
+> {
+  return {
+    removeTarget: (targetRole) =>
+      resolve({ kind: "relationship", verb: "remove", targetRole }, ctx),
+    promoteTarget: (targetRole) =>
+      resolve({ kind: "relationship", verb: "promote", targetRole }, ctx),
+    demoteTarget: (targetRole) =>
+      resolve({ kind: "relationship", verb: "demote", targetRole }, ctx),
+    transfer: resolve({ kind: "relationship", verb: "transfer" }, ctx),
+    changePermissions: resolve({ kind: "relationship", verb: "changePerms" }, ctx),
+  };
+}
 
 /**
  * Maps room data to permission resolved decisions through the shared `resolve`
@@ -139,7 +188,10 @@ export function computePermissions(
   if (!roomData || !currentUserId) {
     // Optimistic defaults before data loads: configurable actions open,
     // relationship actions closed (mirrors prior behaviour).
+    // The ceremony is unknown before data loads; poker is the default
+    // (undefined roomType), so the optimistic arm is poker.
     return {
+      ceremony: "poker",
       role: "participant" as MemberRole,
       isOwner: false,
       isFacilitator: false,
@@ -148,52 +200,76 @@ export function computePermissions(
       gameFlow: RESOLVED_ALLOWED,
       issueManagement: RESOLVED_ALLOWED,
       roomSettings: RESOLVED_ALLOWED,
-      removeTarget: (targetRole) =>
-        resolve({ kind: "relationship", verb: "remove", targetRole }, OPTIMISTIC_CTX),
-      promoteTarget: (targetRole) =>
-        resolve({ kind: "relationship", verb: "promote", targetRole }, OPTIMISTIC_CTX),
-      demoteTarget: (targetRole) =>
-        resolve({ kind: "relationship", verb: "demote", targetRole }, OPTIMISTIC_CTX),
-      transfer: resolve({ kind: "relationship", verb: "transfer" }, OPTIMISTIC_CTX),
-      changePermissions: resolve(
-        { kind: "relationship", verb: "changePerms" },
-        OPTIMISTIC_CTX
-      ),
+      ...relationshipDecisions(OPTIMISTIC_CTX),
       permissions: DEFAULT_PERMISSIONS,
     };
   }
 
   const currentUser = roomData.users.find((u) => u._id === currentUserId);
   const role: MemberRole = currentUser?.role ?? "participant";
-  const permissions = getEffectivePermissions(roomData.room);
+  const effective: EffectivePermissions = getEffectivePermissions(roomData.room);
   const ownerAbsent = roomData.isOwnerAbsent;
-  const ctx = { actorRole: role, permissions, ownerAbsent };
+  const ctx: DecisionContext = {
+    actorRole: role,
+    permissions: effective.permissions,
+    ownerAbsent,
+    ownerInTeam: false,
+  };
 
-  const category = (c: PermissionCategory): ResolvedDecision =>
-    resolve({ kind: "category", category: c, level: permissions[c] }, ctx);
-
-  return {
+  const shared: SharedPermissions = {
     role,
     isOwner: role === "owner",
     isFacilitator: role === "facilitator",
     isOwnerAbsent: ownerAbsent,
+    ...relationshipDecisions(ctx),
+  };
+
+  // Narrow on the ceremony before indexing a category, so each arm resolves
+  // only its own set (ADR-0013).
+  if (effective.ceremony === "retro") {
+    const { permissions } = effective;
+    const category = (c: RetroPermissionCategory): ResolvedDecision =>
+      resolve({ kind: "category", category: c, level: permissions[c] }, ctx);
+    return {
+      ceremony: "retro",
+      ...shared,
+      stageFlow: category("stageFlow"),
+      cardManagement: category("cardManagement"),
+      actionManagement: category("actionManagement"),
+      retroSettings: category("retroSettings"),
+      permissions,
+    };
+  }
+
+  const { permissions } = effective;
+  const category = (c: PokerPermissionCategory): ResolvedDecision =>
+    resolve({ kind: "category", category: c, level: permissions[c] }, ctx);
+  return {
+    ceremony: "poker",
+    ...shared,
     revealCards: category("revealCards"),
     gameFlow: category("gameFlow"),
     issueManagement: category("issueManagement"),
     roomSettings: category("roomSettings"),
-    removeTarget: (targetRole) =>
-      resolve({ kind: "relationship", verb: "remove", targetRole }, ctx),
-    promoteTarget: (targetRole) =>
-      resolve({ kind: "relationship", verb: "promote", targetRole }, ctx),
-    demoteTarget: (targetRole) =>
-      resolve({ kind: "relationship", verb: "demote", targetRole }, ctx),
-    transfer: resolve({ kind: "relationship", verb: "transfer" }, ctx),
-    changePermissions: resolve(
-      { kind: "relationship", verb: "changePerms" },
-      ctx
-    ),
     permissions,
   };
+}
+
+/**
+ * The poker consumers' narrowing of `computePermissions`: the poker arm, or a
+ * throw when the room is a retro. A poker surface (the canvas, the settings
+ * panel) is never rendered for a retro room, so the throw marks a routing bug
+ * rather than a state to handle.
+ */
+export function computePokerPermissions(
+  roomData: RoomWithRelatedData | null | undefined,
+  currentUserId: Id<"users"> | string | undefined
+): PokerPermissionsReturn {
+  const result = computePermissions(roomData, currentUserId);
+  if (result.ceremony !== "poker") {
+    throw new Error("Poker permissions requested for a non-poker room");
+  }
+  return result;
 }
 
 /**
@@ -207,6 +283,20 @@ export function usePermissions(
 ): UsePermissionsReturn {
   return useMemo(
     () => computePermissions(roomData, currentUserId),
+    [roomData, currentUserId]
+  );
+}
+
+/**
+ * `usePermissions` narrowed to the poker arm for the poker surfaces. Same
+ * memoization contract; see `computePokerPermissions` for the throw.
+ */
+export function usePokerPermissions(
+  roomData: RoomWithRelatedData | null | undefined,
+  currentUserId: Id<"users"> | string | undefined
+): PokerPermissionsReturn {
+  return useMemo(
+    () => computePokerPermissions(roomData, currentUserId),
     [roomData, currentUserId]
   );
 }

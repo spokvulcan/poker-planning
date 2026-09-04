@@ -39,7 +39,7 @@ import {
 } from "./nodes";
 import { DEMO_VIEWER_ID, type CustomNodeType, type PlayerNodeData } from "./types";
 import type { RoomWithRelatedData } from "@/convex/model/rooms";
-import { usePermissions } from "@/hooks/usePermissions";
+import { usePokerPermissions } from "@/hooks/usePermissions";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -76,7 +76,7 @@ function RoomCanvasInner({ roomData, currentUserId, isEmbedded = false }: RoomCa
   const { fitView } = useReactFlow();
 
   // Permission flags for the current user
-  const permissions = usePermissions(roomData, currentUserId);
+  const permissions = usePokerPermissions(roomData, currentUserId);
 
   const roomId = roomData.room._id as Id<"rooms">;
 

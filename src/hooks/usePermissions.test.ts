@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { computePermissions } from "./usePermissions";
+import { computePokerPermissions as computePermissions } from "./usePermissions";
 import type { RoomWithRelatedData } from "@/convex/model/rooms";
 import {
   denialMessage,

@@ -4,8 +4,9 @@ import {
   PermissionCategory,
   Action,
   resolve,
-  requiresOwnerLevel,
+  readsOwnerAbsence,
   getEffectivePermissions,
+  categoryLevel,
   getEffectiveRole,
 } from "../permissions";
 import { isRoomOwnerAbsent } from "./permissions";
@@ -94,6 +95,43 @@ export async function requireRoomMember(
 }
 
 /**
+ * Room access (ADR-0009): may the authenticated user *read* this room's
+ * contents? Passes a room member; #287 extends it to members of the room's
+ * Team. Returns the identity, user and room — never a membership row, because
+ * a reader need not be an attendee. Every read-only query on room-owned data
+ * takes this guard; every mutation keeps `requireRoomMember` (attendance).
+ */
+export async function requireRoomReader(
+  ctx: QueryCtx | MutationCtx,
+  roomId: Id<"rooms">
+): Promise<{
+  identity: AuthIdentity;
+  user: Doc<"users">;
+  room: Doc<"rooms">;
+}> {
+  const { identity, user } = await requireAuthUser(ctx);
+  const [room, membership] = await Promise.all([
+    ctx.db.get(roomId),
+    ctx.db
+      .query("roomMemberships")
+      .withIndex("by_room_user", (q) =>
+        q.eq("roomId", roomId).eq("userId", user._id)
+      )
+      .first(),
+  ]);
+  if (!room) {
+    throw new Error("Room not found");
+  }
+  if (!membership) {
+    // #287: a member of room.teamId also passes here. The copy speaks of
+    // access, not attendance — this guard never asks whether you are *in*
+    // the room (ADR-0009).
+    throw new Error("You don't have access to this room");
+  }
+  return { identity, user, room };
+}
+
+/**
  * Requires authentication and room membership, and verifies the authenticated
  * user IS `userId` — handlers that accept a userId argument must not let one
  * member act as another. Returns the verified identity, user, and membership.
@@ -127,7 +165,15 @@ export type RequireCanSpec =
   | { kind: "category"; category: PermissionCategory }
   | {
       kind: "relationship";
-      verb: "remove" | "promote" | "demote" | "transfer" | "changePerms";
+      verb:
+        | "remove"
+        | "promote"
+        | "demote"
+        | "transfer"
+        | "changePerms"
+        | "ratchet"
+        | "delete"
+        | "claim";
     };
 
 /**
@@ -215,18 +261,20 @@ async function guardRoomAction(
     throw new Error("Room not found");
   }
 
-  const permissions = getEffectivePermissions(room);
+  const effective = getEffectivePermissions(room);
   const actorRole = getEffectiveRole(membership);
 
   let action: Action;
   let target: Doc<"roomMemberships"> | undefined;
 
   if (spec.kind === "category") {
-    action = {
-      kind: "category",
-      category: spec.category,
-      level: permissions[spec.category],
-    };
+    // Narrow on the ceremony before indexing: a category from the other
+    // ceremony has no level here and is refused outright (ADR-0013).
+    const level = categoryLevel(effective, spec.category);
+    if (level === undefined) {
+      throw new Error("This action does not apply to this room type.");
+    }
+    action = { kind: "category", category: spec.category, level };
   } else {
     // Relationship verb. Fetch the target membership whenever a target is
     // supplied; fill targetRole only for the target-constrained verbs.
@@ -261,13 +309,23 @@ async function guardRoomAction(
     }
   }
 
-  // Owner absence only refines an owner-level denial (see evaluate); for any
-  // other action it can't change the result, so skip the DB read.
-  const ownerAbsent = requiresOwnerLevel(action)
+  // Owner absence refines an owner-level denial and decides `claim` (see
+  // evaluate); for any other action it can't change the result, so skip the
+  // DB read.
+  const ownerAbsent = readsOwnerAbsence(action)
     ? await isRoomOwnerAbsent(ctx, room)
     : false;
 
-  const decision = resolve(action, { actorRole, permissions, ownerAbsent });
+  // Team inputs (ADR-0013): populated only for rooms with a `teamId`, which
+  // #287 introduces. Until then no actor holds a team role, so `claim` is
+  // insufficient-role for everyone, and `ownerInTeam` is vacuously false.
+  const decision = resolve(action, {
+    actorRole,
+    permissions: effective.permissions,
+    ownerAbsent,
+    actorTeamRole: undefined,
+    ownerInTeam: false,
+  });
   if (!decision.allowed) {
     throw new Error(decision.message);
   }

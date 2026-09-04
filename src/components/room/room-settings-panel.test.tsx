@@ -19,7 +19,7 @@ import {
   act,
 } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { computePermissions } from "@/hooks/usePermissions";
+import { computePokerPermissions as computePermissions } from "@/hooks/usePermissions";
 import type { RoomWithRelatedData } from "@/convex/model/rooms";
 import type { UserWithPresence } from "@/hooks/useRoomPresence";
 import type { Id } from "@/convex/_generated/dataModel";

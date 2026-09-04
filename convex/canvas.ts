@@ -1,14 +1,14 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import * as Canvas from "./model/canvas";
-import { requireRoomMember, requireActingUser } from "./model/auth";
+import { requireRoomReader, requireActingUser } from "./model/auth";
 
 // Get all canvas nodes for a room
-// Requires room membership: note contents are private to the room.
+// Requires room access (ADR-0009): note contents are private to the room.
 export const getCanvasNodes = query({
   args: { roomId: v.id("rooms") },
   handler: async (ctx, args) => {
-    await requireRoomMember(ctx, args.roomId);
+    await requireRoomReader(ctx, args.roomId);
     return await Canvas.getCanvasNodes(ctx, args.roomId);
   },
 });

@@ -105,7 +105,7 @@ describe("acting-user guard (requireActingUser)", () => {
     const asOutsider = t.withIdentity({ subject: "auth-outsider" });
     await expect(
       asOutsider.query(api.canvas.getCanvasNodes, { roomId })
-    ).rejects.toThrow("Not a member of this room");
+    ).rejects.toThrow("You don't have access to this room");
   });
 
   it("actor mismatch throws on updateNodePosition", async () => {
