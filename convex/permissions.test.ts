@@ -23,6 +23,7 @@ function ctx(over: Partial<DecisionContext> = {}): DecisionContext {
     actorRole: "participant",
     permissions: allEveryone,
     ownerAbsent: false,
+    ownerInTeam: false,
     ...over,
   };
 }

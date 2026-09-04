@@ -10,13 +10,48 @@ export const providerValidator = v.union(
   v.literal("github")
 );
 
+/**
+ * A permission level, shared by every configurable category (ADR-0013).
+ */
+export const permissionLevelValidator = v.union(
+  v.literal("everyone"),
+  v.literal("facilitators"),
+  v.literal("owner")
+);
+
+/** The poker room's four configurable categories. */
+export const pokerPermissionsValidator = v.object({
+  revealCards: permissionLevelValidator,
+  gameFlow: permissionLevelValidator,
+  issueManagement: permissionLevelValidator,
+  roomSettings: permissionLevelValidator,
+});
+
+/** The retro room's four configurable categories (ADR-0013). */
+export const retroPermissionsValidator = v.object({
+  stageFlow: permissionLevelValidator,
+  cardManagement: permissionLevelValidator,
+  actionManagement: permissionLevelValidator,
+  retroSettings: permissionLevelValidator,
+});
+
+/** Who may join a room (ADR-0013, spec §4.4). */
+export const joinPolicyValidator = v.union(
+  v.literal("anyone"),
+  v.literal("permanentAccounts"),
+  v.literal("teamMembers")
+);
+
 export default defineSchema({
   rooms: defineTable({
     name: v.string(),
     autoCompleteVoting: v.boolean(),
     autoRevealCountdownStartedAt: v.optional(v.number()), // Timestamp when countdown began
     autoRevealScheduledId: v.optional(v.id("_scheduled_functions")), // Scheduled function ID for auto-reveal
-    roomType: v.optional(v.literal("canvas")), // Optional for backward compatibility
+    // Room type: undefined and "canvas" are poker rooms (legacy rows carry
+    // undefined); "retro" is a retrospective (ADR-0013). Keys the permission
+    // category set in getEffectivePermissions.
+    roomType: v.optional(v.union(v.literal("canvas"), v.literal("retro"))),
     isGameOver: v.boolean(),
     votingScale: v.optional(
       v.object({
@@ -42,30 +77,16 @@ export default defineSchema({
     retained: v.boolean(),
     // Room permissions & ownership
     ownerId: v.optional(v.id("users")),
+    // Stored permissions carry either the poker shape or the retro shape;
+    // getEffectivePermissions picks by roomType and falls back to that type's
+    // defaults. Undefined on legacy rows (ADR-0013).
     permissions: v.optional(
-      v.object({
-        revealCards: v.union(
-          v.literal("everyone"),
-          v.literal("facilitators"),
-          v.literal("owner")
-        ),
-        gameFlow: v.union(
-          v.literal("everyone"),
-          v.literal("facilitators"),
-          v.literal("owner")
-        ),
-        issueManagement: v.union(
-          v.literal("everyone"),
-          v.literal("facilitators"),
-          v.literal("owner")
-        ),
-        roomSettings: v.union(
-          v.literal("everyone"),
-          v.literal("facilitators"),
-          v.literal("owner")
-        ),
-      })
+      v.union(pokerPermissionsValidator, retroPermissionsValidator)
     ),
+    // Admission policy (ADR-0013, spec §4.4). Undefined on poker rooms;
+    // "teamMembers" is only meaningful once the room has a Team. Read by
+    // evaluateJoin; written by nothing yet.
+    joinPolicy: v.optional(joinPolicyValidator),
   })
     .index("by_retention_activity", ["retained", "lastActivityAt"]) // The sweep: non-retained rooms by staleness
     .index("by_created", ["createdAt"]) // For querying recent rooms

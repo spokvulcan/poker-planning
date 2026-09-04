@@ -2,7 +2,7 @@ import { v } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import * as Issues from "./model/issues";
 import * as VotingRound from "./model/votingRound";
-import { requireRoomMember, requireCan } from "./model/auth";
+import { requireRoomReader, requireCan } from "./model/auth";
 
 /**
  * List all issues for a room, ordered by their order field
@@ -26,24 +26,24 @@ export const getCurrent = query({
 
 /**
  * Get issues formatted for export.
- * Requires room membership: the export includes discussion-note contents.
+ * Requires room access (ADR-0009): the export includes discussion-note contents.
  */
 export const getForExport = query({
   args: { roomId: v.id("rooms") },
   handler: async (ctx, args) => {
-    await requireRoomMember(ctx, args.roomId);
+    await requireRoomReader(ctx, args.roomId);
     return await Issues.getIssuesForExport(ctx, args.roomId);
   },
 });
 
 /**
  * Get issues with enhanced data for export (time-to-consensus, individual votes, voting rounds).
- * Requires room membership since it exposes per-user voting data.
+ * Requires room access (ADR-0009) since it exposes per-user voting data.
  */
 export const getForEnhancedExport = query({
   args: { roomId: v.id("rooms") },
   handler: async (ctx, args) => {
-    await requireRoomMember(ctx, args.roomId);
+    await requireRoomReader(ctx, args.roomId);
     return await Issues.getEnhancedIssuesForExport(ctx, args.roomId);
   },
 });

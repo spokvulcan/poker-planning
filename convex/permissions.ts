@@ -6,15 +6,45 @@ export type MemberRole = "owner" | "facilitator" | "participant";
 
 export type PermissionLevel = "everyone" | "facilitators" | "owner";
 
-export type PermissionCategory =
+/** The poker room's four owner-configurable categories. */
+export type PokerPermissionCategory =
   | "revealCards"
   | "gameFlow"
   | "issueManagement"
   | "roomSettings";
 
+/** The retro room's four owner-configurable categories (ADR-0013, spec §4.2). */
+export type RetroPermissionCategory =
+  | "stageFlow"
+  | "cardManagement"
+  | "actionManagement"
+  | "retroSettings";
+
+/**
+ * Every configurable category across both room types. A category is looked
+ * up only after narrowing on the room kind (see `categoryLevel`); the
+ * decision itself (`evaluate`) is generic over the name.
+ */
+export type PermissionCategory = PokerPermissionCategory | RetroPermissionCategory;
+
+/** The poker room's stored permission shape. */
 export type RoomPermissions = {
-  [K in PermissionCategory]: PermissionLevel;
+  [K in PokerPermissionCategory]: PermissionLevel;
 };
+
+/** The retro room's stored permission shape. */
+export type RetroPermissions = {
+  [K in RetroPermissionCategory]: PermissionLevel;
+};
+
+/**
+ * The effective permissions of a room, discriminated on its ceremony
+ * (CONTEXT.md: planning poker or retro, named by `roomType`) so a caller
+ * narrows before indexing a category. Returned by `getEffectivePermissions`.
+ */
+export type EffectivePermissions =
+  | { ceremony: "poker"; permissions: RoomPermissions }
+  | { ceremony: "retro"; permissions: RetroPermissions };
 
 // --- Defaults ---
 
@@ -25,13 +55,30 @@ export const DEFAULT_PERMISSIONS: RoomPermissions = {
   roomSettings: "everyone",
 };
 
+/**
+ * Retro has no back-compat to honour, so its defaults are chosen (ADR-0013):
+ * advance moves everyone's shared pointer; rewriting another's card
+ * default-open is wrong in a candour ceremony; gating action creation makes
+ * the facilitator a bottleneck on the one thing that buys follow-through.
+ */
+export const DEFAULT_RETRO_PERMISSIONS: RetroPermissions = {
+  stageFlow: "facilitators",
+  cardManagement: "facilitators",
+  actionManagement: "everyone",
+  retroSettings: "facilitators",
+};
+
 // --- Permission decision (pure) ---
 
 /**
  * Why a Decision was denied. The reason classifies the denial; user-facing
  * copy is derived from it via denialMessage, never embedded here.
  */
-export type DenialReason = "insufficient-role" | "owner-absent" | "target-rank";
+export type DenialReason =
+  | "insufficient-role"
+  | "owner-absent"
+  | "target-rank"
+  | "owner-present";
 
 /**
  * The verdict returned by evaluate. Pure value — no IO, no identity.
@@ -53,16 +100,29 @@ export type Action =
       verb: "remove" | "promote" | "demote";
       targetRole: MemberRole;
     }
-  | { kind: "relationship"; verb: "transfer" | "changePerms" };
+  | {
+      kind: "relationship";
+      verb: "transfer" | "changePerms" | "ratchet" | "delete" | "claim";
+    };
+
+/**
+ * A member's role in the Team that owns the room, when it has one. Populated
+ * by the guard only for rooms with a `teamId`; never a room power except for
+ * `claim` (ADR-0013).
+ */
+export type TeamRole = "admin" | "member";
 
 /**
  * The inputs the permission decision depends on: the actor's role, the room's
- * permissions, and whether the owner is absent. No DB, no identity.
+ * permissions, whether the owner is absent, and — for `claim` — the actor's
+ * team role and whether the owner is still in the Team. No DB, no identity.
  */
 export type DecisionContext = {
   actorRole: MemberRole;
-  permissions: RoomPermissions;
+  permissions: RoomPermissions | RetroPermissions;
   ownerAbsent: boolean;
+  actorTeamRole?: TeamRole;
+  ownerInTeam: boolean;
 };
 
 /**
@@ -101,9 +161,22 @@ export function evaluate(action: Action, ctx: DecisionContext): Decision {
   // target-rank check. Role always precedes target.
   switch (action.verb) {
     case "transfer":
-    case "changePerms": {
+    case "changePerms":
+    case "ratchet":
+    case "delete": {
       // Owner-only, no target constraint.
       return decideRole(ctx, ctx.actorRole === "owner", requiresOwnerLevel(action));
+    }
+    case "claim": {
+      // A team admin's one room power (ADR-0013): take ownership of a room
+      // whose owner is absent or no longer in the Team. Room role never
+      // substitutes for team role, and a present in-team owner must transfer.
+      if (ctx.actorTeamRole !== "admin") {
+        return { allowed: false, reason: "insufficient-role" };
+      }
+      return ctx.ownerAbsent || !ctx.ownerInTeam
+        ? { allowed: true }
+        : { allowed: false, reason: "owner-present" };
     }
     case "demote": {
       // Owner-only; target must be a facilitator.
@@ -147,9 +220,9 @@ export function evaluate(action: Action, ctx: DecisionContext): Decision {
   }
 }
 
-/** Exhaustiveness guard — unreachable for a well-typed Action. */
-function assertNever(action: never): never {
-  throw new Error(`Unhandled action: ${JSON.stringify(action)}`);
+/** Exhaustiveness guard — unreachable for a well-typed input. */
+function assertNever(value: never): never {
+  throw new Error(`Unhandled value: ${JSON.stringify(value)}`);
 }
 
 /**
@@ -162,8 +235,20 @@ export function requiresOwnerLevel(action: Action): boolean {
   return (
     action.verb === "transfer" ||
     action.verb === "changePerms" ||
-    action.verb === "demote"
+    action.verb === "demote" ||
+    action.verb === "ratchet" ||
+    action.verb === "delete"
   );
+}
+
+/**
+ * Whether the decision reads `ownerAbsent` at all: every owner-level action
+ * (it refines the denial reason) and `claim` (it decides the outcome). The
+ * guard skips the owner-absence DB read for everything else.
+ */
+export function readsOwnerAbsence(action: Action): boolean {
+  if (requiresOwnerLevel(action)) return true;
+  return action.kind === "relationship" && action.verb === "claim";
 }
 
 /**
@@ -174,6 +259,10 @@ export function requiresOwnerLevel(action: Action): boolean {
 export function denialMessage(action: Action, reason: DenialReason): string {
   if (reason === "owner-absent") {
     return "Room owner has left. Owner-level actions are disabled until the owner returns.";
+  }
+
+  if (reason === "owner-present") {
+    return "The owner is still here — ask them to transfer ownership.";
   }
 
   if (reason === "target-rank") {
@@ -188,6 +277,9 @@ export function denialMessage(action: Action, reason: DenialReason): string {
   }
 
   // insufficient-role
+  if (action.kind === "relationship" && action.verb === "claim") {
+    return "Only a team admin can claim this room.";
+  }
   return requiresOwnerLevel(action)
     ? "Only the owner can do this."
     : "Only facilitators and the owner can do this.";
@@ -248,11 +340,92 @@ function decideRole(
 // --- Helpers ---
 
 /**
- * Returns the effective permissions for a room, falling back to defaults
- * for legacy rooms without permissions set.
+ * Returns the effective permissions for a room, keyed by its ceremony: the
+ * poker set for roomType "canvas" or undefined, the retro set for "retro".
+ * Falls back to that ceremony's defaults when nothing is stored — or when the
+ * stored shape belongs to the other ceremony, which no writer produces but the
+ * union schema cannot rule out.
  */
-export function getEffectivePermissions(room: Doc<"rooms">): RoomPermissions {
-  return room.permissions ?? DEFAULT_PERMISSIONS;
+export function getEffectivePermissions(
+  room: Pick<Doc<"rooms">, "roomType" | "permissions">
+): EffectivePermissions {
+  const stored = room.permissions;
+  if (room.roomType === "retro") {
+    return {
+      ceremony: "retro",
+      permissions:
+        stored && "stageFlow" in stored ? stored : DEFAULT_RETRO_PERMISSIONS,
+    };
+  }
+  return {
+    ceremony: "poker",
+    permissions:
+      stored && "revealCards" in stored ? stored : DEFAULT_PERMISSIONS,
+  };
+}
+
+/**
+ * The level a category resolves to in a room's effective permissions, or
+ * undefined when the category belongs to the other ceremony (a poker
+ * mutation invoked on a retro room, or vice versa). The permissions object
+ * *is* the ceremony's category set, so an absent key is the narrowing.
+ */
+export function categoryLevel(
+  effective: EffectivePermissions,
+  category: PermissionCategory
+): PermissionLevel | undefined {
+  const levels: Partial<Record<PermissionCategory, PermissionLevel>> =
+    effective.permissions;
+  return levels[category];
+}
+
+// --- Join decision (pure) ---
+
+/** Who may join a room (ADR-0013, spec §4.4). */
+export type JoinPolicy = "anyone" | "permanentAccounts" | "teamMembers";
+
+export type AccountType = "anonymous" | "permanent";
+
+export type JoinDenialReason = "permanent-account-required" | "team-members-only";
+
+export type JoinDecision =
+  | { allowed: true }
+  | { allowed: false; reason: JoinDenialReason };
+
+/**
+ * The join decision: may this account become a member under this policy. A
+ * pure function beside `evaluate`, not a branch of it — a joiner has no
+ * membership and no role. A team member satisfies every policy: access is
+ * the stronger claim, and someone who may read the archive may sit in the
+ * room. Shared by the `joinRoom` adapter and the join page's disabled state.
+ */
+export function evaluateJoin(
+  policy: JoinPolicy,
+  accountType: AccountType,
+  isTeamMember: boolean
+): JoinDecision {
+  if (isTeamMember) return { allowed: true };
+  switch (policy) {
+    case "anyone":
+      return { allowed: true };
+    case "permanentAccounts":
+      return accountType === "permanent"
+        ? { allowed: true }
+        : { allowed: false, reason: "permanent-account-required" };
+    case "teamMembers":
+      return { allowed: false, reason: "team-members-only" };
+    default:
+      return assertNever(policy);
+  }
+}
+
+/**
+ * The server's one derivation of the join decision's `accountType`: permanent
+ * only when the user row says so, anonymous otherwise (an undefined row value
+ * is anonymous). The auth session's anonymous flag is never the input.
+ */
+export function accountTypeOf(user: Pick<Doc<"users">, "accountType">): AccountType {
+  return user.accountType === "permanent" ? "permanent" : "anonymous";
 }
 
 /**

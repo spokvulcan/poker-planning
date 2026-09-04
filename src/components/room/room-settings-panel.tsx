@@ -54,7 +54,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  usePermissions,
+  usePokerPermissions,
   permissionProps,
   permissionInputProps,
   rosterControls,
@@ -64,8 +64,7 @@ import { useRoomSettingsActions } from "./hooks/useRoomSettingsActions";
 import type { Id } from "@/convex/_generated/dataModel";
 import { cn } from "@/lib/utils";
 import type { RoomWithRelatedData } from "@/convex/model/rooms";
-import type { PermissionLevel, PermissionCategory, RoomPermissions } from "@/convex/permissions";
-import { getEffectivePermissions } from "@/convex/permissions";
+import type { PermissionLevel, PokerPermissionCategory, RoomPermissions } from "@/convex/permissions";
 import { UserAvatar } from "@/components/user-menu/user-avatar";
 import { formatLastSeen } from "./user-presence-avatars";
 
@@ -79,7 +78,7 @@ interface RoomSettingsPanelProps {
   onClose: () => void;
 }
 
-const PERMISSION_CONFIG: Record<PermissionCategory, { label: string; description: string; tooltip: string }> = {
+const PERMISSION_CONFIG: Record<PokerPermissionCategory, { label: string; description: string; tooltip: string }> = {
   revealCards: {
     label: "Reveal cards",
     description: "Reveal votes, cancel auto-reveal",
@@ -133,7 +132,7 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
   // (hide/disable/read-only controls), never write guards.
   const settingsActions = useRoomSettingsActions({ roomId: roomData.room._id });
 
-  const perms = usePermissions(roomData, currentUserId);
+  const perms = usePokerPermissions(roomData, currentUserId);
 
   // Sync room name with prop when it changes externally
   useEffect(() => {
@@ -235,10 +234,9 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
     }
   };
 
-  const handlePermissionChange = async (category: PermissionCategory, value: PermissionLevel) => {
-    const currentPermissions = getEffectivePermissions(roomData.room);
+  const handlePermissionChange = async (category: PokerPermissionCategory, value: PermissionLevel) => {
     const newPermissions: RoomPermissions = {
-      ...currentPermissions,
+      ...perms.permissions,
       [category]: value,
     };
     try {
@@ -249,7 +247,7 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
     }
   };
 
-  const currentPermissions = getEffectivePermissions(roomData.room);
+  const currentPermissions = perms.permissions;
 
   return (
     <>
@@ -452,7 +450,7 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
                         </span>
                       </div>
                       <div className="space-y-2">
-                        {(Object.keys(PERMISSION_CONFIG) as PermissionCategory[]).map((category) => {
+                        {(Object.keys(PERMISSION_CONFIG) as PokerPermissionCategory[]).map((category) => {
                           const config = PERMISSION_CONFIG[category];
                           return (
                             <div
