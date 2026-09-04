@@ -146,9 +146,8 @@ export function TeamContent() {
     }
   };
 
-  const handleRetroDefaults = async (next: RetroDefaults) => {
-    await run(() => updateRetroDefaults({ teamId, retroDefaults: next }), "Failed to update retro defaults");
-  };
+  const handleRetroDefaults = (next: RetroDefaults) =>
+    run(() => updateRetroDefaults({ teamId, retroDefaults: next }), "Failed to update retro defaults");
 
   const handleDelete = async () => {
     setIsDeleting(true);
