@@ -140,6 +140,14 @@ _Avoid_: group (too near the `group` **stage**), theme, affinity group, hull (th
 The transient shape drawn around cards that happen to sit close together. An affordance for *forming* a **cluster**, never a representation of one — it has no identity, dissolves when a member moves, and is shown only during the `group` **stage**. Naming a hull is what promotes it into a cluster; after that, proximity ignores those cards.
 _Avoid_: cluster (a hull has no identity), auto-group, smart group
 
+**Hand** (canvas):
+The one piece of state the retro board holds locally: where the viewer's card is while they are dragging it. Everything else the board shows is derived from what the server has said or what the viewer has just asked it to say (an optimistic write). On drop the hand is released and the write takes over, so a card never jumps between "where I put it" and "where the server thinks it is" (see [ADR-0022](docs/adr/0022-the-canvass-only-local-state-is-the-hand.md)).
+_Avoid_: drag buffer, local state, draft position
+
+**Refusal**:
+A write the server rejected by rule — forbidden, over budget, missing, or wrong stage — as opposed to one that merely failed to arrive. A refusal rolls the board back at once and says why; a failure is retried and never shown unless it keeps failing. A card snaps back only on a refusal.
+_Avoid_: error (too broad), conflict (that is the server's own retry case)
+
 ### Retro data
 
 Decided on [map #253](https://github.com/spokvulcan/poker-planning/issues/253) and not yet built. See [ADR-0016](docs/adr/0016-a-retro-is-one-room-with-its-ceremony-state-beside-it.md).
