@@ -113,8 +113,16 @@ The period a retro's stage is `collect` — open from the moment the retro is cr
 _Avoid_: draft, pre-meeting, brainstorm phase
 
 **Discussion walk**:
-The ordered cursor over topics inside the `discuss` stage, plus the record of which have been visited — coverage is the point, so a walk that has not reached everything says so. Its order is snapshotted when the stage is entered (by votes descending if a `vote` stage ran, creation order otherwise), so votes cast later are still accepted but never reshuffle a walk in progress — the same write-time-snapshot shape as [ADR-0007](docs/adr/0007-analytics-read-from-a-write-time-snapshot.md). Topic-ordered, never person-ordered.
+The ordered cursor over topics inside the `discuss` stage, plus the record of which have been visited — coverage is the point, so a walk that has not reached everything says so. Its order is snapshotted when the stage is entered: the topics that received votes, by votes descending, when a `vote` stage ran, and every topic in creation order otherwise. Votes cast later are still accepted but never reshuffle it, and the only thing that edits the order afterwards is a person who **raises** a topic (see [ADR-0023](docs/adr/0023-the-walk-covers-what-was-voted-for-and-a-person-raises-the-rest.md)). Coverage counts the walk, never the whole board. Topic-ordered, never person-ordered.
 _Avoid_: agenda, round-robin, turn order
+
+**Late card**:
+A card written after the **discussion walk**'s order was set, whose topic the walk will therefore not reach. Accepted with no friction, as every card is, and marked on the board until someone **raises** it or it joins a cluster already in the walk. Counted beside coverage, never inside it.
+_Avoid_: latecomer (that is a person), overflow, parked
+
+**Raise**:
+Putting a topic that is outside the **discussion walk** into it, next after the current one — the one edit a person makes to a snapshotted order. A stage-flow act, offered on any topic the walk does not hold, late or simply unvoted. It never interrupts the topic under discussion and never reorders anything else.
+_Avoid_: bump, escalate, add to agenda, promote
 
 **Readiness**:
 A person's live "I am done with this stage" signal, held in the presence payload and shown named against each member rather than summed into an aggregate. Ephemeral and advisory: it never gates or triggers an **advance**, and it clears whenever the shared pointer moves. Deliberately absent during `collect` — there the only signal is whether a person has written a card, so no durable record of who declared themselves finished is ever created.
