@@ -7,9 +7,11 @@ import { useDateRange } from "./date-range-context";
 
 interface DashboardHeaderProps {
   title: string;
+  /** The analytics pages filter by date; retro surfaces show no time (spec §23). */
+  showDateRange?: boolean;
 }
 
-export function DashboardHeader({ title }: DashboardHeaderProps) {
+export function DashboardHeader({ title, showDateRange = true }: DashboardHeaderProps) {
   const { dateRange, setDateRange } = useDateRange();
 
   return (
@@ -17,7 +19,7 @@ export function DashboardHeader({ title }: DashboardHeaderProps) {
       <SidebarTrigger className="-ml-1" />
       <Separator orientation="vertical" className="mr-2 h-4 hidden" />
       <h1 className="flex-1 text-sm font-medium">{title}</h1>
-      <DateRangePicker value={dateRange} onChange={setDateRange} />
+      {showDateRange && <DateRangePicker value={dateRange} onChange={setDateRange} />}
     </header>
   );
 }
