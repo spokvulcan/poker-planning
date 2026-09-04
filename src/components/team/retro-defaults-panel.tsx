@@ -1,8 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { PermissionLevel, RetroPermissionCategory } from "@/convex/permissions";
-import type { RetroDefaults } from "@/convex/model/teams";
+import type { PermissionLevel, RetroDefaults, RetroPermissionCategory } from "@/convex/permissions";
 import { cn } from "@/lib/utils";
 
 export type { RetroDefaults };
@@ -11,8 +10,12 @@ interface RetroDefaultsPanelProps {
   value: RetroDefaults;
   /** Admins edit; members read. */
   canEdit: boolean;
-  /** Receives the whole bundle, by value, on every change. */
-  onChange: (next: RetroDefaults) => Promise<void> | void;
+  /**
+   * Receives the whole bundle, by value, on every change. Resolving `false`
+   * or throwing means the write did not land: the panel drops its draft and
+   * shows the stored bundle again.
+   */
+  onChange: (next: RetroDefaults) => Promise<boolean | void> | boolean | void;
 }
 
 type Option<V extends string> = { value: V; label: string };
@@ -153,14 +156,26 @@ function Row({
 export function RetroDefaultsPanel({ value: stored, canEdit, onChange }: RetroDefaultsPanelProps) {
   // Each write replaces the whole stored object, so two quick changes must
   // build on each other rather than both on the prop the query last pushed.
-  // The draft is keyed to the stored bundle it was written over: once the
-  // query pushes a new one (carrying the writes), the draft is dropped.
+  // The draft is keyed by identity to the stored bundle it was written over:
+  // Convex's useQuery hands back the same object until the result changes,
+  // so a new reference means the query pushed a new bundle (carrying the
+  // writes) and the draft is dropped.
   const [draft, setDraft] = useState<{ base: RetroDefaults; value: RetroDefaults } | null>(null);
   const value = draft && draft.base === stored ? draft.value : stored;
 
-  const write = (next: RetroDefaults) => {
+  const write = async (next: RetroDefaults) => {
     setDraft({ base: stored, value: next });
-    void onChange(next);
+    let landed: boolean;
+    try {
+      landed = (await onChange(next)) !== false;
+    } catch {
+      landed = false;
+    }
+    if (!landed) {
+      // Roll back to what the server holds — but only if no later write has
+      // replaced this draft in the meantime.
+      setDraft((current) => (current?.value === next ? null : current));
+    }
   };
 
   return (
@@ -171,7 +186,7 @@ export function RetroDefaultsPanel({ value: stored, canEdit, onChange }: RetroDe
           options={ATTRIBUTION_OPTIONS}
           value={value.attribution}
           disabled={!canEdit}
-          onSelect={(attribution) => write({ ...value, attribution })}
+          onSelect={(attribution) => void write({ ...value, attribution })}
         />
       </Row>
       <Row label="Who can join" description="Who may become an attendee of a new retro. Team members always can.">
@@ -180,7 +195,7 @@ export function RetroDefaultsPanel({ value: stored, canEdit, onChange }: RetroDe
           options={JOIN_POLICY_OPTIONS}
           value={value.joinPolicy}
           disabled={!canEdit}
-          onSelect={(joinPolicy) => write({ ...value, joinPolicy })}
+          onSelect={(joinPolicy) => void write({ ...value, joinPolicy })}
         />
       </Row>
       {PERMISSION_ROWS.map((row) => (
@@ -191,7 +206,7 @@ export function RetroDefaultsPanel({ value: stored, canEdit, onChange }: RetroDe
             value={value.permissions[row.category]}
             disabled={!canEdit}
             onSelect={(level) =>
-              write({ ...value, permissions: { ...value.permissions, [row.category]: level } })
+              void write({ ...value, permissions: { ...value.permissions, [row.category]: level } })
             }
           />
         </Row>

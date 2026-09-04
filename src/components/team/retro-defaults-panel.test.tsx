@@ -5,7 +5,7 @@
  * member sees the current values with no live controls.
  */
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, screen, fireEvent, cleanup, within } from "@testing-library/react";
+import { render, screen, fireEvent, cleanup, within, waitFor } from "@testing-library/react";
 import { DEFAULT_RETRO_PERMISSIONS } from "@/convex/permissions";
 import { RetroDefaultsPanel, type RetroDefaults } from "./retro-defaults-panel";
 
@@ -129,5 +129,34 @@ describe("RetroDefaultsPanel — quick successive changes", () => {
     const pushed: RetroDefaults = { ...initial, attribution: "anonymous" };
     rerender(<RetroDefaultsPanel value={pushed} canEdit onChange={onChange} />);
     expect(checked(group("Who can join").getByRole("radio", { name: "Anyone with the link" }))).toBe(true);
+  });
+});
+
+describe("RetroDefaultsPanel — a write that does not land", () => {
+  it("rolls the control back to the stored bundle when onChange resolves false", async () => {
+    const onChange = vi.fn(() => Promise.resolve(false));
+    render(<RetroDefaultsPanel value={initial} canEdit onChange={onChange} />);
+
+    fireEvent.click(group("Attribution").getByRole("radio", { name: "Anonymous" }));
+    expect(checked(group("Attribution").getByRole("radio", { name: "Anonymous" }))).toBe(true);
+
+    await waitFor(() =>
+      expect(checked(group("Attribution").getByRole("radio", { name: "Named" }))).toBe(true)
+    );
+  });
+
+  it("rolls back on a thrown error too, and keeps a later successful draft", async () => {
+    let call = 0;
+    const onChange = vi.fn(() => (++call === 1 ? Promise.reject(new Error("no")) : Promise.resolve()));
+    render(<RetroDefaultsPanel value={initial} canEdit onChange={onChange} />);
+
+    fireEvent.click(group("Attribution").getByRole("radio", { name: "Anonymous" }));
+    fireEvent.click(group("Who can join").getByRole("radio", { name: "Team members" }));
+
+    // The first write failed and is rolled back; the second, which built on
+    // it, is the draft that stays.
+    await waitFor(() => expect(onChange).toHaveBeenCalledTimes(2));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(checked(group("Who can join").getByRole("radio", { name: "Team members" }))).toBe(true);
   });
 });
