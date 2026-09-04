@@ -67,7 +67,6 @@ export function TeamContent() {
   const { isAuthenticated, isLoading: authLoading } = useAuth();
 
   const team = useQuery(api.teams.get, isAuthenticated ? { teamId } : "skip");
-  const me = useQuery(api.users.getGlobalUser, isAuthenticated ? {} : "skip");
 
   const rename = useMutation(api.teams.rename);
   const rotateInvite = useMutation(api.teams.rotateInvite);
@@ -206,7 +205,7 @@ export function TeamContent() {
             </CardHeader>
             <CardContent className="space-y-1">
               {team.members.map((member) => {
-                const isMe = member.userId === me?._id;
+                const isMe = member.userId === team.myUserId;
                 return (
                   <div
                     key={member.userId}

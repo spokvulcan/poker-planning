@@ -83,3 +83,24 @@ describe("RetroDefaultsPanel", () => {
     expect(onChange).not.toHaveBeenCalled();
   });
 });
+
+describe("RetroDefaultsPanel — keyboard", () => {
+  it("arrow keys move the selection and wrap, writing the bundle each time", () => {
+    const { onChange } = renderPanel();
+    const named = group("Attribution").getByRole("radio", { name: "Named" });
+    expect(named.tabIndex).toBe(0);
+    expect(group("Attribution").getByRole("radio", { name: "Anonymous" }).tabIndex).toBe(-1);
+
+    fireEvent.keyDown(named, { key: "ArrowRight" });
+    expect(onChange).toHaveBeenLastCalledWith({ ...initial, attribution: "anonymous" });
+
+    // Wraps from the first option back to the last.
+    fireEvent.keyDown(named, { key: "ArrowLeft" });
+    expect(onChange).toHaveBeenLastCalledWith({ ...initial, attribution: "anonymous" });
+    expect(onChange).toHaveBeenCalledTimes(2);
+
+    // Other keys are ignored.
+    fireEvent.keyDown(named, { key: "Enter" });
+    expect(onChange).toHaveBeenCalledTimes(2);
+  });
+});
