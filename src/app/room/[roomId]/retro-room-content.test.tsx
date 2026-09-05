@@ -11,16 +11,31 @@ import { render, screen, cleanup, fireEvent } from "@testing-library/react";
 const mocks = vi.hoisted(() => ({
   queries: {} as Record<string, unknown>,
   join: vi.fn(),
+  mutations: [] as { fn: string; args: unknown }[],
+  presenceCalls: [] as unknown[][],
   auth: { authUserId: "auth-1", isLoading: false, isAuthenticated: true, accountType: "anonymous" as string },
 }));
 
 vi.mock("@/convex/_generated/api", () => ({
-  api: { retro: { board: "retro.board" }, teams: { listMine: "teams.listMine" } },
+  api: {
+    retro: { board: "retro.board", advance: "retro.advance", setCardsVisible: "retro.setCardsVisible", setTimebox: "retro.setTimebox" },
+    teams: { listMine: "teams.listMine" },
+    presence: { setReadiness: "presence.setReadiness" },
+  },
 }));
 vi.mock("convex/react", () => ({
   useQuery: (ref: string, args: unknown) => (args === "skip" ? undefined : mocks.queries[ref]),
-  useMutation: () => mocks.join,
+  useMutation: (ref: string) => async (args: unknown) => {
+    mocks.mutations.push({ fn: ref, args });
+  },
 }));
+vi.mock("@convex-dev/presence/react", () => ({
+  default: (...args: unknown[]) => {
+    mocks.presenceCalls.push(args);
+    return [{ userId: "user1", online: true, lastDisconnected: 0 }];
+  },
+}));
+vi.mock("@/lib/toast", () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 vi.mock("@/components/auth/auth-provider", () => ({ useAuth: () => mocks.auth }));
 vi.mock("@/components/retro/retro-join-form", () => ({
   RetroJoinForm: ({ roomName, teamName, isTeamMember }: { roomName: string; teamName?: string; isTeamMember: boolean }) => (
@@ -30,11 +45,13 @@ vi.mock("@/components/retro/retro-join-form", () => ({
   ),
 }));
 vi.mock("@/components/retro/retro-board", () => ({
-  RetroBoard: ({ retro, team, menu, banner }: { retro: { currentStageId: string }; team?: { name: string }; menu?: React.ReactNode; banner?: React.ReactNode }) => (
-    <div data-testid="board" data-team={team?.name}>
+  RetroBoard: ({ retro, team, menu, banner, viewer }: { retro: { currentStageId: string }; team?: { name: string }; menu?: React.ReactNode; banner?: React.ReactNode; viewer?: { userId: string; onSetReady: (ready: boolean) => void; controls: { onAdvance: (id: string) => void; stageFlow: { allowed: boolean } } } }) => (
+    <div data-testid="board" data-team={team?.name} data-viewer={viewer?.userId} data-stage-flow={String(viewer?.controls.stageFlow.allowed)}>
       {retro.currentStageId}
       {menu}
       {banner}
+      {viewer && <button onClick={() => viewer.onSetReady(true)}>ready</button>}
+      {viewer && <button onClick={() => viewer.controls.onAdvance("s2")}>advance</button>}
     </div>
   ),
 }));
@@ -62,8 +79,13 @@ const teamed = {
 
 beforeEach(() => {
   mocks.join.mockReset();
+  mocks.mutations = [];
+  mocks.presenceCalls = [];
   mocks.auth.accountType = "anonymous";
-  mocks.queries = { "retro.board": { currentStageId: "collect" }, "teams.listMine": [] };
+  mocks.queries = {
+    "retro.board": { currentStageId: "s1", stages: [{ id: "s1", kind: "collect" }, { id: "s2", kind: "group" }] },
+    "teams.listMine": [],
+  };
 });
 afterEach(cleanup);
 
@@ -86,10 +108,26 @@ describe("RetroRoomContent", () => {
 
   it("mounts the board with the menu and the viewer's role once a membership exists", () => {
     render(<RetroRoomContent roomId={roomId} roomData={teamless} membership={{ _id: "user1" as never }} />);
-    expect(screen.getByTestId("board").textContent).toContain("collect");
+    expect(screen.getByTestId("board").textContent).toContain("s1");
     expect(screen.getByTestId("menu").textContent).toBe("owner");
     expect(screen.queryByTestId("join-form")).toBeNull();
     expect(screen.queryByTestId("team-reader-banner")).toBeNull();
+  });
+
+  it("an attendee heartbeats as themselves, writes readiness keyed to the shared entry, and holds the stageFlow decision", async () => {
+    render(<RetroRoomContent roomId={roomId} roomData={teamless} membership={{ _id: "user1" as never }} />);
+    expect(mocks.presenceCalls[0]?.slice(1)).toEqual([roomId, "user1"]);
+    const board = screen.getByTestId("board");
+    expect(board.getAttribute("data-viewer")).toBe("user1");
+    expect(board.getAttribute("data-stage-flow")).toBe("true");
+
+    fireEvent.click(screen.getByRole("button", { name: "ready" }));
+    fireEvent.click(screen.getByRole("button", { name: "advance" }));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(mocks.mutations).toEqual([
+      { fn: "presence.setReadiness", args: { roomId, userId: "user1", stageId: "s1", ready: true } },
+      { fn: "retro.advance", args: { roomId, toStageId: "s2" } },
+    ]);
   });
 
   it("a Team member who never joined reads the board with no menu, and joins only on their own click", async () => {
@@ -101,6 +139,9 @@ describe("RetroRoomContent", () => {
     expect(screen.queryByTestId("menu")).toBeNull();
     expect(screen.queryByTestId("join-form")).toBeNull();
     expect(screen.getByTestId("team-reader-banner").textContent).toContain("member of Acme Squad");
+    // No attendance, no heartbeat: the presence hook never mounts.
+    expect(mocks.presenceCalls).toEqual([]);
+    expect(board.getAttribute("data-viewer")).toBeNull();
     await new Promise((r) => setTimeout(r, 0));
     expect(mocks.join).not.toHaveBeenCalled();
 

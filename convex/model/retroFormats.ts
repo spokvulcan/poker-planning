@@ -68,6 +68,14 @@ export function newStageEntryId(): string {
 
 export const DEFAULT_VOTE_BUDGET = 5;
 
+/** The entry the shared pointer names; the first entry if the pointer dangles. */
+export function currentStageOf(retro: {
+  stages: readonly StageEntry[];
+  currentStageId: string;
+}): StageEntry {
+  return retro.stages.find((stage) => stage.id === retro.currentStageId) ?? retro.stages[0];
+}
+
 function prompts(
   entries: ReadonlyArray<readonly [id: string, label: string, hint: string, color: RetroTint]>
 ): FormatPrompt[] {

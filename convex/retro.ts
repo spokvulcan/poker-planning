@@ -1,6 +1,7 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import * as Retro from "./model/retro";
+import { visibilityValidator } from "./schema";
 import { refusal } from "./model/refusal";
 import { ROOM_NOT_FOUND } from "./retroCopy";
 import {
@@ -41,6 +42,35 @@ export const board = query({
   handler: async (ctx, args) => {
     await requireRoomReader(ctx, args.roomId);
     return await Retro.getBoard(ctx, args.roomId);
+  },
+});
+
+// --- Stages (ADR-0010, spec §7) ---
+
+/** Move the shared pointer to any entry, forward or back (`stageFlow`). */
+export const advance = mutation({
+  args: { roomId: v.id("rooms"), toStageId: v.string() },
+  handler: async (ctx, args) => {
+    await requireCan(ctx, args.roomId, { kind: "category", category: "stageFlow" });
+    await Retro.advance(ctx, args);
+  },
+});
+
+/** The in-place reveal toggle on the current entry (`stageFlow`, ADR-0015). */
+export const setCardsVisible = mutation({
+  args: { roomId: v.id("rooms"), stageId: v.string(), value: visibilityValidator },
+  handler: async (ctx, args) => {
+    await requireCan(ctx, args.roomId, { kind: "category", category: "stageFlow" });
+    await Retro.setCardsVisible(ctx, args);
+  },
+});
+
+/** The current entry's advisory timebox, in whole minutes; omit to clear (`stageFlow`). */
+export const setTimebox = mutation({
+  args: { roomId: v.id("rooms"), stageId: v.string(), minutes: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    await requireCan(ctx, args.roomId, { kind: "category", category: "stageFlow" });
+    await Retro.setTimebox(ctx, args);
   },
 });
 

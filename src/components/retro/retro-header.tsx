@@ -15,6 +15,9 @@ export interface RetroTeam {
 interface RetroHeaderProps {
   name: string;
   stageKind: StageKind;
+  /** The current entry's advisory timebox and when it was entered (spec §7). */
+  timeboxMinutes?: number;
+  enteredAt?: number;
   /** Advisory cards-due date (ADR-0020); shown, never enforced. */
   collectUntil?: number;
   /** The Team that keeps the retro; undefined for a teamless one. */
@@ -29,11 +32,19 @@ interface RetroHeaderProps {
  * carries the team line, which doubles as the link to the team page
  * (ADR-0008); a teamless retro carries the teamless line.
  */
-export function RetroHeader({ name, stageKind, collectUntil, team, menu }: RetroHeaderProps) {
+export function RetroHeader({
+  name,
+  stageKind,
+  timeboxMinutes,
+  enteredAt,
+  collectUntil,
+  team,
+  menu,
+}: RetroHeaderProps) {
   return (
     <header className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b bg-white px-4 py-2 dark:bg-surface-1">
       <h1 className="truncate text-base font-semibold">{name}</h1>
-      <StagePill kind={stageKind} />
+      <StagePill kind={stageKind} timeboxMinutes={timeboxMinutes} enteredAt={enteredAt} />
       {collectUntil !== undefined && (
         <span data-testid="collect-until" className="text-sm text-muted-foreground">
           {collectUntilLine(format(collectUntil, "d MMM"))}

@@ -541,6 +541,25 @@ describe("room activity — the Team's side of a retro bumps (spec §14)", () =>
     await expectBumped(t, roomId, stale);
   });
 
+  it("advance, setCardsVisible and setTimebox bump (spec §7)", async () => {
+    const t = convexTest(schema, modules);
+    const { roomId } = await seedTeamRetro(t, false);
+    const retro = (await t.run((ctx) =>
+      ctx.db.query("retros").withIndex("by_room", (q) => q.eq("roomId", roomId)).unique()
+    ))!;
+    const acts = [
+      () => as(t, "auth-member").mutation(api.retro.advance, { roomId, toStageId: retro.stages[1].id }),
+      () => as(t, "auth-member").mutation(api.retro.setCardsVisible, { roomId, stageId: retro.stages[1].id, value: "hidden" }),
+      () => as(t, "auth-member").mutation(api.retro.setTimebox, { roomId, stageId: retro.stages[1].id, minutes: 5 }),
+    ];
+    for (const act of acts) {
+      const stale = Date.now() - HOUR - 60_000;
+      await t.run((ctx) => ctx.db.patch(roomId, { lastActivityAt: stale }));
+      await act();
+      await expectBumped(t, roomId, stale);
+    }
+  });
+
   it("claim bumps", async () => {
     const t = convexTest(schema, modules);
     const { roomId, memberId, stale } = await seedTeamRetro(t, true);
