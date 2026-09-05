@@ -356,3 +356,24 @@ export const DISSOLVE_WITH_VOTES_TITLE = "Dissolve group";
 export const DISSOLVE_CONFIRM_BUTTON = "Dissolve";
 export const CANCEL_BUTTON = "Cancel";
 export const DOT_ACT_FAILED = "That vote did not go through. Try again.";
+
+// --- The discussion walk (spec §12, §19; ADR-0023) ---
+
+/** Refusal `stage`: the shared pointer is not a `discuss` entry with a walk. */
+export const NO_WALK = "The walk opens in Discuss";
+/** Refusal `missing`: a cursor index outside the order, or a tick on a topic it does not hold. */
+export const WALK_TOPIC_NOT_FOUND = "That topic is not in the walk";
+export const WALK_TITLE = "Discussion";
+/** The coverage readout (spec §19). */
+export const coverageReadout = (covered: number, total: number, late: number) =>
+  `${covered} of ${total} covered · ${late} new`;
+export const writtenSince = (n: number) => `${n} written since the order was set`;
+export const topicsWithoutVotes = (n: number) => `${n} ${n === 1 ? "topic" : "topics"} without votes`;
+export const WALK_EMPTY = "Nothing to walk yet";
+export const GO_TO_TOPIC = "Go";
+export const RAISE_TOPIC = "Raise";
+export const COVERED_LABEL = "Covered";
+export const CURRENT_TOPIC = "Now";
+/** The late marker on a card (spec §12.3), at every zoom level. */
+export const LATE_CARD_MARKER = "New";
+export const WALK_ACT_FAILED = "That did not go through. Try again.";

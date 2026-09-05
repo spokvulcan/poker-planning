@@ -24,6 +24,11 @@ export function refusalOf(error: unknown): Refusal | null {
   return { code: data.code as RefusalCode, message: data.message ?? "" };
 }
 
+/** The copy a failed write shows: the refusal's reason, or the caller's fallback. */
+export function failureCopy(error: unknown, fallback: string): string {
+  return refusalOf(error)?.message || fallback;
+}
+
 /** How many times a transient failure is retried before the value is dropped. */
 export const RETRY_ATTEMPTS = 3;
 

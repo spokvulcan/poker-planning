@@ -1,5 +1,5 @@
 import type { Id } from "@/convex/_generated/dataModel";
-import type { FullCard, ProjectedCard } from "@/convex/model/retro";
+import type { BoardCardRead, FullCard, ProjectedCard } from "@/convex/model/retro";
 
 /**
  * A card as the board renders it, after the `retro.board` and `retro.mine`
@@ -17,6 +17,8 @@ export interface BoardCard {
   authorId?: Id<"users">;
   /** The viewer wrote it: full text in `mine`, or the author in a visible entry. */
   own: boolean;
+  /** Written after the walk's snapshot and outside its order (spec §12.3). */
+  late: boolean;
 }
 
 function isFull(card: ProjectedCard): card is FullCard {
@@ -28,7 +30,7 @@ function isFull(card: ProjectedCard): card is FullCard {
  * `mine` where the board carries a silhouette. `mine` may still be loading.
  */
 export function mergeCards(
-  boardCards: readonly ProjectedCard[],
+  boardCards: readonly BoardCardRead[],
   mine: readonly FullCard[] | undefined,
   viewerId: Id<"users"> | undefined
 ): BoardCard[] {
@@ -40,6 +42,7 @@ export function mergeCards(
       promptId: card.promptId,
       position: card.position,
       ...(card.clusterId !== undefined ? { clusterId: card.clusterId } : {}),
+      late: card.late === true,
     };
     const full = isFull(card) ? card : own.get(card.clientId);
     if (!full) {

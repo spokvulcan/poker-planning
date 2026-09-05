@@ -21,6 +21,7 @@ const base: BoardCard = {
   text: "keep the demo",
   authorId: "u1" as Id<"users">,
   own: true,
+  late: false,
 };
 
 function renderCard(data: CardNode["data"], selected = false) {
@@ -98,6 +99,29 @@ describe("CardNodeView", () => {
     expect(root.getAttribute("data-hidden")).toBe("true");
     expect(root.getAttribute("aria-label")).toBe("Hidden card");
     expect(root.textContent).toBe("");
+  });
+
+  it("a late card carries data-late and the New marker at every level, and offers Raise when wired (spec §12.3)", () => {
+    const onRaise = vi.fn();
+    const raise = { decision: { allowed: true as const }, onRaise };
+    for (const level of ["detail", "headline", "shape"] as const) {
+      renderCard({ card: { ...base, late: true }, color: "green", editable: false, level, raise });
+      const root = document.querySelector("[data-card-id='a']")!;
+      expect(root.getAttribute("data-late")).toBe("true");
+      expect(screen.getByTestId("late-marker")).toBeTruthy();
+      cleanup();
+    }
+    renderCard({ card: { ...base, late: true }, color: "green", editable: false, raise });
+    fireEvent.click(screen.getByRole("button", { name: "Raise" }));
+    expect(onRaise).toHaveBeenCalledWith("a");
+    cleanup();
+    const denied = { allowed: false as const, message: "Only facilitators and the owner" };
+    renderCard({ card: { ...base, late: true }, color: "green", editable: false, raise: { decision: denied, onRaise } });
+    expect((screen.getByRole("button", { name: denied.message }) as HTMLButtonElement).disabled).toBe(true);
+    cleanup();
+    renderCard({ card: base, color: "green", editable: false });
+    expect(screen.queryByTestId("late-marker")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Raise" })).toBeNull();
   });
 
   it("dots (spec §11): the tally hidden shows own dots only; the count at headline; none without a tally", () => {

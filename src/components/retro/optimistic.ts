@@ -1,7 +1,7 @@
 import type { OptimisticLocalStore } from "convex/browser";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import type { BoardRead, FullCard, ProjectedCard } from "@/convex/model/retro";
+import type { BoardCardRead, BoardRead, FullCard, ProjectedCard } from "@/convex/model/retro";
 import type { TallyRead, TopicRef } from "@/convex/model/retroVotes";
 import { currentStageOf } from "@/convex/model/retroFormats";
 import { nextGroupName } from "@/convex/retroCopy";
@@ -83,9 +83,11 @@ export function applyCreate(
   patchBoard(store, (board) => {
     if (board.cards.some((card) => card.clientId === args.clientId)) return board;
     const hidden = currentStageOf(board.retro).cardsVisible === "hidden";
-    const card: ProjectedCard = hidden
+    const projected: ProjectedCard = hidden
       ? { _id: full._id, clientId: full.clientId, position: full.position, promptId: full.promptId }
       : full;
+    // Written after a snapshot and outside its order: late until raised (spec §12.3).
+    const card: BoardCardRead = board.walk ? { ...projected, late: true } : projected;
     const writers =
       viewer.anonymous || board.writers.includes(viewer.userId)
         ? board.writers

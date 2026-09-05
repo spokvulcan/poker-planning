@@ -177,3 +177,29 @@ describe("ClusterNodeView", () => {
     expect(detail.style.transform).toBe("translate(-50%, -50%) scale(1)");
   });
 });
+
+describe("ClusterNodeView and the walk (spec §12.3)", () => {
+  it("a covered in-walk cluster carries a tick; one outside the walk offers Raise under stageFlow", () => {
+    const onRaise = vi.fn();
+    renderChip({ chip, others, walk: { inWalk: true, covered: true } });
+    let root = document.querySelector("[data-cluster-chip='k1']")!;
+    expect(root.getAttribute("data-covered")).toBe("true");
+    expect(screen.getByTestId("covered-tick")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Raise" })).toBeNull();
+    cleanup();
+
+    renderChip({ chip, others, walk: { inWalk: true, covered: false } });
+    root = document.querySelector("[data-cluster-chip='k1']")!;
+    expect(root.getAttribute("data-covered")).toBe("false");
+    expect(screen.queryByTestId("covered-tick")).toBeNull();
+    cleanup();
+
+    renderChip({ chip, others, walk: { inWalk: false, covered: false, raise: { decision: allowed, onRaise } } });
+    fireEvent.click(screen.getByRole("button", { name: "Raise" }));
+    expect(onRaise).toHaveBeenCalledWith(k1);
+    cleanup();
+
+    renderChip({ chip, others, walk: { inWalk: false, covered: false, raise: { decision: denied, onRaise } } });
+    expect((screen.getByRole("button", { name: denied.message }) as HTMLButtonElement).disabled).toBe(true);
+  });
+});

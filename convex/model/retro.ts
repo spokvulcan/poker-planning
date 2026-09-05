@@ -56,6 +56,7 @@ import {
 } from "../retroCopy";
 import { refusal } from "./refusal";
 import { hashEditKeys } from "./editKeys";
+import { isLate, orderIds, projectWalk, snapshotOrder, votedEntryBefore, type WalkRead } from "./walk";
 
 /**
  * The retro (ADR-0016): one room with its ceremony state in a `retros` row
@@ -346,10 +347,18 @@ export function projectCard(
 /** How many cards and clusters one board read carries; a retro never approaches it. */
 export const MAX_BOARD_ROWS = 2000;
 
+/**
+ * A board card: the projection plus the late marker (spec §12.3), carried
+ * only when set so a silhouette stays the same bytes for every viewer.
+ */
+export type BoardCardRead = ProjectedCard & { late?: true };
+
 export interface BoardRead {
   retro: Doc<"retros">;
   clusters: Doc<"retroClusters">[];
-  cards: ProjectedCard[];
+  cards: BoardCardRead[];
+  /** The walk as the board shows it (spec §12.3), once one has been snapshotted. */
+  walk?: WalkRead;
   /**
    * Who has written at least one card, in a named retro (the roster's
    * "has written", ADR-0012); empty under `anonymous`, where the count is
@@ -383,10 +392,16 @@ export async function board(ctx: QueryCtx, roomId: Id<"rooms">): Promise<BoardRe
       if (row.authorId !== undefined) writers.add(row.authorId);
     }
   }
+  const walk = retro.walk;
+  const inOrder = walk ? orderIds(walk) : undefined;
   return {
     retro,
     clusters,
-    cards: rows.map((row) => projectCard(policy, null, row)),
+    cards: rows.map((row) => ({
+      ...projectCard(policy, null, row),
+      ...(walk && inOrder && isLate(walk, inOrder, row) ? { late: true as const } : {}),
+    })),
+    ...(walk ? { walk: projectWalk(walk, rows, clusters) } : {}),
     writers: [...writers],
   };
 }
@@ -548,14 +563,64 @@ export async function advance(
   args: { room: Doc<"rooms">; toStageId: string }
 ): Promise<void> {
   const retro = await requireRetro(ctx, args.room._id);
-  if (!retro.stages.some((stage) => stage.id === args.toStageId)) {
+  const index = retro.stages.findIndex((stage) => stage.id === args.toStageId);
+  if (index === -1) {
     throw refusal("missing", STAGE_ENTRY_NOT_FOUND);
   }
+  const entry = retro.stages[index];
+  const needsWalk = entry.kind === "discuss" && retro.walk?.stageEntryId !== entry.id;
   await ctx.db.patch(retro._id, {
     currentStageId: args.toStageId,
     currentStageEnteredAt: Date.now(),
+    ...(needsWalk ? { walk: await snapshotWalk(ctx, retro, index) } : {}),
   });
   await updateRoomActivity(ctx, args.room);
+}
+
+/**
+ * The walk snapshot (spec §12.1, ADR-0023): keyed to the entry, so
+ * re-entry keeps it and a second `discuss` entry gets its own. The order's
+ * scope is the nearest earlier vote-carrying entry with any dots; with
+ * none, every topic in creation order. Here rather than beside the walk's
+ * acts because it is `advance`'s own write; the rule itself is
+ * `snapshotOrder`. Dots are bounded by the board's bound, which is also
+ * the dots' (`MAX_VOTE_ROWS`), named here without importing the dots
+ * module.
+ */
+async function snapshotWalk(
+  ctx: MutationCtx,
+  retro: Doc<"retros">,
+  discussIndex: number
+): Promise<NonNullable<Doc<"retros">["walk"]>> {
+  const roomId = retro.roomId;
+  const [cards, clusters] = await Promise.all([
+    ctx.db
+      .query("retroCards")
+      .withIndex("by_room", (q) => q.eq("roomId", roomId))
+      .take(MAX_BOARD_ROWS),
+    ctx.db
+      .query("retroClusters")
+      .withIndex("by_room", (q) => q.eq("roomId", roomId))
+      .take(MAX_BOARD_ROWS),
+  ]);
+  const votesOf = (stageEntryId: string) =>
+    ctx.db
+      .query("retroVotes")
+      .withIndex("by_room_entry", (q) => q.eq("roomId", roomId).eq("stageEntryId", stageEntryId))
+      .take(MAX_BOARD_ROWS);
+  const voted = await votedEntryBefore(
+    retro.stages,
+    discussIndex,
+    async (stageEntryId) => (await votesOf(stageEntryId)).length > 0
+  );
+  const votes = voted ? await votesOf(voted.id) : [];
+  return {
+    stageEntryId: retro.stages[discussIndex].id,
+    snapshotAt: Date.now(),
+    order: snapshotOrder(cards, clusters, votes),
+    cursor: 0,
+    covered: [],
+  };
 }
 
 /**
