@@ -1,4 +1,5 @@
 import { MutationCtx, QueryCtx } from "../_generated/server";
+import type { PaginationOptions } from "convex/server";
 import { Doc, Id } from "../_generated/dataModel";
 import { internal } from "../_generated/api";
 import {
@@ -494,4 +495,26 @@ export async function teamFacts(ctx: QueryCtx, teamId: Id<"teams">): Promise<Tea
       .take(MAX_COUNTED_ROOMS),
   ]);
   return { open, done, dropped, retros: rooms.length };
+}
+
+/**
+ * One page of the Team's rooms for the history export (spec §15.4), in
+ * creation order through `by_team`; the action pages until done and reads
+ * each room's board through its own guard.
+ */
+export async function exportRoomsPage(
+  ctx: QueryCtx,
+  team: Doc<"teams">,
+  paginationOpts: PaginationOptions
+): Promise<{ team: { name: string }; page: Id<"rooms">[]; isDone: boolean; continueCursor: string }> {
+  const result = await ctx.db
+    .query("rooms")
+    .withIndex("by_team", (q) => q.eq("teamId", team._id))
+    .paginate(paginationOpts);
+  return {
+    team: { name: team.name },
+    page: result.page.map((room) => room._id),
+    isDone: result.isDone,
+    continueCursor: result.continueCursor,
+  };
 }

@@ -10,6 +10,7 @@ import { render, screen, fireEvent, cleanup, waitFor, within } from "@testing-li
 import { cloneElement, type ReactElement, type ReactNode } from "react";
 
 const mocks = vi.hoisted(() => ({
+  exports: 0,
   calls: [] as { fn: string; args: unknown }[],
   fail: {} as Record<string, string>,
   counts: { cards: 47, openActions: 3 } as { cards: number; openActions: number } | undefined,
@@ -77,6 +78,11 @@ vi.mock("@/components/ui/dialog", () => {
   };
 });
 
+vi.mock("./use-export-markdown", () => ({
+  useExportMarkdown: () => async () => {
+    mocks.exports += 1;
+  },
+}));
 vi.mock("./retro-settings-dialog", () => ({
   RetroSettingsDialog: ({ open, name, hasTeam, decision }: { open: boolean; name: string; hasTeam: boolean; decision: { allowed: boolean } }) =>
     open ? <div data-testid="settings" data-team={String(hasTeam)} data-allowed={String(decision.allowed)}>{name}</div> : null,
@@ -90,6 +96,7 @@ const acme = { _id: "team-1" as never, name: "Acme Squad" };
 const calledWith = (fn: string) => mocks.calls.filter((c) => c.fn === fn).map((c) => c.args);
 
 beforeEach(() => {
+  mocks.exports = 0;
   mocks.calls = [];
   mocks.fail = {};
   mocks.toasts = [];
@@ -97,6 +104,17 @@ beforeEach(() => {
   mocks.push.mockReset();
 });
 afterEach(cleanup);
+
+describe("RetroMenu — export (spec §15.3)", () => {
+  it("every attendee, whatever their role, exports the retro as Markdown from the menu", async () => {
+    render(<RetroMenu roomId={roomId} role="participant" isOwnerAbsent={false} myTeams={[]} />);
+    const item = screen.getByRole("menuitem", { name: "Export as Markdown" }) as HTMLButtonElement;
+    expect(item.disabled).toBe(false);
+    fireEvent.click(item);
+    await waitFor(() => expect(mocks.exports).toBe(1));
+    expect(mocks.calls).toEqual([]);
+  });
+});
 
 describe("RetroMenu — delete", () => {
   it("the owner sees the counted confirmation, deletes, and leaves for the team page", async () => {

@@ -3,8 +3,8 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useMutation, useQuery } from "convex/react";
-import { Copy, Crown, RefreshCw, ShieldMinus, ShieldPlus, UserMinus, LogOut, Trash2, Plus } from "lucide-react";
+import { useAction, useMutation, useQuery } from "convex/react";
+import { Copy, Crown, Download, RefreshCw, ShieldMinus, ShieldPlus, UserMinus, LogOut, Trash2, Plus } from "lucide-react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useAuth } from "@/components/auth/auth-provider";
@@ -31,6 +31,9 @@ import { HistoryRows } from "@/components/retro/history-row";
 import { ActionList } from "@/components/retro/action-list";
 import { useActionActions } from "@/components/retro/use-action-actions";
 import {
+  EXPORT_HISTORY_BUTTON,
+  EXPORT_HISTORY_FAILED,
+  EXPORTING_HISTORY_BUTTON,
   OPEN_ACTIONS_EMPTY,
   OPEN_ACTIONS_TITLE,
   TEAM_RETROS_EMPTY,
@@ -40,6 +43,7 @@ import {
   teamCountLine,
 } from "@/convex/retroCopy";
 import { copyTextToClipboard } from "@/utils/copy-text-to-clipboard";
+import { downloadFile } from "@/utils/download-file";
 import { toast } from "@/lib/toast";
 import { runAct } from "@/lib/run-act";
 
@@ -59,8 +63,8 @@ function Centered({ title, body }: { title: string; body: string }) {
  * creation order, members with roles, the invite link, the retro-defaults
  * panel, New retro, and admin-only Delete team; the open action items
  * across its retros with done, drop, edit and reassign in place for
- * whoever attended (spec §13), under one count line (spec §17). Export
- * arrives with the second half of #299.
+ * whoever attended (spec §13), under one count line (spec §17); Export
+ * history as one JSON file for any member (spec §15.4).
  */
 export function TeamContent() {
   const params = useParams();
@@ -82,6 +86,7 @@ export function TeamContent() {
   const leave = useMutation(api.teams.leave);
   const updateRetroDefaults = useMutation(api.teams.updateRetroDefaults);
   const deleteTeam = useMutation(api.teams.remove);
+  const exportHistory = useAction(api.teams.exportHistory);
 
   // The rename draft, keyed to the stored name it was typed over: a query
   // update that changes the stored name discards the draft, and no effect
@@ -91,6 +96,7 @@ export function TeamContent() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmLeave, setConfirmLeave] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
 
   if (authLoading || !isAuthenticated || team === undefined) {
     return <Centered title="Loading…" body="Fetching the team" />;
@@ -155,6 +161,20 @@ export function TeamContent() {
   const handleRetroDefaults = (next: RetroDefaults) =>
     runAct(updateRetroDefaults({ teamId, retroDefaults: next }), "Failed to update retro defaults");
 
+  // The export is an action that pages the Team's rooms (spec §15.4); the
+  // button waits for the file rather than offering a second press.
+  const handleExport = async () => {
+    setIsExporting(true);
+    try {
+      const file = await exportHistory({ teamId });
+      downloadFile(file.content, file.filename, "application/json");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : EXPORT_HISTORY_FAILED);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   const handleDelete = async () => {
     setIsDeleting(true);
     if (await runAct(deleteTeam({ teamId }), "Failed to delete team")) {
@@ -197,8 +217,12 @@ export function TeamContent() {
 
           {/* Retros (spec §5, §17): the Team's history in creation order */}
           <Card>
-            <CardHeader>
+            <CardHeader className="flex flex-row items-center justify-between gap-3">
               <CardTitle>{TEAM_RETROS_TITLE}</CardTitle>
+              <Button variant="outline" size="sm" onClick={handleExport} disabled={isExporting}>
+                <Download className="size-4" />
+                {isExporting ? EXPORTING_HISTORY_BUTTON : EXPORT_HISTORY_BUTTON}
+              </Button>
             </CardHeader>
             <CardContent>
               {retros === undefined ? (

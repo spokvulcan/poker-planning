@@ -26,13 +26,13 @@ export function topicOf(card: Pick<Doc<"retroCards">, "_id" | "clusterId">): Top
 /** A topic's bare id, as `covered` stores it. */
 export const topicId = (ref: TopicRef): string => ref.id;
 
-interface Topic {
+export interface Topic {
   ref: TopicRef;
   createdAt: number;
 }
 
 /** Every live topic on the board: clusters with members, loose cards. */
-function liveTopics(cards: readonly CardRow[], clusters: readonly ClusterRow[]): Topic[] {
+export function liveTopics(cards: readonly CardRow[], clusters: readonly ClusterRow[]): Topic[] {
   const populated = new Set<Id<"retroClusters">>();
   const topics: Topic[] = [];
   for (const card of cards) {

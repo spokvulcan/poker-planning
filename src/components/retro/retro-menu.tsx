@@ -30,6 +30,7 @@ import {
   DELETE_MENU_ITEM,
   DELETE_TITLE,
   DELETING_BUTTON,
+  EXPORT_MARKDOWN_MENU_ITEM,
   RATCHET_BUTTON,
   RATCHET_DESCRIPTION,
   RATCHET_FAILED,
@@ -73,6 +74,7 @@ import { toast } from "@/lib/toast";
 import type { Attribution } from "@/convex/model/retro";
 import type { RetroTeam } from "./retro-header";
 import { RetroSettingsDialog } from "./retro-settings-dialog";
+import { useExportMarkdown } from "./use-export-markdown";
 
 /** One of the viewer's Teams, as `teams.listMine` returns it. */
 export interface MyTeam {
@@ -102,14 +104,16 @@ interface RetroMenuProps {
 }
 
 /**
- * The board header's menu (spec §4.3, §5, §15.2): the owner's *Delete
- * retro* behind the counted confirmation; the owner's *Make anonymous…*
+ * The board header's menu (spec §4.3, §5, §15.2, §15.3): *Export as
+ * Markdown* for anyone here (spec §15.3; a Team reader without attendance
+ * takes theirs from the banner); the owner's *Delete retro* behind the
+ * counted confirmation; the owner's *Make anonymous…*
  * behind the irreversibility confirmation, gone once pressed (ADR-0012);
  * *Claim ownership* for a team admin who is not the owner (the server
  * decides `owner-present`); *Keep with a team…* for the owner of a
  * teamless retro who has a Team to give it to; *Retro settings…* opens the
  * settings dialog (spec §6.4), where a denied viewer reads the denial
- * rather than finding the door gone. Every item is a mutation on
+ * rather than finding the door gone. Every other item is a mutation on
  * room-owned state, so the menu renders only for an attendee.
  */
 export function RetroMenu({ roomId, team, role, isOwnerAbsent, myTeams, attribution, settings }: RetroMenuProps) {
@@ -118,6 +122,7 @@ export function RetroMenu({ roomId, team, role, isOwnerAbsent, myTeams, attribut
   const ratchet = useMutation(api.retro.ratchet);
   const claim = useMutation(api.retro.claim);
   const adopt = useMutation(api.retro.adoptIntoTeam);
+  const exportMarkdown = useExportMarkdown(roomId);
 
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -206,6 +211,7 @@ export function RetroMenu({ roomId, team, role, isOwnerAbsent, myTeams, attribut
           <MoreHorizontal className="size-4" />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
+          <DropdownMenuItem onClick={() => void exportMarkdown()}>{EXPORT_MARKDOWN_MENU_ITEM}</DropdownMenuItem>
           {settings && (
             <DropdownMenuItem onClick={() => setSettingsOpen(true)}>{SETTINGS_MENU_ITEM}</DropdownMenuItem>
           )}

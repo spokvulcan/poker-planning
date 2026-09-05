@@ -9,6 +9,7 @@ import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import { render, screen, cleanup, fireEvent } from "@testing-library/react";
 
 const mocks = vi.hoisted(() => ({
+  exports: 0,
   queries: {} as Record<string, unknown>,
   join: vi.fn(),
   mutations: [] as { fn: string; args: unknown }[],
@@ -74,6 +75,11 @@ vi.mock("@/components/retro/retro-board", () => ({
     </div>
   ),
 }));
+vi.mock("@/components/retro/use-export-markdown", () => ({
+  useExportMarkdown: () => async () => {
+    mocks.exports += 1;
+  },
+}));
 vi.mock("@/components/retro/retro-menu", () => ({
   RetroMenu: ({ role, settings }: { role: string; settings?: { name: string; decision: { allowed: boolean } } }) => (
     <div data-testid="menu" data-settings={settings?.name} data-settings-allowed={String(settings?.decision.allowed)}>{role}</div>
@@ -99,6 +105,7 @@ const teamed = {
 } as never;
 
 beforeEach(() => {
+  mocks.exports = 0;
   mocks.join.mockReset();
   mocks.mutations = [];
   mocks.presenceCalls = [];
@@ -221,6 +228,11 @@ describe("RetroRoomContent", () => {
     expect(board.getAttribute("data-viewer")).toBeNull();
     await new Promise((r) => setTimeout(r, 0));
     expect(mocks.join).not.toHaveBeenCalled();
+
+    // A reader may export (spec §15.3): the banner carries the door the menu would.
+    fireEvent.click(screen.getByRole("button", { name: "Export as Markdown" }));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(mocks.exports).toBe(1);
 
     fireEvent.click(screen.getByRole("button", { name: "Join retro" }));
     expect(screen.getByTestId("join-form").getAttribute("data-team-member")).toBe("true");
