@@ -29,6 +29,7 @@ const mocks = vi.hoisted(() => ({
   team: undefined as Team | undefined,
   retros: [] as unknown[] | undefined,
   openActions: { items: [], rooms: [] } as { items: unknown[]; rooms: unknown[] } | undefined,
+  facts: undefined as { open: number; done: number; dropped: number; retros: number } | undefined,
   calls: [] as { fn: string; args: unknown }[],
   fail: {} as Record<string, string>,
   push: vi.fn(),
@@ -42,6 +43,7 @@ vi.mock("convex/react", async () => {
       const fn = getFunctionName(ref as never);
       if (fn === "retro:listForTeam") return mocks.retros;
       if (fn === "teams:openActions") return mocks.openActions;
+      if (fn === "teams:facts") return mocks.facts;
       return mocks.team;
     },
     useMutation: (ref: unknown) => {
@@ -66,8 +68,8 @@ vi.mock("@/components/auth/auth-provider", () => ({
 vi.mock("@/components/navbar", () => ({ Navbar: () => null }));
 vi.mock("@/components/footer", () => ({ Footer: () => null }));
 vi.mock("@/components/user-menu/user-avatar", () => ({ UserAvatar: () => null }));
-vi.mock("@/components/retro/retro-list", () => ({
-  RetroRows: ({ rows }: { rows: { roomId: string; name: string }[] }) => (
+vi.mock("@/components/retro/history-row", () => ({
+  HistoryRows: ({ rows }: { rows: { roomId: string; name: string }[] }) => (
     <ul data-testid="retro-rows">
       {rows.map((row) => (
         <li key={row.roomId}>{row.name}</li>
@@ -134,6 +136,7 @@ const dialog = () => within(screen.getByRole("dialog"));
 
 beforeEach(() => {
   mocks.openActions = { items: [], rooms: [] };
+  mocks.facts = undefined;
   mocks.team = team("admin");
   mocks.retros = [];
   mocks.calls = [];
@@ -293,6 +296,21 @@ describe("TeamContent — the open action items (spec §5, §13)", () => {
     mocks.openActions = { items: [], rooms: [] };
     render(<TeamContent />);
     expect(screen.getByText("No open action items across this team's retros.")).toBeTruthy();
+  });
+
+  it("reads the count line above the list once the facts arrive, the same for admin and member (spec §17)", () => {
+    mocks.facts = { open: 3, done: 12, dropped: 2, retros: 14 };
+    for (const role of ["admin", "member"] as const) {
+      mocks.team = team(role);
+      render(<TeamContent />);
+      expect(screen.getByTestId("team-count-line").textContent).toBe("3 open · 12 done · 2 dropped across 14 retros");
+      cleanup();
+    }
+  });
+
+  it("shows no count line while the facts load", () => {
+    render(<TeamContent />);
+    expect(screen.queryByTestId("team-count-line")).toBeNull();
   });
 });
 

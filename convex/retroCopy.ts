@@ -7,6 +7,9 @@
  */
 import type { JoinPolicy } from "./permissions";
 
+/** The last-admin rule (spec §19), owned by the Team's copy module and read from here too. */
+export { LAST_ADMIN_MESSAGE } from "./teamCopy";
+
 // --- Board header disclosures (ADR-0008, ADR-0019) ---
 
 /** Board header and create form, teamless retro. */
@@ -257,6 +260,8 @@ export const ADOPT_FAILED = "Failed to give this retro to the team";
 
 // --- Claim, delete (spec §4.3, §15.2) ---
 
+/** `claim` denied with `owner-present` (spec §4.3, §19); `permissions.denialMessage` reads it from here. */
+export const CLAIM_DENIED = "The owner is still here — ask them to transfer ownership.";
 export const CLAIM_MENU_ITEM = "Claim ownership";
 export const CLAIM_FAILED = "Failed to claim this retro";
 export const CLAIMED = "You now own this retro";
@@ -272,6 +277,11 @@ export const DELETE_BUTTON = "Delete retro";
 export const DELETING_BUTTON = "Deleting…";
 export const DELETE_FAILED = "Failed to delete this retro";
 export const RETRO_DELETED = "Retro deleted";
+
+/** Delete team confirm (spec §19): the title names the Team, the body its retro count. */
+export const deleteTeamTitle = (team: string) => `Delete ${team}?`;
+export const deleteTeamConfirm = (n: number) =>
+  `Its ${n} ${n === 1 ? "retro" : "retros"} and their action items are removed permanently. This cannot be undone.`;
 
 // --- The ratchet (spec §4.3, §19; ADR-0012) ---
 
@@ -397,9 +407,15 @@ export const NO_WALK = "The walk opens in Discuss";
 /** Refusal `missing`: a cursor index outside the order, or a tick on a topic it does not hold. */
 export const WALK_TOPIC_NOT_FOUND = "That topic is not in the walk";
 export const WALK_TITLE = "Discussion";
+/**
+ * The coverage facts (spec §17): what the stored walk alone says. The
+ * history row prints this; the board's readout adds the late count, which
+ * needs the cards.
+ */
+export const coverageFacts = (covered: number, total: number) => `${covered} of ${total} covered`;
 /** The coverage readout (spec §19). */
 export const coverageReadout = (covered: number, total: number, late: number) =>
-  `${covered} of ${total} covered · ${late} new`;
+  `${coverageFacts(covered, total)} · ${late} new`;
 export const writtenSince = (n: number) => `${n} written since the order was set`;
 export const topicsWithoutVotes = (n: number) => `${n} ${n === 1 ? "topic" : "topics"} without votes`;
 export const WALK_EMPTY = "Nothing to walk yet";
@@ -466,3 +482,31 @@ export const OWNER_NOT_MEMBER = "Only someone in this retro can own an action it
 /** Refusal `forbidden`: a note on a change that does not leave `open`. */
 export const NOTE_ONLY_ON_LEAVING_OPEN = "A note goes with marking an action done or dropped";
 export const ACTION_ACT_FAILED = "That did not go through. Try again.";
+
+// --- Retro facts (spec §17, §19; ADR-0024) ---
+
+/** History row counts (spec §19): this retro's action items by status, as facts with a unit. */
+export const historyRowCounts = (open: number, done: number, dropped: number) =>
+  `${open} open · ${done} done · ${dropped} dropped`;
+/** Team count line (spec §19): the sum over the Team's action index and a count of its rooms. */
+export const teamCountLine = (open: number, done: number, dropped: number, retros: number) =>
+  `${historyRowCounts(open, done, dropped)} across ${retros} ${retros === 1 ? "retro" : "retros"}`;
+/** The attribution as the history row names it (ADR-0012). */
+export const ATTRIBUTION_LABELS: Record<"named" | "anonymous", string> = {
+  named: "Named",
+  anonymous: "Anonymous",
+};
+export const createdOn = (date: string) => `Created ${date}`;
+
+// --- Account deletion (spec §15.2, §19; ADR-0019) ---
+
+export const DELETE_ACCOUNT_SECTION_TITLE = "Delete account";
+export const DELETE_ACCOUNT_SECTION_DESCRIPTION =
+  "Removes your account from AgileKit. Your sign-in provider keeps its own record.";
+export const DELETE_ACCOUNT_BUTTON = "Delete account";
+export const DELETE_ACCOUNT_TITLE = "Delete your account?";
+/** Delete account (spec §19): what goes and what stays, before and after the act. */
+export const ACCOUNT_DELETED =
+  "Your account is removed. Cards and action items you wrote in team retros stay with those teams, without your name.";
+export const DELETING_ACCOUNT_BUTTON = "Deleting…";
+export const DELETE_ACCOUNT_FAILED = "Failed to delete your account";

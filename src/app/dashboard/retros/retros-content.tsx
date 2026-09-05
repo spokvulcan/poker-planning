@@ -8,16 +8,16 @@ import { api } from "@/convex/_generated/api";
 import { useAuth } from "@/components/auth/auth-provider";
 import { DashboardHeader } from "@/components/dashboard";
 import { NewTeamDialog } from "@/components/team/new-team-dialog";
-import { RetroRows } from "@/components/retro/retro-list";
+import { HistoryRows } from "@/components/retro/history-row";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { MY_RETROS_EMPTY, MY_RETROS_TITLE } from "@/convex/retroCopy";
 
 /**
  * /dashboard/retros (spec §18.1): the retros the person attended, grouped
- * by Team with teamless ones under "No team" and `collect` retros first
- * (the minimal row until #299's history row); then the person's Teams with
- * New team, the door to every team page.
+ * by Team with teamless ones under "No team" and `collect` retros first, as
+ * history rows (spec §17); then the person's Teams with New team, the door
+ * to every team page.
  */
 export function RetrosContent() {
   const { isAuthenticated } = useAuth();
@@ -62,7 +62,7 @@ export function RetrosContent() {
                       group.teamName
                     )}
                   </h3>
-                  <RetroRows rows={group.retros} />
+                  <HistoryRows rows={group.retros} />
                 </div>
               ))}
             </div>

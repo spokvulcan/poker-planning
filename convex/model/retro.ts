@@ -1062,14 +1062,36 @@ export async function lastFormat(
   return retro ? retro.format : null;
 }
 
-/** One listing row (spec §16.5): the minimal row until #299's history row. */
-export interface RetroListRow {
+/** This retro's action items by status (spec §17): facts with a unit, never a rate. */
+export interface ActionCounts {
+  open: number;
+  done: number;
+  dropped: number;
+}
+
+/**
+ * The history row (spec §17, ADR-0024): what the `retros` row and one
+ * indexed read of the action table already store, shared by the team page
+ * and `/dashboard/retros`. No card count, no last-active time, no
+ * per-person figure. `collectUntil` and the viewer's own hint (spec §16.5)
+ * ride along for the `collect` rows.
+ */
+export interface HistoryRow {
   roomId: Id<"rooms">;
   name: string;
+  createdAt: number;
+  formatName: string;
+  attribution: Attribution;
   /** The resting stage's kind: the shared pointer. */
   stageKind: StageKind;
+  /**
+   * The coverage facts from the stored walk (spec §17): ticked topics over
+   * the order as snapshotted. The board's readout adds the late count,
+   * which needs the cards; a listing never reads them (ADR-0024's cost).
+   */
+  coverage?: { covered: number; total: number };
+  counts: ActionCounts;
   collectUntil?: number;
-  createdAt: number;
   /**
    * "You haven't added a card yet" (spec §16.5, ADR-0024): the viewer's
    * own fact, in a named retro whose shared stage is `collect`. Never a
@@ -1078,26 +1100,46 @@ export interface RetroListRow {
   noCardYet?: true;
 }
 
+/** How many action rows one row's count reads; a retro never approaches it (ADR-0024: bounded, never a stored counter). */
+const MAX_COUNTED_ACTIONS = 500;
+
+/** Count a bounded read of action rows by status. */
+export function countByStatus(rows: readonly Pick<Doc<"retroActions">, "status">[]): ActionCounts {
+  const counts: ActionCounts = { open: 0, done: 0, dropped: 0 };
+  for (const row of rows) counts[row.status] += 1;
+  return counts;
+}
+
 async function toRow(
   ctx: QueryCtx,
   room: Doc<"rooms">,
   retro: Doc<"retros">,
   viewerId: Id<"users">
-): Promise<RetroListRow> {
+): Promise<HistoryRow> {
   const current = currentStageOf(retro);
-  const noCardYet =
-    current.kind === "collect" &&
-    retro.attribution === "named" &&
-    (await ctx.db
-      .query("retroCards")
-      .withIndex("by_room_author", (q) => q.eq("roomId", room._id).eq("authorId", viewerId))
-      .first()) === null;
+  const [noCardYet, actions] = await Promise.all([
+    current.kind === "collect" && retro.attribution === "named"
+      ? ctx.db
+          .query("retroCards")
+          .withIndex("by_room_author", (q) => q.eq("roomId", room._id).eq("authorId", viewerId))
+          .first()
+          .then((card) => card === null)
+      : Promise.resolve(false),
+    ctx.db
+      .query("retroActions")
+      .withIndex("by_room", (q) => q.eq("roomId", room._id))
+      .take(MAX_COUNTED_ACTIONS),
+  ]);
   return {
     roomId: room._id,
     name: room.name,
-    stageKind: current.kind,
-    ...(retro.collectUntil !== undefined ? { collectUntil: retro.collectUntil } : {}),
     createdAt: room.createdAt,
+    formatName: retro.format.name,
+    attribution: retro.attribution,
+    stageKind: current.kind,
+    ...(retro.walk ? { coverage: { covered: retro.walk.covered.length, total: retro.walk.order.length } } : {}),
+    counts: countByStatus(actions),
+    ...(retro.collectUntil !== undefined ? { collectUntil: retro.collectUntil } : {}),
     ...(noCardYet ? { noCardYet: true as const } : {}),
   };
 }
@@ -1107,7 +1149,7 @@ async function rowsOf(
   ctx: QueryCtx,
   rooms: Doc<"rooms">[],
   viewerId: Id<"users">
-): Promise<RetroListRow[]> {
+): Promise<HistoryRow[]> {
   const retros = await Promise.all(rooms.map((room) => getRetro(ctx, room._id)));
   const rows = await Promise.all(
     rooms.map((room, i) => {
@@ -1115,10 +1157,10 @@ async function rowsOf(
       return retro ? toRow(ctx, room, retro, viewerId) : Promise.resolve(null);
     })
   );
-  return rows.filter((row): row is RetroListRow => row !== null);
+  return rows.filter((row): row is HistoryRow => row !== null);
 }
 
-/** How many of a Team's retros a listing shows; the history row (#299) pages. */
+/** How many of a Team's retros a listing shows; the bound keeps the newest. */
 const MAX_LISTED_ROOMS = 200;
 
 /** How many memberships the dashboard walks looking for retros. */
@@ -1132,7 +1174,7 @@ export async function listForTeam(
   ctx: QueryCtx,
   teamId: Id<"teams">,
   viewerId: Id<"users">
-): Promise<RetroListRow[]> {
+): Promise<HistoryRow[]> {
   const rooms = await ctx.db
     .query("rooms")
     .withIndex("by_team", (q) => q.eq("teamId", teamId))
@@ -1145,7 +1187,7 @@ export async function listForTeam(
  * The dashboard's ordering (spec §16.5): retros whose shared stage is
  * `collect` first, newest first within each half.
  */
-export function orderForDashboard(rows: RetroListRow[]): RetroListRow[] {
+export function orderForDashboard(rows: HistoryRow[]): HistoryRow[] {
   return [...rows].sort((a, b) => {
     const aCollect = a.stageKind === "collect" ? 0 : 1;
     const bCollect = b.stageKind === "collect" ? 0 : 1;
@@ -1157,7 +1199,7 @@ export interface RetroListGroup {
   /** The door to the team page; only when the person is still a member. */
   teamId?: Id<"teams">;
   teamName: string;
-  retros: RetroListRow[];
+  retros: HistoryRow[];
 }
 
 /**
@@ -1188,7 +1230,7 @@ export async function listMine(
   const rows = await rowsOf(ctx, rooms, userId);
   const roomById = new Map(rooms.map((room) => [room._id, room]));
 
-  const byTeam = new Map<Id<"teams"> | undefined, RetroListRow[]>();
+  const byTeam = new Map<Id<"teams"> | undefined, HistoryRow[]>();
   for (const row of rows) {
     const teamId = roomById.get(row.roomId)?.teamId;
     byTeam.set(teamId, [...(byTeam.get(teamId) ?? []), row]);

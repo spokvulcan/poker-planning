@@ -461,3 +461,37 @@ export async function releaseMembershipsOfDeletedUser(
       .map((row) => ctx.db.delete(row._id))
   );
 }
+
+/** The team count line (spec §17, ADR-0024): three sums over `by_team_status` and a count of `by_team`. */
+export interface TeamFacts {
+  open: number;
+  done: number;
+  dropped: number;
+  retros: number;
+}
+
+/** How many action rows one status's sum reads; a Team's history never approaches it. */
+const MAX_COUNTED_ACTIONS = 5000;
+
+/**
+ * `teams.facts`: counts, never a rate. The same for admin and member; the
+ * guard has passed a membership. The rooms bound is the page's own.
+ */
+export async function teamFacts(ctx: QueryCtx, teamId: Id<"teams">): Promise<TeamFacts> {
+  const countStatus = (status: Doc<"retroActions">["status"]) =>
+    ctx.db
+      .query("retroActions")
+      .withIndex("by_team_status", (q) => q.eq("teamId", teamId).eq("status", status))
+      .take(MAX_COUNTED_ACTIONS)
+      .then((rows) => rows.length);
+  const [open, done, dropped, rooms] = await Promise.all([
+    countStatus("open"),
+    countStatus("done"),
+    countStatus("dropped"),
+    ctx.db
+      .query("rooms")
+      .withIndex("by_team", (q) => q.eq("teamId", teamId))
+      .take(MAX_COUNTED_ROOMS),
+  ]);
+  return { open, done, dropped, retros: rooms.length };
+}

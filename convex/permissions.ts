@@ -1,4 +1,5 @@
 import { Doc } from "./_generated/dataModel";
+import { CLAIM_DENIED } from "./retroCopy";
 
 // --- Types ---
 
@@ -262,7 +263,7 @@ export function denialMessage(action: Action, reason: DenialReason): string {
   }
 
   if (reason === "owner-present") {
-    return "The owner is still here — ask them to transfer ownership.";
+    return CLAIM_DENIED;
   }
 
   if (reason === "target-rank") {

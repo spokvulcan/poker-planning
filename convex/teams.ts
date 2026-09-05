@@ -143,3 +143,12 @@ export const openActions = query({
     return await RetroActions.teamOpenActions(ctx, user, args.teamId);
   },
 });
+
+/** The team page's count line (spec §17): action counts by status across the Team and its retro count (members only). */
+export const facts = query({
+  args: { teamId: v.id("teams") },
+  handler: async (ctx, args) => {
+    await requireTeamRole(ctx, args.teamId, "member");
+    return await Teams.teamFacts(ctx, args.teamId);
+  },
+});
