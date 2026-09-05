@@ -288,3 +288,48 @@ export const cardsCount = (n: number) => `${n} ${n === 1 ? "card" : "cards"}`;
 /** Missing user (spec §19). */
 export const FORMER_MEMBER = "Former member";
 export const CARD_ACT_FAILED = "That did not go through. Try again.";
+
+// --- Clusters (spec §10.3, §19; ADR-0011, ADR-0016) ---
+
+/** The default cluster name at formation. */
+export const groupName = (n: number) => `Group ${n}`;
+/**
+ * The next default name: one past the highest "Group {n}" the room carries
+ * and past the row count, so a number freed by a merge or dissolve is never
+ * handed out twice while its neighbours stand. Here rather than in the
+ * model because the optimistic form names its placeholder by the same rule.
+ */
+export function nextGroupName(clusters: readonly { name: string }[]): string {
+  let highest = 0;
+  for (const cluster of clusters) {
+    const match = /^Group (\d+)$/.exec(cluster.name);
+    if (match) highest = Math.max(highest, Number(match[1]));
+  }
+  return groupName(Math.max(highest, clusters.length) + 1);
+}
+/** A cluster act naming a row the room does not carry. */
+export const CLUSTER_NOT_FOUND = "That group is no longer on the board";
+export const CLUSTER_SELECTION_REQUIRED = "Select at least one card to group";
+export const CLUSTER_NAME_REQUIRED = "A group needs a name";
+export const CLUSTER_NAME_TOO_LONG = "A group name holds at most 80 characters";
+export const MERGE_INTO_SELF = "Pick a different group to merge into";
+/** Dissolve confirmation, only when the cluster has dots (spec §19; #294). */
+export const dissolveClusterConfirm = (votes: number) =>
+  `Dissolve this group? Its ${votes} ${votes === 1 ? "vote is" : "votes are"} removed.`;
+export const GROUP_SELECTION = "Group";
+export const groupCards = (n: number) => `Group ${n} ${n === 1 ? "card" : "cards"}`;
+export const ADD_TO_GROUP = "Add to group";
+export const REMOVE_FROM_GROUP = "Remove from group";
+export const CLEAR_SELECTION = "Clear selection";
+export const selectedCards = (n: number) => `${n} selected`;
+export const RENAME_GROUP = "Rename group";
+export const GROUP_NAME_LABEL = "Group name";
+export const RENAME_GROUP_SAVE = "Save";
+export const MERGE_GROUP = "Merge into…";
+export const MERGE_GROUP_TITLE = "Merge group";
+export const MERGE_GROUP_INTO_LABEL = "Into";
+export const MERGE_GROUP_BUTTON = "Merge";
+export const TIDY_GROUP = "Tidy";
+export const DISSOLVE_GROUP = "Dissolve group";
+export const GROUP_MENU = "Group actions";
+export const CLUSTER_ACT_FAILED = "That did not go through. Try again.";

@@ -11,7 +11,7 @@ import { getFunctionName, type FunctionReference } from "convex/server";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { BoardRead, FullCard } from "@/convex/model/retro";
-import { applyCreate, applyDelete, applyMove, applyTextEdit } from "./optimistic";
+import { applyAddToCluster, applyCreate, applyDelete, applyFormCluster, applyMove, applyTextEdit, applyUngroup } from "./optimistic";
 
 const roomId = "room-1" as Id<"rooms">;
 const me = "u-me" as Id<"users">;
@@ -36,18 +36,27 @@ function fakeStore(initial: Record<string, unknown>) {
   return { store, writes, value: <T>(name: string) => values.get(name) as T };
 }
 
-function board(cardsVisible: "hidden" | "visible", cards: BoardRead["cards"] = []): BoardRead {
+function board(
+  cardsVisible: "hidden" | "visible",
+  cards: BoardRead["cards"] = [],
+  clusters: BoardRead["clusters"] = []
+): BoardRead {
   return {
     retro: {
       currentStageId: "s1",
       stages: [{ id: "s1", kind: "collect", cardsVisible, tallyVisible: "visible" }],
       attribution: "named",
     } as unknown as BoardRead["retro"],
-    clusters: [],
+    clusters,
     cards,
     writers: [],
   };
 }
+
+const cluster = (id: string, name: string): BoardRead["clusters"][number] =>
+  ({ _id: id as Id<"retroClusters">, _creationTime: 1, roomId, name, createdAt: 1 });
+const inCluster = (card: FullCard, clusterId: string): FullCard =>
+  ({ ...card, clusterId: clusterId as Id<"retroClusters"> });
 
 const full = (clientId: string, authorId: Id<"users">, text = clientId): FullCard => ({
   _id: `id-${clientId}` as Id<"retroCards">,
@@ -137,5 +146,54 @@ describe("applyDelete", () => {
     applyDelete(store, { roomId, clientId: "a" });
     expect(value<BoardRead>(BOARD).cards.map((c) => c.clientId)).toEqual(["b"]);
     expect(value<FullCard[]>(MINE)).toEqual([]);
+  });
+});
+
+describe("group and ungroup (spec §10.7): clusterId in board only", () => {
+  it("applyFormCluster inserts a placeholder row named by the same rule as the server and points the members at it", () => {
+    const { store, writes, value } = fakeStore({
+      [BOARD]: board("visible", [full("a", me), full("b", other), full("c", other)], [cluster("k1", "Group 1")]),
+      [MINE]: [full("a", me)],
+    });
+    applyFormCluster(store, { roomId, clientIds: ["a", "b"] }, "opt-1");
+    expect(writes).toEqual([BOARD]);
+    const next = value<BoardRead>(BOARD);
+    expect(next.clusters.map((k) => ({ _id: k._id, name: k.name }))).toEqual([
+      { _id: "k1", name: "Group 1" },
+      { _id: "opt-1", name: "Group 2" },
+    ]);
+    expect(next.cards.map((c) => c.clusterId)).toEqual(["opt-1", "opt-1", undefined]);
+  });
+
+  it("applyAddToCluster re-points the members and drops a cluster left empty; positions are untouched", () => {
+    const { store, value } = fakeStore({
+      [BOARD]: board(
+        "visible",
+        [inCluster(full("a", me), "k1"), inCluster(full("b", other), "k2")],
+        [cluster("k1", "Group 1"), cluster("k2", "Group 2")]
+      ),
+    });
+    applyAddToCluster(store, { roomId, clusterId: "k2" as Id<"retroClusters">, clientIds: ["a"] });
+    const next = value<BoardRead>(BOARD);
+    expect(next.cards.map((c) => c.clusterId)).toEqual(["k2", "k2"]);
+    expect(next.cards.map((c) => c.position)).toEqual([{ x: 0, y: 0 }, { x: 0, y: 0 }]);
+    expect(next.clusters.map((k) => k._id)).toEqual(["k2"]);
+  });
+
+  it("applyUngroup nulls clusterId and drops a cluster left empty, touching mine never", () => {
+    const { store, writes, value } = fakeStore({
+      [BOARD]: board(
+        "visible",
+        [inCluster(full("a", me), "k1"), inCluster(full("b", other), "k1"), inCluster(full("c", other), "k2")],
+        [cluster("k1", "Group 1"), cluster("k2", "Group 2")]
+      ),
+      [MINE]: [inCluster(full("a", me), "k1")],
+    });
+    applyUngroup(store, { roomId, clientIds: ["a", "c"] });
+    expect(writes).toEqual([BOARD]);
+    const next = value<BoardRead>(BOARD);
+    expect(next.cards.map((c) => c.clusterId)).toEqual([undefined, "k1", undefined]);
+    expect(next.cards.map((c) => "clusterId" in c)).toEqual([false, true, false]);
+    expect(next.clusters.map((k) => k._id)).toEqual(["k1"]);
   });
 });

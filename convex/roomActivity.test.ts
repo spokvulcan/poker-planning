@@ -620,6 +620,36 @@ describe("room activity — the Team's side of a retro bumps (spec §14)", () =>
     }
   });
 
+  it("every cluster mutation bumps (spec §14)", async () => {
+    const t = convexTest(schema, modules);
+    const { roomId } = await seedTeamRetro(t, false);
+    const retro = (await t.run((ctx) =>
+      ctx.db.query("retros").withIndex("by_room", (q) => q.eq("roomId", roomId)).unique()
+    ))!;
+    const me = as(t, "auth-member");
+    const promptId = retro.format.prompts[0].id;
+    for (const clientId of ["c1", "c2", "c3"]) {
+      await me.mutation(api.retro.createCard, { roomId, clientId, text: clientId, promptId, position: { x: 0, y: 0 } });
+    }
+    let a: Id<"retroClusters">;
+    let b: Id<"retroClusters">;
+    const acts = [
+      async () => void (a = await me.mutation(api.retro.formCluster, { roomId, clientIds: ["c1"] })),
+      async () => void (b = await me.mutation(api.retro.formCluster, { roomId, clientIds: ["c2"] })),
+      () => me.mutation(api.retro.addToCluster, { roomId, clusterId: a, clientIds: ["c3"] }),
+      () => me.mutation(api.retro.removeFromCluster, { roomId, clientIds: ["c3"] }),
+      () => me.mutation(api.retro.renameCluster, { roomId, clusterId: a, name: "A" }),
+      () => me.mutation(api.retro.mergeClusters, { roomId, from: b, into: a }),
+      () => me.mutation(api.retro.dissolveCluster, { roomId, clusterId: a }),
+    ];
+    for (const act of acts) {
+      const stale = Date.now() - HOUR - 60_000;
+      await t.run((ctx) => ctx.db.patch(roomId, { lastActivityAt: stale }));
+      await act();
+      await expectBumped(t, roomId, stale);
+    }
+  });
+
   it("ratchet bumps (spec §14)", async () => {
     const t = convexTest(schema, modules);
     const { roomId, stale } = await seedTeamRetro(t, false);

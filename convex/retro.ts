@@ -3,6 +3,7 @@ import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
 import * as Retro from "./model/retro";
 import * as RetroCards from "./model/retroCards";
+import * as RetroClusters from "./model/retroClusters";
 import {
   joinPolicyValidator,
   retroFormatValidator,
@@ -355,9 +356,69 @@ export const deleteCard = mutation({
   },
 });
 
+// --- Clusters (spec §10.3, ADR-0011) ---
+
 /**
- * A card act's actor: the attendance guard (which does not load the room)
- * and the room row the model needs.
+ * Form a cluster from a selection: attendance is the only guard (forming
+ * is never in the config, spec §4.2). Returns the new row's id; members
+ * never move.
+ */
+export const formCluster = mutation({
+  args: { roomId: v.id("rooms"), clientIds: v.array(v.string()) },
+  handler: async (ctx, args) => {
+    const { roomId, ...rest } = args;
+    return await RetroClusters.formCluster(ctx, { ...(await requireCardActor(ctx, roomId)), ...rest });
+  },
+});
+
+/** Add cards to a cluster (everyone). */
+export const addToCluster = mutation({
+  args: { roomId: v.id("rooms"), clusterId: v.id("retroClusters"), clientIds: v.array(v.string()) },
+  handler: async (ctx, args) => {
+    const { roomId, ...rest } = args;
+    await RetroClusters.addToCluster(ctx, { ...(await requireCardActor(ctx, roomId)), ...rest });
+  },
+});
+
+/** Take cards out of their cluster (everyone); a cluster left empty is removed. */
+export const removeFromCluster = mutation({
+  args: { roomId: v.id("rooms"), clientIds: v.array(v.string()) },
+  handler: async (ctx, args) => {
+    const { roomId, ...rest } = args;
+    await RetroClusters.removeFromCluster(ctx, { ...(await requireCardActor(ctx, roomId)), ...rest });
+  },
+});
+
+/** Rename a cluster: `cardManagement`, decided in the model as a `forbidden` refusal. */
+export const renameCluster = mutation({
+  args: { roomId: v.id("rooms"), clusterId: v.id("retroClusters"), name: v.string() },
+  handler: async (ctx, args) => {
+    const { roomId, ...rest } = args;
+    await RetroClusters.renameCluster(ctx, { ...(await requireCardActor(ctx, roomId)), ...rest });
+  },
+});
+
+/** Merge `from` into `into` (`cardManagement`): members re-pointed, the empty row deleted. */
+export const mergeClusters = mutation({
+  args: { roomId: v.id("rooms"), from: v.id("retroClusters"), into: v.id("retroClusters") },
+  handler: async (ctx, args) => {
+    const { roomId, ...rest } = args;
+    await RetroClusters.mergeClusters(ctx, { ...(await requireCardActor(ctx, roomId)), ...rest });
+  },
+});
+
+/** Dissolve a cluster (`cardManagement`): every member's `clusterId` nulled, the row deleted. */
+export const dissolveCluster = mutation({
+  args: { roomId: v.id("rooms"), clusterId: v.id("retroClusters") },
+  handler: async (ctx, args) => {
+    const { roomId, ...rest } = args;
+    await RetroClusters.dissolveCluster(ctx, { ...(await requireCardActor(ctx, roomId)), ...rest });
+  },
+});
+
+/**
+ * A card or cluster act's actor: the attendance guard (which does not load
+ * the room) and the room row the model needs.
  */
 async function requireCardActor(ctx: QueryCtx, roomId: Id<"rooms">) {
   const { user, membership } = await requireRoomMember(ctx, roomId);

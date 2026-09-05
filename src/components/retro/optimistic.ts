@@ -3,6 +3,7 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { BoardRead, FullCard, ProjectedCard } from "@/convex/model/retro";
 import { currentStageOf } from "@/convex/model/retroFormats";
+import { nextGroupName } from "@/convex/retroCopy";
 
 /**
  * Optimistic functions (ADR-0022, spec §10.7): one synchronous pure
@@ -11,7 +12,8 @@ import { currentStageOf } from "@/convex/model/retroFormats";
  * matters. A move patches `retro.board` and `retro.mine`; a create inserts
  * into both (a silhouette or the full card by the current entry's reveal);
  * a text edit patches `retro.mine` and `retro.board` only where the board
- * already carries the text; a delete removes from both.
+ * already carries the text; a delete removes from both. Group and ungroup
+ * patch `clusterId` in `retro.board` only (spec §10.7); tidy is a move.
  */
 
 export interface CreateCardArgs {
@@ -122,4 +124,66 @@ export function applyDelete(store: OptimisticLocalStore, args: DeleteCardArgs): 
     cards: board.cards.filter((card) => card.clientId !== args.clientId),
   }));
   patchMine(store, (mine) => mine.filter((card) => card.clientId !== args.clientId));
+}
+
+export interface FormClusterArgs {
+  roomId: Id<"rooms">;
+  clientIds: string[];
+}
+
+export interface AddToClusterArgs {
+  roomId: Id<"rooms">;
+  clusterId: Id<"retroClusters">;
+  clientIds: string[];
+}
+
+export interface UngroupArgs {
+  roomId: Id<"rooms">;
+  clientIds: string[];
+}
+
+/**
+ * Point the named cards at a cluster (or none) and drop any cluster this
+ * change left empty — the server's own rule, no more: a row that was
+ * already empty is the server's to remove.
+ */
+function repointBoard(board: BoardRead, clientIds: readonly string[], clusterId: Id<"retroClusters"> | undefined): BoardRead {
+  const named = new Set(clientIds);
+  const vacated = new Set<Id<"retroClusters">>();
+  const cards = board.cards.map((card): ProjectedCard => {
+    if (!named.has(card.clientId)) return card;
+    if (card.clusterId !== undefined && card.clusterId !== clusterId) vacated.add(card.clusterId);
+    const { clusterId: _dropped, ...rest } = card;
+    return clusterId === undefined ? rest : { ...rest, clusterId };
+  });
+  if (vacated.size === 0) return { ...board, cards };
+  const populated = new Set(cards.map((card) => card.clusterId));
+  return { ...board, cards, clusters: board.clusters.filter((k) => !vacated.has(k._id) || populated.has(k._id)) };
+}
+
+/**
+ * A form: a placeholder row under the id the caller minted, named by the
+ * server's own rule, and the members pointed at it. The server's id
+ * replaces the placeholder when the result lands.
+ */
+export function applyFormCluster(store: OptimisticLocalStore, args: FormClusterArgs, placeholderId: string): void {
+  const clusterId = placeholderId as Id<"retroClusters">;
+  patchBoard(store, (board) => {
+    const row: BoardRead["clusters"][number] = {
+      _id: clusterId,
+      _creationTime: Date.now(),
+      roomId: args.roomId,
+      name: nextGroupName(board.clusters),
+      createdAt: Date.now(),
+    };
+    return repointBoard({ ...board, clusters: [...board.clusters, row] }, args.clientIds, clusterId);
+  });
+}
+
+export function applyAddToCluster(store: OptimisticLocalStore, args: AddToClusterArgs): void {
+  patchBoard(store, (board) => repointBoard(board, args.clientIds, args.clusterId));
+}
+
+export function applyUngroup(store: OptimisticLocalStore, args: UngroupArgs): void {
+  patchBoard(store, (board) => repointBoard(board, args.clientIds, undefined));
 }

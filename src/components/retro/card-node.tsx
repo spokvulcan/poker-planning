@@ -40,8 +40,7 @@ export type CardNode = Node<CardNodeData, "card">;
  * A card on the board (ADR-0011 at the detail level, ADR-0015, spec §10.9):
  * text, tint and author chip, or a tint-only silhouette when the viewer has
  * no text for it. Its data attributes are the canvas contract the tests
- * read; `data-cluster-id` and `data-late` are placeholders until #293 and
- * #295.
+ * read; `data-late` is a placeholder until #295.
  */
 export const CardNodeView = memo(function CardNodeView({ data, selected }: NodeProps<CardNode>) {
   const { card, color, authorName, editingBy, editable } = data;

@@ -12,6 +12,7 @@ import { RetroBoard, type BoardViewer } from "@/components/retro/retro-board";
 import { mergeCards, type BoardCard } from "@/components/retro/cards";
 import { readinessOf } from "@/components/retro/readiness";
 import { useCardActions } from "@/components/retro/use-card-actions";
+import { useClusterActions } from "@/components/retro/use-cluster-actions";
 import { useEditKeys, type EditKeyStore } from "@/components/retro/use-edit-keys";
 import { useSingleFlightMutation } from "@/hooks/useSingleFlightMutation";
 import { RetroMenu, type MyTeam } from "@/components/retro/retro-menu";
@@ -117,6 +118,7 @@ export function RetroRoomContent({ roomId, roomData, membership }: RetroRoomCont
         name={room.name}
         retro={board.retro}
         cards={cards}
+        clusters={board.clusters}
         writers={board.writers}
         users={offlineUsers}
         team={team}
@@ -185,6 +187,7 @@ function AttendeeBoard({ roomId, roomData, board, cards, team, userId, myTeams, 
     [userId, retro.attribution, editKeys]
   );
   const cardActions = useCardActions(roomId, writer);
+  const clusterActions = useClusterActions(roomId);
   const currentStageId = currentStageOf(retro).id;
   // The payload is written whole, so an editing write carries readiness
   // too: the viewer's last toggle for this entry, else what their presence
@@ -235,9 +238,10 @@ function AttendeeBoard({ roomId, roomData, board, cards, team, userId, myTeams, 
       onEditing: (clientId) => writePresence({ editing: clientId }),
       controls,
       cards: cardActions,
+      clusters: clusterActions,
       cardManagement,
     }),
-    [userId, me?.name, writePresence, controls, cardActions, cardManagement]
+    [userId, me?.name, writePresence, controls, cardActions, clusterActions, cardManagement]
   );
 
   const role = roomData.users.find((u) => u._id === userId)?.role ?? "participant";
@@ -246,6 +250,7 @@ function AttendeeBoard({ roomId, roomData, board, cards, team, userId, myTeams, 
       name={roomData.room.name}
       retro={retro}
       cards={cards}
+      clusters={board.clusters}
       writers={board.writers}
       users={users}
       team={team}
