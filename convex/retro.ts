@@ -76,8 +76,8 @@ export const claim = mutation({
 export const remove = mutation({
   args: { roomId: v.id("rooms") },
   handler: async (ctx, args) => {
-    await requireCan(ctx, args.roomId, { kind: "relationship", verb: "delete" });
-    await Retro.deleteRetro(ctx, args.roomId);
+    const { room } = await requireCan(ctx, args.roomId, { kind: "relationship", verb: "delete" });
+    await Retro.deleteRetro(ctx, room);
   },
 });
 

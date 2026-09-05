@@ -408,6 +408,18 @@ describe("retro.remove — delete through the cascade (ADR-0019)", () => {
     expect(await membershipsOf(t, roomId)).toEqual([]);
   });
 
+  it("refuses to delete a poker room through the retro door", async () => {
+    const t = convexTest(schema, modules);
+    await seedUser(t, "owner");
+    const pokerId = await as(t, "owner").mutation(api.rooms.create, { name: "P" });
+    await joinRoom(t, pokerId, "owner");
+
+    await expect(as(t, "owner").mutation(api.retro.remove, { roomId: pokerId })).rejects.toThrow(
+      "This room is not a retro"
+    );
+    expect(await t.run((ctx) => ctx.db.get(pokerId))).not.toBeNull();
+  });
+
   it("a non-owner cannot delete; a team admin cannot while the owner is present, and can after claim", async () => {
     const t = convexTest(schema, modules);
     const { teamId, memberId } = await seedTeam(t);
@@ -571,6 +583,19 @@ describe("listings (spec §16.5, §18.1)", () => {
     expect(groups[2].teamId).toBeUndefined();
     expect(groups[2].retros.map((r) => r.roomId)).toEqual([teamless]);
     expect(groups.flatMap((g) => g.retros.map((r) => r.roomId))).not.toContain(notAttended);
+  });
+
+  it("a retro of a Team the person left keeps its Team's name but loses the door to the team page", async () => {
+    const t = convexTest(schema, modules);
+    const { teamId, memberId } = await seedTeam(t);
+    const roomId = await createRetro(t, "member", { teamId });
+    await as(t, "admin").mutation(api.teams.removeMember, { teamId, targetUserId: memberId });
+
+    const groups = await as(t, "member").query(api.retro.listMine, {});
+    expect(groups).toHaveLength(1);
+    expect(groups[0].teamName).toBe("Acme Squad");
+    expect(groups[0].teamId).toBeUndefined();
+    expect(groups[0].retros.map((r) => r.roomId)).toEqual([roomId]);
   });
 
   it("the dashboard is empty for an anonymous visitor and for someone who attended nothing", async () => {

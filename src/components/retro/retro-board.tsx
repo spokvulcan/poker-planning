@@ -5,6 +5,7 @@ import { ReactFlow, ReactFlowProvider, type NodeTypes } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import type { Doc } from "@/convex/_generated/dataModel";
 import { CanvasDotsBackground } from "@/components/canvas-dots-background";
+import { currentStageOf } from "@/convex/model/retro";
 import { RetroHeader, type RetroTeam } from "./retro-header";
 import { PromptZoneNodeView, type PromptZoneNode } from "./prompt-zone-node";
 import { layoutZones } from "./zones";
@@ -33,8 +34,7 @@ const nodeTypes: NodeTypes = { zone: PromptZoneNodeView };
  * their tickets.
  */
 export function RetroBoard({ name, retro, team, menu, banner }: RetroBoardProps) {
-  const currentStage =
-    retro.stages.find((stage) => stage.id === retro.currentStageId) ?? retro.stages[0];
+  const currentStage = currentStageOf(retro);
 
   // The page is titled by the retro's name (spec §18.1). Set here rather than
   // in the route's metadata, which would have to fetch the room server-side

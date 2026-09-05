@@ -72,7 +72,7 @@ export function RetroRoomContent({ roomId, roomData, membership }: RetroRoomCont
     return <CenteredMessage title={LOADING_TITLE} body={LOADING_BOARD} />;
   }
 
-  if (!isMember) {
+  if (!isMember && team) {
     return (
       <RetroBoard
         name={room.name}
@@ -84,7 +84,7 @@ export function RetroRoomContent({ roomId, roomData, membership }: RetroRoomCont
             className="flex flex-wrap items-center justify-between gap-2 border-b bg-blue-50 px-4 py-2 text-sm dark:bg-status-info-bg"
           >
             <span className="text-blue-800 dark:text-status-info-fg">
-              {readingAsTeamMember(team!.name)}
+              {readingAsTeamMember(team.name)}
             </span>
             <Button size="sm" onClick={() => setWantsToJoin(true)}>
               {JOIN_RETRO_BUTTON}
@@ -95,7 +95,7 @@ export function RetroRoomContent({ roomId, roomData, membership }: RetroRoomCont
     );
   }
 
-  const role = roomData.users.find((u) => u._id === membership._id)?.role ?? "participant";
+  const role = roomData.users.find((u) => u._id === membership?._id)?.role ?? "participant";
   return (
     <RetroBoard
       name={room.name}

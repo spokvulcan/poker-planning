@@ -20,43 +20,6 @@ export const keptByTeam = (teamName: string) =>
 export const readingAsTeamMember = (teamName: string) =>
   `You're reading this as a member of ${teamName}. Join to take part.`;
 
-// --- Team (spec §5) ---
-
-export const TEAM_LABEL = "Team";
-export const NO_TEAM_OPTION = "No team";
-export const NEW_TEAM_OPTION = "New team…";
-export const TEAM_DESCRIPTION = "A team keeps the retro and decides who can read it later.";
-
-/** `adoptIntoTeam` by an attendee who does not own the room. */
-export const ONLY_OWNER_CAN_ADOPT = "Only the room owner can give this retro to a team.";
-
-/** `adoptIntoTeam` on a room whose `teamId` is already set (set once, ADR-0008). */
-export const ALREADY_KEPT_BY_TEAM = "This retro already belongs to a team.";
-
-export const ADOPT_MENU_ITEM = "Keep with a team…";
-export const ADOPT_TITLE = "Keep this retro with a team";
-export const ADOPT_DESCRIPTION =
-  "The team's members can read it later, and it no longer disappears after 5 quiet days. This cannot be undone.";
-export const ADOPT_BUTTON = "Keep with team";
-export const ADOPT_FAILED = "Failed to give this retro to the team";
-
-// --- Claim, delete (spec §4.3, §15.2) ---
-
-export const CLAIM_MENU_ITEM = "Claim ownership";
-export const CLAIM_FAILED = "Failed to claim this retro";
-export const CLAIMED = "You now own this retro";
-
-export const DELETE_MENU_ITEM = "Delete retro";
-export const DELETE_TITLE = "Delete this retro?";
-export const deleteRetroConfirm = (cards: number, openActions: number) =>
-  `${cards} ${cards === 1 ? "card" : "cards"}, ${openActions} open ${
-    openActions === 1 ? "action item" : "action items"
-  } and its history are removed permanently. This cannot be undone.`;
-export const DELETE_BUTTON = "Delete retro";
-export const DELETING_BUTTON = "Deleting…";
-export const DELETE_FAILED = "Failed to delete this retro";
-export const RETRO_DELETED = "Retro deleted";
-
 // --- Listings (spec §16.5, §18.1) ---
 
 export const NO_TEAM_GROUP = "No team";
@@ -129,3 +92,43 @@ export const collectUntilLine = (date: string) => `Cards due ${date}`;
 export const LOADING_TITLE = "Loading...";
 export const CHECKING_SESSION = "Checking session";
 export const LOADING_BOARD = "Opening the board...";
+
+// --- Team (spec §5) ---
+
+export const TEAM_LABEL = "Team";
+export const NO_TEAM_OPTION = NO_TEAM_GROUP;
+export const NEW_TEAM_OPTION = "New team…";
+export const TEAM_DESCRIPTION = "A team keeps the retro and decides who can read it later.";
+
+/** `adoptIntoTeam` by an attendee who does not own the room. */
+export const ONLY_OWNER_CAN_ADOPT = "Only the room owner can give this retro to a team.";
+
+/** `adoptIntoTeam` on a room whose `teamId` is already set (set once, ADR-0008). */
+export const ALREADY_KEPT_BY_TEAM = "This retro already belongs to a team.";
+
+export const ADOPT_MENU_ITEM = "Keep with a team…";
+export const ADOPT_TITLE = "Keep this retro with a team";
+export const ADOPT_DESCRIPTION =
+  "The team's members can read it later, and it no longer disappears after 5 quiet days. This cannot be undone.";
+export const ADOPT_BUTTON = "Keep with team";
+export const ADOPT_CHOOSE_TEAM = "Choose a team";
+export const ADOPT_FAILED = "Failed to give this retro to the team";
+
+// --- Claim, delete (spec §4.3, §15.2) ---
+
+export const CLAIM_MENU_ITEM = "Claim ownership";
+export const CLAIM_FAILED = "Failed to claim this retro";
+export const CLAIMED = "You now own this retro";
+
+export const DELETE_MENU_ITEM = "Delete retro";
+export const DELETE_TITLE = "Delete this retro?";
+export const deleteRetroConfirm = (cards: number, openActions: number) =>
+  `${cards} ${cards === 1 ? "card" : "cards"}, ${openActions} open ${
+    openActions === 1 ? "action item" : "action items"
+  } and its history are removed permanently. This cannot be undone.`;
+export const DELETE_COUNTING = "Counting…";
+export const DELETE_BUTTON = "Delete retro";
+export const DELETING_BUTTON = "Deleting…";
+export const DELETE_FAILED = "Failed to delete this retro";
+export const RETRO_DELETED = "Retro deleted";
+

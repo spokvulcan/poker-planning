@@ -201,11 +201,18 @@ export async function claim(
  */
 export async function deleteRetro(
   ctx: MutationCtx,
-  roomId: Id<"rooms">
+  room: Doc<"rooms">
 ): Promise<void> {
-  const step = await deleteRoomAggregateChunk(ctx, roomId);
+  // The retro API deletes retros; a poker room has no delete verb yet and
+  // must not gain one through this door.
+  if (room.roomType !== "retro") {
+    throw refusal("missing", NOT_A_RETRO);
+  }
+  const step = await deleteRoomAggregateChunk(ctx, room._id);
   if (!step.done) {
-    await ctx.scheduler.runAfter(0, internal.maintenance.deleteRoomAggregateChunk, { roomId });
+    await ctx.scheduler.runAfter(0, internal.maintenance.deleteRoomAggregateChunk, {
+      roomId: room._id,
+    });
   }
 }
 
@@ -264,9 +271,15 @@ export interface RetroListRow {
   createdAt: number;
 }
 
+/** The entry the shared pointer names; the first entry if the pointer dangles. */
+export function currentStageOf(
+  retro: Pick<Doc<"retros">, "stages" | "currentStageId">
+): Doc<"retros">["stages"][number] {
+  return retro.stages.find((stage) => stage.id === retro.currentStageId) ?? retro.stages[0];
+}
+
 function toRow(room: Doc<"rooms">, retro: Doc<"retros">): RetroListRow {
-  const current =
-    retro.stages.find((stage) => stage.id === retro.currentStageId) ?? retro.stages[0];
+  const current = currentStageOf(retro);
   return {
     roomId: room._id,
     name: room.name,
@@ -288,7 +301,10 @@ async function rowsOf(ctx: QueryCtx, rooms: Doc<"rooms">[]): Promise<RetroListRo
 /** How many of a Team's retros a listing shows; the history row (#299) pages. */
 const MAX_LISTED_ROOMS = 200;
 
-/** The team page's listing (spec §5): the Team's retros in creation order. */
+/**
+ * The team page's listing (spec §5): the Team's retros in creation order.
+ * The bound keeps the newest, so a long history drops its oldest rows.
+ */
 export async function listForTeam(
   ctx: QueryCtx,
   teamId: Id<"teams">
@@ -296,8 +312,9 @@ export async function listForTeam(
   const rooms = await ctx.db
     .query("rooms")
     .withIndex("by_team", (q) => q.eq("teamId", teamId))
+    .order("desc")
     .take(MAX_LISTED_ROOMS);
-  return rowsOf(ctx, rooms);
+  return rowsOf(ctx, rooms.reverse());
 }
 
 /**
@@ -313,7 +330,7 @@ export function orderForDashboard(rows: RetroListRow[]): RetroListRow[] {
 }
 
 export interface RetroListGroup {
-  /** Undefined for the "No team" group. */
+  /** The door to the team page; only when the person is still a member. */
   teamId?: Id<"teams">;
   teamName: string;
   retros: RetroListRow[];
@@ -329,13 +346,18 @@ export async function listMine(
   ctx: QueryCtx,
   userId: Id<"users">
 ): Promise<RetroListGroup[]> {
-  const memberships = await ctx.db
+  // Walk the person's memberships newest first and keep the retro rooms
+  // among them, up to the bound: poker memberships share the index and
+  // must not use up the budget before a retro is reached.
+  const rooms: Doc<"rooms">[] = [];
+  for await (const membership of ctx.db
     .query("roomMemberships")
     .withIndex("by_user", (q) => q.eq("userId", userId))
-    .take(MAX_LISTED_ROOMS);
-  const rooms = (await Promise.all(memberships.map((m) => ctx.db.get(m.roomId)))).filter(
-    (room): room is Doc<"rooms"> => room !== null && room.roomType === "retro"
-  );
+    .order("desc")) {
+    const room = await ctx.db.get(membership.roomId);
+    if (room?.roomType === "retro") rooms.push(room);
+    if (rooms.length >= MAX_LISTED_ROOMS) break;
+  }
   const rows = await rowsOf(ctx, rooms);
   const roomById = new Map(rooms.map((room) => [room._id, room]));
 
@@ -353,20 +375,21 @@ export async function listMine(
       byTeam.delete(team._id);
     }
   }
-  // Retros of a Team the person has since left, or whose Team is gone, are
-  // still theirs by attendance; they list under the Team's name when it
-  // still exists.
+  // Retros of a Team the person has since left are still theirs by
+  // attendance: they list under the Team's name, without the door to a
+  // team page they can no longer open. A Team mid-cascade lists its rooms
+  // under "No team" until the cascade takes them.
+  const teamless = byTeam.get(undefined) ?? [];
   for (const [teamId, retros] of byTeam) {
     if (teamId === undefined) continue;
     const team = await ctx.db.get(teamId);
-    groups.push({
-      teamId,
-      teamName: team?.name ?? NO_TEAM_GROUP,
-      retros: orderForDashboard(retros),
-    });
+    if (team) {
+      groups.push({ teamName: team.name, retros: orderForDashboard(retros) });
+    } else {
+      teamless.push(...retros);
+    }
   }
-  const teamless = byTeam.get(undefined);
-  if (teamless) {
+  if (teamless.length > 0) {
     groups.push({ teamName: NO_TEAM_GROUP, retros: orderForDashboard(teamless) });
   }
   return groups;

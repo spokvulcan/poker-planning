@@ -6,9 +6,10 @@ import { useMutation, useQuery } from "convex/react";
 import { MoreHorizontal } from "lucide-react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import { resolve, type MemberRole, type TeamRole } from "@/convex/permissions";
+import { DEFAULT_RETRO_PERMISSIONS, resolve, type MemberRole, type TeamRole } from "@/convex/permissions";
 import {
   ADOPT_BUTTON,
+  ADOPT_CHOOSE_TEAM,
   ADOPT_DESCRIPTION,
   ADOPT_FAILED,
   ADOPT_MENU_ITEM,
@@ -17,6 +18,7 @@ import {
   CLAIM_FAILED,
   CLAIM_MENU_ITEM,
   DELETE_BUTTON,
+  DELETE_COUNTING,
   DELETE_FAILED,
   DELETE_MENU_ITEM,
   DELETE_TITLE,
@@ -96,11 +98,11 @@ export function RetroMenu({ roomId, team, role, isOwnerAbsent, myTeams }: RetroM
   const counts = useQuery(api.retro.deleteCounts, confirmDelete ? { roomId } : "skip");
 
   // The same decision the guard makes (ADR-0013): visible-but-disabled with
-  // the denial copy, never vanished. `permissions` are irrelevant to an
-  // owner-only verb; the poker defaults satisfy the type.
+  // the denial copy, never vanished. An owner-only verb never reads the
+  // category levels, so the retro defaults stand in for the room's.
   const deleteDecision = resolve(
     { kind: "relationship", verb: "delete" },
-    { actorRole: role, permissions: { stageFlow: "owner", cardManagement: "owner", actionManagement: "owner", retroSettings: "owner" }, ownerAbsent: isOwnerAbsent, ownerInTeam: false }
+    { actorRole: role, permissions: DEFAULT_RETRO_PERMISSIONS, ownerAbsent: isOwnerAbsent, ownerInTeam: false }
   );
   const myTeamRole = team ? myTeams.find((t) => t._id === team._id)?.role : undefined;
   const canClaim = team !== undefined && myTeamRole === "admin" && role !== "owner";
@@ -110,6 +112,9 @@ export function RetroMenu({ roomId, team, role, isOwnerAbsent, myTeams }: RetroM
     setIsDeleting(true);
     try {
       await remove({ roomId });
+      // Drop the counts subscription before the room's absence reaches it:
+      // its guard would throw for a room that no longer exists.
+      setConfirmDelete(false);
       toast.success(RETRO_DELETED);
       router.push(team ? `/team/${team._id}` : "/");
     } catch (error) {
@@ -171,7 +176,7 @@ export function RetroMenu({ roomId, team, role, isOwnerAbsent, myTeams }: RetroM
           <AlertDialogHeader>
             <AlertDialogTitle>{DELETE_TITLE}</AlertDialogTitle>
             <AlertDialogDescription>
-              {counts ? deleteRetroConfirm(counts.cards, counts.openActions) : "Counting…"}
+              {counts ? deleteRetroConfirm(counts.cards, counts.openActions) : DELETE_COUNTING}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -201,7 +206,7 @@ export function RetroMenu({ roomId, team, role, isOwnerAbsent, myTeams }: RetroM
               onChange={(e) => setAdoptTeamId(e.target.value)}
               className="h-9 rounded-lg border border-input bg-transparent px-2.5 text-sm dark:bg-input/30"
             >
-              <option value="">Choose a team</option>
+              <option value="">{ADOPT_CHOOSE_TEAM}</option>
               {myTeams.map((t) => (
                 <option key={t._id} value={t._id}>
                   {t.name}
