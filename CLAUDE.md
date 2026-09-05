@@ -6,10 +6,6 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 AgileKit is an open-source online planning poker tool for Scrum teams. The project is a modern Next.js/Convex stack with a whiteboard-style interface using React Flow.
 
-## Git Workflow Rules
-
-**IMPORTANT**: Always ask the user before committing or pushing changes, even if bypass permissions are enabled. Do not assume permission to commit or push based on tool access alone.
-
 ## Development Commands
 
 ```bash
@@ -33,8 +29,6 @@ npx playwright test tests/room/room-creation.spec.ts
 # Run tests matching a pattern
 npx playwright test -g "should create a new room"
 ```
-
-> Requires Node.js 20+
 
 ## Architecture
 

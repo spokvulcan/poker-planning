@@ -690,7 +690,10 @@ export async function linkAnonymousToPermanent(
 
     // Action items name their creator and owner by reference (ADR-0017):
     // re-point both in every room the account attended, by room like the
-    // cards. An anonymous account's rows are a handful per room.
+    // cards. An anonymous account's rows are a handful per room. The same
+    // person keeps owning, so no reminder is rescheduled (spec §16.3): the
+    // due-date job re-reads the row when it fires and reaches the merged
+    // account, and an anonymous account had no address to have emailed.
     for (const membership of memberships) {
       const actions = await ctx.db
         .query("retroActions")

@@ -416,7 +416,7 @@ On entering a `discuss` entry with no walk keyed to it, `advance` writes `walk =
 
 ### 16.1 Channel
 
-`convex/email.ts` grows into `send` with per-kind templates (`magicLink`, `retroOpen`, `nudge`, `ownerAssigned`, `dueToday`), raw `fetch` to Resend, one call per recipient, from "AgileKit". The mutation records intent and schedules `internal.email.send` with `runAfter(0)`; the action resolves recipients at send time through `ctx.runQuery`, skipping anyone opted out, deleted, address-less or no longer a team member. No send log. Bounces are left to Resend; whether Resend suppresses hard bounces automatically is checked by a person against current Resend documentation before the build relies on it. Teamless retros never email anyone. The magic link ignores `emailOptOut`.
+`convex/email.ts` grows into `send` with per-kind templates (`magicLink`, `retroOpen`, `nudge`, `ownerAssigned`, `dueToday`), raw `fetch` to Resend, one call per recipient, from "AgileKit". The mutation records intent and schedules `internal.email.send` (the retro emails, keyed by room and sender) or `internal.email.sendReminder` (the action item's, keyed by item) with `runAfter(0)`, or `runAt` for the due date; the action resolves recipients at send time through `ctx.runQuery`, skipping anyone opted out, deleted, address-less or no longer a team member. No send log. Bounces are left to Resend; whether Resend suppresses hard bounces automatically is checked by a person against current Resend documentation before the build relies on it. Teamless retros never email anyone. The magic link ignores `emailOptOut`.
 
 ### 16.2 Nudge
 
@@ -424,7 +424,7 @@ On entering a `discuss` entry with no walk keyed to it, `advance` writes `walk =
 
 ### 16.3 Reminders
 
-*Owner assigned*: sent once when `ownerId` is set to someone other than the actor who has an email; content: action text, who assigned it, due date, link. *Due today*: scheduled with `ctx.scheduler.runAt` at **08:00 UTC on `dueAt`'s date** (a documented v1 constant; no timezone is stored) when `dueAt` is set, job id in `reminderJobId`; any change to `dueAt`, `ownerId` or `status` cancels the job and reschedules only if still `open`, owned, and the instant is ahead; a past instant schedules nothing. No overdue email.
+*Owner assigned*: sent once when `ownerId` is set to someone other than the actor who has an email; content: action text, who assigned it, due date, link. *Due today*: scheduled with `ctx.scheduler.runAt` at **08:00 UTC on `dueAt`'s date** (a documented v1 constant; no timezone is stored) when `dueAt` is set, job id in `reminderJobId`; any change to `dueAt`, `ownerId` or `status` cancels the job and reschedules only if still `open`, owned, and the instant is ahead; a past instant schedules nothing; deleting the item cancels its job. Either send re-reads the item when it fires and sends nothing when it is gone, not `open`, unowned, reassigned since, or in a room that is gone or teamless; the owner then passes the channel's filter (§16.1): an address, no opt-out, and membership of the retro's Team, so an attendee who is not a Team member is never emailed. No reply-to on either email. No overdue email.
 
 ### 16.4 Opt-out
 
