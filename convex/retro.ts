@@ -59,12 +59,16 @@ export const board = query({
   },
 });
 
-/** The viewer's own cards in full, whatever the shared pointer hides (spec §9). */
+/**
+ * The viewer's own cards in full, whatever the shared pointer hides (spec
+ * §9): by author in a named retro, by the presented edit keys in an
+ * anonymous one (ADR-0012).
+ */
 export const mine = query({
-  args: { roomId: v.id("rooms") },
+  args: { roomId: v.id("rooms"), editKeys: v.optional(v.array(v.string())) },
   handler: async (ctx, args) => {
     const { user } = await requireRoomReader(ctx, args.roomId);
-    return await Retro.mine(ctx, args.roomId, user._id);
+    return await Retro.mine(ctx, args.roomId, user._id, args.editKeys);
   },
 });
 
@@ -234,6 +238,19 @@ export const claim = mutation({
   },
 });
 
+/**
+ * The owner-only ratchet (ADR-0012, spec §4.3): named to anonymous, once,
+ * forever; every author stripped, the first batch here and the rest by
+ * schedule.
+ */
+export const ratchet = mutation({
+  args: { roomId: v.id("rooms") },
+  handler: async (ctx, args) => {
+    const { room } = await requireCan(ctx, args.roomId, { kind: "relationship", verb: "ratchet" });
+    await Retro.ratchet(ctx, room);
+  },
+});
+
 /** Owner-level hard delete through the room cascade (ADR-0019). */
 export const remove = mutation({
   args: { roomId: v.id("rooms") },
@@ -290,6 +307,8 @@ const positionValidator = v.object({ x: v.number(), y: v.number() });
 /**
  * Write a card. Attendance is the only guard: writing is never in the
  * config (spec §4.2). The client mints `clientId`; a retry returns the row.
+ * Returns `{ cardId, editKey? }`: in an anonymous retro the key rides back
+ * once, and the client keeps it (ADR-0012).
  */
 export const createCard = mutation({
   args: {
@@ -305,31 +324,34 @@ export const createCard = mutation({
   },
 });
 
-/** Edit a card's text: own, or under `cardManagement`; the model decides per card. */
+/** Edit a card's text: own (by author or edit key), or under `cardManagement`; the model decides per card. */
 export const updateCard = mutation({
-  args: { roomId: v.id("rooms"), clientId: v.string(), text: v.string() },
+  args: { roomId: v.id("rooms"), clientId: v.string(), text: v.string(), editKey: v.optional(v.string()) },
   handler: async (ctx, args) => {
     const { roomId, ...rest } = args;
     await RetroCards.updateCardText(ctx, { ...(await requireCardActor(ctx, roomId)), ...rest });
   },
 });
 
-/** The one move mutation: a batch of `{ clientId, position }` (ADR-0022). */
+/** The one move mutation: a batch of `{ clientId, position, editKey? }` (ADR-0022, ADR-0012). */
 export const moveCards = mutation({
   args: {
     roomId: v.id("rooms"),
-    moves: v.array(v.object({ clientId: v.string(), position: positionValidator })),
+    moves: v.array(
+      v.object({ clientId: v.string(), position: positionValidator, editKey: v.optional(v.string()) })
+    ),
   },
   handler: async (ctx, args) => {
     await RetroCards.moveCards(ctx, { ...(await requireCardActor(ctx, args.roomId)), moves: args.moves });
   },
 });
 
-/** Delete a card: own, or under `cardManagement`. */
+/** Delete a card: own (by author or edit key), or under `cardManagement`. */
 export const deleteCard = mutation({
-  args: { roomId: v.id("rooms"), clientId: v.string() },
+  args: { roomId: v.id("rooms"), clientId: v.string(), editKey: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    await RetroCards.deleteCard(ctx, { ...(await requireCardActor(ctx, args.roomId)), clientId: args.clientId });
+    const { roomId, ...rest } = args;
+    await RetroCards.deleteCard(ctx, { ...(await requireCardActor(ctx, roomId)), ...rest });
   },
 });
 

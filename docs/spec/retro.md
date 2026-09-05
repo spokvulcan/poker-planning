@@ -311,7 +311,7 @@ Own-card rights (edit text, move, delete) are proven by `authorId` in a named re
 
 ### 8.3 Reveal (ADR-0015)
 
-The projection is one pure function `projectCard(entry, reader, card)` in `convex/model/retro.ts`, applied in every read function and export: when the **shared pointer's** entry has `cardsVisible: "hidden"` and the card is not the reader's own, return `{ _id, clientId, position, promptId, clusterId, late? }` only, in both attribution modes. The read function takes the stage from the `retros` row, never from a client argument. Rewinding into a hidden entry hides every card again; a second `collect` entry hides again. No role peeks. The in-place toggle `setCardsVisible({ stageId: currentStageId, value })` is `stageFlow`. Tallies use the same mechanism with `tallyVisible`; a voter always sees their own dots.
+The projection is one pure function `projectCard(policy, reader, card)` in `convex/model/retro.ts` — `policy` being the shared pointer's `cardsVisible` and the retro's `attribution`, so a row still carrying an author between the ratchet's first batch and its last is never read as named, applied in every read function and export: when the **shared pointer's** entry has `cardsVisible: "hidden"` and the card is not the reader's own, return `{ _id, clientId, position, promptId, clusterId, late? }` only, in both attribution modes. The read function takes the stage from the `retros` row, never from a client argument. Rewinding into a hidden entry hides every card again; a second `collect` entry hides again. No role peeks. The in-place toggle `setCardsVisible({ stageId: currentStageId, value })` is `stageFlow`. Tallies use the same mechanism with `tallyVisible`; a voter always sees their own dots.
 
 ## 9. Board reads (ADR-0016)
 

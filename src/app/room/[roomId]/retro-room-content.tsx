@@ -12,6 +12,7 @@ import { RetroBoard, type BoardViewer } from "@/components/retro/retro-board";
 import { mergeCards, type BoardCard } from "@/components/retro/cards";
 import { readinessOf } from "@/components/retro/readiness";
 import { useCardActions } from "@/components/retro/use-card-actions";
+import { useEditKeys, type EditKeyStore } from "@/components/retro/use-edit-keys";
 import { useSingleFlightMutation } from "@/hooks/useSingleFlightMutation";
 import { RetroMenu, type MyTeam } from "@/components/retro/retro-menu";
 import type { RetroTeam } from "@/components/retro/retro-header";
@@ -64,12 +65,21 @@ export function RetroRoomContent({ roomId, roomData, membership }: RetroRoomCont
   const isTeamMember = team !== undefined && (myTeams ?? []).some((t) => t._id === team._id);
   const canRead = isMember || isTeamMember;
   // The board read takes the reader guard; never subscribe before it passes.
-  // `mine` is the attendee's own text (spec §9); a Team reader has none.
+  // `mine` is the attendee's own text (spec §9); a Team reader has none. It
+  // always carries the keys this browser holds for the room (ADR-0012): an
+  // anonymous retro is answered by them, a named one ignores them, and
+  // neither read waits for the other.
   const board = useQuery(api.retro.board, canRead ? { roomId } : "skip");
-  const mine = useQuery(api.retro.mine, isMember ? { roomId } : "skip");
+  const editKeys = useEditKeys(roomId);
+  const mineArgs = useMemo(() => ({ roomId, editKeys: editKeys.keys }), [roomId, editKeys.keys]);
+  const mine = useQuery(api.retro.mine, isMember ? mineArgs : "skip");
+  // A re-keyed subscription answers a beat later; hold the last answer so
+  // the viewer's own cards never flash to silhouettes in between.
+  const [settledMine, setSettledMine] = useState(mine);
+  if (mine !== undefined && mine !== settledMine) setSettledMine(mine);
   const cards = useMemo<BoardCard[]>(
-    () => (board ? mergeCards(board.cards, mine, membership?._id) : []),
-    [board, mine, membership?._id]
+    () => (board ? mergeCards(board.cards, mine ?? settledMine, membership?._id) : []),
+    [board, mine, settledMine, membership?._id]
   );
   // A Team reader never heartbeats, so their roster reads everyone offline.
   const offlineUsers = useMemo<UserWithPresence[]>(
@@ -136,6 +146,7 @@ export function RetroRoomContent({ roomId, roomData, membership }: RetroRoomCont
       team={team}
       userId={membership!._id}
       myTeams={(myTeams ?? []) as MyTeam[]}
+      editKeys={editKeys}
     />
   );
 }
@@ -148,6 +159,7 @@ interface AttendeeBoardProps {
   team?: RetroTeam;
   userId: Id<"users">;
   myTeams: MyTeam[];
+  editKeys: EditKeyStore;
 }
 
 /**
@@ -157,7 +169,7 @@ interface AttendeeBoardProps {
  * wiring. Its own component so the presence hook — which has no skip —
  * mounts only once a membership exists; a Team reader never heartbeats.
  */
-function AttendeeBoard({ roomId, roomData, board, cards, team, userId, myTeams }: AttendeeBoardProps) {
+function AttendeeBoard({ roomId, roomData, board, cards, team, userId, myTeams, editKeys }: AttendeeBoardProps) {
   const { retro } = board;
   const users = useRoomPresence(roomId, userId, roomData.users);
   const setRetroPresence = useSingleFlightMutation(
@@ -168,7 +180,11 @@ function AttendeeBoard({ roomId, roomData, board, cards, team, userId, myTeams }
   const setCardsVisible = useMutation(api.retro.setCardsVisible);
   const setTimebox = useMutation(api.retro.setTimebox);
   const { stageFlow, cardManagement, retroSettings } = useRetroPermissions(roomData, userId);
-  const cardActions = useCardActions(roomId, userId);
+  const writer = useMemo(
+    () => ({ userId, anonymous: retro.attribution === "anonymous", editKeys }),
+    [userId, retro.attribution, editKeys]
+  );
+  const cardActions = useCardActions(roomId, writer);
   const currentStageId = currentStageOf(retro).id;
   // The payload is written whole, so an editing write carries readiness
   // too: the viewer's last toggle for this entry, else what their presence
@@ -241,6 +257,7 @@ function AttendeeBoard({ roomId, roomData, board, cards, team, userId, myTeams }
           role={role}
           isOwnerAbsent={roomData.isOwnerAbsent}
           myTeams={myTeams}
+          attribution={retro.attribution}
           settings={{
             name: roomData.room.name,
             joinPolicy: roomData.room.joinPolicy ?? "anyone",

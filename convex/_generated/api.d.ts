@@ -35,6 +35,7 @@ import type * as model_analytics from "../model/analytics.js";
 import type * as model_auth from "../model/auth.js";
 import type * as model_canvas from "../model/canvas.js";
 import type * as model_cleanup from "../model/cleanup.js";
+import type * as model_editKeys from "../model/editKeys.js";
 import type * as model_integrations from "../model/integrations.js";
 import type * as model_issues from "../model/issues.js";
 import type * as model_permissions from "../model/permissions.js";
@@ -102,6 +103,7 @@ declare const fullApi: ApiFromModules<{
   "model/auth": typeof model_auth;
   "model/canvas": typeof model_canvas;
   "model/cleanup": typeof model_cleanup;
+  "model/editKeys": typeof model_editKeys;
   "model/integrations": typeof model_integrations;
   "model/issues": typeof model_issues;
   "model/permissions": typeof model_permissions;

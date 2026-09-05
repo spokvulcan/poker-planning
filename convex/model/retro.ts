@@ -55,6 +55,7 @@ import {
   VOTE_BUDGET_INVALID,
 } from "../retroCopy";
 import { refusal } from "./refusal";
+import { hashEditKeys } from "./editKeys";
 
 /**
  * The retro (ADR-0016): one room with its ceremony state in a `retros` row
@@ -268,8 +269,29 @@ export type FullCard = Silhouette & {
 
 export type ProjectedCard = Silhouette | FullCard;
 
-/** Who is reading: a person, or nobody in particular (the identity-free board). */
-export type Reader = { userId: Id<"users"> } | null;
+export type Attribution = Doc<"retros">["attribution"];
+
+/**
+ * What the projection reads from the retro: the shared pointer's reveal
+ * policy (ADR-0015) and the attribution (ADR-0012). The attribution is
+ * consulted so that between the ratchet's first batch and its last, a row
+ * still carrying an author is never read as named.
+ */
+export interface ProjectionPolicy {
+  cardsVisible: Visibility;
+  attribution: Attribution;
+}
+
+/** The policy of a retro right now: its current entry's reveal and its attribution. */
+export function policyOf(retro: Doc<"retros">): ProjectionPolicy {
+  return { cardsVisible: currentStageOf(retro).cardsVisible, attribution: retro.attribution };
+}
+
+/**
+ * Who is reading: a person — by id, and by the hashes of the edit keys they
+ * present (ADR-0012) — or nobody in particular (the identity-free board).
+ */
+export type Reader = { userId: Id<"users">; editKeyHashes?: ReadonlySet<string> } | null;
 
 function silhouetteOf(card: Doc<"retroCards">): Silhouette {
   return {
@@ -281,35 +303,44 @@ function silhouetteOf(card: Doc<"retroCards">): Silhouette {
   };
 }
 
-function fullCardOf(card: Doc<"retroCards">): FullCard {
+function fullCardOf(card: Doc<"retroCards">, attribution: Attribution): FullCard {
   return {
     ...silhouetteOf(card),
     text: card.text,
-    ...(card.authorId !== undefined ? { authorId: card.authorId } : {}),
+    ...(attribution === "named" && card.authorId !== undefined ? { authorId: card.authorId } : {}),
     createdAt: card.createdAt,
     updatedAt: card.updatedAt,
     committedAt: card.committedAt,
   };
 }
 
+/** Own means the author in a named retro and a presented key in an anonymous one (ADR-0012). */
+function isOwn(policy: ProjectionPolicy, reader: Reader, card: Doc<"retroCards">): boolean {
+  if (reader === null) return false;
+  if (policy.attribution === "named") {
+    return card.authorId !== undefined && card.authorId === reader.userId;
+  }
+  return card.editKeyHash !== undefined && reader.editKeyHashes?.has(card.editKeyHash) === true;
+}
+
 /**
  * The one projection (ADR-0015): when the entry hides cards and the card is
  * not the reader's own, a silhouette; otherwise the card without its edit
- * key hash. Pure. The entry is always the shared pointer's (the caller
- * reads it from the retros row, never from a client argument); the reader
- * is `null` for the identity-free board, so its bytes are the same for
- * every viewer, and a person for `retro.mine` and the exports.
+ * key hash, and without its author in an anonymous retro. Pure. The policy
+ * is always the shared pointer's (the caller reads it from the retros row,
+ * never from a client argument); the reader is `null` for the
+ * identity-free board, so its bytes are the same for every viewer, and a
+ * person for `retro.mine` and the exports.
  */
 export function projectCard(
-  entry: Pick<StageEntry, "cardsVisible">,
+  policy: ProjectionPolicy,
   reader: Reader,
   card: Doc<"retroCards">
 ): ProjectedCard {
-  const own = reader !== null && card.authorId !== undefined && card.authorId === reader.userId;
-  if (entry.cardsVisible === "hidden" && !own) {
+  if (policy.cardsVisible === "hidden" && !isOwn(policy, reader, card)) {
     return silhouetteOf(card);
   }
-  return fullCardOf(card);
+  return fullCardOf(card, policy.attribution);
 }
 
 /** How many cards and clusters one board read carries; a retro never approaches it. */
@@ -335,7 +366,7 @@ export interface BoardRead {
  */
 export async function board(ctx: QueryCtx, roomId: Id<"rooms">): Promise<BoardRead> {
   const retro = await requireRetro(ctx, roomId);
-  const entry = currentStageOf(retro);
+  const policy = policyOf(retro);
   const [clusters, rows] = await Promise.all([
     ctx.db
       .query("retroClusters")
@@ -355,35 +386,152 @@ export async function board(ctx: QueryCtx, roomId: Id<"rooms">): Promise<BoardRe
   return {
     retro,
     clusters,
-    cards: rows.map((row) => projectCard(entry, null, row)),
+    cards: rows.map((row) => projectCard(policy, null, row)),
     writers: [...writers],
   };
 }
 
+/** How many presented keys one `mine` read hashes; a browser never holds more cards than a board. */
+const MAX_PRESENTED_KEYS = MAX_BOARD_ROWS;
+
 /**
  * `retro.mine` (spec §9): the viewer's own cards, by `by_room_author` in a
- * named retro, through the one projection with the viewer as reader — so
- * "own means full" is decided in `projectCard`, not here. The anonymous
- * half (presented edit keys) joins with ADR-0012's edit-key ticket; until
- * then an anonymous retro has no "mine".
+ * named retro and by the presented edit keys — hashed and matched against
+ * the room's rows — in an anonymous one, through the one projection with
+ * the viewer as reader, so "own means full" is decided in `projectCard`,
+ * not here. Keys are the capability: whoever presents one reads its card.
  */
 export async function mine(
   ctx: QueryCtx,
   roomId: Id<"rooms">,
-  userId: Id<"users">
+  userId: Id<"users">,
+  editKeys: readonly string[] = []
 ): Promise<FullCard[]> {
   const retro = await requireRetro(ctx, roomId);
-  const entry = currentStageOf(retro);
+  const policy = policyOf(retro);
+  const { reader, rows } =
+    policy.attribution === "named"
+      ? await mineByAuthor(ctx, roomId, userId)
+      : await mineByKeys(ctx, roomId, userId, editKeys);
+  return rows.map((row) => {
+    const card = projectCard(policy, reader, row);
+    // Every row here is the reader's own, so the projection can only answer in full.
+    if (!("text" in card)) throw new Error("retro.mine: own card projected as a silhouette");
+    return card;
+  });
+}
+
+async function mineByAuthor(
+  ctx: QueryCtx,
+  roomId: Id<"rooms">,
+  userId: Id<"users">
+): Promise<{ reader: Reader; rows: Doc<"retroCards">[] }> {
   const rows = await ctx.db
     .query("retroCards")
     .withIndex("by_room_author", (q) => q.eq("roomId", roomId).eq("authorId", userId))
     .take(MAX_BOARD_ROWS);
-  return rows.map((row) => {
-    const card = projectCard(entry, { userId }, row);
-    // The index is by author, so the projection can only answer in full.
-    if (!("text" in card)) throw new Error("retro.mine: own card projected as a silhouette");
-    return card;
+  return { reader: { userId }, rows };
+}
+
+/**
+ * The anonymous half: no index can answer "whose key is this", so the
+ * room's cards are read whole (bounded) and matched against the hashes of
+ * the presented keys. No keys, no read.
+ */
+async function mineByKeys(
+  ctx: QueryCtx,
+  roomId: Id<"rooms">,
+  userId: Id<"users">,
+  editKeys: readonly string[]
+): Promise<{ reader: Reader; rows: Doc<"retroCards">[] }> {
+  const editKeyHashes = await hashEditKeys(editKeys.slice(0, MAX_PRESENTED_KEYS));
+  const reader: Reader = { userId, editKeyHashes };
+  if (editKeyHashes.size === 0) return { reader, rows: [] };
+  const all = await ctx.db
+    .query("retroCards")
+    .withIndex("by_room", (q) => q.eq("roomId", roomId))
+    .take(MAX_BOARD_ROWS);
+  return {
+    reader,
+    rows: all.filter((row) => row.editKeyHash !== undefined && editKeyHashes.has(row.editKeyHash)),
+  };
+}
+
+// --- The ratchet (ADR-0012, spec §4.3) ---
+
+/** How many cards one strip step touches; the rest continues by schedule (spec §4.3). */
+export const STRIP_BATCH_SIZE = 500;
+
+export interface StripStep {
+  done: boolean;
+  /** The creation time the next step starts after; meaningful only when not done. */
+  after?: number;
+}
+
+/**
+ * One bounded step of the ratchet's strip: the room's next batch of cards
+ * in creation order, each author removed. Progress is by `_creationTime`
+ * on `by_room`, resumed inclusively so rows sharing the boundary instant
+ * are never skipped — re-reading an already stripped row is a no-op.
+ * Never touches `editKeyHash`, never touches a voter, and never bumps the
+ * activity clock — the pressing mutation did that once (spec §14).
+ */
+export async function stripCardAuthorsChunk(
+  ctx: MutationCtx,
+  roomId: Id<"rooms">,
+  after?: number,
+  batchSize: number = STRIP_BATCH_SIZE
+): Promise<StripStep> {
+  const rows = await ctx.db
+    .query("retroCards")
+    .withIndex("by_room", (q) =>
+      after === undefined ? q.eq("roomId", roomId) : q.eq("roomId", roomId).gte("_creationTime", after)
+    )
+    .take(batchSize);
+  for (const row of rows) {
+    if (row.authorId !== undefined) {
+      await ctx.db.patch(row._id, { authorId: undefined });
+    }
+  }
+  if (rows.length < batchSize) {
+    return { done: true };
+  }
+  return { done: false, after: rows[rows.length - 1]._creationTime };
+}
+
+/** Schedules the next strip step when one remains: the room-cascade continuation shape. */
+export async function continueStrip(
+  ctx: MutationCtx,
+  roomId: Id<"rooms">,
+  step: StripStep
+): Promise<void> {
+  if (step.done) return;
+  await ctx.scheduler.runAfter(0, internal.maintenance.stripCardAuthorsChunk, {
+    roomId,
+    after: step.after,
   });
+}
+
+/**
+ * `ratchet` (ADR-0012): the guard has decided the actor is the owner. Flips
+ * the retro to `anonymous` and strips the first batch of authors in the
+ * same mutation, so no read after this commit shows a named card — the
+ * projection reads the flag, and the rest of the strip continues by
+ * schedule in the room-cascade shape. Irreversible; a second press is a
+ * no-op. Allowed on a retro at rest. Calls the activity chokepoint once;
+ * the continuation never does.
+ */
+export async function ratchet(ctx: MutationCtx, room: Doc<"rooms">): Promise<void> {
+  if (room.roomType !== "retro") {
+    throw refusal("missing", NOT_A_RETRO);
+  }
+  const retro = await requireRetro(ctx, room._id);
+  if (retro.attribution === "anonymous") {
+    return;
+  }
+  await ctx.db.patch(retro._id, { attribution: "anonymous" });
+  await continueStrip(ctx, room._id, await stripCardAuthorsChunk(ctx, room._id));
+  await updateRoomActivity(ctx, room);
 }
 
 // --- Stages (ADR-0010, spec §7) ---

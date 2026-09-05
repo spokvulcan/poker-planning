@@ -24,18 +24,20 @@ export interface CreateCardArgs {
 
 export interface MoveCardsArgs {
   roomId: Id<"rooms">;
-  moves: { clientId: string; position: { x: number; y: number } }[];
+  moves: { clientId: string; position: { x: number; y: number }; editKey?: string }[];
 }
 
 export interface UpdateCardArgs {
   roomId: Id<"rooms">;
   clientId: string;
   text: string;
+  editKey?: string;
 }
 
 export interface DeleteCardArgs {
   roomId: Id<"rooms">;
   clientId: string;
+  editKey?: string;
 }
 
 function patchBoard(store: OptimisticLocalStore, patch: (board: BoardRead) => BoardRead): void {
@@ -52,11 +54,15 @@ function patchMine(store: OptimisticLocalStore, patch: (mine: FullCard[]) => Ful
   }
 }
 
-/** A create: the row as the server will write it, with a placeholder id until the result lands. */
+/**
+ * A create: the row as the server will write it, with a placeholder id
+ * until the result lands. In an anonymous retro the card carries no author
+ * and the writer set stays empty, as the server's read will (ADR-0012).
+ */
 export function applyCreate(
   store: OptimisticLocalStore,
   args: CreateCardArgs,
-  viewer: { userId: Id<"users">; now?: number }
+  viewer: { userId: Id<"users">; anonymous?: boolean; now?: number }
 ): void {
   const now = viewer.now ?? Date.now();
   const full: FullCard = {
@@ -65,7 +71,7 @@ export function applyCreate(
     position: args.position,
     promptId: args.promptId,
     text: args.text,
-    authorId: viewer.userId,
+    ...(viewer.anonymous ? {} : { authorId: viewer.userId }),
     createdAt: now,
     updatedAt: now,
     committedAt: now,
@@ -76,9 +82,10 @@ export function applyCreate(
     const card: ProjectedCard = hidden
       ? { _id: full._id, clientId: full.clientId, position: full.position, promptId: full.promptId }
       : full;
-    const writers = board.writers.includes(viewer.userId)
-      ? board.writers
-      : [...board.writers, viewer.userId];
+    const writers =
+      viewer.anonymous || board.writers.includes(viewer.userId)
+        ? board.writers
+        : [...board.writers, viewer.userId];
     return { ...board, cards: [...board.cards, card], writers };
   });
   patchMine(store, (mine) =>

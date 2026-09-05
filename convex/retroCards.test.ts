@@ -13,6 +13,7 @@ import * as Users from "./model/users";
 // ADR-0022): writing, own-card rights, `cardManagement` on another's card,
 // `clientId` dedupe, the silhouette projection by the shared pointer, and
 // the four refusal codes on their paths. No stage ever forbids a card act.
+// The anonymous half (edit keys, the ratchet) is retroAttribution.test.ts.
 
 const modules = import.meta.glob("./**/*.*s");
 
@@ -80,8 +81,9 @@ describe("retro.createCard", () => {
     const t = convexTest(schema, modules);
     const { roomId, promptId } = await seedRetro(t);
 
-    const cardId = await write(t, "guest", roomId, promptId, "c1", "  keep the demo  ");
+    const { cardId, editKey } = await write(t, "guest", roomId, promptId, "c1", "  keep the demo  ");
 
+    expect(editKey).toBeUndefined();
     const [card] = await cardsOf(t, roomId);
     expect(card._id).toBe(cardId);
     expect(card).toMatchObject({
@@ -103,7 +105,7 @@ describe("retro.createCard", () => {
     const first = await write(t, "guest", roomId, promptId, "c1", "one");
     const again = await write(t, "guest", roomId, promptId, "c1", "changed");
 
-    expect(again).toBe(first);
+    expect(again).toEqual(first);
     const cards = await cardsOf(t, roomId);
     expect(cards).toHaveLength(1);
     expect(cards[0].text).toBe("one");
@@ -326,16 +328,7 @@ describe("a stage never forbids a card act (ADR-0010)", () => {
   });
 });
 
-describe("attribution (ADR-0012, named half)", () => {
-  it("an anonymous retro refuses a card with `forbidden` until the edit-key half ships", async () => {
-    const t = convexTest(schema, modules);
-    const { roomId, promptId } = await seedRetro(t);
-    const retro = await retroRow(t, roomId);
-    await t.run((ctx) => ctx.db.patch(retro._id, { attribution: "anonymous" }));
-    expect(await codeOf(write(t, "guest", roomId, promptId, "c1"))).toBe("forbidden");
-    expect(await cardsOf(t, roomId)).toHaveLength(0);
-  });
-
+describe("attribution (ADR-0012, named half; the anonymous half is retroAttribution.test.ts)", () => {
   it("linking an anonymous account to an existing permanent one re-points authorId", async () => {
     const t = convexTest(schema, modules);
     const { roomId, promptId } = await seedRetro(t);

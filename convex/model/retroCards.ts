@@ -5,8 +5,8 @@ import { resolveRoomAction } from "./auth";
 import { updateRoomActivity } from "./rooms";
 import { requireRetro } from "./retro";
 import { refusal } from "./refusal";
+import { editKeyOpens, hashEditKey, mintEditKey } from "./editKeys";
 import {
-  ANONYMOUS_CARDS_NOT_YET,
   CARD_NOT_FOUND,
   CARD_TEXT_REQUIRED,
   CARD_TEXT_TOO_LONG,
@@ -14,11 +14,16 @@ import {
 } from "../retroCopy";
 
 /**
- * Cards (spec §8.1, ADR-0012 named half, ADR-0022): writing, own-card
- * rights, the one move batch, and the text edit and delete. Every act here
- * is a person's and correct in every stage; the shared pointer never
- * forbids one (ADR-0010). Every rule-based refusal is a `ConvexError` with
- * one of the four codes (spec §4.5).
+ * Cards (spec §8.1, ADR-0012, ADR-0022): writing, own-card rights, the one
+ * move batch, and the text edit and delete. Every act here is a person's
+ * and correct in every stage; the shared pointer never forbids one
+ * (ADR-0010). Every rule-based refusal is a `ConvexError` with one of the
+ * four codes (spec §4.5).
+ *
+ * Attribution is decided at write time and never revisited: a named card
+ * stores its author; an anonymous card stores only the SHA-256 hash of an
+ * edit key the server minted and returned once. "Mine" is then the key in
+ * the writer's browser, not a link in the row (ADR-0012).
  */
 
 export const MAX_CARD_TEXT = 2000;
@@ -70,13 +75,21 @@ async function requireCard(
   return card;
 }
 
+/** What a create returns: the row, and in an anonymous retro the key, once. */
+export interface CreateCardResult {
+  cardId: Id<"retroCards">;
+  /** Present only for a freshly written anonymous card; a retry never carries it again. */
+  editKey?: string;
+}
+
 /**
  * Write a card (spec §8.1). The client mints `clientId`, so a retried
- * create finds its row and inserts nothing. In a named retro the caller
- * becomes the author; the anonymous half (edit keys, ADR-0012) is not
- * built yet, so an anonymous retro refuses the write rather than store an
- * author it promised not to. `committedAt = createdAt = Date.now()` inside
- * the mutation (spec §23.6).
+ * create finds its row and inserts nothing — and, in an anonymous retro,
+ * returns no key a second time: the plaintext is never stored, so it can
+ * only ever be handed out once. In a named retro the caller becomes the
+ * author; in an anonymous one the row gets the hash of a minted key and the
+ * caller gets the key. `committedAt = createdAt = Date.now()` inside the
+ * mutation (spec §23.6).
  */
 export async function createCard(
   ctx: MutationCtx,
@@ -88,19 +101,17 @@ export async function createCard(
     promptId: string;
     position: Position;
   }
-): Promise<Id<"retroCards">> {
+): Promise<CreateCardResult> {
   const retro = await requireRetro(ctx, args.room._id);
   if (!retro.format.prompts.some((p) => p.id === args.promptId)) {
     throw refusal("missing", PROMPT_NOT_FOUND);
   }
   const text = validateCardText(args.text);
-  if (retro.attribution !== "named") {
-    throw refusal("forbidden", ANONYMOUS_CARDS_NOT_YET);
-  }
   const existing = await getCardByClientId(ctx, args.room._id, args.clientId);
   if (existing) {
-    return existing._id;
+    return { cardId: existing._id };
   }
+  const editKey = retro.attribution === "anonymous" ? mintEditKey() : undefined;
   const now = Date.now();
   const cardId = await ctx.db.insert("retroCards", {
     roomId: args.room._id,
@@ -108,31 +119,44 @@ export async function createCard(
     text,
     promptId: args.promptId,
     position: args.position,
-    authorId: args.actor.user._id,
+    // Exactly one of the two (ADR-0012).
+    ...(editKey === undefined
+      ? { authorId: args.actor.user._id }
+      : { editKeyHash: await hashEditKey(editKey) }),
     createdAt: now,
     updatedAt: now,
     committedAt: now,
   });
   await updateRoomActivity(ctx, args.room);
-  return cardId;
+  return editKey === undefined ? { cardId } : { cardId, editKey };
 }
 
 /**
  * Own-card rights (spec §8.1): the author may edit, move and delete their
- * card; anyone else needs `cardManagement`. The decision is the guard's own
- * (`resolveRoomAction`), read back rather than thrown because whether the
- * category applies depends on the card, and a denial must be a `forbidden`
- * refusal the client can tell from a failure. One check per act: a batch
- * resolves the category once and tests authorship per card.
+ * card, proven by `authorId` in a named retro and by presenting the edit
+ * key in an anonymous one; anyone else needs `cardManagement`, which is
+ * also the only way to touch a card the ratchet stripped (neither author
+ * nor key). The decision is the guard's own (`resolveRoomAction`), read
+ * back rather than thrown because whether the category applies depends on
+ * the card, and a denial must be a `forbidden` refusal the client can tell
+ * from a failure. One check per act: a batch resolves the category once and
+ * tests ownership per card, so a batch mixing owned and unowned cards is
+ * refused whole for anyone without the category.
  */
 function cardRights(
   ctx: QueryCtx,
   room: Doc<"rooms">,
   actor: CardActor
-): (card: Doc<"retroCards">) => Promise<void> {
+): (card: Doc<"retroCards">, editKey?: string) => Promise<void> {
   let decision: Promise<ResolvedDecision> | undefined;
-  return async (card) => {
+  return async (card, editKey) => {
+    // Between the ratchet's first batch and its last, a row may still carry
+    // its author; the author keeps their own-card right for that beat. No
+    // read shows the name meanwhile (the projection reads the flag).
     if (card.authorId !== undefined && card.authorId === actor.user._id) {
+      return;
+    }
+    if (await editKeyOpens(card, editKey)) {
       return;
     }
     decision ??= resolveRoomAction(ctx, actor.user, actor.membership, room, {
@@ -149,10 +173,10 @@ function cardRights(
 /** Edit a card's text; the author is untouched and no editor is recorded (ADR-0012). */
 export async function updateCardText(
   ctx: MutationCtx,
-  args: { room: Doc<"rooms">; actor: CardActor; clientId: string; text: string }
+  args: { room: Doc<"rooms">; actor: CardActor; clientId: string; text: string; editKey?: string }
 ): Promise<void> {
   const card = await requireCard(ctx, args.room._id, args.clientId);
-  await cardRights(ctx, args.room, args.actor)(card);
+  await cardRights(ctx, args.room, args.actor)(card, args.editKey);
   await ctx.db.patch(card._id, { text: validateCardText(args.text), updatedAt: Date.now() });
   await updateRoomActivity(ctx, args.room);
 }
@@ -160,6 +184,8 @@ export async function updateCardText(
 export interface CardMove {
   clientId: string;
   position: Position;
+  /** The card's edit key, for an anonymous card the mover wrote (ADR-0012). */
+  editKey?: string;
 }
 
 /**
@@ -175,8 +201,8 @@ export async function moveCards(
     args.moves.map((move) => requireCard(ctx, args.room._id, move.clientId))
   );
   const mayTouch = cardRights(ctx, args.room, args.actor);
-  for (const card of cards) {
-    await mayTouch(card);
+  for (const [i, card] of cards.entries()) {
+    await mayTouch(card, args.moves[i].editKey);
   }
   const now = Date.now();
   await Promise.all(
@@ -190,10 +216,10 @@ export async function moveCards(
 /** Delete a card: own, or under `cardManagement`. */
 export async function deleteCard(
   ctx: MutationCtx,
-  args: { room: Doc<"rooms">; actor: CardActor; clientId: string }
+  args: { room: Doc<"rooms">; actor: CardActor; clientId: string; editKey?: string }
 ): Promise<void> {
   const card = await requireCard(ctx, args.room._id, args.clientId);
-  await cardRights(ctx, args.room, args.actor)(card);
+  await cardRights(ctx, args.room, args.actor)(card, args.editKey);
   await ctx.db.delete(card._id);
   await updateRoomActivity(ctx, args.room);
 }

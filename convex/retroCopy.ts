@@ -240,6 +240,17 @@ export const DELETING_BUTTON = "Deleting…";
 export const DELETE_FAILED = "Failed to delete this retro";
 export const RETRO_DELETED = "Retro deleted";
 
+// --- The ratchet (spec §4.3, §19; ADR-0012) ---
+
+export const RATCHET_MENU_ITEM = "Make anonymous…";
+export const RATCHET_TITLE = "Make this retro anonymous?";
+export const RATCHET_DESCRIPTION =
+  "Every author is removed permanently and this cannot be undone.";
+export const RATCHET_BUTTON = "Make anonymous";
+export const RATCHETING_BUTTON = "Removing authors…";
+export const RATCHET_FAILED = "Failed to make this retro anonymous";
+export const RETRO_ANONYMOUS = "This retro is now anonymous";
+
 
 // --- Cards (spec §8.1, §19; ADR-0012, ADR-0015, ADR-0022) ---
 
@@ -247,14 +258,17 @@ export const RETRO_DELETED = "Retro deleted";
 export const CARD_NOT_FOUND = "That card is no longer on the board";
 export const CARD_TEXT_REQUIRED = "A card needs some text";
 export const CARD_TEXT_TOO_LONG = "A card holds at most 2000 characters";
-/** `createCard` in an anonymous retro before the edit-key half of ADR-0012 ships. */
-export const ANONYMOUS_CARDS_NOT_YET = "Anonymous retros cannot take cards yet";
-
 /** Composer, named (ADR-0012). */
 export const postedAs = (name: string) => `Posted as ${name}. Your name stays with this card.`;
+/** Composer, anonymous (ADR-0012): the claim the storage supports, no more. */
+export const COMPOSER_ANONYMOUS =
+  "Anonymous. Your name is not saved with this card, not even for the facilitator. Edit or delete it from this device.";
 /** Composer, hidden, named (ADR-0015); stacks under the attribution line. */
 export const COMPOSER_HIDDEN_NAMED =
   "Only you can read this for now. Others can see you've added a card, not what it says. Everyone reads it once cards are revealed.";
+/** Composer, hidden, anonymous (ADR-0015). */
+export const COMPOSER_HIDDEN_ANONYMOUS =
+  "Only you can read this for now. Everyone reads it once cards are revealed.";
 /** Composer, visible, either attribution. */
 export const COMPOSER_VISIBLE = "Everyone in the retro can read this now.";
 
