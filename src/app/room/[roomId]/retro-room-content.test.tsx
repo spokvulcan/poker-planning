@@ -18,15 +18,29 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/convex/_generated/api", () => ({
   api: {
-    retro: { board: "retro.board", advance: "retro.advance", setCardsVisible: "retro.setCardsVisible", setTimebox: "retro.setTimebox" },
+    retro: {
+      board: "retro.board",
+      mine: "retro.mine",
+      advance: "retro.advance",
+      setCardsVisible: "retro.setCardsVisible",
+      setTimebox: "retro.setTimebox",
+      createCard: "retro.createCard",
+      updateCard: "retro.updateCard",
+      moveCards: "retro.moveCards",
+      deleteCard: "retro.deleteCard",
+    },
     teams: { listMine: "teams.listMine" },
-    presence: { setReadiness: "presence.setReadiness" },
+    presence: { setRetroPresence: "presence.setRetroPresence" },
   },
 }));
 vi.mock("convex/react", () => ({
   useQuery: (ref: string, args: unknown) => (args === "skip" ? undefined : mocks.queries[ref]),
-  useMutation: (ref: string) => async (args: unknown) => {
-    mocks.mutations.push({ fn: ref, args });
+  useMutation: (ref: string) => {
+    const fn = async (args: unknown) => {
+      mocks.mutations.push({ fn: ref, args });
+    };
+    // The card mutations carry optimistic functions; the recorder ignores them.
+    return Object.assign(fn, { withOptimisticUpdate: () => fn });
   },
 }));
 vi.mock("@convex-dev/presence/react", () => ({
@@ -45,13 +59,15 @@ vi.mock("@/components/retro/retro-join-form", () => ({
   ),
 }));
 vi.mock("@/components/retro/retro-board", () => ({
-  RetroBoard: ({ retro, team, menu, banner, viewer }: { retro: { currentStageId: string }; team?: { name: string }; menu?: React.ReactNode; banner?: React.ReactNode; viewer?: { userId: string; onSetReady: (ready: boolean) => void; controls: { onAdvance: (id: string) => void; stageFlow: { allowed: boolean } } } }) => (
-    <div data-testid="board" data-team={team?.name} data-viewer={viewer?.userId} data-stage-flow={String(viewer?.controls.stageFlow.allowed)}>
+  RetroBoard: ({ retro, cards, team, menu, banner, viewer }: { retro: { currentStageId: string }; cards: { clientId: string; hidden: boolean }[]; team?: { name: string }; menu?: React.ReactNode; banner?: React.ReactNode; viewer?: { userId: string; onSetReady: (ready: boolean) => void; onEditing: (clientId?: string) => void; controls: { onAdvance: (id: string) => void; stageFlow: { allowed: boolean } }; cards: { move: (moves: unknown[]) => void } } }) => (
+    <div data-testid="board" data-team={team?.name} data-viewer={viewer?.userId} data-stage-flow={String(viewer?.controls.stageFlow.allowed)} data-cards={cards.map((c) => `${c.clientId}:${c.hidden}`).join(",")}>
       {retro.currentStageId}
       {menu}
       {banner}
       {viewer && <button onClick={() => viewer.onSetReady(true)}>ready</button>}
+      {viewer && <button onClick={() => viewer.onEditing("c1")}>edit</button>}
       {viewer && <button onClick={() => viewer.controls.onAdvance("s2")}>advance</button>}
+      {viewer && <button onClick={() => viewer.cards.move([{ clientId: "c1", position: { x: 1, y: 1 } }])}>move</button>}
     </div>
   ),
 }));
@@ -85,7 +101,18 @@ beforeEach(() => {
   mocks.presenceCalls = [];
   mocks.auth.accountType = "anonymous";
   mocks.queries = {
-    "retro.board": { currentStageId: "s1", stages: [{ id: "s1", kind: "collect" }, { id: "s2", kind: "group" }] },
+    "retro.board": {
+      retro: { currentStageId: "s1", stages: [{ id: "s1", kind: "collect" }, { id: "s2", kind: "group" }] },
+      clusters: [],
+      cards: [
+        { _id: "id1", clientId: "c1", position: { x: 0, y: 0 }, promptId: "p1" },
+        { _id: "id2", clientId: "c2", position: { x: 0, y: 0 }, promptId: "p1" },
+      ],
+      writers: ["user1"],
+    },
+    "retro.mine": [
+      { _id: "id1", clientId: "c1", position: { x: 0, y: 0 }, promptId: "p1", text: "mine", authorId: "user1", createdAt: 1, updatedAt: 1, committedAt: 1 },
+    ],
     "teams.listMine": [],
   };
 });
@@ -118,7 +145,7 @@ describe("RetroRoomContent", () => {
     expect(screen.queryByTestId("team-reader-banner")).toBeNull();
   });
 
-  it("an attendee heartbeats as themselves, writes readiness keyed to the shared entry, and holds the stageFlow decision", async () => {
+  it("an attendee heartbeats as themselves, writes the presence payload keyed to the shared entry, and holds the stageFlow decision", async () => {
     render(<RetroRoomContent roomId={roomId} roomData={teamless} membership={{ _id: "user1" as never }} />);
     expect(mocks.presenceCalls[0]?.slice(1)).toEqual([roomId, "user1"]);
     const board = screen.getByTestId("board");
@@ -126,12 +153,23 @@ describe("RetroRoomContent", () => {
     expect(board.getAttribute("data-stage-flow")).toBe("true");
 
     fireEvent.click(screen.getByRole("button", { name: "ready" }));
+    await new Promise((r) => setTimeout(r, 0));
+    // The editing write carries the readiness just toggled (one whole payload).
+    fireEvent.click(screen.getByRole("button", { name: "edit" }));
     fireEvent.click(screen.getByRole("button", { name: "advance" }));
+    fireEvent.click(screen.getByRole("button", { name: "move" }));
     await new Promise((r) => setTimeout(r, 0));
     expect(mocks.mutations).toEqual([
-      { fn: "presence.setReadiness", args: { roomId, userId: "user1", stageId: "s1", ready: true } },
+      { fn: "presence.setRetroPresence", args: { roomId, userId: "user1", stageId: "s1", ready: true } },
+      { fn: "presence.setRetroPresence", args: { roomId, userId: "user1", stageId: "s1", ready: true, editing: "c1" } },
       { fn: "retro.advance", args: { roomId, toStageId: "s2" } },
+      { fn: "retro.moveCards", args: { roomId, moves: [{ clientId: "c1", position: { x: 1, y: 1 } }] } },
     ]);
+  });
+
+  it("merges the board with mine: own silhouettes carry text, others stay hidden; a Team reader gets no mine", () => {
+    render(<RetroRoomContent roomId={roomId} roomData={teamless} membership={{ _id: "user1" as never }} />);
+    expect(screen.getByTestId("board").getAttribute("data-cards")).toBe("c1:false,c2:true");
   });
 
   it("a Team member who never joined reads the board with no menu, and joins only on their own click", async () => {
@@ -143,6 +181,8 @@ describe("RetroRoomContent", () => {
     expect(screen.queryByTestId("menu")).toBeNull();
     expect(screen.queryByTestId("join-form")).toBeNull();
     expect(screen.getByTestId("team-reader-banner").textContent).toContain("member of Acme Squad");
+    // No attendance, no `mine`: every card is a silhouette to a Team reader.
+    expect(board.getAttribute("data-cards")).toBe("c1:true,c2:true");
     // No attendance, no heartbeat: the presence hook never mounts.
     expect(mocks.presenceCalls).toEqual([]);
     expect(board.getAttribute("data-viewer")).toBeNull();

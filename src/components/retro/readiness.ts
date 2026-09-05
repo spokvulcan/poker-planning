@@ -11,6 +11,15 @@ import { orderUsersByPresence, type UserWithPresence } from "@/hooks/useRoomPres
 export interface ReadinessPayload {
   stageId: string;
   ready: boolean;
+  /** The `clientId` of the card the person is typing into (ADR-0022). */
+  editing?: string;
+}
+
+/** The card a person is editing, from their payload; undefined when none. */
+export function editingOf(data: unknown): string | undefined {
+  if (typeof data !== "object" || data === null) return undefined;
+  const editing = (data as { editing?: unknown }).editing;
+  return typeof editing === "string" ? editing : undefined;
 }
 
 function isReadinessPayload(data: unknown): data is ReadinessPayload {

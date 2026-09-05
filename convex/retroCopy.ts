@@ -240,3 +240,37 @@ export const DELETING_BUTTON = "Deleting…";
 export const DELETE_FAILED = "Failed to delete this retro";
 export const RETRO_DELETED = "Retro deleted";
 
+
+// --- Cards (spec §8.1, §19; ADR-0012, ADR-0015, ADR-0022) ---
+
+/** A card act naming a `clientId` the room does not carry. */
+export const CARD_NOT_FOUND = "That card is no longer on the board";
+export const CARD_TEXT_REQUIRED = "A card needs some text";
+export const CARD_TEXT_TOO_LONG = "A card holds at most 2000 characters";
+/** `createCard` in an anonymous retro before the edit-key half of ADR-0012 ships. */
+export const ANONYMOUS_CARDS_NOT_YET = "Anonymous retros cannot take cards yet";
+
+/** Composer, named (ADR-0012). */
+export const postedAs = (name: string) => `Posted as ${name}. Your name stays with this card.`;
+/** Composer, hidden, named (ADR-0015); stacks under the attribution line. */
+export const COMPOSER_HIDDEN_NAMED =
+  "Only you can read this for now. Others can see you've added a card, not what it says. Everyone reads it once cards are revealed.";
+/** Composer, visible, either attribution. */
+export const COMPOSER_VISIBLE = "Everyone in the retro can read this now.";
+
+export const ADD_CARD = "Add card";
+export const COMPOSER_TITLE = "Write a card";
+export const COMPOSER_PROMPT_LABEL = "Prompt";
+export const COMPOSER_TEXT_LABEL = "Your card";
+export const COMPOSER_TEXT_PLACEHOLDER = "One thought per card";
+export const COMPOSER_SUBMIT = "Post card";
+export const CARD_TEXT_FIELD = "Card text";
+export const DELETE_CARD = "Delete card";
+export const UNSAVED_CHIP = "Unsaved";
+export const EDITING_CHIP = "Editing";
+export const HIDDEN_CARD_LABEL = "Hidden card";
+export const HAS_WRITTEN = "Has written";
+export const cardsCount = (n: number) => `${n} ${n === 1 ? "card" : "cards"}`;
+/** Missing user (spec §19). */
+export const FORMER_MEMBER = "Former member";
+export const CARD_ACT_FAILED = "That did not go through. Try again.";

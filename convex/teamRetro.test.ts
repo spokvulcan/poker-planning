@@ -477,7 +477,7 @@ describe("reading a team retro without attendance (ADR-0009)", () => {
     const roomId = await createRetro(t, "member", { teamId });
 
     const board = await as(t, "admin").query(api.retro.board, { roomId });
-    expect(board.roomId).toBe(roomId);
+    expect(board.retro.roomId).toBe(roomId);
     expect(await membershipOf(t, roomId, adminId)).toBeNull();
     expect(await as(t, "admin").query(api.users.getMyMembership, { roomId })).toBeNull();
   });
@@ -491,7 +491,7 @@ describe("reading a team retro without attendance (ADR-0009)", () => {
     await as(t, "member").mutation(api.users.remove, { roomId, userId: adminId });
 
     expect(await membershipOf(t, roomId, adminId)).toBeNull();
-    expect((await as(t, "admin").query(api.retro.board, { roomId })).roomId).toBe(roomId);
+    expect((await as(t, "admin").query(api.retro.board, { roomId })).retro.roomId).toBe(roomId);
   });
 
   it("the room shell names the owning Team for anyone with the link", async () => {

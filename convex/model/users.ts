@@ -637,6 +637,21 @@ export async function linkAnonymousToPermanent(
       await ctx.db.patch(node._id, { lastUpdatedBy: existingPermanent._id });
     }
 
+    // Retro cards keep their author by reference (ADR-0012): re-point the
+    // anonymous account's cards in every room it attended. The index is
+    // (room, author), so the walk is per membership.
+    for (const membership of memberships) {
+      const cards = await ctx.db
+        .query("retroCards")
+        .withIndex("by_room_author", (q) =>
+          q.eq("roomId", membership.roomId).eq("authorId", user._id)
+        )
+        .collect();
+      for (const card of cards) {
+        await ctx.db.patch(card._id, { authorId: existingPermanent._id });
+      }
+    }
+
     // Delete the old anonymous user record
     await ctx.db.delete(user._id);
     return;

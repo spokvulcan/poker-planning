@@ -30,23 +30,30 @@ export const heartbeat = mutation({
 });
 
 /**
- * Readiness (ADR-0010, spec §7): a person's "I am done with this stage"
- * signal, held in the presence payload as `{ stageId, ready }` and never in
- * a table. One write per state change; a reader treats a payload whose
- * `stageId` is not the current entry as absent, so an advance clears every
- * signal with no write at all. The same guard as the heartbeat: the caller
- * must be this room member acting as themselves.
+ * The retro's presence payload (ADR-0010, ADR-0022, spec §7, §10.6):
+ * readiness — "I am done with this stage" as `{ stageId, ready }`, never
+ * in a table — and the editing indicator, the `clientId` of the card the
+ * person is typing into. One write per state change through the client's
+ * global single-flight; a reader treats a payload whose `stageId` is not
+ * the current entry as not ready, so an advance clears every signal with
+ * no write at all. The same guard as the heartbeat: the caller must be
+ * this room member acting as themselves.
  */
-export const setReadiness = mutation({
+export const setRetroPresence = mutation({
   args: {
     roomId: v.id("rooms"),
     userId: v.id("users"),
     stageId: v.string(),
     ready: v.boolean(),
+    editing: v.optional(v.string()),
   },
-  handler: async (ctx, { roomId, userId, stageId, ready }) => {
-    await requireActingUser(ctx, roomId, userId, "Cannot set readiness as another user");
-    await presence.updateRoomUser(ctx, roomId, userId, { stageId, ready });
+  handler: async (ctx, { roomId, userId, stageId, ready, editing }) => {
+    await requireActingUser(ctx, roomId, userId, "Cannot set presence as another user");
+    await presence.updateRoomUser(ctx, roomId, userId, {
+      stageId,
+      ready,
+      ...(editing !== undefined ? { editing } : {}),
+    });
     return null;
   },
 });

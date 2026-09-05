@@ -237,18 +237,153 @@ async function getRetro(
     .unique();
 }
 
-/**
- * The retros row of a room, or a `missing` refusal for a poker room. Also
- * the board's structure read (spec §9): identity-free, so every viewer
- * shares one cached result; cards and clusters join it with the cards
- * ticket.
- */
+/** The retros row of a room, or a `missing` refusal for a poker room. */
 export async function requireRetro(ctx: QueryCtx, roomId: Id<"rooms">): Promise<Doc<"retros">> {
   const retro = await getRetro(ctx, roomId);
   if (!retro) {
     throw refusal("missing", NOT_A_RETRO);
   }
   return retro;
+}
+
+// --- The projection and the board reads (ADR-0015, spec §8.3, §9) ---
+
+/** A card as a reader may see it: position and tint only (ADR-0015). */
+export interface Silhouette {
+  _id: Id<"retroCards">;
+  clientId: string;
+  position: { x: number; y: number };
+  promptId: string;
+  clusterId?: Id<"retroClusters">;
+}
+
+/** A card in full; never the edit-key hash. `authorId` only in a named retro. */
+export type FullCard = Silhouette & {
+  text: string;
+  authorId?: Id<"users">;
+  createdAt: number;
+  updatedAt: number;
+  committedAt: number;
+};
+
+export type ProjectedCard = Silhouette | FullCard;
+
+/** Who is reading: a person, or nobody in particular (the identity-free board). */
+export type Reader = { userId: Id<"users"> } | null;
+
+function silhouetteOf(card: Doc<"retroCards">): Silhouette {
+  return {
+    _id: card._id,
+    clientId: card.clientId,
+    position: card.position,
+    promptId: card.promptId,
+    ...(card.clusterId !== undefined ? { clusterId: card.clusterId } : {}),
+  };
+}
+
+function fullCardOf(card: Doc<"retroCards">): FullCard {
+  return {
+    ...silhouetteOf(card),
+    text: card.text,
+    ...(card.authorId !== undefined ? { authorId: card.authorId } : {}),
+    createdAt: card.createdAt,
+    updatedAt: card.updatedAt,
+    committedAt: card.committedAt,
+  };
+}
+
+/**
+ * The one projection (ADR-0015): when the entry hides cards and the card is
+ * not the reader's own, a silhouette; otherwise the card without its edit
+ * key hash. Pure. The entry is always the shared pointer's (the caller
+ * reads it from the retros row, never from a client argument); the reader
+ * is `null` for the identity-free board, so its bytes are the same for
+ * every viewer, and a person for `retro.mine` and the exports.
+ */
+export function projectCard(
+  entry: Pick<StageEntry, "cardsVisible">,
+  reader: Reader,
+  card: Doc<"retroCards">
+): ProjectedCard {
+  const own = reader !== null && card.authorId !== undefined && card.authorId === reader.userId;
+  if (entry.cardsVisible === "hidden" && !own) {
+    return silhouetteOf(card);
+  }
+  return fullCardOf(card);
+}
+
+/** How many cards and clusters one board read carries; a retro never approaches it. */
+const MAX_BOARD_ROWS = 2000;
+
+export interface BoardRead {
+  retro: Doc<"retros">;
+  clusters: Doc<"retroClusters">[];
+  cards: ProjectedCard[];
+  /**
+   * Who has written at least one card, in a named retro (the roster's
+   * "has written", ADR-0012); empty under `anonymous`, where the count is
+   * the only signal.
+   */
+  writers: Id<"users">[];
+}
+
+/**
+ * `retro.board` (spec §9): the retros row, every cluster and every card
+ * through the projection with no owner exception, so one cached result
+ * serves every viewer. The viewer's own hidden text comes only through
+ * `mine`, and the client merges the two.
+ */
+export async function board(ctx: QueryCtx, roomId: Id<"rooms">): Promise<BoardRead> {
+  const retro = await requireRetro(ctx, roomId);
+  const entry = currentStageOf(retro);
+  const [clusters, rows] = await Promise.all([
+    ctx.db
+      .query("retroClusters")
+      .withIndex("by_room", (q) => q.eq("roomId", roomId))
+      .take(MAX_BOARD_ROWS),
+    ctx.db
+      .query("retroCards")
+      .withIndex("by_room", (q) => q.eq("roomId", roomId))
+      .take(MAX_BOARD_ROWS),
+  ]);
+  const writers = new Set<Id<"users">>();
+  if (retro.attribution === "named") {
+    for (const row of rows) {
+      if (row.authorId !== undefined) writers.add(row.authorId);
+    }
+  }
+  return {
+    retro,
+    clusters,
+    cards: rows.map((row) => projectCard(entry, null, row)),
+    writers: [...writers],
+  };
+}
+
+/**
+ * `retro.mine` (spec §9): the viewer's own cards, by `by_room_author` in a
+ * named retro, through the one projection with the viewer as reader — so
+ * "own means full" is decided in `projectCard`, not here. The anonymous
+ * half (presented edit keys) joins with ADR-0012's edit-key ticket; until
+ * then an anonymous retro has no "mine".
+ */
+export async function mine(
+  ctx: QueryCtx,
+  roomId: Id<"rooms">,
+  userId: Id<"users">
+): Promise<FullCard[]> {
+  const retro = await requireRetro(ctx, roomId);
+  const entry = currentStageOf(retro);
+  const rows = await ctx.db
+    .query("retroCards")
+    .withIndex("by_room_author", (q) => q.eq("roomId", roomId).eq("authorId", userId))
+    .take(MAX_BOARD_ROWS);
+  return rows.map((row) => {
+    const card = projectCard(entry, { userId }, row);
+    // The index is by author, so the projection can only answer in full.
+    if (!("text" in card)) throw new Error("retro.mine: own card projected as a silhouette");
+    return card;
+  });
 }
 
 // --- Stages (ADR-0010, spec §7) ---
