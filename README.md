@@ -84,11 +84,14 @@ These variables run on Convex servers and **cannot** be set in `.env.local`.
 |----------|----------|-------------|
 | `SITE_URL` | Yes | Base URL for auth callbacks |
 | `BETTER_AUTH_SECRET` | Yes | Secret for signing sessions (min 32 chars) |
+| `RESEND_API_KEY` | Email | Resend key for sign-in, retro and action-item emails |
+| `UNSUBSCRIBE_SECRET` | Email | HMAC secret behind the one-click unsubscribe link in retro and action-item emails |
 
 ```bash
 # Development setup
 npx convex env set SITE_URL http://localhost:3000
 npx convex env set BETTER_AUTH_SECRET $(openssl rand -base64 32)
+npx convex env set UNSUBSCRIBE_SECRET $(openssl rand -base64 32)
 ```
 
 ## Technology Stack

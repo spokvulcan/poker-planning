@@ -2,7 +2,7 @@
 import { convexTest, type TestConvex } from "convex-test";
 import { describe, it, expect } from "vitest";
 import schema from "./schema";
-import { api } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import * as VotingRound from "./model/votingRound";
 import * as Issues from "./model/issues";
@@ -539,6 +539,24 @@ describe("room activity — the Team's side of a retro bumps (spec §14)", () =>
     await as(t, "auth-member").mutation(api.retro.adoptIntoTeam, { roomId, teamId });
 
     await expectBumped(t, roomId, stale);
+  });
+
+  it("nudge bumps through the pressing mutation; the send action never does (spec §14, ADR-0020)", async () => {
+    const t = convexTest(schema, modules);
+    const { roomId, stale } = await seedTeamRetro(t, true);
+    process.env.RESEND_API_KEY = "re_test";
+    process.env.UNSUBSCRIBE_SECRET = "s";
+
+    await as(t, "auth-member").mutation(api.retro.nudge, { roomId });
+    await expectBumped(t, roomId, stale);
+
+    const again = Date.now() - HOUR - 60_000;
+    await t.run((ctx) => ctx.db.patch(roomId, { lastActivityAt: again }));
+    const memberId = (await t.run((ctx) =>
+      ctx.db.query("users").withIndex("by_auth_user", (q) => q.eq("authUserId", "auth-member")).unique()
+    ))!._id;
+    await t.action(internal.email.send, { kind: "nudge", roomId, senderId: memberId });
+    expect((await t.run((ctx) => ctx.db.get(roomId)))!.lastActivityAt).toBe(again);
   });
 
   it("advance, setCardsVisible and setTimebox bump (spec §7)", async () => {

@@ -207,7 +207,16 @@ function AttendeeBoard({ roomId, roomData, board, cards, team, userId, myTeams, 
   const advance = useMutation(api.retro.advance);
   const setCardsVisible = useMutation(api.retro.setCardsVisible);
   const setTimebox = useMutation(api.retro.setTimebox);
+  const nudge = useMutation(api.retro.nudge);
   const { stageFlow, cardManagement, retroSettings } = useRetroPermissions(roomData, userId);
+  // The nudge (spec §16.2) exists only on a team retro, for a stageFlow
+  // holder, while the shared pointer is in collect: the read, which walks
+  // the Team's cards, is opened only then.
+  const inCollect = currentStageOf(retro).kind === "collect";
+  const nudgeStatus = useQuery(
+    api.retro.nudgeStatus,
+    team && stageFlow.allowed && inCollect ? { roomId } : "skip"
+  );
   const writer = useMemo(
     () => ({ userId, anonymous: retro.attribution === "anonymous", editKeys }),
     [userId, retro.attribution, editKeys]
@@ -255,8 +264,17 @@ function AttendeeBoard({ roomId, roomData, board, cards, team, userId, myTeams, 
           setTimebox({ roomId, stageId: currentStageId, ...(minutes !== undefined ? { minutes } : {}) }),
           STAGE_ACT_FAILED
         ),
+      ...(team && stageFlow.allowed
+        ? {
+            nudge: {
+              status: nudgeStatus,
+              attribution: retro.attribution,
+              onNudge: () => void runAct(nudge({ roomId }), STAGE_ACT_FAILED),
+            },
+          }
+        : {}),
     }),
-    [stageFlow, advance, setCardsVisible, setTimebox, roomId, currentStageId]
+    [stageFlow, advance, setCardsVisible, setTimebox, nudge, nudgeStatus, team, retro.attribution, roomId, currentStageId]
   );
 
   const viewer = useMemo<BoardViewer>(

@@ -1,6 +1,6 @@
 import { httpRouter } from "convex/server";
 import { httpAction } from "./_generated/server";
-import { internal } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 import { authComponent, createAuth } from "./auth";
 import { verifyAndParseJiraWebhook } from "./integrations/jiraWebhook";
 
@@ -39,6 +39,25 @@ http.route({
       console.error("Jira webhook error:", error);
       return new Response(null, { status: 200 }); // Always 200 to prevent retries
     }
+  }),
+});
+
+// RFC 8058 one-click unsubscribe (spec §16.4): the `List-Unsubscribe`
+// header on every nudge and reminder points here. The mail client POSTs
+// `List-Unsubscribe=One-Click`; the token in the query string is the whole
+// authorization, and a mismatch flips nothing. Always 200 once the route
+// answers, so a client never retries a link that was simply stale.
+http.route({
+  path: "/api/unsubscribe",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const token = new URL(request.url).searchParams.get("token") ?? "";
+    try {
+      await ctx.runMutation(api.email.unsubscribe, { token });
+    } catch (error) {
+      console.error("Unsubscribe error:", error);
+    }
+    return new Response(null, { status: 200 });
   }),
 });
 

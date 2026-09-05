@@ -13,6 +13,7 @@ import { Navbar } from "@/components/navbar";
 import { Footer } from "@/components/footer";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Card,
   CardContent,
@@ -53,6 +54,7 @@ import {
   CREATE_RETRO_BUTTON,
   CREATE_RETRO_FAILED,
   CREATING_RETRO_BUTTON,
+  EMAIL_TEAM_OPEN_LABEL,
   FORMAT_CHANGE,
   FORMAT_COLLAPSE,
   FORMAT_LABEL,
@@ -122,6 +124,8 @@ export function CreateRetroContent() {
   const [draft, setDraft] = useState<FormatDraft | null>(null);
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [collectUntil, setCollectUntil] = useState("");
+  // "Email the team that it's open" (spec §6.1): on by default, remembered nowhere.
+  const [emailTeam, setEmailTeam] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
   const [newTeamOpen, setNewTeamOpen] = useState(false);
 
@@ -195,7 +199,7 @@ export function CreateRetroContent() {
         name: name.trim() || defaultRetroName(new Date()),
         ...shape,
         ...(due !== undefined ? { collectUntil: due } : {}),
-        ...(selectedTeam ? { teamId: selectedTeam._id } : {}),
+        ...(selectedTeam ? { teamId: selectedTeam._id, emailTeam } : {}),
       });
       router.push(`/room/${roomId}`);
     } catch (error) {
@@ -203,7 +207,7 @@ export function CreateRetroContent() {
       toast.error(CREATE_RETRO_FAILED);
       setIsCreating(false);
     }
-  }, [ensureSession, collectUntil, createRetro, name, draft, preselected, current, selectedTeam, router]);
+  }, [ensureSession, collectUntil, createRetro, name, draft, preselected, current, selectedTeam, emailTeam, router]);
 
   // A Team named in the URL that the reads have not confirmed yet would be
   // silently dropped, and a Team whose last format is still loading would
@@ -356,6 +360,19 @@ export function CreateRetroContent() {
                     />
                     <FieldDescription>{COLLECT_UNTIL_DESCRIPTION}</FieldDescription>
                   </Field>
+
+                  {selectedTeam && (
+                    <Field orientation="horizontal">
+                      <Checkbox
+                        id="email-team"
+                        checked={emailTeam}
+                        onCheckedChange={(checked) => setEmailTeam(checked === true)}
+                      />
+                      <FieldLabel htmlFor="email-team" className="font-normal">
+                        {EMAIL_TEAM_OPEN_LABEL}
+                      </FieldLabel>
+                    </Field>
+                  )}
 
                   <p
                     data-testid="disclosure"

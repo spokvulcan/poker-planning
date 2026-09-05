@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { ChevronLeft, ChevronRight, Eye, EyeOff } from "lucide-react";
+import { useEffect, useState } from "react";
+import { ChevronLeft, ChevronRight, Eye, EyeOff, Mail } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -9,6 +9,9 @@ import { cn } from "@/lib/utils";
 import type { ResolvedDecision } from "@/convex/permissions";
 import { permissionInputProps, permissionProps } from "@/hooks/usePermissions";
 import type { StageEntry, Visibility } from "@/convex/model/retroFormats";
+import type { NudgeStatus } from "@/convex/model/retroNudge";
+import type { Attribution } from "@/convex/permissions";
+import { nudgeButtonState } from "./nudge";
 import {
   BACK_TO_TEAM,
   BRING_EVERYONE_HERE,
@@ -38,6 +41,15 @@ export interface StageControls {
   onAdvance: (toStageId: string) => void;
   onSetCardsVisible: (value: Visibility) => void;
   onSetTimebox: (minutes: number | undefined) => void;
+  /** The nudge (spec §16.2): a stageFlow holder's, on a team retro; absent or `status: null` hides the button. */
+  nudge?: NudgeControl;
+}
+
+export interface NudgeControl {
+  /** `retro.nudgeStatus`: null on a teamless retro, undefined while loading. */
+  status: NudgeStatus | null | undefined;
+  attribution: Attribution;
+  onNudge: () => void;
 }
 
 /**
@@ -103,6 +115,13 @@ export function StageNav({
 
       {controls && (
       <div className="ml-auto flex flex-wrap items-center gap-2">
+        {viewingShared && current.kind === "collect" && controls.nudge?.status && (
+          <NudgeButton
+            status={controls.nudge.status}
+            attribution={controls.nudge.attribution}
+            onNudge={controls.nudge.onNudge}
+          />
+        )}
         {viewingShared && (
           <>
             <Button
@@ -156,6 +175,53 @@ export function StageNav({
       )}
     </div>
   );
+}
+
+/**
+ * The nudge button (spec §16.2): one click, no confirm, disabled by the
+ * copy's own rules (nobody to email, inside the day). Only a stageFlow
+ * holder is handed one: the count of who has not written is the button's
+ * business, so a participant sees no button rather than a disabled one.
+ */
+function NudgeButton({
+  status,
+  attribution,
+  onNudge,
+}: {
+  status: NudgeStatus;
+  attribution: Attribution;
+  onNudge: () => void;
+}) {
+  const now = useMinuteClock(status.lastNudge?.at);
+  const state = nudgeButtonState(status, attribution, now);
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      size="sm"
+      data-testid="nudge-button"
+      disabled={state.disabled}
+      onClick={onNudge}
+    >
+      <Mail className="size-4" />
+      {state.label}
+    </Button>
+  );
+}
+
+/**
+ * A once-a-minute clock, running only while "Sent {ago}" has something to
+ * age. Between the mount-time read and the first tick the clock can sit
+ * behind a send that just landed; `nudgeButtonState` clamps that to "now".
+ */
+function useMinuteClock(since: number | undefined): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (since === undefined) return;
+    const id = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(id);
+  }, [since]);
+  return now;
 }
 
 /** The timebox input: commits whole minutes on blur, or clears when emptied. */

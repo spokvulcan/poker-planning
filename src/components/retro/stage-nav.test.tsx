@@ -101,6 +101,60 @@ describe("StageNav — advance", () => {
   });
 });
 
+describe("StageNav — the nudge button (spec §16.2)", () => {
+  const collect = { currentStageId: "s1" };
+  it("shows on a team retro in collect, with the copy for the seat, and presses through", () => {
+    const onNudge = vi.fn();
+    renderNav({
+      ...collect,
+      nudge: { status: { recipientCount: 4, lastNudge: null }, attribution: "named", onNudge },
+    });
+    const button = screen.getByRole("button", { name: "Email 4 people who haven't written" });
+    expect(button.hasAttribute("disabled")).toBe(false);
+    fireEvent.click(button);
+    expect(onNudge).toHaveBeenCalledTimes(1);
+  });
+
+  it("reads Sent {ago} by {name} and is disabled inside the day", () => {
+    renderNav({
+      ...collect,
+      nudge: {
+        status: { recipientCount: 4, lastNudge: { at: Date.now() - 2 * 60 * 60 * 1000, byName: "Sam" } },
+        attribution: "anonymous",
+        onNudge: vi.fn(),
+      },
+    });
+    const button = screen.getByRole("button", { name: /^Sent 2 hours ago by Sam$/ });
+    expect(button.hasAttribute("disabled")).toBe(true);
+  });
+
+  it("is disabled at zero recipients", () => {
+    renderNav({
+      ...collect,
+      nudge: { status: { recipientCount: 0, lastNudge: null }, attribution: "named", onNudge: vi.fn() },
+    });
+    expect(screen.getByRole("button", { name: "Email 0 people who haven't written" }).hasAttribute("disabled")).toBe(true);
+  });
+
+  it("is absent outside collect, on a teamless retro, while its read is loading, while viewing another entry, and for a Team reader", () => {
+    const nudge = { status: { recipientCount: 3, lastNudge: null }, attribution: "named" as const, onNudge: vi.fn() };
+    renderNav({ currentStageId: "s2", nudge });
+    expect(screen.queryByRole("button", { name: /Email/ })).toBeNull();
+    cleanup();
+    renderNav({ ...collect, nudge: { ...nudge, status: null } });
+    expect(screen.queryByRole("button", { name: /Email/ })).toBeNull();
+    cleanup();
+    renderNav({ ...collect, nudge: { ...nudge, status: undefined } });
+    expect(screen.queryByRole("button", { name: /Email/ })).toBeNull();
+    cleanup();
+    renderNav({ ...collect, viewStageId: "s3", nudge });
+    expect(screen.queryByRole("button", { name: /Email/ })).toBeNull();
+    cleanup();
+    renderNav({ ...collect, controls: null });
+    expect(screen.queryByRole("button", { name: /Email/ })).toBeNull();
+  });
+});
+
 describe("StageNav — a Team reader", () => {
   it("gets the tabs and Back to the team, and no stageFlow control at all", () => {
     renderNav({ controls: null, viewStageId: "s4" });

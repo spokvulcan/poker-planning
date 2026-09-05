@@ -134,6 +134,41 @@ export const TIMEBOX_INVALID = "Timebox must be a whole number of minutes";
 /** A stage act naming an entry the list does not carry. */
 export const STAGE_ENTRY_NOT_FOUND = "That stage is no longer in this retro";
 
+// --- Nudges and email (spec §16, §19, ADR-0020) ---
+
+/** `nudge` on a teamless retro: no Team, no addressable audience. */
+export const NUDGE_NEEDS_TEAM = "Only a retro kept by a team can email its members";
+/** `nudge` while the shared pointer is outside `collect`. */
+export const NUDGE_ONLY_IN_COLLECT = "Cards can be asked for only while the retro is collecting";
+/** `nudge` inside 24 hours of the last one (the "it's open" email counts). */
+export const NUDGE_TOO_SOON = "The team was emailed less than a day ago";
+
+/** The nudge button, named retro: the team members with no card. */
+export const nudgeNonWriters = (n: number) =>
+  n === 1 ? "Email 1 person who hasn't written" : `Email ${n} people who haven't written`;
+/** The nudge button, anonymous retro: every team member but the sender. */
+export const nudgeTeamMembers = (n: number) =>
+  n === 1 ? "Email 1 team member" : `Email ${n} team members`;
+/** The nudge button after a send, until the day passes. */
+export const nudgeSent = (ago: string, name: string) => `Sent ${ago} by ${name}`;
+
+/** The create form's checkbox (team retros only, on by default). */
+export const EMAIL_TEAM_OPEN_LABEL = "Email the team that it's open";
+/** The Settings toggle (Account tab). */
+export const EMAIL_OPT_IN_LABEL = "Email me about retros and action items";
+export const EMAIL_SECTION_TITLE = "Email";
+export const EMAIL_OPT_IN_DESCRIPTION = "One switch for every retro and action email. Sign-in emails are never affected.";
+export const EMAIL_OPT_IN_FAILED = "That did not save. Try again.";
+export const ACCOUNT_TAB_LABEL = "Account";
+export const SETTINGS_PAGE_DESCRIPTION = "Manage your account, emails and integrations.";
+/** The `/unsubscribe` page, whatever the token did. The word "Settings" is the link. */
+export const UNSUBSCRIBED_TITLE = "Unsubscribed";
+export const UNSUBSCRIBED = "You won't get retro or action emails. Turn them back on in Settings.";
+/** The `/unsubscribe` page when the request itself failed (never for a stale token). */
+export const UNSUBSCRIBE_FAILED = "That link did not go through. You can turn these emails off in Settings.";
+/** The listing's per-viewer hint in a named retro (spec §16.5). */
+export const COLLECT_HINT_NO_CARD = "You haven't added a card yet";
+
 // --- Board (spec §16.5, §19) ---
 
 export const collectUntilLine = (date: string) => `Cards due ${date}`;

@@ -63,6 +63,40 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
+describe("CreateRetroContent — the \"it's open\" email (spec §6.1, §16.2)", () => {
+  it("shows the box for a team retro, ticked by default, and sends emailTeam: true", async () => {
+    mocks.auth.accountType = "permanent";
+    mocks.searchParams = new URLSearchParams("team=team-1");
+    render(<CreateRetroContent />);
+    const box = await screen.findByRole("checkbox", { name: "Email the team that it's open" });
+    expect(box.getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: "Start retro" }));
+    await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
+    expect(mocks.create.mock.calls[0][0]).toMatchObject({ teamId: "team-1", emailTeam: true });
+  });
+
+  it("unticked sends emailTeam: false", async () => {
+    mocks.auth.accountType = "permanent";
+    mocks.searchParams = new URLSearchParams("team=team-1");
+    render(<CreateRetroContent />);
+    const box = await screen.findByRole("checkbox", { name: "Email the team that it's open" });
+    fireEvent.click(box);
+    expect(box.getAttribute("aria-checked")).toBe("false");
+    fireEvent.click(screen.getByRole("button", { name: "Start retro" }));
+    await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
+    expect(mocks.create.mock.calls[0][0]).toMatchObject({ teamId: "team-1", emailTeam: false });
+  });
+
+  it("the box goes away when No team is picked", async () => {
+    mocks.auth.accountType = "permanent";
+    mocks.searchParams = new URLSearchParams("team=team-1");
+    render(<CreateRetroContent />);
+    await screen.findByRole("checkbox", { name: "Email the team that it's open" });
+    fireEvent.change(screen.getByLabelText("Team"), { target: { value: "" } });
+    expect(screen.queryByRole("checkbox", { name: "Email the team that it's open" })).toBeNull();
+  });
+});
+
 describe("CreateRetroContent — format", () => {
   it("pre-selects the default format, collapsed to one line", () => {
     render(<CreateRetroContent />);
@@ -99,6 +133,14 @@ describe("CreateRetroContent — format", () => {
     expect(new Date(args.collectUntil).toISOString().slice(0, 10)).toBe("2026-09-10");
     expect("teamId" in args).toBe(false);
     await waitFor(() => expect(mocks.push).toHaveBeenCalledWith("/room/room1"));
+  });
+
+  it("has no \"Email the team\" box for a teamless retro and sends no emailTeam", async () => {
+    render(<CreateRetroContent />);
+    expect(screen.queryByRole("checkbox", { name: "Email the team that it's open" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Start retro" }));
+    await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
+    expect("emailTeam" in mocks.create.mock.calls[0][0]).toBe(false);
   });
 
   it("omits collectUntil when the date is left blank", async () => {

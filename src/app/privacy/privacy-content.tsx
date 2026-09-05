@@ -34,7 +34,7 @@ const sections = [
     id: "data-usage",
     title: "4. How We Use Your Information",
     content:
-      "We use personal information to provide and secure the service, authenticate users, maintain planning sessions, support collaboration features, send sign-in emails, operate integrations you request, troubleshoot and improve the product, comply with legal obligations, and, where you consent, measure product usage through analytics.",
+      "We use personal information to provide and secure the service, authenticate users, maintain planning sessions, support collaboration features, send sign-in emails and, unless you opt out, emails about retros and action items in teams you belong to, operate integrations you request, troubleshoot and improve the product, comply with legal obligations, and, where you consent, measure product usage through analytics.",
   },
   {
     id: "legal-bases",
@@ -70,7 +70,7 @@ const sections = [
     id: "rights",
     title: "10. Your Rights and Choices",
     content:
-      "Depending on your location, you may have rights to request access, correction, deletion, portability, restriction, objection, or withdrawal of consent. You may also have the right to complain to your local data protection authority. We do not provide a public GitHub workflow for privacy requests because those channels can expose personal data; please use email for privacy-related requests.",
+      "Depending on your location, you may have rights to request access, correction, deletion, portability, restriction, objection, or withdrawal of consent. You may also have the right to complain to your local data protection authority. We do not provide a public GitHub workflow for privacy requests because those channels can expose personal data; please use email for privacy-related requests. You can stop retro and action emails from Settings or from the unsubscribe link in any such email.",
   },
   {
     id: "children",

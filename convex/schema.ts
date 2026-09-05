@@ -204,6 +204,7 @@ export default defineSchema({
     email: v.optional(v.string()),
     avatarUrl: v.optional(v.string()),
     accountType: v.optional(v.union(v.literal("anonymous"), v.literal("permanent"))),
+    emailOptOut: v.optional(v.boolean()), // ADR-0020; undefined means opted in
     createdAt: v.number(),
   })
     .index("by_auth_user", ["authUserId"])
