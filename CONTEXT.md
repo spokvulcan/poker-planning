@@ -238,7 +238,7 @@ _Avoid_: team settings (broader), template (that is a format), policy
 
 ### Retro actions
 
-Decided on [map #253](https://github.com/spokvulcan/poker-planning/issues/253) and not yet built. See [ADR-0017](docs/adr/0017-an-action-item-has-one-home-and-carries-over-by-staying-open.md).
+Decided on [map #253](https://github.com/spokvulcan/poker-planning/issues/253) and built in #296. See [ADR-0017](docs/adr/0017-an-action-item-has-one-home-and-carries-over-by-staying-open.md).
 
 **Action item**:
 A commitment a retro produces: a short text, at most one **owner**, an optional due date, and the **source topic** it answers. Always named, in both **Attribution** modes — anonymity stops at the card ([ADR-0012](docs/adr/0012-an-anonymous-retro-card-has-no-stored-author.md)). It lives in exactly one retro for its whole life, has three states (`open`, `done`, `dropped`, all reversible), and carries no priority, description, comments or count limit. Creating one is never refused by a **stage**; the board invites it only during `discuss` and `close`. Never bare "action" — that word is the **permission decision**'s subject.

@@ -6,6 +6,7 @@ import { refusal } from "./refusal";
 import { getCardByClientId, type CardActor } from "./retroCards";
 import { MAX_BOARD_ROWS } from "./retro";
 import { dotsOnCluster } from "./retroVotes";
+import { repointSources } from "./retroActions";
 import {
   CARD_NOT_FOUND,
   CLUSTER_NAME_REQUIRED,
@@ -198,6 +199,7 @@ export async function mergeClusters(
     // The merged cluster's dots follow it (spec §10.3).
     ...dots.map((dot) => ctx.db.patch(dot._id, { target: { kind: "cluster" as const, id: into._id } })),
   ]);
+  await repointSources(ctx, args.room._id, { kind: "cluster", id: from._id }, { kind: "cluster", id: into._id });
   await ctx.db.delete(from._id);
   await updateRoomActivity(ctx, args.room);
 }
@@ -224,6 +226,7 @@ export async function dissolveCluster(
     ...members.map((card) => ctx.db.patch(card._id, { clusterId: undefined })),
     ...dots.map((dot) => ctx.db.delete(dot._id)),
   ]);
+  await repointSources(ctx, args.room._id, { kind: "cluster", id: cluster._id });
   await ctx.db.delete(cluster._id);
   await updateRoomActivity(ctx, args.room);
   return { dissolved: true };

@@ -27,11 +27,11 @@ describe("StageEmptyState", () => {
     expect(STAGE_EMPTY.review).toBe("No open actions from earlier retros");
   });
 
-  it("a card stage is empty only with no cards; review and close read empty until action items land (spec §7)", () => {
+  it("a card stage is empty only with no cards; review and close speak through their panels (spec §7, §13)", () => {
     expect(isStageEmpty("collect", 0)).toBe(true);
     expect(isStageEmpty("collect", 1)).toBe(false);
     expect(isStageEmpty("group", 2)).toBe(false);
-    expect(isStageEmpty("review", 5)).toBe(true);
-    expect(isStageEmpty("close", 5)).toBe(true);
+    expect(isStageEmpty("review", 0)).toBe(false);
+    expect(isStageEmpty("close", 0)).toBe(false);
   });
 });

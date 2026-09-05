@@ -1,17 +1,16 @@
 import { STAGE_EMPTY, STAGE_LABELS } from "@/convex/retroCopy";
 import type { StageKind } from "@/convex/model/retroFormats";
 
-/** The kinds whose line is about cards; the others speak of action items. */
+/** The kinds whose line is about cards; `review` and `close` speak through their panels. */
 const CARD_KINDS: ReadonlySet<StageKind> = new Set(["collect", "group", "vote", "discuss"]);
 
 /**
  * Whether the viewed entry has nothing in it (spec §7): no cards for a
- * card stage; for `review` and `close` the line is about action items,
- * which arrive with their own ticket, so until then those entries always
- * read empty.
+ * card stage. `review` and `close` never read empty here: their panels
+ * carry the register's line for no action items (spec §13).
  */
 export function isStageEmpty(kind: StageKind, cardCount: number): boolean {
-  return CARD_KINDS.has(kind) ? cardCount === 0 : true;
+  return CARD_KINDS.has(kind) && cardCount === 0;
 }
 
 /**

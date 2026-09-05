@@ -458,6 +458,8 @@ export async function deleteUserByAuthUserId(
  */
 /** How many dots one account linking re-points; an anonymous account never casts more. */
 const MAX_LINKED_VOTES = 5000;
+/** How many action items of one room a linking walks; a retro never approaches it. */
+const MAX_LINKED_ACTIONS = 500;
 
 export async function linkAnonymousToPermanent(
   ctx: MutationCtx,
@@ -652,6 +654,23 @@ export async function linkAnonymousToPermanent(
         .collect();
       for (const card of cards) {
         await ctx.db.patch(card._id, { authorId: existingPermanent._id });
+      }
+    }
+
+    // Action items name their creator and owner by reference (ADR-0017):
+    // re-point both in every room the account attended, by room like the
+    // cards. An anonymous account's rows are a handful per room.
+    for (const membership of memberships) {
+      const actions = await ctx.db
+        .query("retroActions")
+        .withIndex("by_room", (q) => q.eq("roomId", membership.roomId))
+        .take(MAX_LINKED_ACTIONS);
+      for (const action of actions) {
+        const patch = {
+          ...(action.ownerId === user._id ? { ownerId: existingPermanent._id } : {}),
+          ...(action.createdBy === user._id ? { createdBy: existingPermanent._id } : {}),
+        };
+        if (Object.keys(patch).length > 0) await ctx.db.patch(action._id, patch);
       }
     }
 

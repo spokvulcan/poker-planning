@@ -6,6 +6,7 @@ import * as RetroCards from "./model/retroCards";
 import * as RetroClusters from "./model/retroClusters";
 import * as RetroVotes from "./model/retroVotes";
 import * as RetroWalk from "./model/retroWalk";
+import * as RetroActions from "./model/retroActions";
 import {
   joinPolicyValidator,
   retroFormatValidator,
@@ -475,6 +476,92 @@ export const tally = query({
   handler: async (ctx, args) => {
     const { user } = await requireRoomReader(ctx, args.roomId);
     return await RetroVotes.tally(ctx, { roomId: args.roomId, viewerId: user._id });
+  },
+});
+
+// --- Action items (spec §13, ADR-0017) ---
+
+const actionStatusValidator = v.union(v.literal("open"), v.literal("done"), v.literal("dropped"));
+
+/** Create an action item: attendance is the only guard (never refused, spec §13). Returns its id. */
+export const createAction = mutation({
+  args: {
+    roomId: v.id("rooms"),
+    text: v.string(),
+    ownerId: v.optional(v.id("users")),
+    dueAt: v.optional(v.number()),
+    source: v.optional(topicRefValidator),
+  },
+  handler: async (ctx, args) => {
+    const { roomId, ...rest } = args;
+    return await RetroActions.createAction(ctx, { ...(await requireCardActor(ctx, roomId)), ...rest });
+  },
+});
+
+/** Edit text and due date: own, or under `actionManagement`; `dueAt: null` clears the date. */
+export const updateAction = mutation({
+  args: {
+    roomId: v.id("rooms"),
+    actionId: v.id("retroActions"),
+    text: v.optional(v.string()),
+    dueAt: v.optional(v.union(v.number(), v.null())),
+  },
+  handler: async (ctx, args) => {
+    const { roomId, ...rest } = args;
+    await RetroActions.updateAction(ctx, { ...(await requireCardActor(ctx, roomId)), ...rest });
+  },
+});
+
+/** Done, dropped or back to open: own, or under `actionManagement`; the note only on leaving open. */
+export const setActionStatus = mutation({
+  args: {
+    roomId: v.id("rooms"),
+    actionId: v.id("retroActions"),
+    status: actionStatusValidator,
+    note: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const { roomId, ...rest } = args;
+    await RetroActions.setActionStatus(ctx, { ...(await requireCardActor(ctx, roomId)), ...rest });
+  },
+});
+
+/** Assign or unassign (`actionManagement`); omit `ownerId` to leave it unowned. */
+export const assignAction = mutation({
+  args: { roomId: v.id("rooms"), actionId: v.id("retroActions"), ownerId: v.optional(v.id("users")) },
+  handler: async (ctx, args) => {
+    const { roomId, ...rest } = args;
+    await RetroActions.assignAction(ctx, { ...(await requireCardActor(ctx, roomId)), ...rest });
+  },
+});
+
+/** Delete an action item (`actionManagement`). */
+export const deleteAction = mutation({
+  args: { roomId: v.id("rooms"), actionId: v.id("retroActions") },
+  handler: async (ctx, args) => {
+    const { roomId, ...rest } = args;
+    await RetroActions.deleteAction(ctx, { ...(await requireCardActor(ctx, roomId)), ...rest });
+  },
+});
+
+/** This retro's action items at any stage (spec §13): room access (ADR-0009). */
+export const actions = query({
+  args: { roomId: v.id("rooms") },
+  handler: async (ctx, args) => {
+    const { user } = await requireRoomReader(ctx, args.roomId);
+    return await RetroActions.roomActions(ctx, user, args.roomId);
+  },
+});
+
+/**
+ * The carryover (spec §13, ADR-0017): the Team's open action items from
+ * other retros, oldest first; empty for a teamless retro. Room access.
+ */
+export const reviewActions = query({
+  args: { roomId: v.id("rooms") },
+  handler: async (ctx, args) => {
+    const { user, room } = await requireRoomReader(ctx, args.roomId);
+    return await RetroActions.reviewActions(ctx, user, room);
   },
 });
 

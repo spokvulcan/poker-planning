@@ -15,6 +15,8 @@ import { useCardActions } from "@/components/retro/use-card-actions";
 import { useClusterActions } from "@/components/retro/use-cluster-actions";
 import { useDotActions } from "@/components/retro/use-dot-actions";
 import { useWalkActions } from "@/components/retro/use-walk-actions";
+import { useActionActions } from "@/components/retro/use-action-actions";
+import type { ActionsRead } from "@/convex/model/retroActions";
 import type { TallyRead } from "@/convex/model/retroVotes";
 import { useEditKeys, type EditKeyStore } from "@/components/retro/use-edit-keys";
 import { useSingleFlightMutation } from "@/hooks/useSingleFlightMutation";
@@ -82,6 +84,12 @@ export function RetroRoomContent({ roomId, roomData, membership }: RetroRoomCont
   const tallyKind = board ? currentStageOf(board.retro).kind : undefined;
   const tallyMounted = canRead && (tallyKind === "vote" || tallyKind === "discuss");
   const tally = useQuery(api.retro.tally, tallyMounted ? { roomId } : "skip");
+  // The actions panel is reachable at every stage (spec §13), so its read
+  // rides with the board; the carryover is read only when the stage list
+  // carries a `review` entry, which a teamless retro drops at creation.
+  const actions = useQuery(api.retro.actions, canRead ? { roomId } : "skip");
+  const hasReview = board?.retro.stages.some((stage) => stage.kind === "review") ?? false;
+  const review = useQuery(api.retro.reviewActions, canRead && hasReview ? { roomId } : "skip");
   // A re-keyed subscription answers a beat later; hold the last answer so
   // the viewer's own cards never flash to silhouettes in between.
   const [settledMine, setSettledMine] = useState(mine);
@@ -132,6 +140,8 @@ export function RetroRoomContent({ roomId, roomData, membership }: RetroRoomCont
         team={team}
         tally={tally}
         walk={board.walk}
+        actions={actions}
+        review={review}
         banner={
           <div
             data-testid="team-reader-banner"
@@ -160,6 +170,8 @@ export function RetroRoomContent({ roomId, roomData, membership }: RetroRoomCont
       myTeams={(myTeams ?? []) as MyTeam[]}
       editKeys={editKeys}
       tally={tally}
+      actions={actions}
+      review={review}
     />
   );
 }
@@ -174,6 +186,8 @@ interface AttendeeBoardProps {
   myTeams: MyTeam[];
   editKeys: EditKeyStore;
   tally?: TallyRead;
+  actions?: ActionsRead;
+  review?: ActionsRead;
 }
 
 /**
@@ -183,7 +197,7 @@ interface AttendeeBoardProps {
  * wiring. Its own component so the presence hook — which has no skip —
  * mounts only once a membership exists; a Team reader never heartbeats.
  */
-function AttendeeBoard({ roomId, roomData, board, cards, team, userId, myTeams, editKeys, tally }: AttendeeBoardProps) {
+function AttendeeBoard({ roomId, roomData, board, cards, team, userId, myTeams, editKeys, tally, actions, review }: AttendeeBoardProps) {
   const { retro } = board;
   const users = useRoomPresence(roomId, userId, roomData.users);
   const setRetroPresence = useSingleFlightMutation(
@@ -202,6 +216,7 @@ function AttendeeBoard({ roomId, roomData, board, cards, team, userId, myTeams, 
   const clusterActions = useClusterActions(roomId);
   const dotActions = useDotActions(roomId, tally);
   const walkActions = useWalkActions(roomId);
+  const actionItems = useActionActions();
   const currentStageId = currentStageOf(retro).id;
   // The payload is written whole, so an editing write carries readiness
   // too: the viewer's last toggle for this entry, else what their presence
@@ -255,9 +270,10 @@ function AttendeeBoard({ roomId, roomData, board, cards, team, userId, myTeams, 
       clusters: clusterActions,
       dots: dotActions,
       walk: walkActions,
+      actionItems,
       cardManagement,
     }),
-    [userId, me?.name, writePresence, controls, cardActions, clusterActions, dotActions, walkActions, cardManagement]
+    [userId, me?.name, writePresence, controls, cardActions, clusterActions, dotActions, walkActions, actionItems, cardManagement]
   );
 
   const role = roomData.users.find((u) => u._id === userId)?.role ?? "participant";
@@ -273,6 +289,8 @@ function AttendeeBoard({ roomId, roomData, board, cards, team, userId, myTeams, 
       viewer={viewer}
       tally={tally}
       walk={board.walk}
+      actions={actions}
+      review={review}
       menu={
         <RetroMenu
           roomId={roomId}

@@ -28,6 +28,7 @@ type Team = {
 const mocks = vi.hoisted(() => ({
   team: undefined as Team | undefined,
   retros: [] as unknown[] | undefined,
+  openActions: { items: [], rooms: [] } as { items: unknown[]; rooms: unknown[] } | undefined,
   calls: [] as { fn: string; args: unknown }[],
   fail: {} as Record<string, string>,
   push: vi.fn(),
@@ -37,8 +38,12 @@ const mocks = vi.hoisted(() => ({
 vi.mock("convex/react", async () => {
   const { getFunctionName } = await import("convex/server");
   return {
-    useQuery: (ref: unknown) =>
-      getFunctionName(ref as never) === "retro:listForTeam" ? mocks.retros : mocks.team,
+    useQuery: (ref: unknown) => {
+      const fn = getFunctionName(ref as never);
+      if (fn === "retro:listForTeam") return mocks.retros;
+      if (fn === "teams:openActions") return mocks.openActions;
+      return mocks.team;
+    },
     useMutation: (ref: unknown) => {
       const fn = getFunctionName(ref as never);
       return async (args: unknown) => {
@@ -128,6 +133,7 @@ const calledWith = (fn: string) => mocks.calls.filter((c) => c.fn === fn).map((c
 const dialog = () => within(screen.getByRole("dialog"));
 
 beforeEach(() => {
+  mocks.openActions = { items: [], rooms: [] };
   mocks.team = team("admin");
   mocks.retros = [];
   mocks.calls = [];
@@ -249,6 +255,44 @@ describe("TeamContent — the Team's retros", () => {
     render(<TeamContent />);
     expect(screen.getByText("No retros yet. Start one and this team keeps it.")).toBeTruthy();
     expect(screen.queryByTestId("retro-rows")).toBeNull();
+  });
+});
+
+describe("TeamContent — the open action items (spec §5, §13)", () => {
+  it("lists the Team's open items with the retro each came from, and completes one in place through the room's mutation", () => {
+    mocks.openActions = {
+      items: [
+        {
+          _id: "a1",
+          roomId: "r1",
+          roomName: "First",
+          text: "Write the runbook",
+          status: "open",
+          createdBy: "u1",
+          creatorName: "Ada",
+          createdAt: 1,
+          updatedAt: 1,
+          rights: { edit: true, manage: false },
+        },
+      ],
+      rooms: [{ roomId: "r1", name: "First", members: [] }],
+    };
+    render(<TeamContent />);
+    const list = screen.getByTestId("team-open-actions");
+    expect(list.getAttribute("data-count")).toBe("1");
+    expect(within(list).getByText("Write the runbook")).toBeTruthy();
+    expect(within(list).getByText(/First/)).toBeTruthy();
+    fireEvent.click(within(list).getByRole("button", { name: "Done" }));
+    fireEvent.click(within(list).getByRole("button", { name: "Save" }));
+    expect(mocks.calls).toEqual([
+      { fn: "retro:setActionStatus", args: { roomId: "r1", actionId: "a1", status: "done" } },
+    ]);
+  });
+
+  it("reads the empty line with nothing open across the Team", () => {
+    mocks.openActions = { items: [], rooms: [] };
+    render(<TeamContent />);
+    expect(screen.getByText("No open action items across this team's retros.")).toBeTruthy();
   });
 });
 

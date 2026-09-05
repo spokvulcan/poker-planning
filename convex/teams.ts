@@ -1,6 +1,7 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import * as Teams from "./model/teams";
+import * as RetroActions from "./model/retroActions";
 import { retroDefaultsValidator } from "./schema";
 import { getOptionalAuthUser, requireAuthUser, requireTeamRole } from "./model/auth";
 
@@ -131,5 +132,14 @@ export const listMine = query({
     const user = await getOptionalAuthUser(ctx);
     if (!user) return [];
     return await Teams.listTeamsForUser(ctx, user._id);
+  },
+});
+
+/** The team page's open action items across its retros, oldest first (members only, spec §5). */
+export const openActions = query({
+  args: { teamId: v.id("teams") },
+  handler: async (ctx, args) => {
+    const { user } = await requireTeamRole(ctx, args.teamId, "member");
+    return await RetroActions.teamOpenActions(ctx, user, args.teamId);
   },
 });

@@ -3,13 +3,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ReactFlow, ReactFlowProvider, useStore, type Node, type NodeTypes, type ReactFlowInstance } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { Plus, Users } from "lucide-react";
+import { ListChecks, Plus, Users } from "lucide-react";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
 import type { ResolvedDecision } from "@/convex/permissions";
 import type { UserWithPresence } from "@/hooks/useRoomPresence";
 import { CanvasDotsBackground } from "@/components/canvas-dots-background";
 import { Button } from "@/components/ui/button";
-import { ADD_CARD, FORMER_MEMBER, HIDDEN_CARD_LABEL, ROSTER_TITLE } from "@/convex/retroCopy";
+import { ACTIONS_TITLE, ADD_CARD, FORMER_MEMBER, HIDDEN_CARD_LABEL, ROSTER_TITLE } from "@/convex/retroCopy";
 import { currentStageOf } from "@/convex/model/retroFormats";
 import { RetroHeader, type RetroTeam } from "./retro-header";
 import { PromptZoneNodeView, type PromptZoneNode } from "./prompt-zone-node";
@@ -40,6 +40,11 @@ import { VoteBudget } from "./vote-budget";
 import type { TopicRef as WalkTopicRef, WalkRead } from "@/convex/model/walk";
 import type { WalkActions } from "./use-walk-actions";
 import { WalkPanel, type WalkPanelActions } from "./walk-panel";
+import type { ActionsRead } from "@/convex/model/retroActions";
+import type { ActionActions } from "./use-action-actions";
+import { ActionsPanel } from "./actions-panel";
+import { ReviewPanel } from "./review-panel";
+import type { ActionSource } from "./action-composer";
 
 /** What an attendee brings to the board that a Team reader does not. */
 export interface BoardViewer {
@@ -56,6 +61,8 @@ export interface BoardViewer {
   dots?: DotActions;
   /** The walk's `stageFlow` acts (spec §12.2). */
   walk?: WalkActions;
+  /** The action item writes (spec §13); absent for a Team reader. */
+  actionItems?: ActionActions;
   /** Another person's card, and a cluster's rename, merge, tidy and dissolve, only under this decision (spec §4.2). */
   cardManagement: ResolvedDecision;
 }
@@ -80,6 +87,10 @@ interface RetroBoardProps {
   tally?: TallyRead;
   /** The walk as the board read projects it (spec §12.3), once one exists. */
   walk?: WalkRead;
+  /** This retro's action items (spec §13); undefined while loading. */
+  actions?: ActionsRead;
+  /** The carryover (spec §13): the Team's open items from other retros; undefined while loading or without a review entry. */
+  review?: ActionsRead;
   /** The header's menu, for attendees. */
   menu?: ReactNode;
   /** A line under the header: the non-attending Team reader's (ADR-0009). */
@@ -137,6 +148,12 @@ const noMoves = () => {};
  * entry it is keyed to: the panel beside the canvas, coverage on the
  * chips, Raise on any topic outside it, and a pan for whoever follows the
  * cursor. Go is `setCenter` on the topic's derived position.
+ *
+ * Action items (spec §13): one panel reachable at every stage, opened by
+ * itself when the shared pointer reaches `close`; "Add action" on the
+ * walk's current topic opens it with the source filled. The review panel
+ * foregrounds the Team's older open items while the viewed entry is
+ * `review`.
  */
 export function RetroBoard({
   name,
@@ -151,11 +168,15 @@ export function RetroBoard({
   banner,
   tally,
   walk,
+  actions,
+  review,
 }: RetroBoardProps) {
   const currentStage = currentStageOf(retro);
   /** The viewer's own view; null follows the shared pointer. */
   const [viewStageId, setViewStageId] = useState<string | null>(null);
   const [rosterOpen, setRosterOpen] = useState(false);
+  const [actionsOpen, setActionsOpen] = useState(false);
+  const [pendingSource, setPendingSource] = useState<ActionSource | undefined>(undefined);
   const [composing, setComposing] = useState(false);
   const [level, setLevel] = useState<ZoomLevel>("detail");
   const isMobile = useIsMobile();
@@ -167,6 +188,13 @@ export function RetroBoard({
   useEffect(() => {
     document.title = `${name} | AgileKit`;
   }, [name]);
+
+  // The close entry foregrounds the actions panel (spec §7); a person may
+  // close it again, and it stays reachable from the header at any stage.
+  const atClose = currentStage.kind === "close";
+  useEffect(() => {
+    if (atClose) setActionsOpen(true);
+  }, [atClose]);
 
   const zones = useMemo(() => layoutZones(retro.format.prompts), [retro.format.prompts]);
 
@@ -443,8 +471,46 @@ export function RetroBoard({
         : undefined,
     [walkActions, stageFlow]
   );
+  const actionItems = viewer?.actionItems;
+  // "Add action" on the walk's current topic (spec §13): the panel opens
+  // with the source filled; the composer writes it.
+  const onAddAction = useMemo(
+    () =>
+      actionItems
+        ? (ref: WalkTopicRef) => {
+            setPendingSource({ ref, label: labelOf(ref) });
+            setActionsOpen(true);
+          }
+        : undefined,
+    [actionItems, labelOf]
+  );
+  const clearSource = useCallback(() => setPendingSource(undefined), []);
   const walkPanel = walkShown && (
-    <WalkPanel walk={walk} labelOf={labelOf} onGo={panTo} actions={walkPanelActions} />
+    <WalkPanel walk={walk} labelOf={labelOf} onGo={panTo} actions={walkPanelActions} onAddAction={onAddAction} />
+  );
+  const actionsPanel = actionsOpen && (
+    <ActionsPanel
+      roomId={retro.roomId}
+      read={actions}
+      atClose={atClose}
+      actions={actionItems}
+      source={pendingSource}
+      onClearSource={clearSource}
+    />
+  );
+  const reviewPanel = viewStage.kind === "review" && <ReviewPanel read={review} actions={actionItems} />;
+  const actionsToggle = (
+    <Button
+      type="button"
+      variant="ghost"
+      size="sm"
+      aria-label={ACTIONS_TITLE}
+      aria-pressed={actionsOpen}
+      onClick={() => setActionsOpen((open) => !open)}
+    >
+      <ListChecks className="size-4" />
+      {actions !== undefined ? actions.items.length : ""}
+    </Button>
   );
 
   // Zones, then hulls (same z, later in order so they draw above), cards, chips.
@@ -607,8 +673,13 @@ export function RetroBoard({
         >
           {banner}
           {stageNav}
+          {reviewPanel && <div className="border-t pt-3">{reviewPanel}</div>}
           {walkPanel && <div className="border-t pt-3">{walkPanel}</div>}
-          {menu && <div className="flex justify-end">{menu}</div>}
+          <div className="flex justify-end gap-1">
+            {actionsToggle}
+            {menu}
+          </div>
+          {actionsPanel && <div className="border-t pt-3">{actionsPanel}</div>}
           {roster}
         </MobileChrome>
         {composer}
@@ -645,6 +716,7 @@ export function RetroBoard({
               <Users className="size-4" />
               {onlineCount !== undefined ? `${onlineCount}/${users.length}` : users.length}
             </Button>
+            {actionsToggle}
             {menu}
           </>
         }
@@ -675,8 +747,14 @@ export function RetroBoard({
             </Button>
           )}
         </div>
+        {reviewPanel && (
+          <aside className="w-80 shrink-0 overflow-y-auto border-l bg-white p-4 dark:bg-surface-1">{reviewPanel}</aside>
+        )}
         {walkPanel && (
           <aside className="w-72 shrink-0 overflow-y-auto border-l bg-white p-4 dark:bg-surface-1">{walkPanel}</aside>
+        )}
+        {actionsPanel && (
+          <aside className="w-80 shrink-0 overflow-y-auto border-l bg-white p-4 dark:bg-surface-1">{actionsPanel}</aside>
         )}
         {rosterOpen && (
           <aside className="w-64 shrink-0 overflow-y-auto border-l bg-white p-4 dark:bg-surface-1">{roster}</aside>

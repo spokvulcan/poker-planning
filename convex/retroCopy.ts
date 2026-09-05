@@ -377,3 +377,57 @@ export const CURRENT_TOPIC = "Now";
 /** The late marker on a card (spec §12.3), at every zoom level. */
 export const LATE_CARD_MARKER = "New";
 export const WALK_ACT_FAILED = "That did not go through. Try again.";
+
+// --- Action items (spec §13, §19; ADR-0017) ---
+
+export const ACTIONS_TITLE = "Action items";
+export const ADD_ACTION = "Add action";
+export const ACTION_TEXT_LABEL = "Action";
+export const ACTION_TEXT_PLACEHOLDER = "What will be done";
+export const ACTION_OWNER_LABEL = "Owner";
+export const ACTION_DUE_LABEL = "Due";
+export const ACTION_NOTE_LABEL = "Note";
+export const ACTION_NOTE_PLACEHOLDER = "Why, in a sentence (optional)";
+export const ACTION_SUBMIT = "Add";
+export const ACTION_SAVE = "Save";
+export const ACTION_EDIT = "Edit";
+export const ACTION_DONE = "Done";
+export const ACTION_DROP = "Drop";
+export const ACTION_REOPEN = "Reopen";
+export const ACTION_DELETE = "Delete action";
+/** Unowned action (spec §19). */
+export const UNOWNED_ACTION = "Nobody owns this yet";
+/** The owner picker's empty choice. */
+export const NO_OWNER_OPTION = UNOWNED_ACTION;
+/** Overdue: `dueAt` past and still `open` — a rendering state, not a status. */
+export const OVERDUE = "Overdue";
+export const ACTION_STATUS_LABELS: Record<"open" | "done" | "dropped", string> = {
+  open: "Open",
+  done: "Done",
+  dropped: "Dropped",
+};
+/** Close panel facts (spec §19): never a judgement about the count. */
+export const closeFacts = (n: number, unowned: number) =>
+  `${n} ${n === 1 ? "action" : "actions"}, ${unowned} unowned`;
+/** Review empty state (spec §19). */
+export const REVIEW_EMPTY = "No open actions from earlier retros";
+export const ACTIONS_EMPTY = "No action items yet.";
+export const ownedBy = (name: string) => `Owner: ${name}`;
+export const dueOn = (date: string) => `Due ${date}`;
+export const fromRetro = (name: string) => `From ${name}`;
+export const ACTION_SOURCE_LABEL = "About";
+export const OPEN_ACTIONS_TITLE = "Open action items";
+export const OPEN_ACTIONS_EMPTY = "No open action items across this team's retros.";
+/** A team member who never attended the item's retro reads it and cannot act (ADR-0008). */
+export const NOT_ATTENDING = "Join that retro to act on its action items";
+
+/** Refusal `missing`: an action act naming a row the room does not carry. */
+export const ACTION_NOT_FOUND = "That action item is no longer here";
+export const ACTION_TEXT_REQUIRED = "An action item needs some text";
+export const ACTION_TEXT_TOO_LONG = "An action item holds at most 500 characters";
+export const ACTION_NOTE_TOO_LONG = "A note holds at most 500 characters";
+/** Refusal `forbidden`: an owner who is not a member of the retro. */
+export const OWNER_NOT_MEMBER = "Only someone in this retro can own an action item";
+/** Refusal `forbidden`: a note on a change that does not leave `open`. */
+export const NOTE_ONLY_ON_LEAVING_OPEN = "A note goes with marking an action done or dropped";
+export const ACTION_ACT_FAILED = "That did not go through. Try again.";
