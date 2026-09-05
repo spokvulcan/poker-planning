@@ -14,7 +14,10 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import type { FormatPrompt } from "@/convex/model/retroFormats";
 import { MAX_CARD_TEXT } from "@/convex/model/retroCards";
+import type { Attribution } from "@/convex/model/retro";
 import {
+  COMPOSER_ANONYMOUS,
+  COMPOSER_HIDDEN_ANONYMOUS,
   COMPOSER_HIDDEN_NAMED,
   COMPOSER_PROMPT_LABEL,
   COMPOSER_SUBMIT,
@@ -31,6 +34,8 @@ interface CardComposerProps {
   prompts: readonly FormatPrompt[];
   /** The viewer's display name for the attribution line (ADR-0012, named). */
   viewerName: string;
+  /** The retro's attribution; the write-time copy says what the storage supports (ADR-0012). */
+  attribution: Attribution;
   /** Whether the shared pointer's entry hides cards right now (ADR-0015). */
   hidden: boolean;
   /** Resolves to whether the card was written; the dialog closes on success. */
@@ -40,10 +45,11 @@ interface CardComposerProps {
 /**
  * The composer (spec §8.1, §19): pick a prompt and read its hint — the one
  * place a hint shows, never on a card or a zone (§6.2) — write, and post.
- * Above the button, the write-time copy: who the card is posted as, and
- * who can read it now.
+ * Above the button, the write-time copy: who the card is posted as (or
+ * that nobody is), and who can read it now; the two lines stack.
  */
-export function CardComposer({ open, onOpenChange, prompts, viewerName, hidden, onSubmit }: CardComposerProps) {
+export function CardComposer({ open, onOpenChange, prompts, viewerName, attribution, hidden, onSubmit }: CardComposerProps) {
+  const anonymous = attribution === "anonymous";
   const ordered = [...prompts].sort((a, b) => a.order - b.order);
   const [promptId, setPromptId] = useState(ordered[0]?.id ?? "");
   const [text, setText] = useState("");
@@ -67,7 +73,9 @@ export function CardComposer({ open, onOpenChange, prompts, viewerName, hidden, 
       <DialogContent data-testid="card-composer">
         <DialogHeader>
           <DialogTitle>{COMPOSER_TITLE}</DialogTitle>
-          <DialogDescription>{postedAs(viewerName)}</DialogDescription>
+          <DialogDescription data-testid="attribution-copy" data-attribution={attribution}>
+            {anonymous ? COMPOSER_ANONYMOUS : postedAs(viewerName)}
+          </DialogDescription>
         </DialogHeader>
         <form
           className="grid gap-4"
@@ -115,7 +123,7 @@ export function CardComposer({ open, onOpenChange, prompts, viewerName, hidden, 
             />
           </div>
           <p data-testid="reveal-copy" data-hidden={String(hidden)} className="text-xs text-muted-foreground">
-            {hidden ? COMPOSER_HIDDEN_NAMED : COMPOSER_VISIBLE}
+            {hidden ? (anonymous ? COMPOSER_HIDDEN_ANONYMOUS : COMPOSER_HIDDEN_NAMED) : COMPOSER_VISIBLE}
           </p>
           <DialogFooter>
             <Button type="submit" disabled={!text.trim() || posting}>

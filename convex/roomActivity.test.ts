@@ -620,6 +620,15 @@ describe("room activity — the Team's side of a retro bumps (spec §14)", () =>
     }
   });
 
+  it("ratchet bumps (spec §14)", async () => {
+    const t = convexTest(schema, modules);
+    const { roomId, stale } = await seedTeamRetro(t, false);
+
+    await as(t, "auth-member").mutation(api.retro.ratchet, { roomId });
+
+    await expectBumped(t, roomId, stale);
+  });
+
   it("claim bumps", async () => {
     const t = convexTest(schema, modules);
     const { roomId, memberId, stale } = await seedTeamRetro(t, true);

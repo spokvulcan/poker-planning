@@ -277,6 +277,7 @@ export function RetroBoard({
           onOpenChange={setComposing}
           prompts={retro.format.prompts}
           viewerName={viewer.name}
+          attribution={retro.attribution}
           hidden={currentStage.cardsVisible === "hidden"}
           onSubmit={onSubmitCard}
         />

@@ -30,6 +30,13 @@ import {
   DELETE_MENU_ITEM,
   DELETE_TITLE,
   DELETING_BUTTON,
+  RATCHET_BUTTON,
+  RATCHET_DESCRIPTION,
+  RATCHET_FAILED,
+  RATCHET_MENU_ITEM,
+  RATCHET_TITLE,
+  RATCHETING_BUTTON,
+  RETRO_ANONYMOUS,
   RETRO_DELETED,
   SETTINGS_MENU_ITEM,
   TEAM_LABEL,
@@ -63,6 +70,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { toast } from "@/lib/toast";
+import type { Attribution } from "@/convex/model/retro";
 import type { RetroTeam } from "./retro-header";
 import { RetroSettingsDialog } from "./retro-settings-dialog";
 
@@ -82,6 +90,8 @@ interface RetroMenuProps {
   isOwnerAbsent: boolean;
   /** The viewer's Teams; empty for an anonymous account. */
   myTeams: MyTeam[];
+  /** The retro's attribution (ADR-0012); the ratchet item shows while it is `named`, absent hides it. */
+  attribution?: Attribution;
   /** What the settings dialog edits (spec §6.4); absent hides the item. */
   settings?: {
     name: string;
@@ -93,22 +103,26 @@ interface RetroMenuProps {
 
 /**
  * The board header's menu (spec §4.3, §5, §15.2): the owner's *Delete
- * retro* behind the counted confirmation; *Claim ownership* for a team
- * admin who is not the owner (the server decides `owner-present`); *Keep
- * with a team…* for the owner of a teamless retro who has a Team to give it
- * to; *Retro settings…* opens the settings dialog (spec §6.4), where a
- * denied viewer reads the denial rather than finding the door gone. Every
- * item is a mutation on room-owned state, so the menu renders only for an
- * attendee.
+ * retro* behind the counted confirmation; the owner's *Make anonymous…*
+ * behind the irreversibility confirmation, gone once pressed (ADR-0012);
+ * *Claim ownership* for a team admin who is not the owner (the server
+ * decides `owner-present`); *Keep with a team…* for the owner of a
+ * teamless retro who has a Team to give it to; *Retro settings…* opens the
+ * settings dialog (spec §6.4), where a denied viewer reads the denial
+ * rather than finding the door gone. Every item is a mutation on
+ * room-owned state, so the menu renders only for an attendee.
  */
-export function RetroMenu({ roomId, team, role, isOwnerAbsent, myTeams, settings }: RetroMenuProps) {
+export function RetroMenu({ roomId, team, role, isOwnerAbsent, myTeams, attribution, settings }: RetroMenuProps) {
   const router = useRouter();
   const remove = useMutation(api.retro.remove);
+  const ratchet = useMutation(api.retro.ratchet);
   const claim = useMutation(api.retro.claim);
   const adopt = useMutation(api.retro.adoptIntoTeam);
 
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [confirmRatchet, setConfirmRatchet] = useState(false);
+  const [isRatcheting, setIsRatcheting] = useState(false);
   const [adoptOpen, setAdoptOpen] = useState(false);
   const [adoptTeamId, setAdoptTeamId] = useState<string>("");
   const [isAdopting, setIsAdopting] = useState(false);
@@ -121,6 +135,10 @@ export function RetroMenu({ roomId, team, role, isOwnerAbsent, myTeams, settings
   // category levels, so the retro defaults stand in for the room's.
   const deleteDecision = resolve(
     { kind: "relationship", verb: "delete" },
+    { actorRole: role, permissions: DEFAULT_RETRO_PERMISSIONS, ownerAbsent: isOwnerAbsent, ownerInTeam: false }
+  );
+  const ratchetDecision = resolve(
+    { kind: "relationship", verb: "ratchet" },
     { actorRole: role, permissions: DEFAULT_RETRO_PERMISSIONS, ownerAbsent: isOwnerAbsent, ownerInTeam: false }
   );
   const myTeamRole = team ? myTeams.find((t) => t._id === team._id)?.role : undefined;
@@ -139,6 +157,19 @@ export function RetroMenu({ roomId, team, role, isOwnerAbsent, myTeams, settings
     } catch (error) {
       toast.error(error instanceof Error ? error.message : DELETE_FAILED);
       setIsDeleting(false);
+    }
+  };
+
+  const handleRatchet = async () => {
+    setIsRatcheting(true);
+    try {
+      await ratchet({ roomId });
+      setConfirmRatchet(false);
+      toast.success(RETRO_ANONYMOUS);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : RATCHET_FAILED);
+    } finally {
+      setIsRatcheting(false);
     }
   };
 
@@ -182,6 +213,15 @@ export function RetroMenu({ roomId, team, role, isOwnerAbsent, myTeams, settings
             <DropdownMenuItem onClick={() => setAdoptOpen(true)}>{ADOPT_MENU_ITEM}</DropdownMenuItem>
           )}
           {canClaim && <DropdownMenuItem onClick={handleClaim}>{CLAIM_MENU_ITEM}</DropdownMenuItem>}
+          {attribution === "named" && (
+            <DropdownMenuItem
+              disabled={!ratchetDecision.allowed}
+              title={ratchetDecision.allowed ? undefined : ratchetDecision.message}
+              onClick={() => setConfirmRatchet(true)}
+            >
+              {RATCHET_MENU_ITEM}
+            </DropdownMenuItem>
+          )}
           <DropdownMenuItem
             variant="destructive"
             disabled={!deleteDecision.allowed}
@@ -209,6 +249,21 @@ export function RetroMenu({ roomId, team, role, isOwnerAbsent, myTeams, settings
               disabled={isDeleting || counts === undefined}
             >
               {isDeleting ? DELETING_BUTTON : DELETE_BUTTON}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={confirmRatchet} onOpenChange={(open) => !isRatcheting && setConfirmRatchet(open)}>
+        <AlertDialogContent size="sm">
+          <AlertDialogHeader>
+            <AlertDialogTitle>{RATCHET_TITLE}</AlertDialogTitle>
+            <AlertDialogDescription>{RATCHET_DESCRIPTION}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isRatcheting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" onClick={handleRatchet} disabled={isRatcheting}>
+              {isRatcheting ? RATCHETING_BUTTON : RATCHET_BUTTON}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

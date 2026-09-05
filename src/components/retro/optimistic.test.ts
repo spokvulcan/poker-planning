@@ -89,6 +89,15 @@ describe("applyCreate", () => {
     applyCreate(store, { roomId, clientId: "c1", text: "hi", promptId: "p1", position: { x: 3, y: 4 } }, { userId: me, now: 9 });
     expect(writes).toEqual([]);
   });
+
+  it("in an anonymous retro carries no author and names no writer (ADR-0012)", () => {
+    const { store, value } = fakeStore({ [BOARD]: board("visible"), [MINE]: [] });
+    applyCreate(store, { roomId, clientId: "c1", text: "hi", promptId: "p1", position: { x: 3, y: 4 } }, { userId: me, anonymous: true, now: 9 });
+    expect("authorId" in value<BoardRead>(BOARD).cards[0]).toBe(false);
+    expect(value<BoardRead>(BOARD).writers).toEqual([]);
+    expect("authorId" in value<FullCard[]>(MINE)[0]).toBe(false);
+    expect(value<FullCard[]>(MINE)[0].text).toBe("hi");
+  });
 });
 
 describe("applyMove", () => {

@@ -139,6 +139,40 @@ describe("RetroMenu — delete", () => {
   });
 });
 
+describe("RetroMenu — the ratchet (ADR-0012)", () => {
+  it("the owner of a named retro confirms with the register copy and ratchets", async () => {
+    render(<RetroMenu roomId={roomId} role="owner" isOwnerAbsent={false} myTeams={[]} attribution="named" />);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Make anonymous…" }));
+    const dialog = within(screen.getByRole("alertdialog"));
+    expect(dialog.getByText("Make this retro anonymous?")).toBeTruthy();
+    expect(dialog.getByText("Every author is removed permanently and this cannot be undone.")).toBeTruthy();
+
+    fireEvent.click(dialog.getByRole("button", { name: "Make anonymous" }));
+    await waitFor(() => expect(calledWith("retro:ratchet")).toEqual([{ roomId }]));
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+    expect(mocks.toasts.at(-1)).toEqual({ kind: "success", message: "This retro is now anonymous" });
+  });
+
+  it("is absent once the retro is anonymous, and disabled for a non-owner with the owner-only copy", () => {
+    render(<RetroMenu roomId={roomId} role="owner" isOwnerAbsent={false} myTeams={[]} attribution="anonymous" />);
+    expect(screen.queryByRole("menuitem", { name: "Make anonymous…" })).toBeNull();
+    cleanup();
+    render(<RetroMenu roomId={roomId} role="facilitator" isOwnerAbsent={false} myTeams={[]} attribution="named" />);
+    const item = screen.getByRole("menuitem", { name: "Make anonymous…" }) as HTMLButtonElement;
+    expect(item.disabled).toBe(true);
+    expect(item.title).toBe("Only the owner can do this.");
+  });
+
+  it("a refused ratchet keeps the confirmation open with the server's copy", async () => {
+    mocks.fail["retro:ratchet"] = "Room owner has left.";
+    render(<RetroMenu roomId={roomId} role="owner" isOwnerAbsent={false} myTeams={[]} attribution="named" />);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Make anonymous…" }));
+    fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Make anonymous" }));
+    await waitFor(() => expect(mocks.toasts).toContainEqual({ kind: "error", message: "Room owner has left." }));
+    expect(screen.getByRole("alertdialog")).toBeTruthy();
+  });
+});
+
 describe("RetroMenu — claim", () => {
   it("a team admin who is not the owner can claim; the server's refusal surfaces", async () => {
     mocks.fail["retro:claim"] = "The owner is still here — ask them to transfer ownership.";
