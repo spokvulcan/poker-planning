@@ -68,6 +68,24 @@ export function newStageEntryId(): string {
 
 export const DEFAULT_VOTE_BUDGET = 5;
 
+/** A retro carries at most ten prompts and ten stage entries (spec §2). */
+export const MAX_PROMPTS = 10;
+export const MAX_STAGES = 10;
+
+/** A fresh prompt id for a prompt added after the library's. */
+export function newPromptId(): string {
+  return crypto.randomUUID();
+}
+
+export function isRetroTint(color: string): color is RetroTint {
+  return (RETRO_TINTS as readonly string[]).includes(color);
+}
+
+/** Prompts renumbered 0..n-1 in list order. */
+export function renumberPrompts(prompts: readonly FormatPrompt[]): FormatPrompt[] {
+  return prompts.map((prompt, order) => ({ ...prompt, order }));
+}
+
 /** The entry the shared pointer names; the first entry if the pointer dangles. */
 export function currentStageOf(retro: {
   stages: readonly StageEntry[];
@@ -187,16 +205,64 @@ export function seedStages(
   const kinds: StageKind[] = ["collect", "review", "group", "vote", "discuss", "close"];
   return kinds
     .filter((kind) => options.hasTeam || kind !== "review")
-    .map((kind) => {
-      const entry: StageEntry = {
-        // An entry's identity is its own, never its kind: a kind may repeat
-        // (a second vote entry is a second round of dots, ADR-0010, spec §2).
-        id: newStageEntryId(),
-        kind,
-        cardsVisible: kind === "collect" && !format.collectVisible ? "hidden" : "visible",
-        tallyVisible: kind === "vote" ? "hidden" : "visible",
-      };
-      if (kind === "vote") entry.voteBudget = DEFAULT_VOTE_BUDGET;
-      return entry;
-    });
+    .map((kind) => newStageEntry(kind, { collectVisible: format.collectVisible }));
+}
+
+/**
+ * A fresh entry of a kind with the seed's defaults: `collect` hides cards
+ * unless the format says otherwise, `vote` hides the tally and carries the
+ * default budget, everything else is visible with no budget.
+ */
+export function newStageEntry(
+  kind: StageKind,
+  options: { collectVisible?: boolean } = {}
+): StageEntry {
+  const entry: StageEntry = {
+    // An entry's identity is its own, never its kind: a kind may repeat
+    // (a second vote entry is a second round of dots, ADR-0010, spec §2).
+    id: newStageEntryId(),
+    kind,
+    cardsVisible: kind === "collect" && !options.collectVisible ? "hidden" : "visible",
+    tallyVisible: kind === "vote" ? "hidden" : "visible",
+  };
+  if (kind === "vote") entry.voteBudget = DEFAULT_VOTE_BUDGET;
+  return entry;
+}
+
+/** The kinds every retro keeps at least one of (ADR-0021): the write stage and the walk. */
+export const LOCKED_STAGE_KINDS: readonly StageKind[] = ["collect", "discuss"];
+
+/**
+ * Whether the entry is the last of a locked kind, so it can neither be
+ * removed nor moved. A second entry of the same kind is free.
+ */
+export function isLockedKindEntry(stages: readonly StageEntry[], stageId: string): boolean {
+  const entry = stages.find((stage) => stage.id === stageId);
+  if (!entry || !LOCKED_STAGE_KINDS.includes(entry.kind)) return false;
+  return stages.filter((stage) => stage.kind === entry.kind).length === 1;
+}
+
+/**
+ * Whether `next` is a permutation of `stages` in which every locked entry —
+ * the last of a locked kind, and the current entry when there is one —
+ * keeps its index. The reorder rule for the create form and the running
+ * retro alike.
+ */
+export function reorderKeepsLocks(
+  stages: readonly StageEntry[],
+  nextIds: readonly string[],
+  currentStageId?: string
+): { ok: true } | { ok: false; reason: "not-a-permutation" | "locked-moved" } {
+  const ids = stages.map((stage) => stage.id);
+  if (nextIds.length !== ids.length || new Set(nextIds).size !== ids.length) {
+    return { ok: false, reason: "not-a-permutation" };
+  }
+  if (!ids.every((id) => nextIds.includes(id))) {
+    return { ok: false, reason: "not-a-permutation" };
+  }
+  const held = ids.every(
+    (id, index) =>
+      (!isLockedKindEntry(stages, id) && id !== currentStageId) || nextIds[index] === id
+  );
+  return held ? { ok: true } : { ok: false, reason: "locked-moved" };
 }

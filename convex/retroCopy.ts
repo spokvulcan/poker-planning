@@ -147,6 +147,29 @@ export const NO_TEAM_OPTION = NO_TEAM_GROUP;
 export const NEW_TEAM_OPTION = "New team…";
 export const TEAM_DESCRIPTION = "A team keeps the retro and decides who can read it later.";
 
+// --- Prompt and stage-list edits (spec §6.4) ---
+
+export const PROMPT_LABEL_REQUIRED = "A prompt needs a label";
+export const TINT_OUTSIDE_PALETTE = "Pick a tint from the palette";
+export const PROMPT_NOT_FOUND = "That prompt is no longer in this retro";
+export const TOO_MANY_PROMPTS = "A retro has at most 10 prompts";
+export const LAST_PROMPT = "A retro needs at least one prompt";
+/** `removePrompt` while a card answers it: a `forbidden` refusal, not `stage`. */
+export const CARDS_STILL_ANSWER = "Cards still answer this prompt";
+
+export const TOO_MANY_STAGES = "A retro has at most 10 stages";
+export const FORMAT_NAME_REQUIRED = "A format needs a name";
+export const PROMPT_IDS_UNIQUE = "Every prompt needs its own id";
+export const STAGE_IDS_UNIQUE = "Every stage needs its own id";
+export const VOTE_BUDGET_INVALID = "Vote budget must be a whole number of dots";
+export const STAGE_KIND_LOCKED = "Collect and Discuss stay in every retro";
+export const STAGE_CURRENT_LOCKED = "The current stage keeps its place";
+export const STAGE_ORDER_LOCKED = "Collect, Discuss and the current stage keep their place";
+export const STAGE_ORDER_INVALID = "The new order must list every stage once";
+
+/** `setJoinPolicy` to `teamMembers` on a retro no Team keeps. */
+export const TEAM_MEMBERS_NEEDS_TEAM = "Only a team retro can be limited to team members";
+
 /** `adoptIntoTeam` by an attendee who does not own the room. */
 export const ONLY_OWNER_CAN_ADOPT = "Only the room owner can give this retro to a team.";
 

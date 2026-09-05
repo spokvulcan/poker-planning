@@ -560,6 +560,44 @@ describe("room activity — the Team's side of a retro bumps (spec §14)", () =>
     }
   });
 
+  it("every retroSettings mutation bumps (spec §14)", async () => {
+    const t = convexTest(schema, modules);
+    const { roomId } = await seedTeamRetro(t, false);
+    const retro = (await t.run((ctx) =>
+      ctx.db.query("retros").withIndex("by_room", (q) => q.eq("roomId", roomId)).unique()
+    ))!;
+    const me = as(t, "auth-member");
+    const promptId = retro.format.prompts[0].id;
+    const close = retro.stages[retro.stages.length - 1];
+    const acts: (() => Promise<unknown>)[] = [
+      () => me.mutation(api.retro.rename, { roomId, name: "Renamed" }),
+      () => me.mutation(api.retro.setJoinPolicy, { roomId, joinPolicy: "permanentAccounts" }),
+      () => me.mutation(api.retro.setCollectUntil, { roomId, collectUntil: Date.now() + 1000 }),
+      () => me.mutation(api.retro.updatePrompt, { roomId, promptId, label: "Edited" }),
+      () => me.mutation(api.retro.addPrompt, { roomId, label: "New", color: "pink" }),
+      () => me.mutation(api.retro.removePrompt, { roomId, promptId: retro.format.prompts[1].id }),
+      () => me.mutation(api.retro.addStage, { roomId, kind: "review", index: 1 }),
+      () => me.mutation(api.retro.removeStage, { roomId, stageId: close.id }),
+    ];
+    for (const act of acts) {
+      const stale = Date.now() - HOUR - 60_000;
+      await t.run((ctx) => ctx.db.patch(roomId, { lastActivityAt: stale }));
+      await act();
+      await expectBumped(t, roomId, stale);
+    }
+    // Reorder over whatever the list now holds: the review entry was added at 1, close removed.
+    const now = (await t.run((ctx) =>
+      ctx.db.query("retros").withIndex("by_room", (q) => q.eq("roomId", roomId)).unique()
+    ))!;
+    const ids = now.stages.map((s) => s.id);
+    // Swap the two free entries after review (group, vote), keeping collect (current) and discuss.
+    const swapped = [ids[0], ids[1], ids[3], ids[2], ids[4]];
+    const stale = Date.now() - HOUR - 60_000;
+    await t.run((ctx) => ctx.db.patch(roomId, { lastActivityAt: stale }));
+    await me.mutation(api.retro.reorderStages, { roomId, stageIds: swapped });
+    await expectBumped(t, roomId, stale);
+  });
+
   it("claim bumps", async () => {
     const t = convexTest(schema, modules);
     const { roomId, memberId, stale } = await seedTeamRetro(t, true);
