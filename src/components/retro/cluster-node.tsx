@@ -18,13 +18,27 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { ResolvedDecision } from "@/convex/permissions";
 import { MAX_CLUSTER_NAME } from "@/convex/model/retroClusters";
 import {
+  CANCEL_BUTTON,
+  DISSOLVE_CONFIRM_BUTTON,
   DISSOLVE_GROUP,
+  DISSOLVE_WITH_VOTES_TITLE,
   GROUP_MENU,
+  dissolveClusterConfirm,
   GROUP_NAME_LABEL,
   MERGE_GROUP,
   MERGE_GROUP_BUTTON,
@@ -37,6 +51,8 @@ import {
 } from "@/convex/retroCopy";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { ClusterChip } from "./clusters";
+import { DotControls, type DotControlsProps } from "./dot-controls";
+import type { DissolveResult } from "./use-cluster-actions";
 import { zoomLevelOf } from "./zoom";
 
 /** The `cardManagement` acts on one cluster, as the board wires them. */
@@ -45,7 +61,7 @@ export type ClusterId = Id<"retroClusters">;
 export interface ClusterChipActions {
   rename: (clusterId: ClusterId, name: string) => Promise<boolean>;
   merge: (from: ClusterId, into: ClusterId) => Promise<boolean>;
-  dissolve: (clusterId: ClusterId) => Promise<boolean>;
+  dissolve: (clusterId: ClusterId, removeVotes?: boolean) => Promise<DissolveResult>;
   /** Tidy: the board computes the positions and issues the one move batch. */
   tidy: (clusterId: ClusterId) => void;
 }
@@ -64,6 +80,8 @@ export type ClusterNodeData = {
   /** The `cardManagement` decision; absent for a Team reader, who gets the label alone. */
   decision?: ResolvedDecision;
   actions?: ClusterChipActions;
+  /** The cluster's dots — its own plus its members' — while the tally is mounted (spec §9). */
+  dots?: DotControlsProps;
 };
 
 export type ClusterNode = Node<ClusterNodeData, "cluster">;
@@ -80,11 +98,18 @@ const selectZoom = (state: { transform: [number, number, number] }) => state.tra
  * content (spec §10.2).
  */
 export const ClusterNodeView = memo(function ClusterNodeView({ data }: NodeProps<ClusterNode>) {
-  const { chip, others, decision, actions } = data;
+  const { chip, others, decision, actions, dots } = data;
   const zoom = useStore(selectZoom);
   const level = zoomLevelOf(zoom);
   const [renaming, setRenaming] = useState(false);
   const [merging, setMerging] = useState(false);
+  /** The dot count a dissolve came back with, awaiting consent (spec §19). */
+  const [dissolving, setDissolving] = useState<number | null>(null);
+  const dissolve = async (removeVotes?: boolean) => {
+    if (!actions) return;
+    const outcome = await actions.dissolve(chip.clusterId, removeVotes);
+    setDissolving(typeof outcome === "object" ? outcome.votes : null);
+  };
   const managed = decision !== undefined && actions !== undefined;
   const allowed = managed && decision.allowed;
   const scale = level === "shape" ? 1 / zoom : 1;
@@ -107,6 +132,7 @@ export const ClusterNodeView = memo(function ClusterNodeView({ data }: NodeProps
           {chip.name}
         </span>
         <span className="text-muted-foreground font-normal">{cardsCount(chip.count)}</span>
+        {dots && <DotControls {...dots} />}
         {managed && (
           <DropdownMenu>
             <DropdownMenuTrigger
@@ -128,7 +154,7 @@ export const ClusterNodeView = memo(function ClusterNodeView({ data }: NodeProps
                 {MERGE_GROUP}
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => actions.tidy(chip.clusterId)}>{TIDY_GROUP}</DropdownMenuItem>
-              <DropdownMenuItem variant="destructive" onClick={() => void actions.dissolve(chip.clusterId)}>
+              <DropdownMenuItem variant="destructive" onClick={() => void dissolve()}>
                 {DISSOLVE_GROUP}
               </DropdownMenuItem>
             </DropdownMenuContent>
@@ -148,6 +174,22 @@ export const ClusterNodeView = memo(function ClusterNodeView({ data }: NodeProps
           onClose={() => setMerging(false)}
           onMerge={(into) => actions.merge(chip.clusterId, into)}
         />
+      )}
+      {managed && dissolving !== null && (
+        <AlertDialog open onOpenChange={(open) => !open && setDissolving(null)}>
+          <AlertDialogContent data-testid="dissolve-confirm" className="nodrag nowheel">
+            <AlertDialogHeader>
+              <AlertDialogTitle>{DISSOLVE_WITH_VOTES_TITLE}</AlertDialogTitle>
+              <AlertDialogDescription>{dissolveClusterConfirm(dissolving)}</AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>{CANCEL_BUTTON}</AlertDialogCancel>
+              <AlertDialogAction variant="destructive" onClick={() => void dissolve(true)}>
+                {DISSOLVE_CONFIRM_BUTTON}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       )}
     </div>
   );

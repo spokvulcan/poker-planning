@@ -32,6 +32,11 @@ import { CARD_MIN_HEIGHT, placeNewCard, type BoardCard } from "./cards";
 import { useHand } from "./use-hand";
 import { editingOf } from "./readiness";
 import type { CardActions } from "./use-card-actions";
+import type { DotActions } from "./use-dot-actions";
+import type { TallyRead, TopicRef } from "@/convex/model/retroVotes";
+import { dotsLeft, dotsOf, topicKey } from "./dots";
+import type { DotControlsProps } from "./dot-controls";
+import { VoteBudget } from "./vote-budget";
 
 /** What an attendee brings to the board that a Team reader does not. */
 export interface BoardViewer {
@@ -44,6 +49,8 @@ export interface BoardViewer {
   controls: StageControls;
   cards: CardActions;
   clusters: ClusterActions;
+  /** The dot writes (spec §11); present whenever the tally is. */
+  dots?: DotActions;
   /** Another person's card, and a cluster's rename, merge, tidy and dissolve, only under this decision (spec §4.2). */
   cardManagement: ResolvedDecision;
 }
@@ -64,6 +71,8 @@ interface RetroBoardProps {
   team?: RetroTeam;
   /** The attendee's presence and stageFlow wiring; absent for a Team reader. */
   viewer?: BoardViewer;
+  /** The tally, mounted only while the shared pointer is in `vote` or `discuss` (spec §9). */
+  tally?: TallyRead;
   /** The header's menu, for attendees. */
   menu?: ReactNode;
   /** A line under the header: the non-attending Team reader's (ADR-0009). */
@@ -128,6 +137,7 @@ export function RetroBoard({
   viewer,
   menu,
   banner,
+  tally,
 }: RetroBoardProps) {
   const currentStage = currentStageOf(retro);
   /** The viewer's own view; null follows the shared pointer. */
@@ -163,6 +173,23 @@ export function RetroBoard({
   );
 
   const hand = useHand({ cards, onDrop: viewer?.cards.move ?? noMoves, tapSelect: isMobile });
+
+  // Dots (spec §11): a topic is a cluster or a loose card; a grouped card
+  // shows and gives back the viewer's own dots on it, and takes no more.
+  const dotActions = viewer?.dots;
+  const takesDots = tally !== undefined && tally.budget !== undefined && dotActions !== undefined;
+  const dotsFor = useCallback(
+    (target: TopicRef, topic: boolean): DotControlsProps | undefined => {
+      if (tally === undefined) return undefined;
+      const shown = dotsOf(tally, topicKey(target));
+      return {
+        ...(topic ? shown : { mine: shown.mine }),
+        ...(takesDots && topic ? { onPlace: () => dotActions!.place(target) } : {}),
+        ...(takesDots && (topic || shown.mine > 0) ? { onRemove: () => dotActions!.remove(target) } : {}),
+      };
+    },
+    [tally, takesDots, dotActions]
+  );
 
   const namesById = useMemo(() => new Map(users.map((user) => [user._id as string, user.name])), [users]);
   const tintByPrompt = useMemo(
@@ -202,13 +229,16 @@ export function RetroBoard({
             editable,
             level,
             ...(isMobile && hand.selected.has(card.clientId) ? { tapSelected: true } : {}),
+            ...(tally !== undefined && !card.hidden
+              ? { dots: dotsFor({ kind: "card", id: card._id }, card.clusterId === undefined) }
+              : {}),
             ...(viewer && editable
               ? { onEditText: viewer.cards.editText, onDelete: viewer.cards.remove, onEditing: viewer.onEditing }
               : {}),
           },
         };
       }),
-    [cards, viewer, hand.positions, hand.measured, hand.selected, tintByPrompt, named, namesById, editingBy, level, isMobile]
+    [cards, viewer, hand.positions, hand.measured, hand.selected, tintByPrompt, named, namesById, editingBy, level, isMobile, tally, dotsFor]
   );
 
   /** The cards as geometry: positions read through the hand, heights as measured. */
@@ -235,7 +265,7 @@ export function RetroBoard({
   // card box is what is drawn, so a hull hugs it.
   const hullNodes = useMemo<HullNode[]>(() => {
     return hullsFor(currentStage.kind, members, cardSize).map(
-      (hull) => ({
+      (hull): HullNode => ({
         id: `hull-${hull.key}`,
         type: "hull",
         position: hull.position,
@@ -243,10 +273,13 @@ export function RetroBoard({
         selectable: false,
         focusable: false,
         zIndex: -1,
+        // A rebuilt node is hidden until React Flow measures it again;
+        // the hand keeps what it measured (spec §10.5).
+        ...(hand.measured.has(`hull-${hull.key}`) ? { measured: hand.measured.get(`hull-${hull.key}`) } : {}),
         data: { hull },
       })
     );
-  }, [currentStage.kind, members, cardSize]);
+  }, [currentStage.kind, members, cardSize, hand.measured]);
 
   const chips = useMemo(() => clusterChips(clusters, members, cardSize), [clusters, members, cardSize]);
 
@@ -271,7 +304,7 @@ export function RetroBoard({
 
   const clusterNodes = useMemo<ClusterNode[]>(
     () =>
-      chips.map((chip) => ({
+      chips.map((chip): ClusterNode => ({
         id: `cluster-${chip.clusterId}`,
         type: "cluster",
         position: chip.position,
@@ -280,13 +313,17 @@ export function RetroBoard({
         focusable: false,
         // Above a selected card, which React Flow elevates to 1000.
         zIndex: CHIP_Z_INDEX,
+        ...(hand.measured.has(`cluster-${chip.clusterId}`)
+          ? { measured: hand.measured.get(`cluster-${chip.clusterId}`) }
+          : {}),
         data: {
           chip,
           others: chips.filter((other) => other.clusterId !== chip.clusterId),
           ...(viewer && chipActions ? { decision: viewer.cardManagement, actions: chipActions } : {}),
+          ...(tally !== undefined ? { dots: dotsFor({ kind: "cluster", id: chip.clusterId }, true) } : {}),
         },
       })),
-    [chips, viewer, chipActions]
+    [chips, viewer, chipActions, tally, dotsFor, hand.measured]
   );
 
   // Zones, then hulls (same z, later in order so they draw above), cards, chips.
@@ -351,6 +388,12 @@ export function RetroBoard({
     },
     [viewer, zones, cards]
   );
+
+  const left = dotsLeft(tally);
+  const budget =
+    viewer && tally?.budget !== undefined && left !== undefined ? (
+      <VoteBudget left={left} budget={tally.budget} anonymous={retro.attribution === "anonymous"} />
+    ) : null;
 
   const onlineCount = viewer ? users.filter((user) => user.isOnline).length : undefined;
   const writerSet = useMemo(() => (named ? new Set(writers) : undefined), [named, writers]);
@@ -436,6 +479,7 @@ export function RetroBoard({
           enteredAt={retro.currentStageEnteredAt}
           selection={selection}
           onCompose={viewer ? () => setComposing(true) : undefined}
+          note={budget}
         >
           {banner}
           {stageNav}
@@ -486,12 +530,15 @@ export function RetroBoard({
         <div className="relative min-w-0 flex-1">
           {isStageEmpty(viewStage.kind, cards.length) && <StageEmptyState kind={viewStage.kind} />}
           {canvas}
-          {selection && (
-            <SelectionBar
-              {...selection}
-              className="absolute top-3 left-3 rounded-lg border bg-white/95 p-1.5 shadow-md dark:bg-surface-2/95"
-            />
-          )}
+          <div className="absolute top-3 left-3 flex flex-col items-start gap-2">
+            {budget && <div className="rounded-lg border bg-white/95 px-2.5 py-1.5 shadow-md dark:bg-surface-2/95">{budget}</div>}
+            {selection && (
+              <SelectionBar
+                {...selection}
+                className="rounded-lg border bg-white/95 p-1.5 shadow-md dark:bg-surface-2/95"
+              />
+            )}
+          </div>
           {viewer && (
             <Button
               type="button"

@@ -26,6 +26,8 @@ export interface MobileChromeProps {
   selection?: Omit<SelectionBarProps, "className">;
   /** Opens the composer; absent for a Team reader. */
   onCompose?: () => void;
+  /** A line in the bar: the vote budget while the entry takes dots. */
+  note?: ReactNode;
   /** What the bottom sheet holds: the stage strip, the roster, the menu. */
   children: ReactNode;
 }
@@ -46,6 +48,7 @@ export function MobileChrome({
   enteredAt,
   selection,
   onCompose,
+  note,
   children,
 }: MobileChromeProps) {
   const [open, setOpen] = useState(false);
@@ -60,6 +63,7 @@ export function MobileChrome({
         data-testid="mobile-bar"
         className="absolute inset-x-0 bottom-0 z-10 flex flex-col gap-2 border-t bg-white/95 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] dark:bg-surface-1/95"
       >
+        {note}
         {selection && <SelectionBar {...selection} />}
         <div className="flex items-center gap-2">
           <Button type="button" variant="outline" size="icon" aria-label={BOARD_MENU} onClick={() => setOpen(true)}>

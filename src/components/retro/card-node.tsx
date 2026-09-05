@@ -17,6 +17,7 @@ import { tintClasses } from "./tints";
 import type { BoardCard } from "./cards";
 import { useCardDraft } from "./use-card-draft";
 import { cardSizeAt, headlineOf, type ZoomLevel } from "./zoom";
+import { DotControls, type DotControlsProps } from "./dot-controls";
 
 // A type alias: React Flow node data must satisfy Record<string, unknown>.
 export type CardNodeData = {
@@ -33,6 +34,8 @@ export type CardNodeData = {
   level?: ZoomLevel;
   /** In the tap-selection (spec §10.4), which the board keeps out of React Flow's own. */
   tapSelected?: boolean;
+  /** The card's dots while the tally is mounted (spec §11); a grouped card's own dots only. */
+  dots?: DotControlsProps;
   onEditText?: (clientId: string, text: string) => Promise<void>;
   onDelete?: (clientId: string) => void;
   /** The editing indicator: the card focused, or none. */
@@ -50,7 +53,7 @@ export type CardNode = Node<CardNodeData, "card">;
  * contract the tests read; `data-late` is a placeholder until #295.
  */
 export const CardNodeView = memo(function CardNodeView({ data, selected: flowSelected }: NodeProps<CardNode>) {
-  const { card, color, authorName, editingBy, editable, level = "detail" } = data;
+  const { card, color, authorName, editingBy, editable, level = "detail", dots } = data;
   const selected = flowSelected || data.tapSelected === true;
   const tint = tintClasses(color);
   const size = cardSizeAt(level);
@@ -86,6 +89,7 @@ export const CardNodeView = memo(function CardNodeView({ data, selected: flowSel
         style={{ width: size.width, height: size.height }}
       >
         <p className="truncate">{headlineOf(card.text ?? "")}</p>
+        {dots && <DotControls count={dots.count} mine={dots.mine} className="ml-auto shrink-0" />}
       </div>
     );
   }
@@ -116,6 +120,7 @@ export const CardNodeView = memo(function CardNodeView({ data, selected: flowSel
       ) : (
         <p className="whitespace-pre-wrap break-words">{card.text}</p>
       )}
+      {dots && <DotControls {...dots} />}
       <div className="flex min-h-5 items-center gap-2 text-xs text-muted-foreground">
         {authorName && (
           <span data-testid="author-chip" className={cn("truncate font-medium", tint.label)}>

@@ -4,11 +4,13 @@ import type { Id } from "./_generated/dataModel";
 import * as Retro from "./model/retro";
 import * as RetroCards from "./model/retroCards";
 import * as RetroClusters from "./model/retroClusters";
+import * as RetroVotes from "./model/retroVotes";
 import {
   joinPolicyValidator,
   retroFormatValidator,
   retroStageValidator,
   stageKindValidator,
+  topicRefValidator,
   visibilityValidator,
 } from "./schema";
 import { refusal } from "./model/refusal";
@@ -409,10 +411,37 @@ export const mergeClusters = mutation({
 
 /** Dissolve a cluster (`cardManagement`): every member's `clusterId` nulled, the row deleted. */
 export const dissolveCluster = mutation({
-  args: { roomId: v.id("rooms"), clusterId: v.id("retroClusters") },
+  args: { roomId: v.id("rooms"), clusterId: v.id("retroClusters"), removeVotes: v.optional(v.boolean()) },
   handler: async (ctx, args) => {
     const { roomId, ...rest } = args;
-    await RetroClusters.dissolveCluster(ctx, { ...(await requireCardActor(ctx, roomId)), ...rest });
+    return await RetroClusters.dissolveCluster(ctx, { ...(await requireCardActor(ctx, roomId)), ...rest });
+  },
+});
+
+/** Place one dot on a topic within the current entry's budget (spec §11). */
+export const placeDot = mutation({
+  args: { roomId: v.id("rooms"), target: topicRefValidator },
+  handler: async (ctx, args) => {
+    const { roomId, ...rest } = args;
+    await RetroVotes.placeDot(ctx, { ...(await requireCardActor(ctx, roomId)), ...rest });
+  },
+});
+
+/** Take one of the viewer's own dots off a topic (spec §11). */
+export const removeDot = mutation({
+  args: { roomId: v.id("rooms"), target: topicRefValidator },
+  handler: async (ctx, args) => {
+    const { roomId, ...rest } = args;
+    await RetroVotes.removeDot(ctx, { ...(await requireCardActor(ctx, roomId)), ...rest });
+  },
+});
+
+/** The tally (spec §9): counts when the entry shows them, the viewer's own dots always. */
+export const tally = query({
+  args: { roomId: v.id("rooms") },
+  handler: async (ctx, args) => {
+    const { user } = await requireRoomReader(ctx, args.roomId);
+    return await RetroVotes.tally(ctx, { roomId: args.roomId, viewerId: user._id });
   },
 });
 

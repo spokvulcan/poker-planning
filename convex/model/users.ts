@@ -456,6 +456,9 @@ export async function deleteUserByAuthUserId(
  * Links an anonymous user account to a new permanent account.
  * Transfers all memberships, votes, and canvas node ownerships.
  */
+/** How many dots one account linking re-points; an anonymous account never casts more. */
+const MAX_LINKED_VOTES = 5000;
+
 export async function linkAnonymousToPermanent(
   ctx: MutationCtx,
   args: {
@@ -650,6 +653,16 @@ export async function linkAnonymousToPermanent(
       for (const card of cards) {
         await ctx.db.patch(card._id, { authorId: existingPermanent._id });
       }
+    }
+
+    // Dots always store their voter (spec §8.2): re-point the anonymous
+    // account's rows, read by voter and bounded like the cards above.
+    const dots = await ctx.db
+      .query("retroVotes")
+      .withIndex("by_voter", (q) => q.eq("voterId", user._id))
+      .take(MAX_LINKED_VOTES);
+    for (const dot of dots) {
+      await ctx.db.patch(dot._id, { voterId: existingPermanent._id });
     }
 
     // Delete the old anonymous user record

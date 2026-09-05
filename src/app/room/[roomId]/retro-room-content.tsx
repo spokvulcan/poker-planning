@@ -13,6 +13,8 @@ import { mergeCards, type BoardCard } from "@/components/retro/cards";
 import { readinessOf } from "@/components/retro/readiness";
 import { useCardActions } from "@/components/retro/use-card-actions";
 import { useClusterActions } from "@/components/retro/use-cluster-actions";
+import { useDotActions } from "@/components/retro/use-dot-actions";
+import type { TallyRead } from "@/convex/model/retroVotes";
 import { useEditKeys, type EditKeyStore } from "@/components/retro/use-edit-keys";
 import { useSingleFlightMutation } from "@/hooks/useSingleFlightMutation";
 import { RetroMenu, type MyTeam } from "@/components/retro/retro-menu";
@@ -74,6 +76,11 @@ export function RetroRoomContent({ roomId, roomData, membership }: RetroRoomCont
   const editKeys = useEditKeys(roomId);
   const mineArgs = useMemo(() => ({ roomId, editKeys: editKeys.keys }), [roomId, editKeys.keys]);
   const mine = useQuery(api.retro.mine, isMember ? mineArgs : "skip");
+  // The tally is mounted only while the shared pointer is in `vote` or
+  // `discuss` (spec §9, ADR-0016); elsewhere the board carries no dots.
+  const tallyKind = board ? currentStageOf(board.retro).kind : undefined;
+  const tallyMounted = canRead && (tallyKind === "vote" || tallyKind === "discuss");
+  const tally = useQuery(api.retro.tally, tallyMounted ? { roomId } : "skip");
   // A re-keyed subscription answers a beat later; hold the last answer so
   // the viewer's own cards never flash to silhouettes in between.
   const [settledMine, setSettledMine] = useState(mine);
@@ -122,6 +129,7 @@ export function RetroRoomContent({ roomId, roomData, membership }: RetroRoomCont
         writers={board.writers}
         users={offlineUsers}
         team={team}
+        tally={tally}
         banner={
           <div
             data-testid="team-reader-banner"
@@ -149,6 +157,7 @@ export function RetroRoomContent({ roomId, roomData, membership }: RetroRoomCont
       userId={membership!._id}
       myTeams={(myTeams ?? []) as MyTeam[]}
       editKeys={editKeys}
+      tally={tally}
     />
   );
 }
@@ -162,6 +171,7 @@ interface AttendeeBoardProps {
   userId: Id<"users">;
   myTeams: MyTeam[];
   editKeys: EditKeyStore;
+  tally?: TallyRead;
 }
 
 /**
@@ -171,7 +181,7 @@ interface AttendeeBoardProps {
  * wiring. Its own component so the presence hook — which has no skip —
  * mounts only once a membership exists; a Team reader never heartbeats.
  */
-function AttendeeBoard({ roomId, roomData, board, cards, team, userId, myTeams, editKeys }: AttendeeBoardProps) {
+function AttendeeBoard({ roomId, roomData, board, cards, team, userId, myTeams, editKeys, tally }: AttendeeBoardProps) {
   const { retro } = board;
   const users = useRoomPresence(roomId, userId, roomData.users);
   const setRetroPresence = useSingleFlightMutation(
@@ -188,6 +198,7 @@ function AttendeeBoard({ roomId, roomData, board, cards, team, userId, myTeams, 
   );
   const cardActions = useCardActions(roomId, writer);
   const clusterActions = useClusterActions(roomId);
+  const dotActions = useDotActions(roomId, tally);
   const currentStageId = currentStageOf(retro).id;
   // The payload is written whole, so an editing write carries readiness
   // too: the viewer's last toggle for this entry, else what their presence
@@ -239,9 +250,10 @@ function AttendeeBoard({ roomId, roomData, board, cards, team, userId, myTeams, 
       controls,
       cards: cardActions,
       clusters: clusterActions,
+      dots: dotActions,
       cardManagement,
     }),
-    [userId, me?.name, writePresence, controls, cardActions, clusterActions, cardManagement]
+    [userId, me?.name, writePresence, controls, cardActions, clusterActions, dotActions, cardManagement]
   );
 
   const role = roomData.users.find((u) => u._id === userId)?.role ?? "participant";
@@ -255,6 +267,7 @@ function AttendeeBoard({ roomId, roomData, board, cards, team, userId, myTeams, 
       users={users}
       team={team}
       viewer={viewer}
+      tally={tally}
       menu={
         <RetroMenu
           roomId={roomId}

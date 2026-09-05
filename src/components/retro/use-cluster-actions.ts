@@ -17,8 +17,14 @@ export interface ClusterActions {
   /** The `cardManagement` acts resolve to whether they went through; a refusal toasts its reason. */
   rename: (clusterId: Id<"retroClusters">, name: string) => Promise<boolean>;
   merge: (from: Id<"retroClusters">, into: Id<"retroClusters">) => Promise<boolean>;
-  dissolve: (clusterId: Id<"retroClusters">) => Promise<boolean>;
+  /**
+   * Dissolve: done, failed, or — when the cluster has dots and no consent
+   * was given — the count to confirm with (spec §10.3, §19).
+   */
+  dissolve: (clusterId: Id<"retroClusters">, removeVotes?: boolean) => Promise<DissolveResult>;
 }
+
+export type DissolveResult = "done" | "failed" | { votes: number };
 
 /** The refusal's reason, or the fallback for a failure that outlived its retries. */
 function surface(error: unknown): void {
@@ -92,7 +98,15 @@ export function useClusterActions(roomId: Id<"rooms">): ClusterActions {
   );
 
   const dissolve = useCallback<ClusterActions["dissolve"]>(
-    (clusterId) => act(dissolveCluster({ roomId, clusterId })),
+    async (clusterId, removeVotes) => {
+      try {
+        const outcome = await dissolveCluster({ roomId, clusterId, ...(removeVotes ? { removeVotes } : {}) });
+        return outcome.dissolved ? "done" : { votes: outcome.votes };
+      } catch (error) {
+        surface(error);
+        return "failed";
+      }
+    },
     [dissolveCluster, roomId]
   );
 

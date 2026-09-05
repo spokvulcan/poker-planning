@@ -19,6 +19,22 @@ vi.mock("@/components/ui/dropdown-menu", () => ({
     <button role="menuitem" onClick={onClick} disabled={disabled}>{children}</button>
   ),
 }));
+vi.mock("@/components/ui/alert-dialog", () => {
+  const pass = ({ children }: { children?: ReactNode }) => <div>{children}</div>;
+  return {
+    AlertDialog: ({ children, open }: { children?: ReactNode; open: boolean }) =>
+      open ? <div role="alertdialog">{children}</div> : null,
+    AlertDialogContent: pass,
+    AlertDialogHeader: pass,
+    AlertDialogFooter: pass,
+    AlertDialogTitle: ({ children }: { children?: ReactNode }) => <h2>{children}</h2>,
+    AlertDialogDescription: ({ children }: { children?: ReactNode }) => <p>{children}</p>,
+    AlertDialogAction: ({ children, onClick }: { children?: ReactNode; onClick?: () => void }) => (
+      <button onClick={onClick}>{children}</button>
+    ),
+    AlertDialogCancel: ({ children }: { children?: ReactNode }) => <button>{children}</button>,
+  };
+});
 vi.mock("@/components/ui/dialog", () => {
   const pass = ({ children }: { children?: ReactNode }) => <div>{children}</div>;
   return {
@@ -63,7 +79,7 @@ function renderChip(data: ClusterNode["data"], zoom = 1) {
 const actions = () => ({
   rename: vi.fn().mockResolvedValue(true),
   merge: vi.fn().mockResolvedValue(true),
-  dissolve: vi.fn().mockResolvedValue(true),
+  dissolve: vi.fn().mockResolvedValue("done"),
   tidy: vi.fn(),
 });
 
@@ -108,8 +124,40 @@ describe("ClusterNodeView", () => {
 
     fireEvent.click(screen.getByRole("menuitem", { name: "Tidy" }));
     expect(acts.tidy).toHaveBeenCalledWith("k1");
-    fireEvent.click(screen.getByRole("menuitem", { name: "Dissolve group" }));
-    expect(acts.dissolve).toHaveBeenCalledWith("k1");
+    await act(async () => {
+      fireEvent.click(screen.getByRole("menuitem", { name: "Dissolve group" }));
+    });
+    expect(acts.dissolve).toHaveBeenCalledWith("k1", undefined);
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+  });
+
+  it("dissolving a cluster with dots asks with the count, then dissolves with consent (spec §19)", async () => {
+    const acts = actions();
+    acts.dissolve.mockResolvedValueOnce({ votes: 4 }).mockResolvedValueOnce("done");
+    renderChip({ chip, others, decision: allowed, actions: acts });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("menuitem", { name: "Dissolve group" }));
+    });
+    const confirm = within(screen.getByRole("alertdialog"));
+    expect(confirm.getByText("Dissolve this group? Its 4 votes are removed.")).toBeTruthy();
+    await act(async () => {
+      fireEvent.click(confirm.getByRole("button", { name: "Dissolve" }));
+    });
+    expect(acts.dissolve).toHaveBeenLastCalledWith("k1", true);
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+  });
+
+  it("shows the cluster's dots and takes one either way (spec §11)", () => {
+    const onPlace = vi.fn();
+    const onRemove = vi.fn();
+    renderChip({ chip, others, dots: { count: 3, mine: 1, onPlace, onRemove } });
+    const dots = screen.getByTestId("dots");
+    expect(dots.getAttribute("data-count")).toBe("3");
+    expect(dots.getAttribute("data-mine")).toBe("1");
+    fireEvent.click(screen.getByRole("button", { name: "Vote" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove vote" }));
+    expect(onPlace).toHaveBeenCalledTimes(1);
+    expect(onRemove).toHaveBeenCalledTimes(1);
   });
 
   it("merge is disabled when there is no other cluster", () => {

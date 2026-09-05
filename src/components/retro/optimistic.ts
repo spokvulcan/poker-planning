@@ -2,8 +2,10 @@ import type { OptimisticLocalStore } from "convex/browser";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { BoardRead, FullCard, ProjectedCard } from "@/convex/model/retro";
+import type { TallyRead, TopicRef } from "@/convex/model/retroVotes";
 import { currentStageOf } from "@/convex/model/retroFormats";
 import { nextGroupName } from "@/convex/retroCopy";
+import { topicKey } from "./dots";
 
 /**
  * Optimistic functions (ADR-0022, spec §10.7): one synchronous pure
@@ -142,11 +144,6 @@ export interface UngroupArgs {
   clientIds: string[];
 }
 
-/**
- * Point the named cards at a cluster (or none) and drop any cluster this
- * change left empty — the server's own rule, no more: a row that was
- * already empty is the server's to remove.
- */
 /** Re-point the named cards; a cluster left empty keeps its row, as on the server. */
 function repointBoard(board: BoardRead, clientIds: readonly string[], clusterId: Id<"retroClusters"> | undefined): BoardRead {
   const named = new Set(clientIds);
@@ -183,4 +180,58 @@ export function applyAddToCluster(store: OptimisticLocalStore, args: AddToCluste
 
 export function applyUngroup(store: OptimisticLocalStore, args: UngroupArgs): void {
   patchBoard(store, (board) => repointBoard(board, args.clientIds, undefined));
+}
+
+export interface DotArgs {
+  roomId: Id<"rooms">;
+  target: TopicRef;
+}
+
+/**
+ * The cluster a card target's dot also counts for (ADR-0016), read from
+ * the cached board; undefined for a cluster target or a loose card.
+ */
+function clusterOfTarget(store: OptimisticLocalStore, target: TopicRef): Id<"retroClusters"> | undefined {
+  if (target.kind !== "card") return undefined;
+  for (const { value } of store.getAllQueries(api.retro.board)) {
+    const card = value?.cards.find((candidate) => candidate._id === target.id);
+    if (card?.clusterId !== undefined) return card.clusterId;
+  }
+  return undefined;
+}
+
+function patchTally(store: OptimisticLocalStore, patch: (tally: TallyRead) => TallyRead): void {
+  for (const { args, value } of store.getAllQueries(api.retro.tally)) {
+    if (value === undefined) continue;
+    store.setQuery(api.retro.tally, args, patch(value));
+  }
+}
+
+const shifted = (record: Record<string, number>, key: string, by: number): Record<string, number> => {
+  const next = (record[key] ?? 0) + by;
+  const { [key]: _dropped, ...rest } = record;
+  return next > 0 ? { ...rest, [key]: next } : rest;
+};
+
+/** A dot placed or removed: own dots and the spend always, the aggregate only where it shows (spec §10.7). */
+function applyDot(store: OptimisticLocalStore, args: DotArgs, by: 1 | -1): void {
+  const key = topicKey(args.target);
+  const clusterId = clusterOfTarget(store, args.target);
+  patchTally(store, (tally) => {
+    if (by === -1 && (tally.mine[key] ?? 0) === 0) return tally;
+    let counts = tally.counts;
+    if (tally.visible) {
+      counts = shifted(counts, key, by);
+      if (clusterId !== undefined) counts = shifted(counts, clusterId, by);
+    }
+    return { ...tally, counts, mine: shifted(tally.mine, key, by), spent: Math.max(0, tally.spent + by) };
+  });
+}
+
+export function applyPlaceDot(store: OptimisticLocalStore, args: DotArgs): void {
+  applyDot(store, args, 1);
+}
+
+export function applyRemoveDot(store: OptimisticLocalStore, args: DotArgs): void {
+  applyDot(store, args, -1);
 }

@@ -44,6 +44,7 @@ import type * as model_retro from "../model/retro.js";
 import type * as model_retroCards from "../model/retroCards.js";
 import type * as model_retroClusters from "../model/retroClusters.js";
 import type * as model_retroFormats from "../model/retroFormats.js";
+import type * as model_retroVotes from "../model/retroVotes.js";
 import type * as model_roles from "../model/roles.js";
 import type * as model_roomAggregate from "../model/roomAggregate.js";
 import type * as model_rooms from "../model/rooms.js";
@@ -113,6 +114,7 @@ declare const fullApi: ApiFromModules<{
   "model/retroCards": typeof model_retroCards;
   "model/retroClusters": typeof model_retroClusters;
   "model/retroFormats": typeof model_retroFormats;
+  "model/retroVotes": typeof model_retroVotes;
   "model/roles": typeof model_roles;
   "model/roomAggregate": typeof model_roomAggregate;
   "model/rooms": typeof model_rooms;

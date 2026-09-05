@@ -336,3 +336,23 @@ export const CLUSTER_ACT_FAILED = "That did not go through. Try again.";
 // --- Mobile chrome (spec §10.4) ---
 
 export const BOARD_MENU = "Board menu";
+
+// Dots (spec §11, §19).
+/** Refusal `stage`: the current entry carries no budget. */
+export const NO_VOTE_BUDGET = "This stage takes no votes";
+/** Refusal `budget`: the voter's rows for the entry equal the budget. */
+export const VOTE_BUDGET_SPENT = "All your votes are placed";
+/** Refusal `budget`: the voter's dots on the topic equal `maxPerTopic`. */
+export const TOPIC_VOTES_CAPPED = "No more votes on this topic";
+/** Refusal `missing`: no own dot to take off the topic. */
+export const DOT_NOT_FOUND = "You have no vote here";
+/** The vote UI's line in an anonymous retro (spec §19). */
+export const VOTE_ANONYMOUS_NOTE = "Nobody is shown how you voted.";
+export const votesLeft = (left: number, budget: number) => `${left} of ${budget} ${budget === 1 ? "vote" : "votes"} left`;
+export const votesCount = (n: number) => `${n} ${n === 1 ? "vote" : "votes"}`;
+export const ADD_DOT = "Vote";
+export const REMOVE_DOT = "Remove vote";
+export const DISSOLVE_WITH_VOTES_TITLE = "Dissolve group";
+export const DISSOLVE_CONFIRM_BUTTON = "Dissolve";
+export const CANCEL_BUTTON = "Cancel";
+export const DOT_ACT_FAILED = "That vote did not go through. Try again.";

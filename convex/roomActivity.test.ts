@@ -650,6 +650,36 @@ describe("room activity — the Team's side of a retro bumps (spec §14)", () =>
     }
   });
 
+  it("every dot mutation bumps (spec §14)", async () => {
+    const t = convexTest(schema, modules);
+    const { roomId } = await seedTeamRetro(t, false);
+    const retro = (await t.run((ctx) =>
+      ctx.db.query("retros").withIndex("by_room", (q) => q.eq("roomId", roomId)).unique()
+    ))!;
+    const me = as(t, "auth-member");
+    await me.mutation(api.retro.createCard, { roomId, clientId: "c1", text: "c1", promptId: retro.format.prompts[0].id, position: { x: 0, y: 0 } });
+    const card = (await t.run((ctx) =>
+      ctx.db.query("retroCards").withIndex("by_room", (q) => q.eq("roomId", roomId)).unique()
+    ))!;
+    // A budget on the current entry: the kind is never the test (ADR-0010).
+    await t.run((ctx) =>
+      ctx.db.patch(retro._id, {
+        stages: retro.stages.map((s) => (s.id === retro.currentStageId ? { ...s, voteBudget: 3 } : s)),
+      })
+    );
+    const target = { kind: "card" as const, id: card._id };
+    const acts = [
+      () => me.mutation(api.retro.placeDot, { roomId, target }),
+      () => me.mutation(api.retro.removeDot, { roomId, target }),
+    ];
+    for (const act of acts) {
+      const stale = Date.now() - HOUR - 60_000;
+      await t.run((ctx) => ctx.db.patch(roomId, { lastActivityAt: stale }));
+      await act();
+      await expectBumped(t, roomId, stale);
+    }
+  });
+
   it("ratchet bumps (spec §14)", async () => {
     const t = convexTest(schema, modules);
     const { roomId, stale } = await seedTeamRetro(t, false);
