@@ -185,9 +185,8 @@ export async function dotsOnCluster(
   roomId: Id<"rooms">,
   clusterId: Id<"retroClusters">
 ): Promise<Doc<"retroVotes">[]> {
-  const rows = await ctx.db
+  return ctx.db
     .query("retroVotes")
-    .withIndex("by_room", (q) => q.eq("roomId", roomId))
+    .withIndex("by_room_target", (q) => q.eq("roomId", roomId).eq("target.id", clusterId))
     .take(MAX_VOTE_ROWS);
-  return rows.filter((row) => row.target.kind === "cluster" && row.target.id === clusterId);
 }

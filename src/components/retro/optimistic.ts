@@ -5,6 +5,7 @@ import type { BoardRead, FullCard, ProjectedCard } from "@/convex/model/retro";
 import type { TallyRead, TopicRef } from "@/convex/model/retroVotes";
 import { currentStageOf } from "@/convex/model/retroFormats";
 import { nextGroupName } from "@/convex/retroCopy";
+import { topicKey } from "./dots";
 
 /**
  * Optimistic functions (ADR-0022, spec §10.7): one synchronous pure
@@ -214,7 +215,7 @@ const shifted = (record: Record<string, number>, key: string, by: number): Recor
 
 /** A dot placed or removed: own dots and the spend always, the aggregate only where it shows (spec §10.7). */
 function applyDot(store: OptimisticLocalStore, args: DotArgs, by: 1 | -1): void {
-  const key = args.target.id;
+  const key = topicKey(args.target);
   const clusterId = clusterOfTarget(store, args.target);
   patchTally(store, (tally) => {
     if (by === -1 && (tally.mine[key] ?? 0) === 0) return tally;

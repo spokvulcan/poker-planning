@@ -26,10 +26,12 @@ import {
  * calling the one move batch. Every act is correct in every stage
  * (ADR-0010) and bumps the activity chokepoint (spec §14).
  *
- * Dots and action sources arrive with #294 and #296: merge re-points dots,
- * dissolve deletes them behind the confirmation and nulls an action's
- * source. A cluster emptied by a membership change is removed as a dissolve
- * of nothing; those tickets treat it as one.
+ * Dots (spec §11): merge re-points a cluster's dots, dissolve deletes them
+ * behind the confirmation. A cluster emptied by a membership change keeps
+ * its row (deleting one is dissolve, which is gated) but loses its dots:
+ * with no chip to carry them they could be neither seen nor taken back,
+ * and would hold the voter's budget for nothing. Action sources arrive
+ * with #296.
  */
 
 export const MAX_CLUSTER_NAME = 80;
@@ -105,18 +107,28 @@ async function defaultName(ctx: QueryCtx, roomId: Id<"rooms">): Promise<string> 
  * cluster the change leaves empty keeps its row: deleting one is dissolve,
  * which is `cardManagement` (spec §4.2), while membership is open to
  * everyone. Only merge removes a row (spec §10.3). An empty cluster draws
- * no chip and is deleted with the room.
+ * no chip and is deleted with the room; its dots go with the last member.
  */
 async function repoint(
   ctx: MutationCtx,
+  roomId: Id<"rooms">,
   cards: readonly Doc<"retroCards">[],
   clusterId: Id<"retroClusters"> | undefined
 ): Promise<void> {
+  const vacated = new Set<Id<"retroClusters">>();
+  for (const card of cards) {
+    if (card.clusterId !== undefined && card.clusterId !== clusterId) vacated.add(card.clusterId);
+  }
   await Promise.all(
     cards.map((card) =>
       ctx.db.patch(card._id, clusterId === undefined ? { clusterId: undefined } : { clusterId })
     )
   );
+  for (const id of vacated) {
+    if ((await membersOf(ctx, id)).length > 0) continue;
+    const dots = await dotsOnCluster(ctx, roomId, id);
+    await Promise.all(dots.map((dot) => ctx.db.delete(dot._id)));
+  }
 }
 
 /**
@@ -134,7 +146,7 @@ export async function formCluster(
     name: await defaultName(ctx, args.room._id),
     createdAt: Date.now(),
   });
-  await repoint(ctx, cards, clusterId);
+  await repoint(ctx, args.room._id, cards, clusterId);
   await updateRoomActivity(ctx, args.room);
   return clusterId;
 }
@@ -146,7 +158,7 @@ export async function addToCluster(
 ): Promise<void> {
   const cluster = await requireCluster(ctx, args.room._id, args.clusterId);
   const cards = await requireCards(ctx, args.room._id, args.clientIds);
-  await repoint(ctx, cards, cluster._id);
+  await repoint(ctx, args.room._id, cards, cluster._id);
   await updateRoomActivity(ctx, args.room);
 }
 
@@ -156,7 +168,7 @@ export async function removeFromCluster(
   args: { room: Doc<"rooms">; actor: CardActor; clientIds: string[] }
 ): Promise<void> {
   const cards = await requireCards(ctx, args.room._id, args.clientIds);
-  await repoint(ctx, cards, undefined);
+  await repoint(ctx, args.room._id, cards, undefined);
   await updateRoomActivity(ctx, args.room);
 }
 

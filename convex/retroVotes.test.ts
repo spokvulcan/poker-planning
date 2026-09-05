@@ -262,7 +262,7 @@ describe("retro.tally (spec §9, §8.2)", () => {
     expect(guest.budget).toBeUndefined();
   });
 
-  it("a cluster's tally is its own dots plus its members'; a Team reader reads it", async () => {
+  it("a cluster's tally is its own dots plus its members'", async () => {
     const t = convexTest(schema, modules);
     const { roomId, vote, onCard, cardId } = await seedRetro(t);
     await patchStage(t, roomId, vote.id, { tallyVisible: "visible" });
@@ -333,6 +333,21 @@ describe("dots under grouping (spec §10.3, ADR-0016)", () => {
     // A cluster without dots dissolves at once.
     const c = await owner.mutation(api.retro.formCluster, { roomId, clientIds: ["o1"] });
     expect(await owner.mutation(api.retro.dissolveCluster, { roomId, clusterId: c })).toEqual({ dissolved: true });
+  });
+
+  it("a cluster emptied by a membership change keeps its row and loses its dots, freeing the budget", async () => {
+    const t = convexTest(schema, modules);
+    const { roomId, onCard, cardId } = await seedRetro(t);
+    const a = await as(t, "owner").mutation(api.retro.formCluster, { roomId, clientIds: ["o1"] });
+    await as(t, "guest").mutation(api.retro.placeDot, { roomId, target: { kind: "cluster", id: a } });
+    await as(t, "guest").mutation(api.retro.placeDot, { roomId, target: onCard("o1") });
+    await as(t, "guest").mutation(api.retro.removeFromCluster, { roomId, clientIds: ["o1"] });
+    expect(await clustersOf(t, roomId)).toHaveLength(1);
+    const rows = await votesOf(t, roomId);
+    expect(rows.map((r) => r.target)).toEqual([onCard("o1")]);
+    const guest = await as(t, "guest").query(api.retro.tally, { roomId });
+    expect(guest.spent).toBe(1);
+    expect(guest.mine).toEqual({ [cardId("o1")]: 1 });
   });
 
   it("dissolving with dots is still `cardManagement`, refused before any count is told", async () => {

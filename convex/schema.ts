@@ -291,7 +291,9 @@ export default defineSchema({
   })
     .index("by_room", ["roomId"]) // The cascade reads every room-owned table by this name
     .index("by_room_entry", ["roomId", "stageEntryId"])
-    .index("by_room_entry_voter", ["roomId", "stageEntryId", "voterId"]),
+    .index("by_room_entry_voter", ["roomId", "stageEntryId", "voterId"])
+    .index("by_room_target", ["roomId", "target.id"]) // a topic's dots across entries: merge, dissolve
+    .index("by_voter", ["voterId"]), // account linking re-points a voter's rows
 
   // An action item (ADR-0017): one home, denormalised to the Team.
   retroActions: defineTable({

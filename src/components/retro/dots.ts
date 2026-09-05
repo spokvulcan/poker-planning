@@ -1,4 +1,4 @@
-import type { TallyRead } from "@/convex/model/retroVotes";
+import type { TallyRead, TopicRef } from "@/convex/model/retroVotes";
 import { NO_VOTE_BUDGET, TOPIC_VOTES_CAPPED, VOTE_BUDGET_SPENT } from "@/convex/retroCopy";
 
 /**
@@ -8,11 +8,14 @@ import { NO_VOTE_BUDGET, TOPIC_VOTES_CAPPED, VOTE_BUDGET_SPENT } from "@/convex/
  * browser. Pure, so a node test proves it.
  */
 
+/** The tally's key for a topic: its row id, as the server keys it. */
+export const topicKey = (target: TopicRef): string => target.id;
+
 /** Why a dot on the topic would be refused, or null when it would land. */
-export function dotRefusal(tally: TallyRead | undefined, topicKey: string): string | null {
+export function dotRefusal(tally: TallyRead | undefined, key: string): string | null {
   if (!tally || tally.budget === undefined) return NO_VOTE_BUDGET;
   if (tally.spent >= tally.budget) return VOTE_BUDGET_SPENT;
-  if (tally.maxPerTopic !== undefined && (tally.mine[topicKey] ?? 0) >= tally.maxPerTopic) return TOPIC_VOTES_CAPPED;
+  if (tally.maxPerTopic !== undefined && (tally.mine[key] ?? 0) >= tally.maxPerTopic) return TOPIC_VOTES_CAPPED;
   return null;
 }
 

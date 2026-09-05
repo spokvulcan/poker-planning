@@ -32,13 +32,13 @@ export function DotControls({ count, mine, onPlace, onRemove, className }: DotCo
       onClick={(e) => e.stopPropagation()}
     >
       {count !== undefined && (
-        <span className="rounded-full bg-black/5 px-2 py-0.5 font-medium tabular-nums dark:bg-white/10">
+        <span className="rounded-full bg-black/5 px-2 py-0.5 font-medium tabular-nums dark:bg-surface-3">
           {votesCount(count)}
         </span>
       )}
       {mine > 0 && (
         <span
-          aria-label={`${mine} of your ${mine === 1 ? "vote" : "votes"}`}
+          aria-label={`Your ${votesCount(mine)}`}
           className="flex items-center gap-0.5"
         >
           {Array.from({ length: Math.min(mine, 5) }, (_, i) => (

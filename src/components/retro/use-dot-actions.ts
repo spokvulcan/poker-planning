@@ -8,7 +8,7 @@ import type { TallyRead, TopicRef } from "@/convex/model/retroVotes";
 import { refusalOf, retryWrite } from "@/lib/write-retry";
 import { toast } from "@/lib/toast";
 import { DOT_ACT_FAILED } from "@/convex/retroCopy";
-import { dotRefusal } from "./dots";
+import { dotRefusal, topicKey } from "./dots";
 import { applyPlaceDot, applyRemoveDot } from "./optimistic";
 
 export interface DotActions {
@@ -37,7 +37,7 @@ export function useDotActions(roomId: Id<"rooms">, tally: TallyRead | undefined)
 
   const place = useCallback<DotActions["place"]>(
     (target) => {
-      const refused = dotRefusal(tally, target.id);
+      const refused = dotRefusal(tally, topicKey(target));
       if (refused) {
         toast.error(refused);
         return;

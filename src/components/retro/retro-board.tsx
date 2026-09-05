@@ -34,7 +34,7 @@ import { editingOf } from "./readiness";
 import type { CardActions } from "./use-card-actions";
 import type { DotActions } from "./use-dot-actions";
 import type { TallyRead, TopicRef } from "@/convex/model/retroVotes";
-import { dotsLeft, dotsOf } from "./dots";
+import { dotsLeft, dotsOf, topicKey } from "./dots";
 import type { DotControlsProps } from "./dot-controls";
 import { VoteBudget } from "./vote-budget";
 
@@ -181,7 +181,7 @@ export function RetroBoard({
   const dotsFor = useCallback(
     (target: TopicRef, topic: boolean): DotControlsProps | undefined => {
       if (tally === undefined) return undefined;
-      const shown = dotsOf(tally, target.id);
+      const shown = dotsOf(tally, topicKey(target));
       return {
         ...(topic ? shown : { mine: shown.mine }),
         ...(takesDots && topic ? { onPlace: () => dotActions!.place(target) } : {}),

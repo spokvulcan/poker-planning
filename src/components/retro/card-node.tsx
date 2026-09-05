@@ -89,9 +89,7 @@ export const CardNodeView = memo(function CardNodeView({ data, selected: flowSel
         style={{ width: size.width, height: size.height }}
       >
         <p className="truncate">{headlineOf(card.text ?? "")}</p>
-        {dots && (dots.count !== undefined || dots.mine > 0) && (
-          <DotControls count={dots.count} mine={dots.mine} className="ml-auto shrink-0" />
-        )}
+        {dots && <DotControls count={dots.count} mine={dots.mine} className="ml-auto shrink-0" />}
       </div>
     );
   }
