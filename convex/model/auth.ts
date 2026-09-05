@@ -9,6 +9,7 @@ import {
   categoryLevel,
   getEffectiveRole,
   TeamRole,
+  type ResolvedDecision,
 } from "../permissions";
 import { isRoomOwnerAbsent } from "./permissions";
 import { getMembership } from "./users";
@@ -295,10 +296,9 @@ export async function requireCanForUser(
 
 /**
  * The guard's shared IO assembly, given the actor's user and membership from
- * either authentication mode. Loads the room, assembles the precise Action,
- * fetches the target for target-constrained verbs, reads owner absence only
- * when an owner-level outcome could depend on it, calls resolve, and throws
- * the resolved decision's message on denial. Returns the loaded bundle.
+ * either authentication mode. Loads the room, resolves the action through
+ * `resolveRoomAction`, and throws the resolved decision's message on denial.
+ * Returns the loaded bundle.
  */
 async function guardRoomAction(
   ctx: QueryCtx | MutationCtx,
@@ -312,7 +312,39 @@ async function guardRoomAction(
   if (!room) {
     throw new Error("Room not found");
   }
+  const { decision, target } = await resolveRoomAction(
+    ctx,
+    user,
+    membership,
+    room,
+    spec,
+    targetUserId
+  );
+  if (!decision.allowed) {
+    throw new Error(decision.message);
+  }
+  return { user, membership, room, target };
+}
 
+/**
+ * The decision for an action in a loaded room, returned rather than thrown:
+ * the same IO assembly the guard uses — the precise Action, the target for
+ * target-constrained verbs, owner absence only when an owner-level outcome
+ * could depend on it, the Team inputs only for `claim` — for a caller whose
+ * denial is per target (a retro card, spec §8.1) and must be a coded
+ * refusal the client can tell from a failure. Throws only when the category
+ * has no level in this room's ceremony (ADR-0013) or a target is not a
+ * member, which are caller errors, not denials.
+ */
+export async function resolveRoomAction(
+  ctx: QueryCtx | MutationCtx,
+  user: Doc<"users">,
+  membership: Doc<"roomMemberships">,
+  room: Doc<"rooms">,
+  spec: RequireCanSpec,
+  targetUserId?: Id<"users">
+): Promise<{ decision: ResolvedDecision; target?: Doc<"roomMemberships"> }> {
+  const roomId = room._id;
   const effective = getEffectivePermissions(room);
   const actorRole = getEffectiveRole(membership);
 
@@ -381,11 +413,7 @@ async function guardRoomAction(
     ...(team.actorTeamRole ? { actorTeamRole: team.actorTeamRole } : {}),
     ownerInTeam: team.ownerInTeam,
   });
-  if (!decision.allowed) {
-    throw new Error(decision.message);
-  }
-
-  return { user, membership, room, target };
+  return { decision, target };
 }
 
 /**

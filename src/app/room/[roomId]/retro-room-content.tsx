@@ -1,19 +1,24 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { Doc, Id } from "@/convex/_generated/dataModel";
+import { Id } from "@/convex/_generated/dataModel";
 import { useAuth } from "@/components/auth/auth-provider";
 import { CenteredMessage } from "@/components/centered-message";
 import { Button } from "@/components/ui/button";
 import { RetroJoinForm } from "@/components/retro/retro-join-form";
 import { RetroBoard, type BoardViewer } from "@/components/retro/retro-board";
+import { mergeCards, type BoardCard } from "@/components/retro/cards";
+import { readinessOf } from "@/components/retro/readiness";
+import { useCardActions } from "@/components/retro/use-card-actions";
+import { useSingleFlightMutation } from "@/hooks/useSingleFlightMutation";
 import { RetroMenu, type MyTeam } from "@/components/retro/retro-menu";
 import type { RetroTeam } from "@/components/retro/retro-header";
 import type { StageControls } from "@/components/retro/stage-nav";
 import { currentStageOf } from "@/convex/model/retroFormats";
 import type { RoomWithRelatedData } from "@/convex/model/rooms";
+import type { BoardRead } from "@/convex/model/retro";
 import { useRetroPermissions } from "@/hooks/usePermissions";
 import { useRoomPresence, type UserWithPresence } from "@/hooks/useRoomPresence";
 import { runAct } from "@/lib/run-act";
@@ -59,7 +64,13 @@ export function RetroRoomContent({ roomId, roomData, membership }: RetroRoomCont
   const isTeamMember = team !== undefined && (myTeams ?? []).some((t) => t._id === team._id);
   const canRead = isMember || isTeamMember;
   // The board read takes the reader guard; never subscribe before it passes.
-  const retro = useQuery(api.retro.board, canRead ? { roomId } : "skip");
+  // `mine` is the attendee's own text (spec §9); a Team reader has none.
+  const board = useQuery(api.retro.board, canRead ? { roomId } : "skip");
+  const mine = useQuery(api.retro.mine, isMember ? { roomId } : "skip");
+  const cards = useMemo<BoardCard[]>(
+    () => (board ? mergeCards(board.cards, mine, membership?._id) : []),
+    [board, mine, membership?._id]
+  );
   // A Team reader never heartbeats, so their roster reads everyone offline.
   const offlineUsers = useMemo<UserWithPresence[]>(
     () => roomData.users.map((user) => ({ ...user, isOnline: false, lastSeen: null })),
@@ -86,7 +97,7 @@ export function RetroRoomContent({ roomId, roomData, membership }: RetroRoomCont
     );
   }
 
-  if (retro === undefined) {
+  if (board === undefined) {
     return <CenteredMessage title={LOADING_TITLE} body={LOADING_BOARD} />;
   }
 
@@ -94,7 +105,9 @@ export function RetroRoomContent({ roomId, roomData, membership }: RetroRoomCont
     return (
       <RetroBoard
         name={room.name}
-        retro={retro}
+        retro={board.retro}
+        cards={cards}
+        writers={board.writers}
         users={offlineUsers}
         team={team}
         banner={
@@ -118,7 +131,8 @@ export function RetroRoomContent({ roomId, roomData, membership }: RetroRoomCont
     <AttendeeBoard
       roomId={roomId}
       roomData={roomData}
-      retro={retro}
+      board={board}
+      cards={cards}
       team={team}
       userId={membership!._id}
       myTeams={(myTeams ?? []) as MyTeam[]}
@@ -129,7 +143,8 @@ export function RetroRoomContent({ roomId, roomData, membership }: RetroRoomCont
 interface AttendeeBoardProps {
   roomId: Id<"rooms">;
   roomData: RoomWithRelatedData;
-  retro: Doc<"retros">;
+  board: BoardRead;
+  cards: BoardCard[];
   team?: RetroTeam;
   userId: Id<"users">;
   myTeams: MyTeam[];
@@ -137,18 +152,49 @@ interface AttendeeBoardProps {
 
 /**
  * The attendee's board: one presence subscription (heartbeat as this
- * member), the readiness write, and the stageFlow wiring. Its own component
- * so the presence hook — which has no skip — mounts only once a membership
- * exists; a Team reader never heartbeats.
+ * member), the presence payload writes (readiness, the editing indicator)
+ * through one global single-flight, the card writes, and the stageFlow
+ * wiring. Its own component so the presence hook — which has no skip —
+ * mounts only once a membership exists; a Team reader never heartbeats.
  */
-function AttendeeBoard({ roomId, roomData, retro, team, userId, myTeams }: AttendeeBoardProps) {
+function AttendeeBoard({ roomId, roomData, board, cards, team, userId, myTeams }: AttendeeBoardProps) {
+  const { retro } = board;
   const users = useRoomPresence(roomId, userId, roomData.users);
-  const setReadiness = useMutation(api.presence.setReadiness);
+  const setRetroPresence = useSingleFlightMutation(
+    useMutation(api.presence.setRetroPresence),
+    () => "presence"
+  );
   const advance = useMutation(api.retro.advance);
   const setCardsVisible = useMutation(api.retro.setCardsVisible);
   const setTimebox = useMutation(api.retro.setTimebox);
-  const { stageFlow, retroSettings } = useRetroPermissions(roomData, userId);
+  const { stageFlow, cardManagement, retroSettings } = useRetroPermissions(roomData, userId);
+  const cardActions = useCardActions(roomId, userId);
   const currentStageId = currentStageOf(retro).id;
+  // The payload is written whole, so an editing write carries readiness
+  // too: the viewer's last toggle for this entry, else what their presence
+  // row already says. An advance drops the local value with the entry.
+  const me = users.find((u) => u._id === userId);
+  const myPresence = me?.data;
+  const [toggled, setToggled] = useState<{ stageId: string; ready: boolean } | null>(null);
+  const writePresence = useCallback(
+    (patch: { ready?: boolean; editing?: string }) => {
+      const ready =
+        patch.ready ??
+        (toggled?.stageId === currentStageId ? toggled.ready : readinessOf(myPresence, currentStageId));
+      if (patch.ready !== undefined) setToggled({ stageId: currentStageId, ready: patch.ready });
+      void runAct(
+        setRetroPresence({
+          roomId,
+          userId,
+          stageId: currentStageId,
+          ready,
+          ...(patch.editing !== undefined ? { editing: patch.editing } : {}),
+        }),
+        STAGE_ACT_FAILED
+      );
+    },
+    [setRetroPresence, roomId, userId, currentStageId, toggled, myPresence]
+  );
 
   const controls = useMemo<StageControls>(
     () => ({
@@ -168,11 +214,14 @@ function AttendeeBoard({ roomId, roomData, retro, team, userId, myTeams }: Atten
   const viewer = useMemo<BoardViewer>(
     () => ({
       userId,
-      onSetReady: (ready) =>
-        void runAct(setReadiness({ roomId, userId, stageId: currentStageId, ready }), STAGE_ACT_FAILED),
+      name: me?.name ?? "",
+      onSetReady: (ready) => writePresence({ ready }),
+      onEditing: (clientId) => writePresence({ editing: clientId }),
       controls,
+      cards: cardActions,
+      cardManagement,
     }),
-    [userId, setReadiness, roomId, currentStageId, controls]
+    [userId, me?.name, writePresence, controls, cardActions, cardManagement]
   );
 
   const role = roomData.users.find((u) => u._id === userId)?.role ?? "participant";
@@ -180,6 +229,8 @@ function AttendeeBoard({ roomId, roomData, retro, team, userId, myTeams }: Atten
     <RetroBoard
       name={roomData.room.name}
       retro={retro}
+      cards={cards}
+      writers={board.writers}
       users={users}
       team={team}
       viewer={viewer}

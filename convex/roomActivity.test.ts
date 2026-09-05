@@ -598,6 +598,28 @@ describe("room activity — the Team's side of a retro bumps (spec §14)", () =>
     await expectBumped(t, roomId, stale);
   });
 
+  it("every card mutation bumps (spec §14)", async () => {
+    const t = convexTest(schema, modules);
+    const { roomId } = await seedTeamRetro(t, false);
+    const retro = (await t.run((ctx) =>
+      ctx.db.query("retros").withIndex("by_room", (q) => q.eq("roomId", roomId)).unique()
+    ))!;
+    const me = as(t, "auth-member");
+    const promptId = retro.format.prompts[0].id;
+    const acts = [
+      () => me.mutation(api.retro.createCard, { roomId, clientId: "c1", text: "hi", promptId, position: { x: 0, y: 0 } }),
+      () => me.mutation(api.retro.updateCard, { roomId, clientId: "c1", text: "edited" }),
+      () => me.mutation(api.retro.moveCards, { roomId, moves: [{ clientId: "c1", position: { x: 1, y: 1 } }] }),
+      () => me.mutation(api.retro.deleteCard, { roomId, clientId: "c1" }),
+    ];
+    for (const act of acts) {
+      const stale = Date.now() - HOUR - 60_000;
+      await t.run((ctx) => ctx.db.patch(roomId, { lastActivityAt: stale }));
+      await act();
+      await expectBumped(t, roomId, stale);
+    }
+  });
+
   it("claim bumps", async () => {
     const t = convexTest(schema, modules);
     const { roomId, memberId, stale } = await seedTeamRetro(t, true);

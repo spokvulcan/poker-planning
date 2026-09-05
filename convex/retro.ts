@@ -1,6 +1,8 @@
-import { mutation, query } from "./_generated/server";
+import { mutation, query, type QueryCtx } from "./_generated/server";
 import { v } from "convex/values";
+import type { Id } from "./_generated/dataModel";
 import * as Retro from "./model/retro";
+import * as RetroCards from "./model/retroCards";
 import {
   joinPolicyValidator,
   retroFormatValidator,
@@ -45,14 +47,24 @@ export const create = mutation({
 });
 
 /**
- * The board's structure (spec §9): the retros row — format, stages, the
- * shared pointer, `collectUntil`. Room access, not attendance (ADR-0009).
+ * The board (spec §9): the retros row, every cluster and every card through
+ * the projection, identical for every viewer. Room access, not attendance
+ * (ADR-0009).
  */
 export const board = query({
   args: { roomId: v.id("rooms") },
   handler: async (ctx, args) => {
     await requireRoomReader(ctx, args.roomId);
-    return await Retro.requireRetro(ctx, args.roomId);
+    return await Retro.board(ctx, args.roomId);
+  },
+});
+
+/** The viewer's own cards in full, whatever the shared pointer hides (spec §9). */
+export const mine = query({
+  args: { roomId: v.id("rooms") },
+  handler: async (ctx, args) => {
+    const { user } = await requireRoomReader(ctx, args.roomId);
+    return await Retro.mine(ctx, args.roomId, user._id);
   },
 });
 
@@ -270,3 +282,66 @@ export const listMine = query({
     return await Retro.listMine(ctx, user._id);
   },
 });
+
+// --- Cards (spec §8.1, ADR-0022) ---
+
+const positionValidator = v.object({ x: v.number(), y: v.number() });
+
+/**
+ * Write a card. Attendance is the only guard: writing is never in the
+ * config (spec §4.2). The client mints `clientId`; a retry returns the row.
+ */
+export const createCard = mutation({
+  args: {
+    roomId: v.id("rooms"),
+    clientId: v.string(),
+    text: v.string(),
+    promptId: v.string(),
+    position: positionValidator,
+  },
+  handler: async (ctx, args) => {
+    const { roomId, ...rest } = args;
+    return await RetroCards.createCard(ctx, { ...(await requireCardActor(ctx, roomId)), ...rest });
+  },
+});
+
+/** Edit a card's text: own, or under `cardManagement`; the model decides per card. */
+export const updateCard = mutation({
+  args: { roomId: v.id("rooms"), clientId: v.string(), text: v.string() },
+  handler: async (ctx, args) => {
+    const { roomId, ...rest } = args;
+    await RetroCards.updateCardText(ctx, { ...(await requireCardActor(ctx, roomId)), ...rest });
+  },
+});
+
+/** The one move mutation: a batch of `{ clientId, position }` (ADR-0022). */
+export const moveCards = mutation({
+  args: {
+    roomId: v.id("rooms"),
+    moves: v.array(v.object({ clientId: v.string(), position: positionValidator })),
+  },
+  handler: async (ctx, args) => {
+    await RetroCards.moveCards(ctx, { ...(await requireCardActor(ctx, args.roomId)), moves: args.moves });
+  },
+});
+
+/** Delete a card: own, or under `cardManagement`. */
+export const deleteCard = mutation({
+  args: { roomId: v.id("rooms"), clientId: v.string() },
+  handler: async (ctx, args) => {
+    await RetroCards.deleteCard(ctx, { ...(await requireCardActor(ctx, args.roomId)), clientId: args.clientId });
+  },
+});
+
+/**
+ * A card act's actor: the attendance guard (which does not load the room)
+ * and the room row the model needs.
+ */
+async function requireCardActor(ctx: QueryCtx, roomId: Id<"rooms">) {
+  const { user, membership } = await requireRoomMember(ctx, roomId);
+  const room = await ctx.db.get(roomId);
+  if (!room) {
+    throw refusal("missing", ROOM_NOT_FOUND);
+  }
+  return { room, actor: { user, membership } };
+}

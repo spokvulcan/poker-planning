@@ -97,3 +97,27 @@ describe("RetroRoster", () => {
     expect(screen.getAllByRole("listitem")[0].hasAttribute("data-ready")).toBe(false);
   });
 });
+
+describe("RetroRoster — has written (ADR-0012, spec §7)", () => {
+  it("in collect names who has written in a named retro, and shows only a total under anonymous", () => {
+    const present = withPresence({ u1: { online: true }, u2: { online: true } });
+    const { unmount } = render(
+      <RetroRoster users={present} currentStage={collect} writers={new Set(["u2"])} cardCount={3} />
+    );
+    const rows = screen.getAllByRole("listitem");
+    expect(rows.map((row) => row.getAttribute("data-written"))).toEqual(["false", "true", "false"]);
+    expect(within(rows[1]).getByText("Has written")).toBeTruthy();
+    expect(screen.queryByTestId("card-count")).toBeNull();
+    unmount();
+
+    render(<RetroRoster users={present} currentStage={collect} cardCount={3} />);
+    expect(screen.getByTestId("card-count").textContent).toBe("3 cards");
+    expect(screen.getAllByRole("listitem")[1].getAttribute("data-written")).toBeNull();
+  });
+
+  it("outside collect the written signal is not shown", () => {
+    render(<RetroRoster users={withPresence({})} currentStage={group} writers={new Set(["u2"])} cardCount={3} />);
+    expect(screen.queryByText("Has written")).toBeNull();
+    expect(screen.getAllByRole("listitem")[1].getAttribute("data-written")).toBeNull();
+  });
+});

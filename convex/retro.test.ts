@@ -186,11 +186,13 @@ describe("retro.board", () => {
       formatName: DEFAULT_RETRO_FORMAT.name,
     });
 
-    const board = await as(t, "owner").query(api.retro.board, { roomId });
+    const { retro: board, cards, clusters } = await as(t, "owner").query(api.retro.board, { roomId });
     expect(board.roomId).toBe(roomId);
     expect(board.currentStageId).toBe(board.stages[0].id);
     expect(board.stages[0].kind).toBe("collect");
     expect(board.format.name).toBe(DEFAULT_RETRO_FORMAT.name);
+    expect(cards).toEqual([]);
+    expect(clusters).toEqual([]);
 
     await expect(
       as(t, "stranger").query(api.retro.board, { roomId })
