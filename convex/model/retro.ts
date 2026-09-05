@@ -6,10 +6,13 @@ import { validateRoomName, updateRoomActivity } from "./rooms";
 import { deleteRoomAggregateChunk } from "./roomAggregate";
 import { listTeamsForUser } from "./teams";
 import {
+  currentStageOf,
   findFormat,
   seedStages,
   stampFormat,
+  type StageEntry,
   type StageKind,
+  type Visibility,
   type StampedFormat,
 } from "./retroFormats";
 import {
@@ -17,6 +20,9 @@ import {
   NO_TEAM_GROUP,
   NOT_A_RETRO,
   ONLY_OWNER_CAN_ADOPT,
+  NOT_CURRENT_STAGE,
+  STAGE_ENTRY_NOT_FOUND,
+  TIMEBOX_INVALID,
   UNKNOWN_FORMAT,
 } from "../retroCopy";
 import { refusal } from "./refusal";
@@ -121,11 +127,92 @@ export async function getBoard(
   ctx: QueryCtx,
   roomId: Id<"rooms">
 ): Promise<Doc<"retros">> {
+  return requireRetro(ctx, roomId);
+}
+
+/** The retros row of a room, or a `missing` refusal for a poker room. */
+async function requireRetro(ctx: QueryCtx, roomId: Id<"rooms">): Promise<Doc<"retros">> {
   const retro = await getRetro(ctx, roomId);
   if (!retro) {
     throw refusal("missing", NOT_A_RETRO);
   }
   return retro;
+}
+
+// --- Stages (ADR-0010, spec §7) ---
+
+/**
+ * Advance: the shared pointer moves to any entry, forward or back, and the
+ * entered-at instant is re-stamped so the advisory timebox counts from it.
+ * It destroys, finalises and hides nothing beyond the read-time projection;
+ * there is no stage guard and nothing advances itself. The walk snapshot on
+ * entering a `discuss` entry (spec §12.1) joins with the walk ticket.
+ */
+export async function advance(
+  ctx: MutationCtx,
+  args: { roomId: Id<"rooms">; toStageId: string }
+): Promise<void> {
+  const retro = await requireRetro(ctx, args.roomId);
+  if (!retro.stages.some((stage) => stage.id === args.toStageId)) {
+    throw refusal("missing", STAGE_ENTRY_NOT_FOUND);
+  }
+  await ctx.db.patch(retro._id, {
+    currentStageId: args.toStageId,
+    currentStageEnteredAt: Date.now(),
+  });
+  await updateRoomActivity(ctx, args.roomId);
+}
+
+/**
+ * Patch one entry of the stage list in place; the act on the current entry
+ * that the two in-the-moment `stageFlow` mutations share. Refused with
+ * `stage` when the id is not the shared pointer's: an act on another entry
+ * is a structural edit and belongs to `retroSettings` (spec §23.1).
+ */
+async function patchCurrentStage(
+  ctx: MutationCtx,
+  args: { roomId: Id<"rooms">; stageId: string },
+  patch: (entry: StageEntry) => StageEntry
+): Promise<void> {
+  const retro = await requireRetro(ctx, args.roomId);
+  if (args.stageId !== retro.currentStageId) {
+    throw refusal("stage", NOT_CURRENT_STAGE);
+  }
+  await ctx.db.patch(retro._id, {
+    stages: retro.stages.map((entry) => (entry.id === args.stageId ? patch(entry) : entry)),
+  });
+  await updateRoomActivity(ctx, args.roomId);
+}
+
+/**
+ * The in-place reveal toggle (ADR-0015): flips the current entry's reveal
+ * policy either way, covering "show the board without moving on" and "hide
+ * it again". A `stageFlow` act; the projection follows on the next read.
+ */
+export async function setCardsVisible(
+  ctx: MutationCtx,
+  args: { roomId: Id<"rooms">; stageId: string; value: Visibility }
+): Promise<void> {
+  await patchCurrentStage(ctx, args, (entry) => ({ ...entry, cardsVisible: args.value }));
+}
+
+/**
+ * The advisory timebox on the current entry (ADR-0010): whole minutes, or
+ * none. The pill counts it down; at zero it says so and nothing else
+ * happens. A `stageFlow` act.
+ */
+export async function setTimebox(
+  ctx: MutationCtx,
+  args: { roomId: Id<"rooms">; stageId: string; minutes?: number }
+): Promise<void> {
+  const { minutes } = args;
+  if (minutes !== undefined && (!Number.isInteger(minutes) || minutes <= 0)) {
+    throw refusal("forbidden", TIMEBOX_INVALID);
+  }
+  await patchCurrentStage(ctx, args, (entry) => {
+    const { timeboxMinutes: _dropped, ...rest } = entry;
+    return minutes === undefined ? rest : { ...rest, timeboxMinutes: minutes };
+  });
 }
 
 /**
@@ -272,13 +359,6 @@ export interface RetroListRow {
   stageKind: StageKind;
   collectUntil?: number;
   createdAt: number;
-}
-
-/** The entry the shared pointer names; the first entry if the pointer dangles. */
-export function currentStageOf(
-  retro: Pick<Doc<"retros">, "stages" | "currentStageId">
-): Doc<"retros">["stages"][number] {
-  return retro.stages.find((stage) => stage.id === retro.currentStageId) ?? retro.stages[0];
 }
 
 function toRow(room: Doc<"rooms">, retro: Doc<"retros">): RetroListRow {

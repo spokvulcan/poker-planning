@@ -89,6 +89,50 @@ export const STAGE_LABELS: Record<
 
 export const STAGE_PILL_LABEL = "Stage";
 
+/**
+ * Each kind's empty state (ADR-0010): entering a stage with nothing in it
+ * renders an explanation, never a lock.
+ */
+export const STAGE_EMPTY: Record<
+  "collect" | "review" | "group" | "vote" | "discuss" | "close",
+  string
+> = {
+  collect: "No cards yet. Every prompt has a zone; write into any of them.",
+  review: "No open actions from earlier retros",
+  group: "Nothing to group yet. Cards written in Collect show up here.",
+  vote: "Nothing to vote on yet. Cards and groups show up here once written.",
+  discuss: "Nothing to discuss yet. Topics show up here once cards are written.",
+  close: "No action items yet.",
+};
+export const TIMEBOX_OVER = "Timebox over";
+
+// --- Stage navigation (spec §7) ---
+
+export const BACK_TO_TEAM = "Back to the team";
+export const NEXT_STAGE = "Next stage";
+export const PREVIOUS_STAGE = "Previous stage";
+export const BRING_EVERYONE_HERE = "Bring everyone here";
+export const SHOW_CARDS = "Show cards";
+export const HIDE_CARDS = "Hide cards";
+export const TIMEBOX_LABEL = "Timebox (minutes)";
+export const STAGES_NAV_LABEL = "Stages";
+export const STAGE_ACT_FAILED = "That did not go through. Try again.";
+
+// --- Roster and readiness (spec §7) ---
+
+export const ROSTER_TITLE = "People";
+export const READY_LABEL = "Ready";
+export const READY_TOGGLE_LABEL = "I'm ready";
+
+/** An in-the-moment act (`setCardsVisible`, the timebox) naming an entry that is not the shared pointer's. */
+export const NOT_CURRENT_STAGE = "Only the current stage can be changed here";
+
+/** `setTimebox` with anything but a positive whole number of minutes. */
+export const TIMEBOX_INVALID = "Timebox must be a whole number of minutes";
+
+/** A stage act naming an entry the list does not carry. */
+export const STAGE_ENTRY_NOT_FOUND = "That stage is no longer in this retro";
+
 // --- Board (spec §16.5, §19) ---
 
 export const collectUntilLine = (date: string) => `Cards due ${date}`;

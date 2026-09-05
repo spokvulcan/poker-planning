@@ -29,6 +29,28 @@ export const heartbeat = mutation({
   },
 });
 
+/**
+ * Readiness (ADR-0010, spec §7): a person's "I am done with this stage"
+ * signal, held in the presence payload as `{ stageId, ready }` and never in
+ * a table. One write per state change; a reader treats a payload whose
+ * `stageId` is not the current entry as absent, so an advance clears every
+ * signal with no write at all. The same guard as the heartbeat: the caller
+ * must be this room member acting as themselves.
+ */
+export const setReadiness = mutation({
+  args: {
+    roomId: v.id("rooms"),
+    userId: v.id("users"),
+    stageId: v.string(),
+    ready: v.boolean(),
+  },
+  handler: async (ctx, { roomId, userId, stageId, ready }) => {
+    await requireActingUser(ctx, roomId, userId, "Cannot set readiness as another user");
+    await presence.updateRoomUser(ctx, roomId, userId, { stageId, ready });
+    return null;
+  },
+});
+
 export const list = query({
   args: { roomToken: v.string() },
   handler: async (ctx, { roomToken }) => {
