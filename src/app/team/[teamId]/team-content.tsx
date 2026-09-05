@@ -31,6 +31,7 @@ import { RetroRows } from "@/components/retro/retro-list";
 import { TEAM_RETROS_EMPTY, TEAM_RETROS_TITLE } from "@/convex/retroCopy";
 import { copyTextToClipboard } from "@/utils/copy-text-to-clipboard";
 import { toast } from "@/lib/toast";
+import { runAct } from "@/lib/run-act";
 
 function Centered({ title, body }: { title: string; body: string }) {
   return (
@@ -41,20 +42,6 @@ function Centered({ title, body }: { title: string; body: string }) {
       </div>
     </div>
   );
-}
-
-/**
- * Every write on this page fails the same way: the server's refusal copy
- * (the last-admin rule, a stale role) or a fallback, in a toast.
- */
-async function run(fn: () => Promise<unknown>, fallback: string): Promise<boolean> {
-  try {
-    await fn();
-    return true;
-  } catch (error) {
-    toast.error(error instanceof Error ? error.message : fallback);
-    return false;
-  }
 }
 
 /**
@@ -104,7 +91,7 @@ export function TeamContent() {
     const trimmed = name.trim();
     setDraft(null);
     if (!trimmed || trimmed === team.name) return;
-    if (await run(() => rename({ teamId, name: trimmed }), "Failed to rename team")) {
+    if (await runAct(rename({ teamId, name: trimmed }), "Failed to rename team")) {
       toast.success("Team renamed");
     }
   };
@@ -118,21 +105,21 @@ export function TeamContent() {
   };
 
   const handleRotate = async () => {
-    if (await run(() => rotateInvite({ teamId }), "Failed to rotate the invite link")) {
+    if (await runAct(rotateInvite({ teamId }), "Failed to rotate the invite link")) {
       toast.success("Invite link rotated", { description: "The old link no longer works." });
     }
   };
 
   const roleMutations = { promote, demote };
   const handleRole = async (action: keyof typeof roleMutations, userId: Id<"users">) => {
-    await run(() => roleMutations[action]({ teamId, targetUserId: userId }), "Failed to change role");
+    await runAct(roleMutations[action]({ teamId, targetUserId: userId }), "Failed to change role");
   };
 
   const handleConfirmRemove = async () => {
     if (!pendingRemove) return;
     const removed = pendingRemove;
     setPendingRemove(null);
-    if (await run(() => removeMember({ teamId, targetUserId: removed.userId }), "Failed to remove member")) {
+    if (await runAct(removeMember({ teamId, targetUserId: removed.userId }), "Failed to remove member")) {
       toast.success("Member removed", {
         description: `${removed.name} no longer has access to this team's retros.`,
       });
@@ -142,7 +129,7 @@ export function TeamContent() {
   // Confirmations stay open on failure (the last-admin rule, most often),
   // so the next attempt is one click away.
   const handleLeave = async () => {
-    if (await run(() => leave({ teamId }), "Failed to leave the team")) {
+    if (await runAct(leave({ teamId }), "Failed to leave the team")) {
       setConfirmLeave(false);
       router.push("/dashboard/retros");
     }
@@ -151,11 +138,11 @@ export function TeamContent() {
   // No success toast here on purpose: the control itself shows the new
   // value, and a failure rolls it back (the panel's contract) with a toast.
   const handleRetroDefaults = (next: RetroDefaults) =>
-    run(() => updateRetroDefaults({ teamId, retroDefaults: next }), "Failed to update retro defaults");
+    runAct(updateRetroDefaults({ teamId, retroDefaults: next }), "Failed to update retro defaults");
 
   const handleDelete = async () => {
     setIsDeleting(true);
-    if (await run(() => deleteTeam({ teamId }), "Failed to delete team")) {
+    if (await runAct(deleteTeam({ teamId }), "Failed to delete team")) {
       toast.success(`${team.name} deleted`);
       router.push("/dashboard/retros");
     } else {

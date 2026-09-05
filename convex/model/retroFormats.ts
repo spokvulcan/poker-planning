@@ -66,16 +66,17 @@ export function newStageEntryId(): string {
   return crypto.randomUUID();
 }
 
+/** Every stage kind, in the seed's order. */
+export const STAGE_KINDS: readonly StageKind[] = ["collect", "review", "group", "vote", "discuss", "close"];
+
 export const DEFAULT_VOTE_BUDGET = 5;
 
 /** A retro carries at most ten prompts and ten stage entries (spec §2). */
 export const MAX_PROMPTS = 10;
 export const MAX_STAGES = 10;
 
-/** A fresh prompt id for a prompt added after the library's. */
-export function newPromptId(): string {
-  return crypto.randomUUID();
-}
+/** A fresh prompt id for a prompt added after the library's; the same minting as a stage's. */
+export const newPromptId = newStageEntryId;
 
 export function isRetroTint(color: string): color is RetroTint {
   return (RETRO_TINTS as readonly string[]).includes(color);
@@ -202,8 +203,7 @@ export function seedStages(
   format: Pick<RetroFormat, "collectVisible">,
   options: { hasTeam: boolean }
 ): StageEntry[] {
-  const kinds: StageKind[] = ["collect", "review", "group", "vote", "discuss", "close"];
-  return kinds
+  return STAGE_KINDS
     .filter((kind) => options.hasTeam || kind !== "review")
     .map((kind) => newStageEntry(kind, { collectVisible: format.collectVisible }));
 }

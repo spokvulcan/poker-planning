@@ -15,14 +15,18 @@ interface StagePillProps {
   enteredAt?: number;
 }
 
-/** A once-a-second clock, running only while a countdown is shown. */
-function useNow(active: boolean): number {
+/**
+ * A once-a-second clock, running only while a countdown is shown and not
+ * yet over: past `until` the label is a constant, so the ticking stops.
+ */
+function useNow(until: number | undefined): number {
   const [now, setNow] = useState(() => Date.now());
+  const ticking = until !== undefined && now < until;
   useEffect(() => {
-    if (!active) return;
+    if (!ticking) return;
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
-  }, [active]);
+  }, [ticking]);
   return now;
 }
 
@@ -33,7 +37,7 @@ function useNow(active: boolean): number {
  */
 export function StagePill({ kind, timeboxMinutes, enteredAt }: StagePillProps) {
   const hasTimebox = timeboxMinutes !== undefined && enteredAt !== undefined;
-  const now = useNow(hasTimebox);
+  const now = useNow(hasTimebox ? enteredAt + timeboxMinutes * 60_000 : undefined);
   const reading = hasTimebox ? timeboxReading(timeboxMinutes, enteredAt, now) : undefined;
   return (
     <Badge

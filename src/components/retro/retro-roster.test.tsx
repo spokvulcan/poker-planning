@@ -11,6 +11,7 @@ import { render, screen, cleanup, fireEvent, within } from "@testing-library/rea
 import { readinessOf, projectRoster } from "./readiness";
 import { RetroRoster } from "./retro-roster";
 import type { StageEntry } from "@/convex/model/retroFormats";
+import type { UserWithPresence } from "@/hooks/useRoomPresence";
 
 afterEach(cleanup);
 
@@ -19,6 +20,14 @@ const users = [
   { _id: "u2", name: "Ben", isSpectator: false, role: "participant", joinedAt: 2, membershipId: "m2" },
   { _id: "u3", name: "Cy", isSpectator: false, role: "participant", joinedAt: 3, membershipId: "m3" },
 ] as never[];
+
+/** The members as `useRoomPresence` hands them over: offline unless a payload says otherwise. */
+function withPresence(byId: Record<string, { online: boolean; data?: unknown }>): UserWithPresence[] {
+  return users.map((user: { _id: string }) => {
+    const entry = byId[user._id];
+    return { ...(user as UserWithPresence), isOnline: entry?.online ?? false, lastSeen: null, data: entry?.data };
+  });
+}
 
 const group: StageEntry = { id: "s-group", kind: "group", cardsVisible: "visible", tallyVisible: "visible" };
 const collect: StageEntry = { id: "s-collect", kind: "collect", cardsVisible: "hidden", tallyVisible: "visible" };
@@ -36,12 +45,11 @@ describe("readinessOf", () => {
 });
 
 describe("projectRoster", () => {
-  it("merges presence and readiness onto every member, online first", () => {
-    const presence = [
-      { userId: "u2", online: true, lastDisconnected: 0, data: { stageId: "s-group", ready: true } },
-      { userId: "u1", online: false, lastDisconnected: 500, data: { stageId: "s-group", ready: true } },
-    ];
-    const rows = projectRoster(users, presence, "s-group");
+  it("reads readiness from every member's payload, online first", () => {
+    const rows = projectRoster(
+      withPresence({ u2: { online: true, data: { stageId: "s-group", ready: true } }, u1: { online: false, data: { stageId: "s-group", ready: true } } }),
+      "s-group"
+    );
     expect(rows.map((r) => [r.name, r.isOnline, r.ready])).toEqual([
       ["Ben", true, true],
       ["Ada", false, true],
@@ -50,24 +58,20 @@ describe("projectRoster", () => {
   });
 
   it("reads everyone as not ready after the pointer moves", () => {
-    const presence = [
-      { userId: "u1", online: true, lastDisconnected: 0, data: { stageId: "s-collect", ready: true } },
-    ];
-    expect(projectRoster(users, presence, "s-group").every((r) => !r.ready)).toBe(true);
-    expect(projectRoster(users, undefined, "s-group").every((r) => !r.isOnline && !r.ready)).toBe(true);
+    const moved = withPresence({ u1: { online: true, data: { stageId: "s-collect", ready: true } } });
+    expect(projectRoster(moved, "s-group").every((r) => !r.ready)).toBe(true);
+    expect(projectRoster(withPresence({}), "s-group").every((r) => !r.isOnline && !r.ready)).toBe(true);
   });
 });
 
 describe("RetroRoster", () => {
   it("shows each person with readiness, and the viewer's toggle writes once per change", () => {
     const onSetReady = vi.fn();
-    const presence = [
-      { userId: "u1", online: true, lastDisconnected: 0, data: { stageId: "s-group", ready: false } },
-      { userId: "u2", online: true, lastDisconnected: 0, data: { stageId: "s-group", ready: true } },
-    ];
-    render(
-      <RetroRoster users={users} presence={presence} currentStage={group} myUserId="u1" onSetReady={onSetReady} />
-    );
+    const members = withPresence({
+      u1: { online: true, data: { stageId: "s-group", ready: false } },
+      u2: { online: true, data: { stageId: "s-group", ready: true } },
+    });
+    render(<RetroRoster users={members} currentStage={group} myUserId="u1" onSetReady={onSetReady} />);
     const rows = screen.getAllByRole("listitem");
     expect(rows).toHaveLength(3);
     const ben = rows.find((r) => r.textContent?.includes("Ben"))!;
@@ -85,7 +89,7 @@ describe("RetroRoster", () => {
 
   it("offers no readiness in collect", () => {
     render(
-      <RetroRoster users={users} presence={undefined} currentStage={collect} myUserId="u1" onSetReady={vi.fn()} />
+      <RetroRoster users={withPresence({})} currentStage={collect} myUserId="u1" onSetReady={vi.fn()} />
     );
     expect(screen.queryByRole("switch")).toBeNull();
     expect(screen.queryByText("Ready")).toBeNull();

@@ -5,6 +5,7 @@
  * imports here. Later retro tickets extend it; #300 tests the register
  * against it.
  */
+import type { JoinPolicy } from "./permissions";
 
 // --- Board header disclosures (ADR-0008, ADR-0019) ---
 
@@ -156,7 +157,7 @@ export const SETTINGS_TITLE = "Retro settings";
 export const SETTINGS_DESCRIPTION =
   "Prompts and stages can change at any stage. Collect, Discuss and the current stage keep their place.";
 export const JOIN_POLICY_LABEL = "Who can join";
-export const JOIN_POLICY_OPTIONS: { value: "anyone" | "permanentAccounts" | "teamMembers"; label: string }[] = [
+export const JOIN_POLICY_OPTIONS: { value: JoinPolicy; label: string }[] = [
   { value: "anyone", label: "Anyone with the link" },
   { value: "permanentAccounts", label: "Signed-in accounts" },
   { value: "teamMembers", label: "Team members" },

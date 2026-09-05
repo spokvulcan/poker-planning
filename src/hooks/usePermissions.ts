@@ -266,6 +266,18 @@ function narrowToPoker(result: UsePermissionsReturn): PokerPermissionsReturn {
   return result;
 }
 
+/**
+ * The retro consumers' narrowing, the mirror of `narrowToPoker`: the retro
+ * arm, or a throw when the room is poker. The retro board mounts only under
+ * the retro room type, so the throw marks a routing bug.
+ */
+function narrowToRetro(result: UsePermissionsReturn): RetroPermissionsReturn {
+  if (result.ceremony !== "retro") {
+    throw new Error("Retro permissions requested for a non-retro room");
+  }
+  return result;
+}
+
 /** `computePermissions` narrowed to the poker arm; see `narrowToPoker`. */
 export function computePokerPermissions(
   roomData: RoomWithRelatedData | null | undefined,
@@ -298,4 +310,12 @@ export function usePokerPermissions(
   currentUserId: Id<"users"> | string | undefined
 ): PokerPermissionsReturn {
   return narrowToPoker(usePermissions(roomData, currentUserId));
+}
+
+/** `usePermissions` narrowed to the retro arm for the retro surfaces; see `narrowToRetro`. */
+export function useRetroPermissions(
+  roomData: RoomWithRelatedData | null | undefined,
+  currentUserId: Id<"users"> | string | undefined
+): RetroPermissionsReturn {
+  return narrowToRetro(usePermissions(roomData, currentUserId));
 }

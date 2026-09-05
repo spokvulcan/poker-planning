@@ -238,19 +238,12 @@ async function getRetro(
 }
 
 /**
- * The board's structure read (spec §9): the `retros` row. Identity-free, so
- * every viewer shares one cached result. Cards and clusters join it with
- * the cards ticket.
+ * The retros row of a room, or a `missing` refusal for a poker room. Also
+ * the board's structure read (spec §9): identity-free, so every viewer
+ * shares one cached result; cards and clusters join it with the cards
+ * ticket.
  */
-export async function getBoard(
-  ctx: QueryCtx,
-  roomId: Id<"rooms">
-): Promise<Doc<"retros">> {
-  return requireRetro(ctx, roomId);
-}
-
-/** The retros row of a room, or a `missing` refusal for a poker room. */
-async function requireRetro(ctx: QueryCtx, roomId: Id<"rooms">): Promise<Doc<"retros">> {
+export async function requireRetro(ctx: QueryCtx, roomId: Id<"rooms">): Promise<Doc<"retros">> {
   const retro = await getRetro(ctx, roomId);
   if (!retro) {
     throw refusal("missing", NOT_A_RETRO);
@@ -269,9 +262,9 @@ async function requireRetro(ctx: QueryCtx, roomId: Id<"rooms">): Promise<Doc<"re
  */
 export async function advance(
   ctx: MutationCtx,
-  args: { roomId: Id<"rooms">; toStageId: string }
+  args: { room: Doc<"rooms">; toStageId: string }
 ): Promise<void> {
-  const retro = await requireRetro(ctx, args.roomId);
+  const retro = await requireRetro(ctx, args.room._id);
   if (!retro.stages.some((stage) => stage.id === args.toStageId)) {
     throw refusal("missing", STAGE_ENTRY_NOT_FOUND);
   }
@@ -279,7 +272,7 @@ export async function advance(
     currentStageId: args.toStageId,
     currentStageEnteredAt: Date.now(),
   });
-  await updateRoomActivity(ctx, args.roomId);
+  await updateRoomActivity(ctx, args.room);
 }
 
 /**
@@ -290,17 +283,17 @@ export async function advance(
  */
 async function patchCurrentStage(
   ctx: MutationCtx,
-  args: { roomId: Id<"rooms">; stageId: string },
+  args: { room: Doc<"rooms">; stageId: string },
   patch: (entry: StageEntry) => StageEntry
 ): Promise<void> {
-  const retro = await requireRetro(ctx, args.roomId);
+  const retro = await requireRetro(ctx, args.room._id);
   if (args.stageId !== retro.currentStageId) {
     throw refusal("stage", NOT_CURRENT_STAGE);
   }
   await ctx.db.patch(retro._id, {
     stages: retro.stages.map((entry) => (entry.id === args.stageId ? patch(entry) : entry)),
   });
-  await updateRoomActivity(ctx, args.roomId);
+  await updateRoomActivity(ctx, args.room);
 }
 
 /**
@@ -310,7 +303,7 @@ async function patchCurrentStage(
  */
 export async function setCardsVisible(
   ctx: MutationCtx,
-  args: { roomId: Id<"rooms">; stageId: string; value: Visibility }
+  args: { room: Doc<"rooms">; stageId: string; value: Visibility }
 ): Promise<void> {
   await patchCurrentStage(ctx, args, (entry) => ({ ...entry, cardsVisible: args.value }));
 }
@@ -322,7 +315,7 @@ export async function setCardsVisible(
  */
 export async function setTimebox(
   ctx: MutationCtx,
-  args: { roomId: Id<"rooms">; stageId: string; minutes?: number }
+  args: { room: Doc<"rooms">; stageId: string; minutes?: number }
 ): Promise<void> {
   const { minutes } = args;
   if (minutes !== undefined && (!Number.isInteger(minutes) || minutes <= 0)) {
@@ -343,7 +336,7 @@ export async function setTimebox(
  */
 export async function renameRetro(
   ctx: MutationCtx,
-  args: { roomId: Id<"rooms">; name: string }
+  args: { room: Doc<"rooms">; name: string }
 ): Promise<void> {
   let name: string;
   try {
@@ -351,8 +344,8 @@ export async function renameRetro(
   } catch (error) {
     throw refusal("forbidden", error instanceof Error ? error.message : NAME_INVALID);
   }
-  await ctx.db.patch(args.roomId, { name });
-  await updateRoomActivity(ctx, args.roomId);
+  await ctx.db.patch(args.room._id, { name });
+  await updateRoomActivity(ctx, args.room);
 }
 
 /**
@@ -367,17 +360,17 @@ export async function setJoinPolicy(
     throw refusal("forbidden", TEAM_MEMBERS_NEEDS_TEAM);
   }
   await ctx.db.patch(args.room._id, { joinPolicy: args.joinPolicy });
-  await updateRoomActivity(ctx, args.room._id);
+  await updateRoomActivity(ctx, args.room);
 }
 
 /** The advisory cards-due date (ADR-0020); undefined clears it. It closes nothing. */
 export async function setCollectUntil(
   ctx: MutationCtx,
-  args: { roomId: Id<"rooms">; collectUntil?: number }
+  args: { room: Doc<"rooms">; collectUntil?: number }
 ): Promise<void> {
-  const retro = await requireRetro(ctx, args.roomId);
+  const retro = await requireRetro(ctx, args.room._id);
   await ctx.db.patch(retro._id, { collectUntil: args.collectUntil });
-  await updateRoomActivity(ctx, args.roomId);
+  await updateRoomActivity(ctx, args.room);
 }
 
 /** The label, trimmed, or a refusal when blank. */
@@ -399,13 +392,14 @@ function validateTint(color: string): string {
 /** Write the retro's prompts back, renumbered; the name is kept. */
 async function writePrompts(
   ctx: MutationCtx,
+  room: Doc<"rooms">,
   retro: Doc<"retros">,
   prompts: readonly FormatPrompt[]
 ): Promise<void> {
   await ctx.db.patch(retro._id, {
     format: { ...retro.format, prompts: renumberPrompts(prompts) },
   });
-  await updateRoomActivity(ctx, retro.roomId);
+  await updateRoomActivity(ctx, room);
 }
 
 export interface PromptEdit {
@@ -421,9 +415,9 @@ export interface PromptEdit {
  */
 export async function updatePrompt(
   ctx: MutationCtx,
-  args: { roomId: Id<"rooms">; promptId: string } & PromptEdit
+  args: { room: Doc<"rooms">; promptId: string } & PromptEdit
 ): Promise<void> {
-  const retro = await requireRetro(ctx, args.roomId);
+  const retro = await requireRetro(ctx, args.room._id);
   const prompt = retro.format.prompts.find((p) => p.id === args.promptId);
   if (!prompt) {
     throw refusal("missing", PROMPT_NOT_FOUND);
@@ -437,6 +431,7 @@ export async function updatePrompt(
   }
   await writePrompts(
     ctx,
+    args.room,
     retro,
     retro.format.prompts.map((p) => (p.id === prompt.id ? edited : p))
   );
@@ -445,9 +440,9 @@ export async function updatePrompt(
 /** Add a prompt at any stage, last in order, up to the cap. */
 export async function addPrompt(
   ctx: MutationCtx,
-  args: { roomId: Id<"rooms">; label: string; hint?: string; color: string }
+  args: { room: Doc<"rooms">; label: string; hint?: string; color: string }
 ): Promise<string> {
-  const retro = await requireRetro(ctx, args.roomId);
+  const retro = await requireRetro(ctx, args.room._id);
   if (retro.format.prompts.length >= MAX_PROMPTS) {
     throw refusal("forbidden", TOO_MANY_PROMPTS);
   }
@@ -459,7 +454,7 @@ export async function addPrompt(
   };
   const hint = args.hint?.trim();
   if (hint) prompt.hint = hint;
-  await writePrompts(ctx, retro, [...retro.format.prompts, prompt]);
+  await writePrompts(ctx, args.room, retro, [...retro.format.prompts, prompt]);
   return prompt.id;
 }
 
@@ -471,9 +466,9 @@ export async function addPrompt(
  */
 export async function removePrompt(
   ctx: MutationCtx,
-  args: { roomId: Id<"rooms">; promptId: string }
+  args: { room: Doc<"rooms">; promptId: string }
 ): Promise<void> {
-  const retro = await requireRetro(ctx, args.roomId);
+  const retro = await requireRetro(ctx, args.room._id);
   if (!retro.format.prompts.some((p) => p.id === args.promptId)) {
     throw refusal("missing", PROMPT_NOT_FOUND);
   }
@@ -482,13 +477,14 @@ export async function removePrompt(
   }
   const answered = await ctx.db
     .query("retroCards")
-    .withIndex("by_room_prompt", (q) => q.eq("roomId", args.roomId).eq("promptId", args.promptId))
+    .withIndex("by_room_prompt", (q) => q.eq("roomId", args.room._id).eq("promptId", args.promptId))
     .first();
   if (answered) {
     throw refusal("forbidden", CARDS_STILL_ANSWER);
   }
   await writePrompts(
     ctx,
+    args.room,
     retro,
     retro.format.prompts.filter((p) => p.id !== args.promptId)
   );
@@ -497,11 +493,12 @@ export async function removePrompt(
 /** Write the stage list back; the pointer is untouched. */
 async function writeStages(
   ctx: MutationCtx,
+  room: Doc<"rooms">,
   retro: Doc<"retros">,
   stages: readonly StageEntry[]
 ): Promise<void> {
   await ctx.db.patch(retro._id, { stages: [...stages] });
-  await updateRoomActivity(ctx, retro.roomId);
+  await updateRoomActivity(ctx, room);
 }
 
 /**
@@ -511,14 +508,14 @@ async function writeStages(
  */
 export async function addStage(
   ctx: MutationCtx,
-  args: { roomId: Id<"rooms">; kind: StageKind; index?: number }
+  args: { room: Doc<"rooms">; kind: StageKind; index?: number }
 ): Promise<string> {
-  const retro = await requireRetro(ctx, args.roomId);
+  const retro = await requireRetro(ctx, args.room._id);
   if (retro.stages.length >= MAX_STAGES) {
     throw refusal("forbidden", TOO_MANY_STAGES);
   }
   const entry = newStageEntry(args.kind);
-  await writeStages(ctx, retro, insertStage(retro.stages, entry, args.index));
+  await writeStages(ctx, args.room, retro, insertStage(retro.stages, entry, args.index));
   return entry.id;
 }
 
@@ -530,9 +527,9 @@ export async function addStage(
  */
 export async function removeStage(
   ctx: MutationCtx,
-  args: { roomId: Id<"rooms">; stageId: string }
+  args: { room: Doc<"rooms">; stageId: string }
 ): Promise<void> {
-  const retro = await requireRetro(ctx, args.roomId);
+  const retro = await requireRetro(ctx, args.room._id);
   if (!retro.stages.some((stage) => stage.id === args.stageId)) {
     throw refusal("missing", STAGE_ENTRY_NOT_FOUND);
   }
@@ -544,6 +541,7 @@ export async function removeStage(
   }
   await writeStages(
     ctx,
+    args.room,
     retro,
     retro.stages.filter((stage) => stage.id !== args.stageId)
   );
@@ -556,9 +554,9 @@ export async function removeStage(
  */
 export async function reorderStages(
   ctx: MutationCtx,
-  args: { roomId: Id<"rooms">; stageIds: string[] }
+  args: { room: Doc<"rooms">; stageIds: string[] }
 ): Promise<void> {
-  const retro = await requireRetro(ctx, args.roomId);
+  const retro = await requireRetro(ctx, args.room._id);
   const check = reorderKeepsLocks(retro.stages, args.stageIds, retro.currentStageId);
   if (!check.ok) {
     throw refusal(
@@ -566,7 +564,7 @@ export async function reorderStages(
       check.reason === "not-a-permutation" ? STAGE_ORDER_INVALID : STAGE_ORDER_LOCKED
     );
   }
-  await writeStages(ctx, retro, orderStagesBy(retro.stages, args.stageIds));
+  await writeStages(ctx, args.room, retro, orderStagesBy(retro.stages, args.stageIds));
 }
 
 /**

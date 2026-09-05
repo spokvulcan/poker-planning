@@ -52,7 +52,7 @@ export const board = query({
   args: { roomId: v.id("rooms") },
   handler: async (ctx, args) => {
     await requireRoomReader(ctx, args.roomId);
-    return await Retro.getBoard(ctx, args.roomId);
+    return await Retro.requireRetro(ctx, args.roomId);
   },
 });
 
@@ -62,8 +62,9 @@ export const board = query({
 export const advance = mutation({
   args: { roomId: v.id("rooms"), toStageId: v.string() },
   handler: async (ctx, args) => {
-    await requireCan(ctx, args.roomId, { kind: "category", category: "stageFlow" });
-    await Retro.advance(ctx, args);
+    const { roomId, ...rest } = args;
+    const { room } = await requireCan(ctx, roomId, { kind: "category", category: "stageFlow" });
+    await Retro.advance(ctx, { room, ...rest });
   },
 });
 
@@ -71,8 +72,9 @@ export const advance = mutation({
 export const setCardsVisible = mutation({
   args: { roomId: v.id("rooms"), stageId: v.string(), value: visibilityValidator },
   handler: async (ctx, args) => {
-    await requireCan(ctx, args.roomId, { kind: "category", category: "stageFlow" });
-    await Retro.setCardsVisible(ctx, args);
+    const { roomId, ...rest } = args;
+    const { room } = await requireCan(ctx, roomId, { kind: "category", category: "stageFlow" });
+    await Retro.setCardsVisible(ctx, { room, ...rest });
   },
 });
 
@@ -80,8 +82,9 @@ export const setCardsVisible = mutation({
 export const setTimebox = mutation({
   args: { roomId: v.id("rooms"), stageId: v.string(), minutes: v.optional(v.number()) },
   handler: async (ctx, args) => {
-    await requireCan(ctx, args.roomId, { kind: "category", category: "stageFlow" });
-    await Retro.setTimebox(ctx, args);
+    const { roomId, ...rest } = args;
+    const { room } = await requireCan(ctx, roomId, { kind: "category", category: "stageFlow" });
+    await Retro.setTimebox(ctx, { room, ...rest });
   },
 });
 
@@ -91,8 +94,9 @@ export const setTimebox = mutation({
 export const rename = mutation({
   args: { roomId: v.id("rooms"), name: v.string() },
   handler: async (ctx, args) => {
-    await requireCan(ctx, args.roomId, { kind: "category", category: "retroSettings" });
-    await Retro.renameRetro(ctx, args);
+    const { roomId, ...rest } = args;
+    const { room } = await requireCan(ctx, roomId, { kind: "category", category: "retroSettings" });
+    await Retro.renameRetro(ctx, { room, ...rest });
   },
 });
 
@@ -112,8 +116,9 @@ export const setJoinPolicy = mutation({
 export const setCollectUntil = mutation({
   args: { roomId: v.id("rooms"), collectUntil: v.optional(v.number()) },
   handler: async (ctx, args) => {
-    await requireCan(ctx, args.roomId, { kind: "category", category: "retroSettings" });
-    await Retro.setCollectUntil(ctx, args);
+    const { roomId, ...rest } = args;
+    const { room } = await requireCan(ctx, roomId, { kind: "category", category: "retroSettings" });
+    await Retro.setCollectUntil(ctx, { room, ...rest });
   },
 });
 
@@ -126,8 +131,9 @@ export const updatePrompt = mutation({
     hint: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    await requireCan(ctx, args.roomId, { kind: "category", category: "retroSettings" });
-    await Retro.updatePrompt(ctx, args);
+    const { roomId, ...rest } = args;
+    const { room } = await requireCan(ctx, roomId, { kind: "category", category: "retroSettings" });
+    await Retro.updatePrompt(ctx, { room, ...rest });
   },
 });
 
@@ -140,8 +146,9 @@ export const addPrompt = mutation({
     color: v.string(),
   },
   handler: async (ctx, args) => {
-    await requireCan(ctx, args.roomId, { kind: "category", category: "retroSettings" });
-    return await Retro.addPrompt(ctx, args);
+    const { roomId, ...rest } = args;
+    const { room } = await requireCan(ctx, roomId, { kind: "category", category: "retroSettings" });
+    return await Retro.addPrompt(ctx, { room, ...rest });
   },
 });
 
@@ -149,8 +156,9 @@ export const addPrompt = mutation({
 export const removePrompt = mutation({
   args: { roomId: v.id("rooms"), promptId: v.string() },
   handler: async (ctx, args) => {
-    await requireCan(ctx, args.roomId, { kind: "category", category: "retroSettings" });
-    await Retro.removePrompt(ctx, args);
+    const { roomId, ...rest } = args;
+    const { room } = await requireCan(ctx, roomId, { kind: "category", category: "retroSettings" });
+    await Retro.removePrompt(ctx, { room, ...rest });
   },
 });
 
@@ -158,8 +166,9 @@ export const removePrompt = mutation({
 export const addStage = mutation({
   args: { roomId: v.id("rooms"), kind: stageKindValidator, index: v.optional(v.number()) },
   handler: async (ctx, args) => {
-    await requireCan(ctx, args.roomId, { kind: "category", category: "retroSettings" });
-    return await Retro.addStage(ctx, args);
+    const { roomId, ...rest } = args;
+    const { room } = await requireCan(ctx, roomId, { kind: "category", category: "retroSettings" });
+    return await Retro.addStage(ctx, { room, ...rest });
   },
 });
 
@@ -167,8 +176,9 @@ export const addStage = mutation({
 export const removeStage = mutation({
   args: { roomId: v.id("rooms"), stageId: v.string() },
   handler: async (ctx, args) => {
-    await requireCan(ctx, args.roomId, { kind: "category", category: "retroSettings" });
-    await Retro.removeStage(ctx, args);
+    const { roomId, ...rest } = args;
+    const { room } = await requireCan(ctx, roomId, { kind: "category", category: "retroSettings" });
+    await Retro.removeStage(ctx, { room, ...rest });
   },
 });
 
@@ -176,8 +186,9 @@ export const removeStage = mutation({
 export const reorderStages = mutation({
   args: { roomId: v.id("rooms"), stageIds: v.array(v.string()) },
   handler: async (ctx, args) => {
-    await requireCan(ctx, args.roomId, { kind: "category", category: "retroSettings" });
-    await Retro.reorderStages(ctx, args);
+    const { roomId, ...rest } = args;
+    const { room } = await requireCan(ctx, roomId, { kind: "category", category: "retroSettings" });
+    await Retro.reorderStages(ctx, { room, ...rest });
   },
 });
 

@@ -115,11 +115,25 @@ describe("RetroSettingsDialog — the retro", () => {
       expect(calledWith("retro:setJoinPolicy")).toEqual([{ roomId, joinPolicy: "permanentAccounts" }])
     );
 
-    fireEvent.change(d.getByLabelText("Cards due"), { target: { value: "2026-09-10" } });
+    // The date commits on blur, once, and not when unchanged.
+    const dueField = d.getByLabelText("Cards due");
+    fireEvent.blur(dueField);
+    fireEvent.change(dueField, { target: { value: "2026-09-10" } });
+    fireEvent.blur(dueField);
     await waitFor(() => expect(calledWith("retro:setCollectUntil")).toHaveLength(1));
     const due = (calledWith("retro:setCollectUntil")[0] as { collectUntil: number }).collectUntil;
     expect(new Date(due).toISOString().slice(0, 10)).toBe("2026-09-10");
-    fireEvent.change(d.getByLabelText("Cards due"), { target: { value: "" } });
+    // Clearing commits once the server holds a date; against no date it is a no-op.
+    fireEvent.change(dueField, { target: { value: "" } });
+    fireEvent.blur(dueField);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(calledWith("retro:setCollectUntil")).toHaveLength(1);
+    cleanup();
+    const d2 = renderDialog({ retro: { ...retro, collectUntil: due } });
+    const dueField2 = d2.getByLabelText("Cards due") as HTMLInputElement;
+    expect(dueField2.value).toBe("2026-09-10");
+    fireEvent.change(dueField2, { target: { value: "" } });
+    fireEvent.blur(dueField2);
     await waitFor(() => expect(calledWith("retro:setCollectUntil")[1]).toEqual({ roomId }));
   });
 

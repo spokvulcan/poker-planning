@@ -11,6 +11,7 @@ import {
   type StageKind,
   type StampedFormat,
   type Visibility,
+  STAGE_KINDS,
 } from "@/convex/model/retroFormats";
 import {
   ADD_PROMPT,
@@ -60,8 +61,6 @@ interface FormatEditorProps extends FormatEditorActions {
   decision?: ResolvedDecision;
 }
 
-const STAGE_KINDS: StageKind[] = ["collect", "review", "group", "vote", "discuss", "close"];
-
 /**
  * The format editor (ADR-0021): prompts (label, hint, tint; add up to ten;
  * remove) and the stage list (add, remove, reorder except collect, discuss
@@ -75,7 +74,6 @@ export function FormatEditor({
   decision = RESOLVED_ALLOWED,
   ...actions
 }: FormatEditorProps) {
-  const disabled = !decision.allowed;
   const deny = permissionProps(decision);
   const denyInput = permissionInputProps(decision);
   const [newKind, setNewKind] = useState<StageKind>("group");
@@ -193,8 +191,7 @@ export function FormatEditor({
             value={newKind}
             onChange={(e) => setNewKind(e.target.value as StageKind)}
             className="h-8 rounded-lg border border-input bg-transparent px-2 text-sm dark:bg-input/30"
-            disabled={disabled}
-            title={decision.allowed ? undefined : decision.message}
+            {...deny}
           >
             {STAGE_KINDS.map((kind) => (
               <option key={kind} value={kind}>
@@ -301,8 +298,7 @@ function PromptRow({
           value={prompt.color}
           onChange={(e) => onUpdate({ color: e.target.value })}
           className={cn("h-8 rounded-lg border border-input bg-white/70 px-2 text-sm capitalize dark:bg-surface-1/70", tint.label)}
-          disabled={!decision.allowed}
-          title={decision.allowed ? undefined : decision.message}
+          {...permissionProps(decision)}
         >
           {RETRO_TINTS.map((color) => (
             <option key={color} value={color}>

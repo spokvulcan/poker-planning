@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { PermissionLevel, RetroDefaults, RetroPermissionCategory } from "@/convex/permissions";
 import { cn } from "@/lib/utils";
+import { JOIN_POLICY_OPTIONS } from "@/convex/retroCopy";
 
 export type { RetroDefaults };
 
@@ -23,12 +24,6 @@ type Option<V extends string> = { value: V; label: string };
 const ATTRIBUTION_OPTIONS: Option<RetroDefaults["attribution"]>[] = [
   { value: "named", label: "Named" },
   { value: "anonymous", label: "Anonymous" },
-];
-
-const JOIN_POLICY_OPTIONS: Option<RetroDefaults["joinPolicy"]>[] = [
-  { value: "anyone", label: "Anyone with the link" },
-  { value: "permanentAccounts", label: "Signed-in accounts" },
-  { value: "teamMembers", label: "Team members" },
 ];
 
 const LEVEL_OPTIONS: Option<PermissionLevel>[] = [

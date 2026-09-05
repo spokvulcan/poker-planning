@@ -64,11 +64,10 @@ describe("stages", () => {
     expect(setCardsVisible(base, ids()[0], "visible").stages[0].cardsVisible).toBe("visible");
   });
 
-  it("removes any entry except the last collect or discuss, or the current one", () => {
+  it("removes any entry except the last collect or discuss", () => {
     const [collect, group, , discuss] = ids();
     expect(removeStage(base, collect)).toBe(base);
     expect(removeStage(base, discuss)).toBe(base);
-    expect(removeStage(base, group, group)).toBe(base);
     expect(removeStage(base, group).stages.map((s) => s.kind)).toEqual(["collect", "vote", "discuss", "close"]);
     const twoDiscuss = addStage(base, "discuss");
     expect(removeStage(twoDiscuss, discuss).stages.filter((s) => s.kind === "discuss")).toHaveLength(1);

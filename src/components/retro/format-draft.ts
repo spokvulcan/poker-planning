@@ -119,8 +119,8 @@ export function isStageLocked(
   return isLockedKindEntry(stages, stageId) || stageId === currentStageId;
 }
 
-export function removeStage(draft: FormatDraft, stageId: string, currentStageId?: string): FormatDraft {
-  if (isStageLocked(draft.stages, stageId, currentStageId)) return draft;
+export function removeStage(draft: FormatDraft, stageId: string): FormatDraft {
+  if (isStageLocked(draft.stages, stageId)) return draft;
   return { ...draft, stages: draft.stages.filter((s) => s.id !== stageId) };
 }
 
@@ -140,8 +140,8 @@ export function movedOrder(
   return reorderKeepsLocks(stages, next, currentStageId).ok ? next : null;
 }
 
-export function reorderStages(draft: FormatDraft, stageIds: readonly string[], currentStageId?: string): FormatDraft {
-  if (!reorderKeepsLocks(draft.stages, stageIds, currentStageId).ok) return draft;
+export function reorderStages(draft: FormatDraft, stageIds: readonly string[]): FormatDraft {
+  if (!reorderKeepsLocks(draft.stages, stageIds).ok) return draft;
   return { ...draft, stages: orderStagesBy(draft.stages, stageIds) };
 }
 

@@ -27,6 +27,7 @@ import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 import { tintClasses } from "@/components/retro/tints";
 import { FormatEditor } from "@/components/retro/format-editor";
+import { parseCollectUntil } from "@/components/retro/collect-until";
 import {
   addPrompt,
   addStage,
@@ -69,14 +70,6 @@ import {
   defaultRetroName,
   keptByTeam,
 } from "@/convex/retroCopy";
-
-/** A `<input type="date">` value as the end of that local day, or undefined. */
-function parseCollectUntil(value: string): number | undefined {
-  if (!value) return undefined;
-  const [y, m, d] = value.split("-").map(Number);
-  if (!y || !m || !d) return undefined;
-  return new Date(y, m - 1, d, 23, 59, 59).getTime();
-}
 
 /** The picker's "New team" option value; never a Team id. */
 const NEW_TEAM_VALUE = "__new";
@@ -164,9 +157,6 @@ export function CreateRetroContent() {
     () => [preselected, ...RETRO_FORMATS.filter((entry) => entry.name !== preselected.name)],
     [preselected]
   );
-  /** The library entry the draft started from, by name; an edited name matches none. */
-  const [pickedName, setPickedName] = useState<string | null>(null);
-  const selectedName = pickedName ?? preselected.name;
   const edit = (reduce: (d: FormatDraft) => FormatDraft) => setDraft(reduce(current));
 
   const handleTeamChange = (value: string) => {
@@ -178,7 +168,6 @@ export function CreateRetroContent() {
     // A new Team brings its own pre-selection and seed; a pick or an edit
     // made for the old one does not carry over.
     setDraft(null);
-    setPickedName(null);
   };
 
   const handleCreate = useCallback(async () => {
@@ -278,7 +267,8 @@ export function CreateRetroContent() {
                       <div data-testid="format-library" className="space-y-2">
                         {library.map((entry) => {
                           const id = `format-${entry.name.replace(/\W+/g, "-").toLowerCase()}`;
-                          const selected = entry.name === selectedName;
+                          // The draft carries its entry's name until renamed; a renamed one matches none.
+                          const selected = entry.name === current.format.name;
                           return (
                             <label
                               key={entry.name}
@@ -297,10 +287,7 @@ export function CreateRetroContent() {
                                   name="format"
                                   value={entry.name}
                                   checked={selected}
-                                  onChange={() => {
-                                    setPickedName(entry.name);
-                                    setDraft(draftFromLibrary(entry, { hasTeam }));
-                                  }}
+                                  onChange={() => setDraft(draftFromLibrary(entry, { hasTeam }))}
                                   aria-label={entry.name}
                                   className="mt-0.5 accent-primary"
                                 />
