@@ -16,7 +16,7 @@ const mocks = vi.hoisted(() => ({
   auth: { isAuthenticated: true, isLoading: false, accountType: "anonymous" as "anonymous" | "permanent" | null },
   searchParams: new URLSearchParams(),
   queries: {} as Record<string, unknown>,
-  dialog: { open: false, onCreated: undefined as undefined | ((id: string) => void) },
+  dialog: { open: false, onCreated: undefined as undefined | ((team: { _id: string; name: string }) => void) },
 }));
 
 vi.mock("@/convex/_generated/api", () => ({
@@ -38,7 +38,7 @@ vi.mock("@/components/auth/auth-provider", () => ({ useAuth: () => mocks.auth })
 vi.mock("@/components/navbar", () => ({ Navbar: () => null }));
 vi.mock("@/components/footer", () => ({ Footer: () => null }));
 vi.mock("@/components/team/new-team-dialog", () => ({
-  NewTeamDialog: ({ open, onCreated }: { open: boolean; onCreated?: (id: string) => void }) => {
+  NewTeamDialog: ({ open, onCreated }: { open: boolean; onCreated?: (team: { _id: string; name: string }) => void }) => {
     mocks.dialog = { open, onCreated };
     return open ? <div role="dialog">New team dialog</div> : null;
   },
@@ -188,16 +188,26 @@ describe("CreateRetroContent — team", () => {
     expect(screen.getByTestId("format-selected").textContent).toContain(DEFAULT_RETRO_FORMAT.name);
   });
 
-  it("New team opens the dialog and selects the Team it creates", () => {
+  it("New team opens the dialog and selects the Team it creates before the Teams read catches up", async () => {
     mocks.auth.accountType = "permanent";
     render(<CreateRetroContent />);
     fireEvent.change(screen.getByLabelText("Team"), { target: { value: "__new" } });
     expect(screen.getByRole("dialog")).toBeTruthy();
     expect((screen.getByLabelText("Team") as HTMLSelectElement).value).toBe("");
 
-    mocks.queries["teams.listMine"] = [...teams, { _id: "team-3", name: "Gamma", role: "admin" }];
-    act(() => mocks.dialog.onCreated?.("team-3"));
-    expect((screen.getByLabelText("Team") as HTMLSelectElement).value).toBe("team-3");
+    // The Teams read still lists the old Teams; the created one is known locally.
+    act(() => mocks.dialog.onCreated?.({ _id: "team-3", name: "Gamma" }));
     expect(screen.getByTestId("disclosure").textContent).toBe(keptByTeam("Gamma"));
+    fireEvent.click(screen.getByRole("button", { name: "Start retro" }));
+    await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
+    expect(mocks.create.mock.calls[0][0].teamId).toBe("team-3");
+  });
+
+  it("holds the button while the chosen Team's last format is still loading", () => {
+    mocks.auth.accountType = "permanent";
+    mocks.searchParams = new URLSearchParams("team=team-1");
+    mocks.queries["retro.lastFormat"] = undefined;
+    render(<CreateRetroContent />);
+    expect((screen.getByRole("button", { name: "Start retro" }) as HTMLButtonElement).disabled).toBe(true);
   });
 });

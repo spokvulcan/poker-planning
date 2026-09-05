@@ -29,7 +29,7 @@ interface NewTeamDialogProps {
    * Called with the new Team instead of opening its page — the create form's
    * picker keeps the person where they were and selects the Team.
    */
-  onCreated?: (teamId: Id<"teams">) => void;
+  onCreated?: (team: { _id: Id<"teams">; name: string }) => void;
 }
 
 /**
@@ -61,7 +61,7 @@ export function NewTeamDialog({ open, onOpenChange, returnTo, onCreated }: NewTe
       const teamId = await createTeam({ name: trimmed });
       close(false);
       if (onCreated) {
-        onCreated(teamId);
+        onCreated({ _id: teamId, name: trimmed });
       } else {
         router.push(`/team/${teamId}`);
       }

@@ -179,6 +179,9 @@ export async function claim(
   args: { room: Doc<"rooms">; actorMembership: Doc<"roomMemberships"> }
 ): Promise<void> {
   const { room, actorMembership } = args;
+  if (room.roomType !== "retro") {
+    throw refusal("missing", NOT_A_RETRO);
+  }
   if (room.ownerId && room.ownerId !== actorMembership.userId) {
     const previous = await ctx.db
       .query("roomMemberships")

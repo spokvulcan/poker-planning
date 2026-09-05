@@ -1,6 +1,8 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import * as Retro from "./model/retro";
+import { refusal } from "./model/refusal";
+import { ROOM_NOT_FOUND } from "./retroCopy";
 import {
   getOptionalAuthUser,
   requireAuthUser,
@@ -54,7 +56,7 @@ export const adoptIntoTeam = mutation({
     await requireTeamRole(ctx, args.teamId, "member");
     const room = await ctx.db.get(args.roomId);
     if (!room) {
-      throw new Error("Room not found");
+      throw refusal("missing", ROOM_NOT_FOUND);
     }
     await Retro.adoptIntoTeam(ctx, { room, actorUserId: user._id, teamId: args.teamId });
   },

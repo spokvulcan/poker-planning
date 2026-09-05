@@ -69,6 +69,9 @@ export const UNKNOWN_FORMAT = "Unknown retro format";
 /** `retro.board` on a room that has no retros row. */
 export const NOT_A_RETRO = "This room is not a retro";
 
+/** A retro mutation whose room row is gone. */
+export const ROOM_NOT_FOUND = "Room not found";
+
 // --- Stages (spec §7) ---
 
 /** The stage pill's label per kind. */

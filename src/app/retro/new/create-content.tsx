@@ -103,6 +103,11 @@ export function CreateRetroContent() {
 
   const [name, setName] = useState("");
   const [teamId, setTeamId] = useState<string>(searchParams.get("team") ?? "");
+  /**
+   * A Team created from the picker, known here before the Teams read
+   * reflects it, so a quick Start never creates a teamless retro.
+   */
+  const [createdTeam, setCreatedTeam] = useState<{ _id: Id<"teams">; name: string } | null>(null);
   /** The person's explicit pick; null means "the pre-selection". */
   const [chosenFormat, setChosenFormat] = useState<RetroFormat | null>(null);
   const [libraryOpen, setLibraryOpen] = useState(false);
@@ -112,7 +117,9 @@ export function CreateRetroContent() {
 
   const isPermanent = accountType === "permanent";
   const myTeams = useQuery(api.teams.listMine, isPermanent ? {} : "skip");
-  const selectedTeam = myTeams?.find((team) => team._id === teamId);
+  const selectedTeam =
+    myTeams?.find((team) => team._id === teamId) ??
+    (createdTeam && createdTeam._id === teamId ? createdTeam : undefined);
   const lastFormat = useQuery(
     api.retro.lastFormat,
     selectedTeam ? { teamId: selectedTeam._id } : "skip"
@@ -172,8 +179,12 @@ export function CreateRetroContent() {
   }, [ensureSession, collectUntil, createRetro, name, format, selectedTeam, router]);
 
   // A Team named in the URL that the reads have not confirmed yet would be
-  // silently dropped; hold the button until they have.
-  const teamPending = isPermanent && teamId !== "" && myTeams === undefined;
+  // silently dropped, and a Team whose last format is still loading would
+  // stamp the default; hold the button until both have settled.
+  const teamPending =
+    isPermanent &&
+    teamId !== "" &&
+    (myTeams === undefined || (selectedTeam !== undefined && lastFormat === undefined));
 
   return (
     <div className="flex min-h-screen flex-col bg-white dark:bg-black">
@@ -343,7 +354,10 @@ export function CreateRetroContent() {
         open={newTeamOpen}
         onOpenChange={setNewTeamOpen}
         returnTo="/retro/new"
-        onCreated={(id: Id<"teams">) => handleTeamChange(id)}
+        onCreated={(team) => {
+          setCreatedTeam(team);
+          handleTeamChange(team._id);
+        }}
       />
     </div>
   );
