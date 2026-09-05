@@ -1,5 +1,7 @@
 import { MutationCtx, QueryCtx } from "../_generated/server";
 import type { PaginationOptions } from "convex/server";
+import type { ActionCounts } from "./retro";
+import type { ExportRoomsPage } from "./retroExport";
 import { Doc, Id } from "../_generated/dataModel";
 import { internal } from "../_generated/api";
 import {
@@ -464,15 +466,10 @@ export async function releaseMembershipsOfDeletedUser(
 }
 
 /** The team count line (spec §17, ADR-0024): three sums over `by_team_status` and a count of `by_team`. */
-export interface TeamFacts {
-  open: number;
-  done: number;
-  dropped: number;
-  retros: number;
-}
+export type TeamFacts = ActionCounts & { retros: number };
 
-/** How many action rows one status's sum reads; a Team's history never approaches it. */
-const MAX_COUNTED_ACTIONS = 5000;
+/** How many action rows one status's sum reads across the Team; its history never approaches it. */
+const MAX_TEAM_ACTION_ROWS = 5000;
 
 /**
  * `teams.facts`: counts, never a rate. The same for admin and member; the
@@ -483,7 +480,7 @@ export async function teamFacts(ctx: QueryCtx, teamId: Id<"teams">): Promise<Tea
     ctx.db
       .query("retroActions")
       .withIndex("by_team_status", (q) => q.eq("teamId", teamId).eq("status", status))
-      .take(MAX_COUNTED_ACTIONS)
+      .take(MAX_TEAM_ACTION_ROWS)
       .then((rows) => rows.length);
   const [open, done, dropped, rooms] = await Promise.all([
     countStatus("open"),
@@ -506,7 +503,7 @@ export async function exportRoomsPage(
   ctx: QueryCtx,
   team: Doc<"teams">,
   paginationOpts: PaginationOptions
-): Promise<{ team: { name: string }; page: Id<"rooms">[]; isDone: boolean; continueCursor: string }> {
+): Promise<ExportRoomsPage> {
   const result = await ctx.db
     .query("rooms")
     .withIndex("by_team", (q) => q.eq("teamId", team._id))

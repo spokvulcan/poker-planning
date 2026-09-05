@@ -1104,7 +1104,7 @@ export interface HistoryRow {
 const MAX_COUNTED_ACTIONS = 500;
 
 /** Count a bounded read of action rows by status. */
-export function countByStatus(rows: readonly Pick<Doc<"retroActions">, "status">[]): ActionCounts {
+function countByStatus(rows: readonly Pick<Doc<"retroActions">, "status">[]): ActionCounts {
   const counts: ActionCounts = { open: 0, done: 0, dropped: 0 };
   for (const row of rows) counts[row.status] += 1;
   return counts;

@@ -12,7 +12,7 @@ import {
   type Reader,
 } from "./retro";
 import { MAX_ACTION_ROWS, projectActions, type ActionRead } from "./retroActions";
-import { MAX_VOTE_ROWS, tally, tallyEntryOf, topicKey } from "./retroVotes";
+import { MAX_VOTE_ROWS, countDots, tally, tallyEntryOf } from "./retroVotes";
 import { currentStageOf, type StageEntry } from "./retroFormats";
 import { liveTopics, projectWalk, topicId, type TopicRef } from "./walk";
 import {
@@ -104,15 +104,15 @@ function actionLine(action: Doc<"retroActions">, names: Map<Id<"users">, string>
 
 /**
  * The dots the export counts (spec §15.3): the entry the board's tally
- * reads (`tallyEntryOf`), and only while the current entry shows its
- * tally, so a hidden vote round exports no counts. A dot on a member card
- * counts for its cluster (ADR-0016). Voters never leave this function.
+ * reads (`tallyEntryOf`), through the tally's own `countDots`, and only
+ * while the current entry shows its tally, so a hidden vote round exports
+ * no counts. Null when the retro has had no vote round to count.
  */
 async function dotCounts(
   ctx: QueryCtx,
   retro: Doc<"retros">,
   cards: readonly Doc<"retroCards">[]
-): Promise<Map<string, number> | null> {
+): Promise<Record<string, number> | null> {
   if (currentStageOf(retro).tallyVisible !== "visible") return null;
   const entry = tallyEntryOf(retro);
   if (entry.voteBudget === undefined) return null;
@@ -120,18 +120,7 @@ async function dotCounts(
     .query("retroVotes")
     .withIndex("by_room_entry", (q) => q.eq("roomId", retro.roomId).eq("stageEntryId", entry.id))
     .take(MAX_VOTE_ROWS);
-  const clusterOf = new Map<string, Id<"retroClusters">>();
-  for (const card of cards) {
-    if (card.clusterId !== undefined) clusterOf.set(card._id, card.clusterId);
-  }
-  const counts = new Map<string, number>();
-  const bump = (key: string) => counts.set(key, (counts.get(key) ?? 0) + 1);
-  for (const row of rows) {
-    bump(topicKey(row.target));
-    const clusterId = row.target.kind === "card" ? clusterOf.get(row.target.id) : undefined;
-    if (clusterId !== undefined) bump(clusterId);
-  }
-  return counts;
+  return countDots(rows, cards);
 }
 
 /** The display names of the referenced people, one read each; a missing row renders by the register. */
@@ -190,7 +179,7 @@ export async function exportMarkdown(
       : sortedCards.filter((card) => card._id === ref.id);
 
   const topicSection = (ref: TopicRef, tags: string[]): string[] => {
-    const votes = counts ? [votesCount(counts.get(topicId(ref)) ?? 0)] : [];
+    const votes = counts ? [votesCount(counts[topicId(ref)] ?? 0)] : [];
     const lines = [`### ${[topicTitle(ref, clusters, projected), ...tags, ...votes].join(" · ")}`, ""];
     for (const prompt of retro.format.prompts) {
       const answers = cardsOf(ref).filter((card) => card.promptId === prompt.id);
@@ -255,7 +244,10 @@ export interface RetroExport {
 /**
  * `retro.exportBoard` (spec §15.4): the same shape `retro.board` returns
  * for that reader, with the tally's counts and the names beside it. The
- * guard (`requireRoomReader`) has passed.
+ * board read is the identity-free one (spec §9): the reader's own hidden
+ * text travels in `retro.mine` on the board and in the Markdown export,
+ * not here, so the file is what the board shows the Team. The guard
+ * (`requireRoomReader`) has passed.
  */
 export async function exportBoard(ctx: QueryCtx, room: Doc<"rooms">, readerId: Id<"users">): Promise<RetroExport> {
   const [read, counts] = await Promise.all([board(ctx, room._id), tally(ctx, { roomId: room._id, viewerId: readerId })]);
