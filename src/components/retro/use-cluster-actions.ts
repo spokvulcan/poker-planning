@@ -4,7 +4,7 @@ import { useCallback, useMemo } from "react";
 import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import { refusalOf, retryWrite } from "@/lib/write-retry";
+import { failureCopy, retryWrite } from "@/lib/write-retry";
 import { toast } from "@/lib/toast";
 import { CLUSTER_ACT_FAILED } from "@/convex/retroCopy";
 import { applyAddToCluster, applyFormCluster, applyUngroup } from "./optimistic";
@@ -28,7 +28,7 @@ export type DissolveResult = "done" | "failed" | { votes: number };
 
 /** The refusal's reason, or the fallback for a failure that outlived its retries. */
 function surface(error: unknown): void {
-  toast.error(refusalOf(error)?.message || CLUSTER_ACT_FAILED);
+  toast.error(failureCopy(error, CLUSTER_ACT_FAILED));
 }
 
 /** One non-optimistic act: whether it went through, a failure surfaced as its copy. */

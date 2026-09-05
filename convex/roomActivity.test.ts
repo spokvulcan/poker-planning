@@ -680,6 +680,36 @@ describe("room activity — the Team's side of a retro bumps (spec §14)", () =>
     }
   });
 
+  it("every walk act bumps (spec §14)", async () => {
+    const t = convexTest(schema, modules);
+    const { roomId } = await seedTeamRetro(t, false);
+    const retro = (await t.run((ctx) =>
+      ctx.db.query("retros").withIndex("by_room", (q) => q.eq("roomId", roomId)).unique()
+    ))!;
+    const me = as(t, "auth-member");
+    await me.mutation(api.retro.createCard, { roomId, clientId: "c1", text: "c1", promptId: retro.format.prompts[0].id, position: { x: 0, y: 0 } });
+    await me.mutation(api.retro.advance, { roomId, toStageId: retro.stages.find((s) => s.kind === "discuss")!.id });
+    await me.mutation(api.retro.createCard, { roomId, clientId: "c2", text: "c2", promptId: retro.format.prompts[0].id, position: { x: 0, y: 0 } });
+    const cards = await t.run((ctx) =>
+      ctx.db.query("retroCards").withIndex("by_room", (q) => q.eq("roomId", roomId)).collect()
+    );
+    const c1 = cards.find((c) => c.clientId === "c1")!._id;
+    const c2 = cards.find((c) => c.clientId === "c2")!._id;
+    const acts = [
+      () => me.mutation(api.retro.setWalkCursor, { roomId, index: 0 }),
+      () => me.mutation(api.retro.markCovered, { roomId, topicId: c1, covered: true }),
+      () => me.mutation(api.retro.raise, { roomId, topicRef: { kind: "card", id: c2 } }),
+      // A no-op raise is still a person's act.
+      () => me.mutation(api.retro.raise, { roomId, topicRef: { kind: "card", id: c2 } }),
+    ];
+    for (const act of acts) {
+      const stale = Date.now() - HOUR - 60_000;
+      await t.run((ctx) => ctx.db.patch(roomId, { lastActivityAt: stale }));
+      await act();
+      await expectBumped(t, roomId, stale);
+    }
+  });
+
   it("ratchet bumps (spec §14)", async () => {
     const t = convexTest(schema, modules);
     const { roomId, stale } = await seedTeamRetro(t, false);

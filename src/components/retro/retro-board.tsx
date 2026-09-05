@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { ReactFlow, ReactFlowProvider, useStore, type Node, type NodeTypes } from "@xyflow/react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { ReactFlow, ReactFlowProvider, useStore, type Node, type NodeTypes, type ReactFlowInstance } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { Plus, Users } from "lucide-react";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
@@ -9,7 +9,7 @@ import type { ResolvedDecision } from "@/convex/permissions";
 import type { UserWithPresence } from "@/hooks/useRoomPresence";
 import { CanvasDotsBackground } from "@/components/canvas-dots-background";
 import { Button } from "@/components/ui/button";
-import { ADD_CARD, FORMER_MEMBER, ROSTER_TITLE } from "@/convex/retroCopy";
+import { ADD_CARD, FORMER_MEMBER, HIDDEN_CARD_LABEL, ROSTER_TITLE } from "@/convex/retroCopy";
 import { currentStageOf } from "@/convex/model/retroFormats";
 import { RetroHeader, type RetroTeam } from "./retro-header";
 import { PromptZoneNodeView, type PromptZoneNode } from "./prompt-zone-node";
@@ -22,7 +22,7 @@ import { ClusterNodeView, type ClusterNode, type ClusterChipActions, type Cluste
 import { HullNodeView, type HullNode } from "./hull-node";
 import { hullsFor } from "./hulls";
 import { MobileChrome } from "./mobile-chrome";
-import { cardSizeAt, zoomLevelOf, type ZoomLevel } from "./zoom";
+import { cardSizeAt, headlineOf, zoomLevelOf, type ZoomLevel } from "./zoom";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { SelectionBar } from "./selection-bar";
 import { clusterChips, tidyPositions, type Member, type Size } from "./clusters";
@@ -37,6 +37,9 @@ import type { TallyRead, TopicRef } from "@/convex/model/retroVotes";
 import { dotsLeft, dotsOf, topicKey } from "./dots";
 import type { DotControlsProps } from "./dot-controls";
 import { VoteBudget } from "./vote-budget";
+import type { TopicRef as WalkTopicRef, WalkRead } from "@/convex/model/walk";
+import type { WalkActions } from "./use-walk-actions";
+import { WalkPanel, type WalkPanelActions } from "./walk-panel";
 
 /** What an attendee brings to the board that a Team reader does not. */
 export interface BoardViewer {
@@ -51,6 +54,8 @@ export interface BoardViewer {
   clusters: ClusterActions;
   /** The dot writes (spec §11); present whenever the tally is. */
   dots?: DotActions;
+  /** The walk's `stageFlow` acts (spec §12.2). */
+  walk?: WalkActions;
   /** Another person's card, and a cluster's rename, merge, tidy and dissolve, only under this decision (spec §4.2). */
   cardManagement: ResolvedDecision;
 }
@@ -73,6 +78,8 @@ interface RetroBoardProps {
   viewer?: BoardViewer;
   /** The tally, mounted only while the shared pointer is in `vote` or `discuss` (spec §9). */
   tally?: TallyRead;
+  /** The walk as the board read projects it (spec §12.3), once one exists. */
+  walk?: WalkRead;
   /** The header's menu, for attendees. */
   menu?: ReactNode;
   /** A line under the header: the non-attending Team reader's (ADR-0009). */
@@ -125,6 +132,11 @@ const noMoves = () => {};
  * so it follows a drag without a write. The selection bar turns a
  * selection into a cluster; tidy computes the grid here and issues the
  * one move batch.
+ *
+ * The walk (spec §12.3) shows while the shared pointer is the `discuss`
+ * entry it is keyed to: the panel beside the canvas, coverage on the
+ * chips, Raise on any topic outside it, and a pan for whoever follows the
+ * cursor. Go is `setCenter` on the topic's derived position.
  */
 export function RetroBoard({
   name,
@@ -138,6 +150,7 @@ export function RetroBoard({
   menu,
   banner,
   tally,
+  walk,
 }: RetroBoardProps) {
   const currentStage = currentStageOf(retro);
   /** The viewer's own view; null follows the shared pointer. */
@@ -191,6 +204,39 @@ export function RetroBoard({
     [tally, takesDots, dotActions]
   );
 
+  // The walk (spec §12.3): shown only while the shared pointer is the
+  // entry it is keyed to. `inWalk` is the live order, which is what a
+  // topic is measured against for Raise and the late marker's clearing.
+  const walkShown = walk !== undefined && currentStage.kind === "discuss" && walk.stageEntryId === currentStage.id;
+  const inWalk = useMemo(() => new Set(walkShown ? walk.entries.map((entry) => entry.ref.id as string) : []), [walkShown, walk]);
+  const coveredIds = useMemo(
+    () => new Set(walkShown ? walk.entries.filter((entry) => entry.covered).map((entry) => entry.ref.id as string) : []),
+    [walkShown, walk]
+  );
+  const walkActions = viewer?.walk;
+  const stageFlow = viewer?.controls.stageFlow;
+  const raiseCluster = useMemo(
+    () =>
+      walkShown && walkActions && stageFlow
+        ? { decision: stageFlow, onRaise: (id: Id<"retroClusters">) => walkActions.raise({ kind: "cluster", id }) }
+        : undefined,
+    [walkShown, walkActions, stageFlow]
+  );
+  const cardById = useMemo(() => new Map(cards.map((card) => [card._id as string, card])), [cards]);
+  const raiseCard = useMemo(
+    () =>
+      walkShown && walkActions && stageFlow
+        ? {
+            decision: stageFlow,
+            onRaise: (clientId: string) => {
+              const card = cards.find((c) => c.clientId === clientId);
+              if (card) walkActions.raise({ kind: "card", id: card._id });
+            },
+          }
+        : undefined,
+    [walkShown, walkActions, stageFlow, cards]
+  );
+
   const namesById = useMemo(() => new Map(users.map((user) => [user._id as string, user.name])), [users]);
   const tintByPrompt = useMemo(
     () => new Map(retro.format.prompts.map((prompt) => [prompt.id, prompt.color])),
@@ -235,10 +281,14 @@ export function RetroBoard({
             ...(viewer && editable
               ? { onEditText: viewer.cards.editText, onDelete: viewer.cards.remove, onEditing: viewer.onEditing }
               : {}),
+            // A loose card outside the walk is raisable from the board (ADR-0023).
+            ...(raiseCard && !card.hidden && card.clusterId === undefined && !inWalk.has(card._id)
+              ? { raise: raiseCard }
+              : {}),
           },
         };
       }),
-    [cards, viewer, hand.positions, hand.measured, hand.selected, tintByPrompt, named, namesById, editingBy, level, isMobile, tally, dotsFor]
+    [cards, viewer, hand.positions, hand.measured, hand.selected, tintByPrompt, named, namesById, editingBy, level, isMobile, tally, dotsFor, inWalk, raiseCard]
   );
 
   /** The cards as geometry: positions read through the hand, heights as measured. */
@@ -321,9 +371,80 @@ export function RetroBoard({
           others: chips.filter((other) => other.clusterId !== chip.clusterId),
           ...(viewer && chipActions ? { decision: viewer.cardManagement, actions: chipActions } : {}),
           ...(tally !== undefined ? { dots: dotsFor({ kind: "cluster", id: chip.clusterId }, true) } : {}),
+          ...(walkShown
+            ? {
+                walk: {
+                  inWalk: inWalk.has(chip.clusterId),
+                  covered: coveredIds.has(chip.clusterId),
+                  ...(raiseCluster ? { raise: raiseCluster } : {}),
+                },
+              }
+            : {}),
         },
       })),
-    [chips, viewer, chipActions, tally, dotsFor, hand.measured]
+    [chips, viewer, chipActions, tally, dotsFor, hand.measured, walkShown, inWalk, coveredIds, raiseCluster]
+  );
+
+  // Go (spec §12.2): `setCenter` on the topic's derived position — a card's
+  // box centre through the hand, a cluster's chip — at the current zoom.
+  const flowRef = useRef<ReactFlowInstance | null>(null);
+  const centerOf = useCallback(
+    (ref: WalkTopicRef): { x: number; y: number } | undefined => {
+      if (ref.kind === "cluster") return chips.find((chip) => chip.clusterId === ref.id)?.position;
+      const card = cardById.get(ref.id);
+      if (!card) return undefined;
+      const position = hand.positions.get(card.clientId) ?? card.position;
+      const measured = hand.measured.get(card.clientId);
+      return { x: position.x + cardSize.width / 2, y: position.y + (measured?.height ?? cardSize.height) / 2 };
+    },
+    [chips, cardById, hand.positions, hand.measured, cardSize]
+  );
+  const panTo = useCallback(
+    (ref: WalkTopicRef) => {
+      const flow = flowRef.current;
+      const center = centerOf(ref);
+      if (!flow || !center) return;
+      // No duration: the board re-renders on the same update that moves the
+      // cursor, which cuts an animated pan short; an instant one lands.
+      void flow.setCenter(center.x, center.y, { zoom: flow.getZoom() });
+    },
+    [centerOf]
+  );
+  // Moving the cursor pans whoever follows the walk: the viewers on the
+  // shared stage. The first render is left to fitView.
+  const cursor = walkShown ? walk.cursor : undefined;
+  const cursorRef = walkShown ? walk.entries.find((entry) => entry.index === walk.cursor)?.ref : undefined;
+  const seenCursor = useRef(cursor);
+  useEffect(() => {
+    if (cursor === seenCursor.current) return;
+    seenCursor.current = cursor;
+    if (cursor !== undefined && cursorRef && viewStageId === null) panTo(cursorRef);
+    // The pan reads the position at the moment the cursor moves; a later drag is not a cursor move.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cursor]);
+
+  const labelOf = useCallback(
+    (ref: WalkTopicRef): string => {
+      if (ref.kind === "cluster") return clusters.find((cluster) => cluster._id === ref.id)?.name ?? "";
+      const card = cardById.get(ref.id);
+      return card === undefined || card.hidden ? HIDDEN_CARD_LABEL : headlineOf(card.text ?? "");
+    },
+    [clusters, cardById]
+  );
+  const walkPanelActions = useMemo<WalkPanelActions | undefined>(
+    () =>
+      walkActions && stageFlow
+        ? {
+            decision: stageFlow,
+            onSetCursor: walkActions.setCursor,
+            onMarkCovered: walkActions.markCovered,
+            onRaise: walkActions.raise,
+          }
+        : undefined,
+    [walkActions, stageFlow]
+  );
+  const walkPanel = walkShown && (
+    <WalkPanel walk={walk} labelOf={labelOf} onGo={panTo} actions={walkPanelActions} />
   );
 
   // Zones, then hulls (same z, later in order so they draw above), cards, chips.
@@ -405,6 +526,9 @@ export function RetroBoard({
         nodeTypes={nodeTypes}
         onNodesChange={hand.onNodesChange}
         onNodeDragStop={hand.onNodeDragStop}
+        onInit={(instance) => {
+          flowRef.current = instance;
+        }}
         fitView
         fitViewOptions={{ padding: 0.1, maxZoom: 1 }}
         proOptions={{ hideAttribution: true }}
@@ -483,6 +607,7 @@ export function RetroBoard({
         >
           {banner}
           {stageNav}
+          {walkPanel && <div className="border-t pt-3">{walkPanel}</div>}
           {menu && <div className="flex justify-end">{menu}</div>}
           {roster}
         </MobileChrome>
@@ -550,6 +675,9 @@ export function RetroBoard({
             </Button>
           )}
         </div>
+        {walkPanel && (
+          <aside className="w-72 shrink-0 overflow-y-auto border-l bg-white p-4 dark:bg-surface-1">{walkPanel}</aside>
+        )}
         {rosterOpen && (
           <aside className="w-64 shrink-0 overflow-y-auto border-l bg-white p-4 dark:bg-surface-1">{roster}</aside>
         )}

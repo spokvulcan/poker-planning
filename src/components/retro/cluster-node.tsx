@@ -2,7 +2,7 @@
 
 import { memo, useState } from "react";
 import { useStore, type Node, type NodeProps } from "@xyflow/react";
-import { ChevronDown } from "lucide-react";
+import { ArrowUpToLine, Check, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -31,6 +31,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { ResolvedDecision } from "@/convex/permissions";
+import { permissionProps } from "@/hooks/usePermissions";
 import { MAX_CLUSTER_NAME } from "@/convex/model/retroClusters";
 import {
   CANCEL_BUTTON,
@@ -44,6 +45,7 @@ import {
   MERGE_GROUP_BUTTON,
   MERGE_GROUP_INTO_LABEL,
   MERGE_GROUP_TITLE,
+  RAISE_TOPIC,
   RENAME_GROUP,
   RENAME_GROUP_SAVE,
   TIDY_GROUP,
@@ -82,7 +84,19 @@ export type ClusterNodeData = {
   actions?: ClusterChipActions;
   /** The cluster's dots — its own plus its members' — while the tally is mounted (spec §9). */
   dots?: DotControlsProps;
+  /**
+   * Where the cluster stands in the discussion walk (spec §12.3), while one
+   * is shown, and Raise for one outside it: `stageFlow`, disabled with the
+   * copy otherwise, absent for a Team reader.
+   */
+  walk?: ClusterWalkData;
 };
+
+export interface ClusterWalkData {
+  inWalk: boolean;
+  covered: boolean;
+  raise?: { decision: ResolvedDecision; onRaise: (clusterId: ClusterId) => void };
+}
 
 export type ClusterNode = Node<ClusterNodeData, "cluster">;
 
@@ -95,10 +109,11 @@ const selectZoom = (state: { transform: [number, number, number] }) => state.tra
  * menu under `cardManagement`, disabled with the decision's copy otherwise.
  * It never moves its members; tidy is the explicit opt-in. At the shape
  * level the chip is held at constant screen size and becomes the board's
- * content (spec §10.2).
+ * content (spec §10.2), which is where the walk's coverage reads: a
+ * covered in-walk cluster carries a tick, one outside the walk a Raise.
  */
 export const ClusterNodeView = memo(function ClusterNodeView({ data }: NodeProps<ClusterNode>) {
-  const { chip, others, decision, actions, dots } = data;
+  const { chip, others, decision, actions, dots, walk } = data;
   const zoom = useStore(selectZoom);
   const level = zoomLevelOf(zoom);
   const [renaming, setRenaming] = useState(false);
@@ -118,6 +133,7 @@ export const ClusterNodeView = memo(function ClusterNodeView({ data }: NodeProps
       data-cluster-chip={chip.clusterId}
       data-count={chip.count}
       data-level={level}
+      {...(walk ? { "data-in-walk": String(walk.inWalk), "data-covered": String(walk.covered) } : {})}
       style={{ transform: `translate(-50%, -50%) scale(${scale})` }}
     >
       <div
@@ -128,11 +144,28 @@ export const ClusterNodeView = memo(function ClusterNodeView({ data }: NodeProps
           "dark:bg-surface-2/95"
         )}
       >
-        <span data-testid="cluster-name" className="max-w-48 truncate">
+        {walk?.covered && (
+          <span data-testid="covered-tick" className="flex size-4 items-center justify-center rounded-full bg-primary text-primary-foreground">
+            <Check className="size-3" />
+          </span>
+        )}
+        <span data-testid="cluster-name" className={cn("max-w-48 truncate", walk?.covered && "text-muted-foreground line-through")}>
           {chip.name}
         </span>
         <span className="text-muted-foreground font-normal">{cardsCount(chip.count)}</span>
         {dots && <DotControls {...dots} />}
+        {walk && !walk.inWalk && walk.raise && (
+          <Button
+            type="button"
+            variant="outline"
+            size="xs"
+            onClick={() => walk.raise?.onRaise(chip.clusterId)}
+            {...permissionProps(walk.raise.decision)}
+          >
+            <ArrowUpToLine className="size-3" />
+            {RAISE_TOPIC}
+          </Button>
+        )}
         {managed && (
           <DropdownMenu>
             <DropdownMenuTrigger

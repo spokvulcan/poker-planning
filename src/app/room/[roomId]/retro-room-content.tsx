@@ -14,6 +14,7 @@ import { readinessOf } from "@/components/retro/readiness";
 import { useCardActions } from "@/components/retro/use-card-actions";
 import { useClusterActions } from "@/components/retro/use-cluster-actions";
 import { useDotActions } from "@/components/retro/use-dot-actions";
+import { useWalkActions } from "@/components/retro/use-walk-actions";
 import type { TallyRead } from "@/convex/model/retroVotes";
 import { useEditKeys, type EditKeyStore } from "@/components/retro/use-edit-keys";
 import { useSingleFlightMutation } from "@/hooks/useSingleFlightMutation";
@@ -130,6 +131,7 @@ export function RetroRoomContent({ roomId, roomData, membership }: RetroRoomCont
         users={offlineUsers}
         team={team}
         tally={tally}
+        walk={board.walk}
         banner={
           <div
             data-testid="team-reader-banner"
@@ -199,6 +201,7 @@ function AttendeeBoard({ roomId, roomData, board, cards, team, userId, myTeams, 
   const cardActions = useCardActions(roomId, writer);
   const clusterActions = useClusterActions(roomId);
   const dotActions = useDotActions(roomId, tally);
+  const walkActions = useWalkActions(roomId);
   const currentStageId = currentStageOf(retro).id;
   // The payload is written whole, so an editing write carries readiness
   // too: the viewer's last toggle for this entry, else what their presence
@@ -251,9 +254,10 @@ function AttendeeBoard({ roomId, roomData, board, cards, team, userId, myTeams, 
       cards: cardActions,
       clusters: clusterActions,
       dots: dotActions,
+      walk: walkActions,
       cardManagement,
     }),
-    [userId, me?.name, writePresence, controls, cardActions, clusterActions, dotActions, cardManagement]
+    [userId, me?.name, writePresence, controls, cardActions, clusterActions, dotActions, walkActions, cardManagement]
   );
 
   const role = roomData.users.find((u) => u._id === userId)?.role ?? "participant";
@@ -268,6 +272,7 @@ function AttendeeBoard({ roomId, roomData, board, cards, team, userId, myTeams, 
       team={team}
       viewer={viewer}
       tally={tally}
+      walk={board.walk}
       menu={
         <RetroMenu
           roomId={roomId}

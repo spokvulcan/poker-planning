@@ -5,7 +5,7 @@ import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { TallyRead, TopicRef } from "@/convex/model/retroVotes";
-import { refusalOf, retryWrite } from "@/lib/write-retry";
+import { failureCopy, retryWrite } from "@/lib/write-retry";
 import { toast } from "@/lib/toast";
 import { DOT_ACT_FAILED } from "@/convex/retroCopy";
 import { dotRefusal, topicKey } from "./dots";
@@ -20,7 +20,7 @@ export interface DotActions {
 
 /** The refusal's reason, or the fallback for a failure that outlived its retries. */
 function surface(error: unknown): void {
-  toast.error(refusalOf(error)?.message || DOT_ACT_FAILED);
+  toast.error(failureCopy(error, DOT_ACT_FAILED));
 }
 
 /**

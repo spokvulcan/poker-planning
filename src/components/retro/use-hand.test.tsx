@@ -21,6 +21,7 @@ const card = (clientId: string, x = 0, y = 0): BoardCard => ({
   position: { x, y },
   hidden: false,
   own: true,
+  late: false,
 });
 
 const node = (id: string, x: number, y: number): Node => ({ id, position: { x, y }, data: {} });

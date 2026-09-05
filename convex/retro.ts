@@ -5,6 +5,7 @@ import * as Retro from "./model/retro";
 import * as RetroCards from "./model/retroCards";
 import * as RetroClusters from "./model/retroClusters";
 import * as RetroVotes from "./model/retroVotes";
+import * as RetroWalk from "./model/retroWalk";
 import {
   joinPolicyValidator,
   retroFormatValidator,
@@ -104,6 +105,38 @@ export const setTimebox = mutation({
     const { roomId, ...rest } = args;
     const { room } = await requireCan(ctx, roomId, { kind: "category", category: "stageFlow" });
     await Retro.setTimebox(ctx, { room, ...rest });
+  },
+});
+
+// --- The discussion walk (ADR-0023, spec §12.2) ---
+
+// Attendance is the guard here; `stageFlow` is decided in the model as a
+// `forbidden` refusal the client can tell from a failure (ADR-0022).
+
+/** Move the walk's cursor to an index of its order (`stageFlow`). */
+export const setWalkCursor = mutation({
+  args: { roomId: v.id("rooms"), index: v.number() },
+  handler: async (ctx, args) => {
+    const { roomId, ...rest } = args;
+    await RetroWalk.setWalkCursor(ctx, { ...(await requireCardActor(ctx, roomId)), ...rest });
+  },
+});
+
+/** Tick or untick a topic of the order (`stageFlow`); `topicId` is the bare row id. */
+export const markCovered = mutation({
+  args: { roomId: v.id("rooms"), topicId: v.string(), covered: v.boolean() },
+  handler: async (ctx, args) => {
+    const { roomId, ...rest } = args;
+    await RetroWalk.markCovered(ctx, { ...(await requireCardActor(ctx, roomId)), ...rest });
+  },
+});
+
+/** Put a topic outside the walk next after the cursor (`stageFlow`); a no-op inside it. */
+export const raise = mutation({
+  args: { roomId: v.id("rooms"), topicRef: topicRefValidator },
+  handler: async (ctx, args) => {
+    const { roomId, ...rest } = args;
+    await RetroWalk.raise(ctx, { ...(await requireCardActor(ctx, roomId)), ...rest });
   },
 });
 
