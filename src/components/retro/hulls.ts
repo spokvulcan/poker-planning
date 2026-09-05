@@ -1,5 +1,5 @@
 import type { StageKind } from "@/convex/model/retroFormats";
-import type { Member, Point, Size } from "./clusters";
+import { heightOf, type Member, type Point, type Size } from "./clusters";
 
 /**
  * Proximity hulls (spec §10.3, ADR-0011): the transient shape drawn around
@@ -49,7 +49,7 @@ export function proximityHulls(
       left: card.position.x,
       top: card.position.y,
       right: card.position.x + size.width,
-      bottom: card.position.y + size.height,
+      bottom: card.position.y + heightOf(card, size),
     }));
   // Union-find over pairs that come near.
   const parent = boxes.map((_, i) => i);

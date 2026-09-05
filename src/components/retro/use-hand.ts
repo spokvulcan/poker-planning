@@ -104,16 +104,6 @@ export function useHand({ cards, onDrop, tapSelect = false }: UseHandArgs) {
     }
   }, [tapSelect]);
 
-  /** A tap on a card: in or out of the selection. */
-  const toggleSelected = useCallback((clientId: string) => {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(clientId)) next.delete(clientId);
-      else next.add(clientId);
-      return next;
-    });
-  }, []);
-
   const onNodeDragStop = useCallback(
     (_event: MouseEvent | TouchEvent, _node: Node, nodes: Node[]) => {
       const moves = nodes.map((n) => ({ clientId: n.id, position: n.position }));
@@ -137,5 +127,5 @@ export function useHand({ cards, onDrop, tapSelect = false }: UseHandArgs) {
     return map;
   }, [cards, overrides]);
 
-  return { overrides, selected, measured, positions, onNodesChange, onNodeDragStop, clearSelection, toggleSelected };
+  return { overrides, selected, measured, positions, onNodesChange, onNodeDragStop, clearSelection };
 }

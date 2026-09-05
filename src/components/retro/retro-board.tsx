@@ -18,17 +18,17 @@ import { StageNav, type StageControls } from "./stage-nav";
 import { StageEmptyState, isStageEmpty } from "./stage-empty-state";
 import { RetroRoster } from "./retro-roster";
 import { CardNodeView, type CardNode } from "./card-node";
-import { ClusterNodeView, type ClusterNode, type ClusterChipActions } from "./cluster-node";
+import { ClusterNodeView, type ClusterNode, type ClusterChipActions, type ClusterTarget } from "./cluster-node";
 import { HullNodeView, type HullNode } from "./hull-node";
 import { hullsFor } from "./hulls";
 import { MobileChrome } from "./mobile-chrome";
 import { cardSizeAt, zoomLevelOf, type ZoomLevel } from "./zoom";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { SelectionBar } from "./selection-bar";
-import { clusterChips, tidyPositions } from "./clusters";
+import { clusterChips, tidyPositions, type Member, type Size } from "./clusters";
 import type { ClusterActions } from "./use-cluster-actions";
 import { CardComposer } from "./card-composer";
-import { CARD_MIN_HEIGHT, CARD_WIDTH, placeNewCard, type BoardCard } from "./cards";
+import { CARD_MIN_HEIGHT, placeNewCard, type BoardCard } from "./cards";
 import { useHand } from "./use-hand";
 import { editingOf } from "./readiness";
 import type { CardActions } from "./use-card-actions";
@@ -81,8 +81,6 @@ const nodeTypes: NodeTypes = {
 /** React Flow elevates a selected node to 1000; a chip stays above its members either way. */
 const CHIP_Z_INDEX = 1001;
 
-/** The card size the chip centroid, hulls and tidy assume; never stored (spec §10.2). */
-const CARD_SIZE = { width: CARD_WIDTH, height: CARD_MIN_HEIGHT };
 
 const selectZoomLevel = (state: { transform: [number, number, number] }) => zoomLevelOf(state.transform[2]);
 
@@ -213,22 +211,30 @@ export function RetroBoard({
     [cards, viewer, hand.positions, hand.measured, hand.selected, tintByPrompt, named, namesById, editingBy, level, isMobile]
   );
 
-  /** The cards as geometry, positions read through the hand. */
-  const members = useMemo(
+  /** The cards as geometry: positions read through the hand, heights as measured. */
+  const members = useMemo<Member<Id<"retroClusters">>[]>(
     () =>
-      cards.map((card) => ({
-        clientId: card.clientId,
-        position: hand.positions.get(card.clientId) ?? card.position,
-        ...(card.clusterId !== undefined ? { clusterId: card.clusterId } : {}),
-      })),
-    [cards, hand.positions]
+      cards.map((card) => {
+        const measured = hand.measured.get(card.clientId);
+        return {
+          clientId: card.clientId,
+          position: hand.positions.get(card.clientId) ?? card.position,
+          ...(card.clusterId !== undefined ? { clusterId: card.clusterId } : {}),
+          ...(measured ? { height: measured.height } : {}),
+        };
+      }),
+    [cards, hand.positions, hand.measured]
   );
+  /** The level's card box, for a card not yet measured. */
+  const cardSize = useMemo<Size>(() => {
+    const size = cardSizeAt(level);
+    return { width: size.width, height: size.height ?? CARD_MIN_HEIGHT };
+  }, [level]);
 
   // Hulls only while the shared pointer is in `group` (spec §10.3); the
-  // card box is the level's, so a hull hugs what is drawn.
+  // card box is what is drawn, so a hull hugs it.
   const hullNodes = useMemo<HullNode[]>(() => {
-    const size = cardSizeAt(level);
-    return hullsFor(currentStage.kind, members, { width: size.width, height: size.height ?? CARD_MIN_HEIGHT }).map(
+    return hullsFor(currentStage.kind, members, cardSize).map(
       (hull) => ({
         id: `hull-${hull.key}`,
         type: "hull",
@@ -240,26 +246,28 @@ export function RetroBoard({
         data: { hull },
       })
     );
-  }, [currentStage.kind, members, level]);
+  }, [currentStage.kind, members, cardSize]);
 
-  const chips = useMemo(() => clusterChips(clusters, members, CARD_SIZE), [clusters, members]);
+  const chips = useMemo(() => clusterChips(clusters, members, cardSize), [clusters, members, cardSize]);
 
   const clusterActions = viewer?.clusters;
   const moveCards = viewer?.cards.move;
   const chipActions = useMemo<ClusterChipActions | undefined>(() => {
     if (!clusterActions || !moveCards) return undefined;
     return {
-      rename: (clusterId, name) => clusterActions.rename(clusterId as Id<"retroClusters">, name),
-      merge: (from, into) => clusterActions.merge(from as Id<"retroClusters">, into as Id<"retroClusters">),
-      dissolve: (clusterId) => clusterActions.dissolve(clusterId as Id<"retroClusters">),
+      rename: clusterActions.rename,
+      merge: clusterActions.merge,
+      dissolve: clusterActions.dissolve,
       tidy: (clusterId) => {
-        const members = cards
-          .filter((card) => card.clusterId === clusterId)
-          .map((card) => ({ clientId: card.clientId, position: hand.positions.get(card.clientId) ?? card.position }));
-        moveCards(tidyPositions(members, CARD_SIZE));
+        moveCards(
+          tidyPositions(
+            members.filter((member) => member.clusterId === clusterId),
+            cardSize
+          )
+        );
       },
     };
-  }, [clusterActions, moveCards, cards, hand.positions]);
+  }, [clusterActions, moveCards, members, cardSize]);
 
   const clusterNodes = useMemo<ClusterNode[]>(
     () =>
@@ -295,9 +303,10 @@ export function RetroBoard({
     () => cards.filter((card) => hand.selected.has(card.clientId) && card.clusterId !== undefined).length,
     [cards, hand.selected]
   );
-  const clusterTargets = useMemo(
-    () => clusters.map((cluster) => ({ clusterId: cluster._id as string, name: cluster.name })),
-    [clusters]
+  // Only a cluster with members is a target: an emptied one keeps its row but shows nowhere.
+  const clusterTargets = useMemo<ClusterTarget[]>(
+    () => chips.map((chip) => ({ clusterId: chip.clusterId, name: chip.name })),
+    [chips]
   );
   const clearSelection = hand.clearSelection;
   const onGroup = useCallback(() => {
@@ -305,8 +314,8 @@ export function RetroBoard({
     clearSelection();
   }, [clusterActions, selectedIds, clearSelection]);
   const onAddTo = useCallback(
-    (clusterId: string) => {
-      clusterActions?.addTo(clusterId as Id<"retroClusters">, selectedIds);
+    (clusterId: Id<"retroClusters">) => {
+      clusterActions?.addTo(clusterId, selectedIds);
       clearSelection();
     },
     [clusterActions, selectedIds, clearSelection]

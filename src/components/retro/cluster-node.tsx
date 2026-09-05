@@ -35,23 +35,32 @@ import {
   TIDY_GROUP,
   cardsCount,
 } from "@/convex/retroCopy";
+import type { Id } from "@/convex/_generated/dataModel";
 import type { ClusterChip } from "./clusters";
 import { zoomLevelOf } from "./zoom";
 
 /** The `cardManagement` acts on one cluster, as the board wires them. */
+export type ClusterId = Id<"retroClusters">;
+
 export interface ClusterChipActions {
-  rename: (clusterId: string, name: string) => Promise<boolean>;
-  merge: (from: string, into: string) => Promise<boolean>;
-  dissolve: (clusterId: string) => Promise<boolean>;
+  rename: (clusterId: ClusterId, name: string) => Promise<boolean>;
+  merge: (from: ClusterId, into: ClusterId) => Promise<boolean>;
+  dissolve: (clusterId: ClusterId) => Promise<boolean>;
   /** Tidy: the board computes the positions and issues the one move batch. */
-  tidy: (clusterId: string) => void;
+  tidy: (clusterId: ClusterId) => void;
+}
+
+/** A merge target: another cluster on the board. */
+export interface ClusterTarget {
+  clusterId: ClusterId;
+  name: string;
 }
 
 // A type alias: React Flow node data must satisfy Record<string, unknown>.
 export type ClusterNodeData = {
-  chip: ClusterChip;
+  chip: ClusterChip<ClusterId>;
   /** The other clusters on the board, as merge targets. */
-  others: readonly { clusterId: string; name: string }[];
+  others: readonly ClusterTarget[];
   /** The `cardManagement` decision; absent for a Team reader, who gets the label alone. */
   decision?: ResolvedDecision;
   actions?: ClusterChipActions;
@@ -201,11 +210,11 @@ function MergeDialog({
   onClose,
   onMerge,
 }: {
-  others: readonly { clusterId: string; name: string }[];
+  others: readonly ClusterTarget[];
   onClose: () => void;
-  onMerge: (into: string) => Promise<boolean>;
+  onMerge: (into: ClusterId) => Promise<boolean>;
 }) {
-  const [into, setInto] = useState(others[0]?.clusterId ?? "");
+  const [into, setInto] = useState<ClusterId | "">(others[0]?.clusterId ?? "");
   const [merging, setMerging] = useState(false);
   const merge = async () => {
     if (!into || merging) return;
@@ -232,7 +241,7 @@ function MergeDialog({
             <select
               id="merge-into"
               value={into}
-              onChange={(e) => setInto(e.target.value)}
+              onChange={(e) => setInto(e.target.value as ClusterId)}
               className="h-9 rounded-lg border border-input bg-transparent px-2.5 text-sm dark:bg-input/30"
             >
               {others.map((other) => (

@@ -74,7 +74,7 @@ describe("CardNodeView", () => {
     expect(screen.getByTestId("editing-chip").textContent).toContain("Ben");
   });
 
-  it("at headline draws the clamped first line only, at shape a tinted block; a silhouette is a block at every level (spec §10.2)", () => {
+  it("at headline draws the clamped first line only, at shape a tinted block; a silhouette is a block below detail (spec §10.2)", () => {
     const long = { ...base, text: "first line of a long card that goes on\nsecond line" };
     const { unmount } = renderCard({ card: long, color: "green", authorName: "Ada", editable: true, level: "headline", onEditText: vi.fn() });
     let root = document.querySelector("[data-card-id='a']") as HTMLElement;

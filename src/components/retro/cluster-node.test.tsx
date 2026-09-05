@@ -30,12 +30,14 @@ vi.mock("@/components/ui/dialog", () => {
   };
 });
 
-import { ClusterNodeView, type ClusterNode } from "./cluster-node";
+import { ClusterNodeView, type ClusterId, type ClusterNode } from "./cluster-node";
 
 afterEach(cleanup);
 
-const chip = { clusterId: "k1", name: "Group 1", position: { x: 100, y: 50 }, count: 3 };
-const others = [{ clusterId: "k2", name: "Group 2" }];
+const k1 = "k1" as ClusterId;
+const k2 = "k2" as ClusterId;
+const chip = { clusterId: k1, name: "Group 1", position: { x: 100, y: 50 }, count: 3 };
+const others = [{ clusterId: k2, name: "Group 2" }];
 const allowed = { allowed: true as const };
 const denied = { allowed: false as const, message: "Only facilitators can manage cards" };
 

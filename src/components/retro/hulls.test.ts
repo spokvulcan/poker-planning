@@ -21,6 +21,12 @@ describe("proximityHulls", () => {
     ]);
   });
 
+  it("a measured height reaches further than the level's box", () => {
+    const cards = [card("a", 0, 0), card("b", 0, 300)];
+    expect(proximityHulls(cards, size)).toEqual([]);
+    expect(proximityHulls([{ ...cards[0], height: 280 }, cards[1]], size).map((h) => h.height)).toEqual([432]);
+  });
+
   it("chains through a middle card, and dissolves when a member moves away", () => {
     const chain = [card("a", 0, 0), card("b", 220, 0), card("c", 440, 0)];
     expect(proximityHulls(chain, size).map((h) => h.members)).toEqual([["a", "b", "c"]]);

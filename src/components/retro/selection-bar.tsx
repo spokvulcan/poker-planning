@@ -16,6 +16,7 @@ import {
   selectedCards,
 } from "@/convex/retroCopy";
 import { cn } from "@/lib/utils";
+import type { ClusterTarget } from "./cluster-node";
 
 export interface SelectionBarProps {
   /** How many cards are selected; the bar renders nothing for none. */
@@ -23,9 +24,9 @@ export interface SelectionBarProps {
   /** How many of them already belong to a cluster. */
   inCluster: number;
   /** The clusters on the board, as "Add to group" targets. */
-  clusters: readonly { clusterId: string; name: string }[];
+  clusters: readonly ClusterTarget[];
   onGroup: () => void;
-  onAddTo: (clusterId: string) => void;
+  onAddTo: (clusterId: ClusterTarget["clusterId"]) => void;
   onRemove: () => void;
   onClear: () => void;
   className?: string;

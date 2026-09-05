@@ -316,7 +316,6 @@ export const MERGE_INTO_SELF = "Pick a different group to merge into";
 /** Dissolve confirmation, only when the cluster has dots (spec §19; #294). */
 export const dissolveClusterConfirm = (votes: number) =>
   `Dissolve this group? Its ${votes} ${votes === 1 ? "vote is" : "votes are"} removed.`;
-export const GROUP_SELECTION = "Group";
 export const groupCards = (n: number) => `Group ${n} ${n === 1 ? "card" : "cards"}`;
 export const ADD_TO_GROUP = "Add to group";
 export const REMOVE_FROM_GROUP = "Remove from group";

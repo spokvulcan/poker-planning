@@ -142,10 +142,6 @@ describe("useHand", () => {
     });
     expect([...hook.result.current.selected]).toEqual(["b"]);
     act(() => {
-      hook.result.current.toggleSelected("a");
-    });
-    expect([...hook.result.current.selected].sort()).toEqual(["a", "b"]);
-    act(() => {
       hook.result.current.clearSelection();
     });
     expect(hook.result.current.selected.size).toBe(0);
