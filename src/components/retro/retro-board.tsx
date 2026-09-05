@@ -5,7 +5,7 @@ import { ReactFlow, ReactFlowProvider, type NodeTypes } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { Users } from "lucide-react";
 import type { Doc } from "@/convex/_generated/dataModel";
-import type { RoomUserData } from "@/convex/model/users";
+import type { UserWithPresence } from "@/hooks/useRoomPresence";
 import { CanvasDotsBackground } from "@/components/canvas-dots-background";
 import { Button } from "@/components/ui/button";
 import { ROSTER_TITLE } from "@/convex/retroCopy";
@@ -16,13 +16,10 @@ import { layoutZones } from "./zones";
 import { StageNav, type StageControls } from "./stage-nav";
 import { StageEmptyState } from "./stage-empty-state";
 import { RetroRoster } from "./retro-roster";
-import type { PresenceEntry } from "./readiness";
 
 /** What an attendee brings to the board that a Team reader does not. */
 export interface BoardViewer {
   userId: string;
-  /** The room's presence list; undefined while loading. */
-  presence: readonly PresenceEntry[] | undefined;
   onSetReady: (ready: boolean) => void;
   controls: StageControls;
 }
@@ -31,8 +28,8 @@ interface RetroBoardProps {
   /** The room shell's name; the board reads nothing else from it. */
   name: string;
   retro: Doc<"retros">;
-  /** The roster's members, from the room shell. */
-  users: readonly RoomUserData[];
+  /** The roster's members with presence merged on; a Team reader sees everyone offline. */
+  users: readonly UserWithPresence[];
   /** The Team that keeps the retro (ADR-0008); undefined for a teamless one. */
   team?: RetroTeam;
   /** The attendee's presence and stageFlow wiring; absent for a Team reader. */
@@ -86,7 +83,7 @@ export function RetroBoard({ name, retro, users, team, viewer, menu, banner }: R
     [retro.format.prompts]
   );
 
-  const onlineCount = viewer?.presence?.filter((entry) => entry.online).length;
+  const onlineCount = viewer ? users.filter((user) => user.isOnline).length : undefined;
 
   return (
     <div
@@ -154,7 +151,6 @@ export function RetroBoard({ name, retro, users, team, viewer, menu, banner }: R
           <aside className="w-64 shrink-0 overflow-y-auto border-l bg-white p-4 dark:bg-surface-1">
             <RetroRoster
               users={users}
-              presence={viewer?.presence}
               currentStage={currentStage}
               myUserId={viewer?.userId}
               onSetReady={viewer?.onSetReady}

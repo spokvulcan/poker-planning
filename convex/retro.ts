@@ -1,7 +1,13 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import * as Retro from "./model/retro";
-import { visibilityValidator } from "./schema";
+import {
+  joinPolicyValidator,
+  retroFormatValidator,
+  retroStageValidator,
+  stageKindValidator,
+  visibilityValidator,
+} from "./schema";
 import { refusal } from "./model/refusal";
 import { ROOM_NOT_FOUND } from "./retroCopy";
 import {
@@ -21,7 +27,12 @@ import {
 export const create = mutation({
   args: {
     name: v.string(),
-    formatName: v.string(),
+    /** A library format by name, stamped as shipped. */
+    formatName: v.optional(v.string()),
+    /** The create form's edited copy (spec §6.1); wins over `formatName`. */
+    format: v.optional(retroFormatValidator),
+    /** The create form's edited stage list; the standard seed when absent. */
+    stages: v.optional(v.array(retroStageValidator)),
     collectUntil: v.optional(v.number()),
     teamId: v.optional(v.id("teams")),
   },
@@ -41,7 +52,7 @@ export const board = query({
   args: { roomId: v.id("rooms") },
   handler: async (ctx, args) => {
     await requireRoomReader(ctx, args.roomId);
-    return await Retro.getBoard(ctx, args.roomId);
+    return await Retro.requireRetro(ctx, args.roomId);
   },
 });
 
@@ -51,8 +62,9 @@ export const board = query({
 export const advance = mutation({
   args: { roomId: v.id("rooms"), toStageId: v.string() },
   handler: async (ctx, args) => {
-    await requireCan(ctx, args.roomId, { kind: "category", category: "stageFlow" });
-    await Retro.advance(ctx, args);
+    const { roomId, ...rest } = args;
+    const { room } = await requireCan(ctx, roomId, { kind: "category", category: "stageFlow" });
+    await Retro.advance(ctx, { room, ...rest });
   },
 });
 
@@ -60,8 +72,9 @@ export const advance = mutation({
 export const setCardsVisible = mutation({
   args: { roomId: v.id("rooms"), stageId: v.string(), value: visibilityValidator },
   handler: async (ctx, args) => {
-    await requireCan(ctx, args.roomId, { kind: "category", category: "stageFlow" });
-    await Retro.setCardsVisible(ctx, args);
+    const { roomId, ...rest } = args;
+    const { room } = await requireCan(ctx, roomId, { kind: "category", category: "stageFlow" });
+    await Retro.setCardsVisible(ctx, { room, ...rest });
   },
 });
 
@@ -69,8 +82,113 @@ export const setCardsVisible = mutation({
 export const setTimebox = mutation({
   args: { roomId: v.id("rooms"), stageId: v.string(), minutes: v.optional(v.number()) },
   handler: async (ctx, args) => {
-    await requireCan(ctx, args.roomId, { kind: "category", category: "stageFlow" });
-    await Retro.setTimebox(ctx, args);
+    const { roomId, ...rest } = args;
+    const { room } = await requireCan(ctx, roomId, { kind: "category", category: "stageFlow" });
+    await Retro.setTimebox(ctx, { room, ...rest });
+  },
+});
+
+// --- Settings (ADR-0021, spec §6.4) ---
+
+/** Rename the retro (`retroSettings`). */
+export const rename = mutation({
+  args: { roomId: v.id("rooms"), name: v.string() },
+  handler: async (ctx, args) => {
+    const { roomId, ...rest } = args;
+    const { room } = await requireCan(ctx, roomId, { kind: "category", category: "retroSettings" });
+    await Retro.renameRetro(ctx, { room, ...rest });
+  },
+});
+
+/** Edit who may join (`retroSettings`); `teamMembers` only on a team retro. */
+export const setJoinPolicy = mutation({
+  args: { roomId: v.id("rooms"), joinPolicy: joinPolicyValidator },
+  handler: async (ctx, args) => {
+    const { room } = await requireCan(ctx, args.roomId, {
+      kind: "category",
+      category: "retroSettings",
+    });
+    await Retro.setJoinPolicy(ctx, { room, joinPolicy: args.joinPolicy });
+  },
+});
+
+/** The advisory cards-due date; omit to clear (`retroSettings`). */
+export const setCollectUntil = mutation({
+  args: { roomId: v.id("rooms"), collectUntil: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const { roomId, ...rest } = args;
+    const { room } = await requireCan(ctx, roomId, { kind: "category", category: "retroSettings" });
+    await Retro.setCollectUntil(ctx, { room, ...rest });
+  },
+});
+
+/** Edit a prompt's label or hint at any stage (`retroSettings`). */
+export const updatePrompt = mutation({
+  args: {
+    roomId: v.id("rooms"),
+    promptId: v.string(),
+    label: v.optional(v.string()),
+    hint: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const { roomId, ...rest } = args;
+    const { room } = await requireCan(ctx, roomId, { kind: "category", category: "retroSettings" });
+    await Retro.updatePrompt(ctx, { room, ...rest });
+  },
+});
+
+/** Add a prompt at any stage, up to ten (`retroSettings`). Returns its id. */
+export const addPrompt = mutation({
+  args: {
+    roomId: v.id("rooms"),
+    label: v.string(),
+    hint: v.optional(v.string()),
+    color: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const { roomId, ...rest } = args;
+    const { room } = await requireCan(ctx, roomId, { kind: "category", category: "retroSettings" });
+    return await Retro.addPrompt(ctx, { room, ...rest });
+  },
+});
+
+/** Remove a prompt no card answers (`retroSettings`). */
+export const removePrompt = mutation({
+  args: { roomId: v.id("rooms"), promptId: v.string() },
+  handler: async (ctx, args) => {
+    const { roomId, ...rest } = args;
+    const { room } = await requireCan(ctx, roomId, { kind: "category", category: "retroSettings" });
+    await Retro.removePrompt(ctx, { room, ...rest });
+  },
+});
+
+/** Add a stage entry of a kind, at an index or at the end (`retroSettings`). Returns its id. */
+export const addStage = mutation({
+  args: { roomId: v.id("rooms"), kind: stageKindValidator, index: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const { roomId, ...rest } = args;
+    const { room } = await requireCan(ctx, roomId, { kind: "category", category: "retroSettings" });
+    return await Retro.addStage(ctx, { room, ...rest });
+  },
+});
+
+/** Remove a stage entry except collect, discuss and the current one (`retroSettings`). */
+export const removeStage = mutation({
+  args: { roomId: v.id("rooms"), stageId: v.string() },
+  handler: async (ctx, args) => {
+    const { roomId, ...rest } = args;
+    const { room } = await requireCan(ctx, roomId, { kind: "category", category: "retroSettings" });
+    await Retro.removeStage(ctx, { room, ...rest });
+  },
+});
+
+/** Reorder the stage list; collect, discuss and the current entry hold their place (`retroSettings`). */
+export const reorderStages = mutation({
+  args: { roomId: v.id("rooms"), stageIds: v.array(v.string()) },
+  handler: async (ctx, args) => {
+    const { roomId, ...rest } = args;
+    const { room } = await requireCan(ctx, roomId, { kind: "category", category: "retroSettings" });
+    await Retro.reorderStages(ctx, { room, ...rest });
   },
 });
 

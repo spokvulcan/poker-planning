@@ -271,6 +271,7 @@ export default defineSchema({
   })
     .index("by_room", ["roomId"])
     .index("by_room_author", ["roomId", "authorId"])
+    .index("by_room_prompt", ["roomId", "promptId"]) // the prompt-removal check (spec §6.4)
     .index("by_room_client", ["roomId", "clientId"])
     .index("by_cluster", ["clusterId"]),
 

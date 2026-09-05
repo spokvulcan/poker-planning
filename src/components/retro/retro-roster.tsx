@@ -1,20 +1,18 @@
 "use client";
 
 import { useMemo } from "react";
-import type { RoomUserData } from "@/convex/model/users";
 import type { StageEntry } from "@/convex/model/retroFormats";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import type { UserWithPresence } from "@/hooks/useRoomPresence";
+import { UserAvatar } from "@/components/user-menu/user-avatar";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
-import { getColorFromName, getInitial } from "@/lib/avatar-utils";
 import { READY_LABEL, READY_TOGGLE_LABEL, ROSTER_TITLE } from "@/convex/retroCopy";
-import { projectRoster, type PresenceEntry } from "./readiness";
+import { projectRoster } from "./readiness";
 
 interface RetroRosterProps {
-  users: readonly RoomUserData[];
-  /** The room's presence list; undefined while loading. */
-  presence: readonly PresenceEntry[] | undefined;
+  /** The members with presence merged on; offline while presence loads. */
+  users: readonly UserWithPresence[];
   currentStage: Pick<StageEntry, "id" | "kind">;
   /** The viewer, when attending; a Team reader has no row and no toggle. */
   myUserId?: string;
@@ -29,11 +27,8 @@ interface RetroRosterProps {
  * cards ticket adds — so nothing durable ever records who declared
  * themselves finished.
  */
-export function RetroRoster({ users, presence, currentStage, myUserId, onSetReady }: RetroRosterProps) {
-  const rows = useMemo(
-    () => projectRoster(users, presence, currentStage.id),
-    [users, presence, currentStage.id]
-  );
+export function RetroRoster({ users, currentStage, myUserId, onSetReady }: RetroRosterProps) {
+  const rows = useMemo(() => projectRoster(users, currentStage.id), [users, currentStage.id]);
   const offersReadiness = currentStage.kind !== "collect";
   const me = rows.find((row) => row._id === myUserId);
 
@@ -59,12 +54,12 @@ export function RetroRoster({ users, presence, currentStage, myUserId, onSetRead
             {...(offersReadiness ? { "data-ready": String(row.ready) } : {})}
             className="flex items-center gap-2 text-sm"
           >
-            <Avatar size="sm" className={cn("ring-2", row.isOnline ? "ring-green-500" : "ring-gray-400 grayscale")}>
-              {row.avatarUrl && <AvatarImage src={row.avatarUrl} alt={row.name} />}
-              <AvatarFallback className={getColorFromName(row.name)}>
-                <span className="text-xs font-medium text-white">{getInitial(row.name)}</span>
-              </AvatarFallback>
-            </Avatar>
+            <UserAvatar
+              name={row.name}
+              avatarUrl={row.avatarUrl}
+              size="sm"
+              className={cn("ring-2", row.isOnline ? "ring-green-500" : "ring-gray-400 grayscale")}
+            />
             <span className={cn("min-w-0 flex-1 truncate", !row.isOnline && "text-muted-foreground")}>
               {row.name}
             </span>

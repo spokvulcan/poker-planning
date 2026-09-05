@@ -1,4 +1,3 @@
-import type { RoomUserData } from "@/convex/model/users";
 import { orderUsersByPresence, type UserWithPresence } from "@/hooks/useRoomPresence";
 
 /**
@@ -12,14 +11,6 @@ import { orderUsersByPresence, type UserWithPresence } from "@/hooks/useRoomPres
 export interface ReadinessPayload {
   stageId: string;
   ready: boolean;
-}
-
-/** What `presence.list` returns per person; `data` is the readiness payload when set. */
-export interface PresenceEntry {
-  userId: string;
-  online: boolean;
-  lastDisconnected: number;
-  data?: unknown;
 }
 
 function isReadinessPayload(data: unknown): data is ReadinessPayload {
@@ -42,24 +33,11 @@ export interface RosterRow extends UserWithPresence {
 }
 
 /**
- * The roster: every member with presence and readiness merged on, in the
- * one ordering rule (online first, then by join time).
+ * The roster: every member (presence already merged by `useRoomPresence`)
+ * with readiness read from their payload, in the one ordering rule (online
+ * first, then by join time).
  */
-export function projectRoster(
-  users: readonly RoomUserData[],
-  presence: readonly PresenceEntry[] | undefined,
-  currentStageId: string
-): RosterRow[] {
-  const byUserId = new Map((presence ?? []).map((entry) => [entry.userId, entry]));
-  const rows: RosterRow[] = users.map((user) => {
-    const entry = byUserId.get(user._id);
-    const online = entry?.online ?? false;
-    return {
-      ...user,
-      isOnline: online,
-      lastSeen: online ? null : (entry?.lastDisconnected ?? null),
-      ready: readinessOf(entry?.data, currentStageId),
-    };
-  });
+export function projectRoster(users: readonly UserWithPresence[], currentStageId: string): RosterRow[] {
+  const rows = users.map((user) => ({ ...user, ready: readinessOf(user.data, currentStageId) }));
   return orderUsersByPresence(rows) as RosterRow[];
 }

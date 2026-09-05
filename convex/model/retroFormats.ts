@@ -66,7 +66,26 @@ export function newStageEntryId(): string {
   return crypto.randomUUID();
 }
 
+/** Every stage kind, in the seed's order. */
+export const STAGE_KINDS: readonly StageKind[] = ["collect", "review", "group", "vote", "discuss", "close"];
+
 export const DEFAULT_VOTE_BUDGET = 5;
+
+/** A retro carries at most ten prompts and ten stage entries (spec §2). */
+export const MAX_PROMPTS = 10;
+export const MAX_STAGES = 10;
+
+/** A fresh prompt id for a prompt added after the library's; the same minting as a stage's. */
+export const newPromptId = newStageEntryId;
+
+export function isRetroTint(color: string): color is RetroTint {
+  return (RETRO_TINTS as readonly string[]).includes(color);
+}
+
+/** Prompts renumbered 0..n-1 in list order. */
+export function renumberPrompts(prompts: readonly FormatPrompt[]): FormatPrompt[] {
+  return prompts.map((prompt, order) => ({ ...prompt, order }));
+}
 
 /** The entry the shared pointer names; the first entry if the pointer dangles. */
 export function currentStageOf(retro: {
@@ -184,19 +203,88 @@ export function seedStages(
   format: Pick<RetroFormat, "collectVisible">,
   options: { hasTeam: boolean }
 ): StageEntry[] {
-  const kinds: StageKind[] = ["collect", "review", "group", "vote", "discuss", "close"];
-  return kinds
+  return STAGE_KINDS
     .filter((kind) => options.hasTeam || kind !== "review")
-    .map((kind) => {
-      const entry: StageEntry = {
-        // An entry's identity is its own, never its kind: a kind may repeat
-        // (a second vote entry is a second round of dots, ADR-0010, spec §2).
-        id: newStageEntryId(),
-        kind,
-        cardsVisible: kind === "collect" && !format.collectVisible ? "hidden" : "visible",
-        tallyVisible: kind === "vote" ? "hidden" : "visible",
-      };
-      if (kind === "vote") entry.voteBudget = DEFAULT_VOTE_BUDGET;
-      return entry;
-    });
+    .map((kind) => newStageEntry(kind, { collectVisible: format.collectVisible }));
+}
+
+/**
+ * A fresh entry of a kind with the seed's defaults: `collect` hides cards
+ * unless the format says otherwise, `vote` hides the tally and carries the
+ * default budget, everything else is visible with no budget.
+ */
+export function newStageEntry(
+  kind: StageKind,
+  options: { collectVisible?: boolean } = {}
+): StageEntry {
+  const entry: StageEntry = {
+    // An entry's identity is its own, never its kind: a kind may repeat
+    // (a second vote entry is a second round of dots, ADR-0010, spec §2).
+    id: newStageEntryId(),
+    kind,
+    cardsVisible: kind === "collect" && !options.collectVisible ? "hidden" : "visible",
+    tallyVisible: kind === "vote" ? "hidden" : "visible",
+  };
+  if (kind === "vote") entry.voteBudget = DEFAULT_VOTE_BUDGET;
+  return entry;
+}
+
+/** The kinds every retro keeps at least one of (ADR-0021): the write stage and the walk. */
+export const LOCKED_STAGE_KINDS: readonly StageKind[] = ["collect", "discuss"];
+
+/**
+ * Whether the entry is the last of a locked kind, so it can neither be
+ * removed nor moved. A second entry of the same kind is free.
+ */
+export function isLockedKindEntry(stages: readonly StageEntry[], stageId: string): boolean {
+  const entry = stages.find((stage) => stage.id === stageId);
+  if (!entry || !LOCKED_STAGE_KINDS.includes(entry.kind)) return false;
+  return stages.filter((stage) => stage.kind === entry.kind).length === 1;
+}
+
+/**
+ * Whether `nextIds` is a legal reorder of `stages` (spec §6.4): a
+ * permutation in which the current entry keeps its index (the ground under
+ * the shared pointer never moves) and the locked kinds keep their order
+ * among themselves (collect stays ahead of discuss); every other entry may
+ * be placed anywhere, before or after them. The rule for the create form
+ * (no current entry) and the running retro alike.
+ */
+export function reorderKeepsLocks(
+  stages: readonly StageEntry[],
+  nextIds: readonly string[],
+  currentStageId?: string
+): { ok: true } | { ok: false; reason: "not-a-permutation" | "locked-moved" } {
+  const ids = stages.map((stage) => stage.id);
+  if (nextIds.length !== ids.length || new Set(nextIds).size !== ids.length) {
+    return { ok: false, reason: "not-a-permutation" };
+  }
+  if (!ids.every((id) => nextIds.includes(id))) {
+    return { ok: false, reason: "not-a-permutation" };
+  }
+  if (currentStageId !== undefined && ids.indexOf(currentStageId) !== nextIds.indexOf(currentStageId)) {
+    return { ok: false, reason: "locked-moved" };
+  }
+  const lockedBefore = ids.filter((id) => isLockedKindEntry(stages, id));
+  const lockedAfter = nextIds.filter((id) => isLockedKindEntry(stages, id));
+  const held = lockedBefore.every((id, i) => lockedAfter[i] === id);
+  return held ? { ok: true } : { ok: false, reason: "locked-moved" };
+}
+
+/** The list with `entry` inserted at `index` (clamped), or at the end. */
+export function insertStage(
+  stages: readonly StageEntry[],
+  entry: StageEntry,
+  index?: number
+): StageEntry[] {
+  const next = [...stages];
+  const at = index === undefined ? next.length : Math.max(0, Math.min(index, next.length));
+  next.splice(at, 0, entry);
+  return next;
+}
+
+/** The same entries re-listed in the order of `ids`; the caller has checked `ids` is a permutation. */
+export function orderStagesBy(stages: readonly StageEntry[], ids: readonly string[]): StageEntry[] {
+  const byId = new Map(stages.map((stage) => [stage.id, stage]));
+  return ids.map((id) => byId.get(id)!);
 }

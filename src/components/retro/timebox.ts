@@ -9,7 +9,6 @@ import { TIMEBOX_OVER } from "@/convex/retroCopy";
  * happens: the count never fires an advance.
  */
 export interface TimeboxReading {
-  remainingSeconds: number;
   over: boolean;
   /** MM:SS, or the "Timebox over" line. */
   label: string;
@@ -34,7 +33,6 @@ export function timeboxReading(
   const remainingSeconds = timeboxMinutes * 60 - elapsed;
   const over = remainingSeconds <= 0;
   return {
-    remainingSeconds,
     over,
     label: over ? TIMEBOX_OVER : formatTimerTime(remainingSeconds),
   };

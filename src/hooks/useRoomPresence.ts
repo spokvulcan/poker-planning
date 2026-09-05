@@ -9,6 +9,8 @@ import { useDemoSimulation } from "@/components/room/demo/DemoSimulationProvider
 export interface UserWithPresence extends RoomUserData {
   isOnline: boolean;
   lastSeen: number | null; // Timestamp when user was last online (null if currently online)
+  /** The person's presence payload, when they wrote one (the retro's readiness). */
+  data?: unknown;
 }
 
 /**
@@ -101,6 +103,7 @@ function useConvexPresence(
         ...user,
         isOnline: presence?.online ?? false,
         lastSeen: presence?.online ? null : (presence?.lastDisconnected ?? null),
+        data: presence?.data,
       };
     });
   }, [users, presenceState]);

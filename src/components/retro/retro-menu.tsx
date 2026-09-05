@@ -5,8 +5,15 @@ import { useRouter } from "next/navigation";
 import { useMutation, useQuery } from "convex/react";
 import { MoreHorizontal } from "lucide-react";
 import { api } from "@/convex/_generated/api";
-import type { Id } from "@/convex/_generated/dataModel";
-import { DEFAULT_RETRO_PERMISSIONS, resolve, type MemberRole, type TeamRole } from "@/convex/permissions";
+import type { Doc, Id } from "@/convex/_generated/dataModel";
+import {
+  DEFAULT_RETRO_PERMISSIONS,
+  resolve,
+  type JoinPolicy,
+  type MemberRole,
+  type ResolvedDecision,
+  type TeamRole,
+} from "@/convex/permissions";
 import {
   ADOPT_BUTTON,
   ADOPT_CHOOSE_TEAM,
@@ -24,6 +31,7 @@ import {
   DELETE_TITLE,
   DELETING_BUTTON,
   RETRO_DELETED,
+  SETTINGS_MENU_ITEM,
   TEAM_LABEL,
   deleteRetroConfirm,
   keptByTeam,
@@ -56,6 +64,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { toast } from "@/lib/toast";
 import type { RetroTeam } from "./retro-header";
+import { RetroSettingsDialog } from "./retro-settings-dialog";
 
 /** One of the viewer's Teams, as `teams.listMine` returns it. */
 export interface MyTeam {
@@ -73,6 +82,13 @@ interface RetroMenuProps {
   isOwnerAbsent: boolean;
   /** The viewer's Teams; empty for an anonymous account. */
   myTeams: MyTeam[];
+  /** What the settings dialog edits (spec §6.4); absent hides the item. */
+  settings?: {
+    name: string;
+    joinPolicy: JoinPolicy;
+    retro: Doc<"retros">;
+    decision: ResolvedDecision;
+  };
 }
 
 /**
@@ -80,10 +96,12 @@ interface RetroMenuProps {
  * retro* behind the counted confirmation; *Claim ownership* for a team
  * admin who is not the owner (the server decides `owner-present`); *Keep
  * with a team…* for the owner of a teamless retro who has a Team to give it
- * to. Every item is a mutation on room-owned state, so the menu renders
- * only for an attendee.
+ * to; *Retro settings…* opens the settings dialog (spec §6.4), where a
+ * denied viewer reads the denial rather than finding the door gone. Every
+ * item is a mutation on room-owned state, so the menu renders only for an
+ * attendee.
  */
-export function RetroMenu({ roomId, team, role, isOwnerAbsent, myTeams }: RetroMenuProps) {
+export function RetroMenu({ roomId, team, role, isOwnerAbsent, myTeams, settings }: RetroMenuProps) {
   const router = useRouter();
   const remove = useMutation(api.retro.remove);
   const claim = useMutation(api.retro.claim);
@@ -94,6 +112,7 @@ export function RetroMenu({ roomId, team, role, isOwnerAbsent, myTeams }: RetroM
   const [adoptOpen, setAdoptOpen] = useState(false);
   const [adoptTeamId, setAdoptTeamId] = useState<string>("");
   const [isAdopting, setIsAdopting] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const counts = useQuery(api.retro.deleteCounts, confirmDelete ? { roomId } : "skip");
 
@@ -156,6 +175,9 @@ export function RetroMenu({ roomId, team, role, isOwnerAbsent, myTeams }: RetroM
           <MoreHorizontal className="size-4" />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
+          {settings && (
+            <DropdownMenuItem onClick={() => setSettingsOpen(true)}>{SETTINGS_MENU_ITEM}</DropdownMenuItem>
+          )}
           {canAdopt && (
             <DropdownMenuItem onClick={() => setAdoptOpen(true)}>{ADOPT_MENU_ITEM}</DropdownMenuItem>
           )}
@@ -191,6 +213,19 @@ export function RetroMenu({ roomId, team, role, isOwnerAbsent, myTeams }: RetroM
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {settings && (
+        <RetroSettingsDialog
+          open={settingsOpen}
+          onOpenChange={setSettingsOpen}
+          roomId={roomId}
+          name={settings.name}
+          joinPolicy={settings.joinPolicy}
+          hasTeam={team !== undefined}
+          retro={settings.retro}
+          decision={settings.decision}
+        />
+      )}
 
       <Dialog open={adoptOpen} onOpenChange={(open) => !isAdopting && setAdoptOpen(open)}>
         <DialogContent className="sm:max-w-md">

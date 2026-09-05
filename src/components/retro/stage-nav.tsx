@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import type { ResolvedDecision } from "@/convex/permissions";
-import { permissionProps } from "@/hooks/usePermissions";
+import { permissionInputProps, permissionProps } from "@/hooks/usePermissions";
 import type { StageEntry, Visibility } from "@/convex/model/retroFormats";
 import {
   BACK_TO_TEAM,
@@ -62,6 +62,7 @@ export function StageNav({
   const previous = stages[sharedIndex - 1];
   const next = stages[sharedIndex + 1];
   const deny = controls ? permissionProps(controls.stageFlow) : {};
+  const hidden = current.cardsVisible === "hidden";
 
   return (
     <div
@@ -108,19 +109,19 @@ export function StageNav({
               type="button"
               variant="ghost"
               size="sm"
-              aria-label={current.cardsVisible === "hidden" ? SHOW_CARDS : HIDE_CARDS}
-              onClick={() => controls.onSetCardsVisible(current.cardsVisible === "hidden" ? "visible" : "hidden")}
+              aria-label={hidden ? SHOW_CARDS : HIDE_CARDS}
+              onClick={() => controls.onSetCardsVisible(hidden ? "visible" : "hidden")}
               {...deny}
             >
-              {current.cardsVisible === "hidden" ? <Eye className="size-4" /> : <EyeOff className="size-4" />}
-              {current.cardsVisible === "hidden" ? SHOW_CARDS : HIDE_CARDS}
+              {hidden ? <Eye className="size-4" /> : <EyeOff className="size-4" />}
+              {hidden ? SHOW_CARDS : HIDE_CARDS}
             </Button>
             <TimeboxField
               // Remount on a server change so the draft never fights the stored value.
               key={`${current.id}:${current.timeboxMinutes ?? ""}`}
               minutes={current.timeboxMinutes}
               onCommit={controls.onSetTimebox}
-              denial={controls.stageFlow.allowed ? undefined : controls.stageFlow.message}
+              decision={controls.stageFlow}
             />
           </>
         )}
@@ -161,11 +162,11 @@ export function StageNav({
 function TimeboxField({
   minutes,
   onCommit,
-  denial,
+  decision,
 }: {
   minutes: number | undefined;
   onCommit: (minutes: number | undefined) => void;
-  denial?: string;
+  decision: ResolvedDecision;
 }) {
   const [draft, setDraft] = useState(minutes === undefined ? "" : String(minutes));
   const commit = () => {
@@ -199,7 +200,7 @@ function TimeboxField({
         onKeyDown={(e) => {
           if (e.key === "Enter") (e.target as HTMLInputElement).blur();
         }}
-        {...(denial ? { readOnly: true, title: denial } : {})}
+        {...permissionInputProps(decision)}
       />
     </div>
   );

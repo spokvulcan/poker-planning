@@ -56,7 +56,9 @@ vi.mock("@/components/retro/retro-board", () => ({
   ),
 }));
 vi.mock("@/components/retro/retro-menu", () => ({
-  RetroMenu: ({ role }: { role: string }) => <div data-testid="menu">{role}</div>,
+  RetroMenu: ({ role, settings }: { role: string; settings?: { name: string; decision: { allowed: boolean } } }) => (
+    <div data-testid="menu" data-settings={settings?.name} data-settings-allowed={String(settings?.decision.allowed)}>{role}</div>
+  ),
 }));
 
 import { RetroRoomContent } from "./retro-room-content";
@@ -110,6 +112,8 @@ describe("RetroRoomContent", () => {
     render(<RetroRoomContent roomId={roomId} roomData={teamless} membership={{ _id: "user1" as never }} />);
     expect(screen.getByTestId("board").textContent).toContain("s1");
     expect(screen.getByTestId("menu").textContent).toBe("owner");
+    expect(screen.getByTestId("menu").getAttribute("data-settings")).toBe("Sprint 12");
+    expect(screen.getByTestId("menu").getAttribute("data-settings-allowed")).toBe("true");
     expect(screen.queryByTestId("join-form")).toBeNull();
     expect(screen.queryByTestId("team-reader-banner")).toBeNull();
   });

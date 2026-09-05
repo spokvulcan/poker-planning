@@ -5,6 +5,7 @@
  * imports here. Later retro tickets extend it; #300 tests the register
  * against it.
  */
+import type { JoinPolicy } from "./permissions";
 
 // --- Board header disclosures (ADR-0008, ADR-0019) ---
 
@@ -53,6 +54,8 @@ export const RETRO_NAME_DESCRIPTION = "Leave empty for a dated name";
 export const FORMAT_LABEL = "Format";
 export const FORMAT_CHANGE = "Change";
 export const FORMAT_COLLAPSE = "Done";
+/** The picker line under a Team's own edited format (ADR-0021). */
+export const LAST_USED_DESCRIPTION = "What this team used last.";
 export const COLLECT_UNTIL_LABEL = "Cards due";
 export const COLLECT_UNTIL_DESCRIPTION =
   "Optional. Shown on the board as a reminder; it closes nothing by itself.";
@@ -146,6 +149,64 @@ export const TEAM_LABEL = "Team";
 export const NO_TEAM_OPTION = NO_TEAM_GROUP;
 export const NEW_TEAM_OPTION = "New team…";
 export const TEAM_DESCRIPTION = "A team keeps the retro and decides who can read it later.";
+
+// --- Retro settings (spec §6.4) ---
+
+export const SETTINGS_MENU_ITEM = "Retro settings…";
+export const SETTINGS_TITLE = "Retro settings";
+export const SETTINGS_DESCRIPTION =
+  "Prompts and stages can change at any stage. Collect, Discuss and the current stage keep their place.";
+export const JOIN_POLICY_LABEL = "Who can join";
+export const JOIN_POLICY_OPTIONS: { value: JoinPolicy; label: string }[] = [
+  { value: "anyone", label: "Anyone with the link" },
+  { value: "permanentAccounts", label: "Signed-in accounts" },
+  { value: "teamMembers", label: "Team members" },
+];
+export const SETTINGS_FAILED = "That change did not go through. Try again.";
+
+// --- The format editor (spec §6.1, §6.4) ---
+
+export const FORMAT_NAME_LABEL = "Format name";
+export const PROMPTS_TITLE = "Prompts";
+export const PROMPT_LABEL_FIELD = "Prompt label";
+export const PROMPT_HINT_FIELD = "Hint";
+export const PROMPT_HINT_PLACEHOLDER = "Shown while writing, never on the board";
+export const TINT_FIELD = "Tint";
+export const ADD_PROMPT = "Add prompt";
+export const NEW_PROMPT_LABEL = "New prompt";
+export const removePromptLabel = (label: string) => `Remove ${label}`;
+export const STAGES_TITLE = "Stages";
+export const ADD_STAGE = "Add stage";
+export const removeStageLabel = (label: string) => `Remove ${label}`;
+export const moveStageUpLabel = (label: string) => `Move ${label} up`;
+export const moveStageDownLabel = (label: string) => `Move ${label} down`;
+export const cardsHiddenIn = (label: string) => `Cards hidden in ${label}`;
+export const cardsVisibleIn = (label: string) => `Cards visible in ${label}`;
+export const CURRENT_STAGE_TAG = "current";
+
+// --- Prompt and stage-list edits (spec §6.4) ---
+
+export const PROMPT_LABEL_REQUIRED = "A prompt needs a label";
+export const TINT_OUTSIDE_PALETTE = "Pick a tint from the palette";
+export const PROMPT_NOT_FOUND = "That prompt is no longer in this retro";
+export const TOO_MANY_PROMPTS = "A retro has at most 10 prompts";
+export const LAST_PROMPT = "A retro needs at least one prompt";
+/** `removePrompt` while a card answers it: a `forbidden` refusal, not `stage`. */
+export const CARDS_STILL_ANSWER = "Cards still answer this prompt";
+
+export const TOO_MANY_STAGES = "A retro has at most 10 stages";
+export const FORMAT_NAME_REQUIRED = "A format needs a name";
+export const NAME_INVALID = "That name will not do";
+export const PROMPT_IDS_UNIQUE = "Every prompt needs its own id";
+export const STAGE_IDS_UNIQUE = "Every stage needs its own id";
+export const VOTE_BUDGET_INVALID = "Vote budget must be a whole number of dots";
+export const STAGE_KIND_LOCKED = "Collect and Discuss stay in every retro";
+export const STAGE_CURRENT_LOCKED = "The current stage keeps its place";
+export const STAGE_ORDER_LOCKED = "Collect, Discuss and the current stage keep their place";
+export const STAGE_ORDER_INVALID = "The new order must list every stage once";
+
+/** `setJoinPolicy` to `teamMembers` on a retro no Team keeps. */
+export const TEAM_MEMBERS_NEEDS_TEAM = "Only a team retro can be limited to team members";
 
 /** `adoptIntoTeam` by an attendee who does not own the room. */
 export const ONLY_OWNER_CAN_ADOPT = "Only the room owner can give this retro to a team.";

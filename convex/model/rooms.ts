@@ -192,9 +192,11 @@ export const RETRO_ACTIVITY_GRANULARITY_MS = 60 * 60 * 1000;
  */
 export async function updateRoomActivity(
   ctx: MutationCtx,
-  roomId: Id<"rooms">
+  roomOrId: Doc<"rooms"> | Id<"rooms">
 ): Promise<void> {
-  const room = await ctx.db.get(roomId);
+  // A caller whose guard already loaded the room passes the row; the id
+  // form re-reads it.
+  const room = typeof roomOrId === "string" ? await ctx.db.get(roomOrId) : roomOrId;
   if (!room) return;
   const now = Date.now();
   if (
@@ -203,7 +205,7 @@ export async function updateRoomActivity(
   ) {
     return;
   }
-  await ctx.db.patch(roomId, { lastActivityAt: now });
+  await ctx.db.patch(room._id, { lastActivityAt: now });
 }
 
 /**

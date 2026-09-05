@@ -180,14 +180,6 @@ describe("CreateRetroContent — team", () => {
     expect(screen.getByTestId("format-selected").textContent).toContain("4Ls");
   });
 
-  it("falls back to the default when the last format's name is not in the library", () => {
-    mocks.auth.accountType = "permanent";
-    mocks.searchParams = new URLSearchParams("team=team-1");
-    mocks.queries["retro.lastFormat"] = { name: "Our own", prompts: [] };
-    render(<CreateRetroContent />);
-    expect(screen.getByTestId("format-selected").textContent).toContain(DEFAULT_RETRO_FORMAT.name);
-  });
-
   it("New team opens the dialog and selects the Team it creates before the Teams read catches up", async () => {
     mocks.auth.accountType = "permanent";
     render(<CreateRetroContent />);
@@ -209,5 +201,114 @@ describe("CreateRetroContent — team", () => {
     mocks.queries["retro.lastFormat"] = undefined;
     render(<CreateRetroContent />);
     expect((screen.getByRole("button", { name: "Start retro" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+});
+
+describe("CreateRetroContent — editing the format before stamping (spec §6.1)", () => {
+  const shipped = JSON.stringify(RETRO_FORMATS);
+
+  function expandEditor() {
+    fireEvent.click(screen.getByRole("button", { name: "Change" }));
+    return screen.getByTestId("format-editor");
+  }
+
+  it("stamps the edited copy: a renamed prompt, an added prompt, a removed stage, a visible collect; the shipped constant is untouched", async () => {
+    render(<CreateRetroContent />);
+    const editor = within(expandEditor());
+
+    const first = editor.getAllByLabelText("Prompt label")[0] as HTMLInputElement;
+    expect(first.value).toBe("What went well?");
+    fireEvent.change(first, { target: { value: "What worked?" } });
+    fireEvent.blur(first);
+    fireEvent.change(editor.getAllByLabelText("Tint")[0], { target: { value: "teal" } });
+
+    fireEvent.click(editor.getByRole("button", { name: "Add prompt" }));
+    expect(editor.getAllByLabelText("Prompt label")).toHaveLength(4);
+
+    // Remove the vote stage; flip collect to visible.
+    fireEvent.click(editor.getByRole("button", { name: "Remove Vote" }));
+    fireEvent.click(editor.getByRole("button", { name: "Cards hidden in Collect" }));
+    expect(editor.getByRole("button", { name: "Cards visible in Collect" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Start retro" }));
+    await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
+    const args = mocks.create.mock.calls[0][0];
+    expect("formatName" in args).toBe(false);
+    expect(args.format.name).toBe(DEFAULT_RETRO_FORMAT.name);
+    expect(args.format.prompts.map((p: { label: string; color: string }) => [p.label, p.color])).toEqual([
+      ["What worked?", "teal"],
+      ["What should we do differently?", "amber"],
+      ["Ideas", "blue"],
+      ["New prompt", expect.any(String)],
+    ]);
+    expect(args.format.prompts.map((p: { order: number }) => p.order)).toEqual([0, 1, 2, 3]);
+    expect(args.stages.map((s: { kind: string }) => s.kind)).toEqual(["collect", "group", "discuss", "close"]);
+    expect(args.stages[0].cardsVisible).toBe("visible");
+    expect(JSON.stringify(RETRO_FORMATS)).toBe(shipped);
+  });
+
+  it("caps prompts at ten and never removes collect or discuss", () => {
+    render(<CreateRetroContent />);
+    const editor = within(expandEditor());
+    for (let i = 3; i < 10; i++) fireEvent.click(editor.getByRole("button", { name: "Add prompt" }));
+    expect(editor.getAllByLabelText("Prompt label")).toHaveLength(10);
+    expect((editor.getByRole("button", { name: "Add prompt" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((editor.getByRole("button", { name: "Remove Collect" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((editor.getByRole("button", { name: "Remove Discuss" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((editor.getByRole("button", { name: "Remove Group" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("reorders the free entries around collect and discuss, and adds an entry", () => {
+    render(<CreateRetroContent />);
+    const editor = within(expandEditor());
+    const kinds = () => editor.getAllByTestId("stage-row").map((r) => r.getAttribute("data-kind"));
+    expect(kinds()).toEqual(["collect", "group", "vote", "discuss", "close"]);
+    fireEvent.click(editor.getByRole("button", { name: "Move Vote up" }));
+    expect(kinds()).toEqual(["collect", "vote", "group", "discuss", "close"]);
+    // A free entry passes discuss; discuss never passes collect.
+    fireEvent.click(editor.getByRole("button", { name: "Move Close up" }));
+    expect(kinds()).toEqual(["collect", "vote", "group", "close", "discuss"]);
+    expect((editor.getByRole("button", { name: "Move Discuss up" }) as HTMLButtonElement).disabled).toBe(false);
+    expect((editor.getByRole("button", { name: "Move Collect up" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(editor.getByLabelText("Add stage"), { target: { value: "review" } });
+    fireEvent.click(editor.getByRole("button", { name: "Add stage" }));
+    expect(kinds()).toEqual(["collect", "vote", "group", "close", "discuss", "review"]);
+    fireEvent.click(editor.getByRole("button", { name: "Move Review up" }));
+    expect(kinds()).toEqual(["collect", "vote", "group", "close", "review", "discuss"]);
+  });
+
+  it("the creator may rename an edited format; a fresh library pick starts over from its stamp", async () => {
+    render(<CreateRetroContent />);
+    const editor = within(expandEditor());
+    fireEvent.change(editor.getByLabelText("Format name"), { target: { value: "Our three" } });
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    expect(screen.getByTestId("format-selected").textContent).toContain("Our three");
+
+    fireEvent.click(screen.getByRole("button", { name: "Change" }));
+    fireEvent.click(screen.getByLabelText("Lean Coffee"));
+    expect((within(screen.getByTestId("format-editor")).getByLabelText("Format name") as HTMLInputElement).value).toBe("Lean Coffee");
+    expect(within(screen.getByTestId("format-editor")).getByRole("button", { name: "Cards visible in Collect" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Start retro" }));
+    await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
+    const args = mocks.create.mock.calls[0][0];
+    expect(args.format.name).toBe("Lean Coffee");
+    expect(args.stages[0].cardsVisible).toBe("visible");
+  });
+
+  it("pre-selects a Team's edited last format under its own name, with its prompts", () => {
+    mocks.auth.accountType = "permanent";
+    mocks.searchParams = new URLSearchParams("team=team-1");
+    mocks.queries["retro.lastFormat"] = {
+      name: "Our own",
+      prompts: [{ id: "x", label: "Keep", color: "green", order: 0 }],
+    };
+    render(<CreateRetroContent />);
+    expect(screen.getByTestId("format-selected").textContent).toContain("Our own");
+    expect(screen.getByTestId("format-selected").textContent).toContain("Keep");
+    fireEvent.click(screen.getByRole("button", { name: "Change" }));
+    const radios = within(screen.getByTestId("format-library")).getAllByRole("radio");
+    expect(radios[0].getAttribute("aria-label")).toBe("Our own");
+    expect(radios).toHaveLength(RETRO_FORMATS.length + 1);
   });
 });

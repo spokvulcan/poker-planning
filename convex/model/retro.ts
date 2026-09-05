@@ -1,15 +1,27 @@
 import { MutationCtx, QueryCtx } from "../_generated/server";
 import { Doc, Id } from "../_generated/dataModel";
 import { internal } from "../_generated/api";
-import { DEFAULT_RETRO_PERMISSIONS } from "../permissions";
+import { DEFAULT_RETRO_PERMISSIONS, type JoinPolicy } from "../permissions";
 import { validateRoomName, updateRoomActivity } from "./rooms";
 import { deleteRoomAggregateChunk } from "./roomAggregate";
 import { listTeamsForUser } from "./teams";
 import {
   currentStageOf,
   findFormat,
+  insertStage,
+  isLockedKindEntry,
+  isRetroTint,
+  LOCKED_STAGE_KINDS,
+  MAX_PROMPTS,
+  MAX_STAGES,
+  newPromptId,
+  newStageEntry,
+  orderStagesBy,
+  reorderKeepsLocks,
+  renumberPrompts,
   seedStages,
   stampFormat,
+  type FormatPrompt,
   type StageEntry,
   type StageKind,
   type Visibility,
@@ -17,13 +29,30 @@ import {
 } from "./retroFormats";
 import {
   ALREADY_KEPT_BY_TEAM,
+  CARDS_STILL_ANSWER,
+  FORMAT_NAME_REQUIRED,
+  LAST_PROMPT,
+  NAME_INVALID,
   NO_TEAM_GROUP,
   NOT_A_RETRO,
-  ONLY_OWNER_CAN_ADOPT,
   NOT_CURRENT_STAGE,
+  ONLY_OWNER_CAN_ADOPT,
+  PROMPT_IDS_UNIQUE,
+  PROMPT_LABEL_REQUIRED,
+  PROMPT_NOT_FOUND,
+  STAGE_CURRENT_LOCKED,
   STAGE_ENTRY_NOT_FOUND,
+  STAGE_IDS_UNIQUE,
+  STAGE_KIND_LOCKED,
+  STAGE_ORDER_INVALID,
+  STAGE_ORDER_LOCKED,
+  TEAM_MEMBERS_NEEDS_TEAM,
   TIMEBOX_INVALID,
+  TINT_OUTSIDE_PALETTE,
+  TOO_MANY_PROMPTS,
+  TOO_MANY_STAGES,
   UNKNOWN_FORMAT,
+  VOTE_BUDGET_INVALID,
 } from "../retroCopy";
 import { refusal } from "./refusal";
 
@@ -37,8 +66,16 @@ import { refusal } from "./refusal";
 export interface CreateRetroArgs {
   name: string;
   ownerId: Id<"users">;
-  /** A library format's name; the edited-copy seam is #290's. */
-  formatName: string;
+  /** A library format's name, stamped as shipped; `format` takes precedence. */
+  formatName?: string;
+  /**
+   * The edited copy from the create form (ADR-0021): stamped as given,
+   * under whatever name the creator left on it. The shipped constant is
+   * never read for it.
+   */
+  format?: StampedFormat;
+  /** The edited stage list; the standard seed when absent. */
+  stages?: StageEntry[];
   /** Advisory cards-due date (ADR-0020). */
   collectUntil?: number;
   /**
@@ -61,10 +98,7 @@ export async function createRetro(
   ctx: MutationCtx,
   args: CreateRetroArgs
 ): Promise<Id<"rooms">> {
-  const format = findFormat(args.formatName);
-  if (!format) {
-    throw refusal("missing", UNKNOWN_FORMAT);
-  }
+  const { format, stages } = resolveCreateShape(args);
   const name = validateRoomName(args.name);
   const now = Date.now();
   // Copied by value, whole (ADR-0008): the room's stored values are
@@ -85,11 +119,10 @@ export async function createRetro(
     permissions: { ...(defaults?.permissions ?? DEFAULT_RETRO_PERMISSIONS) },
   });
 
-  const stages = seedStages(format, { hasTeam: args.team !== undefined });
   await ctx.db.insert("retros", {
     roomId,
     attribution: defaults?.attribution ?? "named",
-    format: stampFormat(format),
+    format,
     stages,
     currentStageId: stages[0].id,
     currentStageEnteredAt: now,
@@ -107,6 +140,92 @@ export async function createRetro(
   return roomId;
 }
 
+/**
+ * What creation stamps: the edited copy when the form sent one, else the
+ * library entry by name; the edited stage list when sent, else the seed.
+ * Both are validated as data — the shipped constant is never consulted for
+ * an edited copy, so an edit there can never leak back into it.
+ */
+function resolveCreateShape(
+  args: Pick<CreateRetroArgs, "formatName" | "format" | "stages" | "team">
+): { format: StampedFormat; stages: StageEntry[] } {
+  const hasTeam = args.team !== undefined;
+  if (args.format) {
+    // An edited copy without a stage list seeds as its base library entry
+    // does (a Lean Coffee copy keeps its visible collect), else the standard.
+    const base = findFormat(args.format.name);
+    return {
+      format: validateStampedFormat(args.format),
+      stages: args.stages
+        ? validateStageList(args.stages)
+        : seedStages({ collectVisible: base?.collectVisible }, { hasTeam }),
+    };
+  }
+  const library = args.formatName === undefined ? undefined : findFormat(args.formatName);
+  if (!library) {
+    throw refusal("missing", UNKNOWN_FORMAT);
+  }
+  return {
+    format: stampFormat(library),
+    stages: args.stages ? validateStageList(args.stages) : seedStages(library, { hasTeam }),
+  };
+}
+
+/** A stamped format as data: a name, one to ten prompts with unique ids, labels and palette tints. */
+export function validateStampedFormat(format: StampedFormat): StampedFormat {
+  const name = format.name.trim();
+  if (!name) {
+    throw refusal("forbidden", FORMAT_NAME_REQUIRED);
+  }
+  if (format.prompts.length === 0) {
+    throw refusal("forbidden", LAST_PROMPT);
+  }
+  if (format.prompts.length > MAX_PROMPTS) {
+    throw refusal("forbidden", TOO_MANY_PROMPTS);
+  }
+  if (new Set(format.prompts.map((p) => p.id)).size !== format.prompts.length) {
+    throw refusal("forbidden", PROMPT_IDS_UNIQUE);
+  }
+  const prompts = renumberPrompts(
+    format.prompts.map((p) => {
+      const prompt: FormatPrompt = {
+        id: p.id,
+        label: validatePromptLabel(p.label),
+        color: validateTint(p.color),
+        order: p.order,
+      };
+      const hint = p.hint?.trim();
+      if (hint) prompt.hint = hint;
+      return prompt;
+    })
+  );
+  return { name, prompts };
+}
+
+/** A stage list as data: one to ten entries, unique ids, at least one collect and one discuss. */
+export function validateStageList(stages: readonly StageEntry[]): StageEntry[] {
+  if (stages.length > MAX_STAGES) {
+    throw refusal("forbidden", TOO_MANY_STAGES);
+  }
+  if (new Set(stages.map((s) => s.id)).size !== stages.length) {
+    throw refusal("forbidden", STAGE_IDS_UNIQUE);
+  }
+  for (const kind of LOCKED_STAGE_KINDS) {
+    if (!stages.some((s) => s.kind === kind)) {
+      throw refusal("forbidden", STAGE_KIND_LOCKED);
+    }
+  }
+  for (const stage of stages) {
+    if (stage.voteBudget !== undefined && (!Number.isInteger(stage.voteBudget) || stage.voteBudget <= 0)) {
+      throw refusal("forbidden", VOTE_BUDGET_INVALID);
+    }
+    if (stage.timeboxMinutes !== undefined && (!Number.isInteger(stage.timeboxMinutes) || stage.timeboxMinutes <= 0)) {
+      throw refusal("forbidden", TIMEBOX_INVALID);
+    }
+  }
+  return stages.map((stage) => ({ ...stage }));
+}
+
 /** The retros row of a room, or null for a poker room. */
 async function getRetro(
   ctx: QueryCtx,
@@ -119,19 +238,12 @@ async function getRetro(
 }
 
 /**
- * The board's structure read (spec §9): the `retros` row. Identity-free, so
- * every viewer shares one cached result. Cards and clusters join it with
- * the cards ticket.
+ * The retros row of a room, or a `missing` refusal for a poker room. Also
+ * the board's structure read (spec §9): identity-free, so every viewer
+ * shares one cached result; cards and clusters join it with the cards
+ * ticket.
  */
-export async function getBoard(
-  ctx: QueryCtx,
-  roomId: Id<"rooms">
-): Promise<Doc<"retros">> {
-  return requireRetro(ctx, roomId);
-}
-
-/** The retros row of a room, or a `missing` refusal for a poker room. */
-async function requireRetro(ctx: QueryCtx, roomId: Id<"rooms">): Promise<Doc<"retros">> {
+export async function requireRetro(ctx: QueryCtx, roomId: Id<"rooms">): Promise<Doc<"retros">> {
   const retro = await getRetro(ctx, roomId);
   if (!retro) {
     throw refusal("missing", NOT_A_RETRO);
@@ -150,9 +262,9 @@ async function requireRetro(ctx: QueryCtx, roomId: Id<"rooms">): Promise<Doc<"re
  */
 export async function advance(
   ctx: MutationCtx,
-  args: { roomId: Id<"rooms">; toStageId: string }
+  args: { room: Doc<"rooms">; toStageId: string }
 ): Promise<void> {
-  const retro = await requireRetro(ctx, args.roomId);
+  const retro = await requireRetro(ctx, args.room._id);
   if (!retro.stages.some((stage) => stage.id === args.toStageId)) {
     throw refusal("missing", STAGE_ENTRY_NOT_FOUND);
   }
@@ -160,7 +272,7 @@ export async function advance(
     currentStageId: args.toStageId,
     currentStageEnteredAt: Date.now(),
   });
-  await updateRoomActivity(ctx, args.roomId);
+  await updateRoomActivity(ctx, args.room);
 }
 
 /**
@@ -171,17 +283,17 @@ export async function advance(
  */
 async function patchCurrentStage(
   ctx: MutationCtx,
-  args: { roomId: Id<"rooms">; stageId: string },
+  args: { room: Doc<"rooms">; stageId: string },
   patch: (entry: StageEntry) => StageEntry
 ): Promise<void> {
-  const retro = await requireRetro(ctx, args.roomId);
+  const retro = await requireRetro(ctx, args.room._id);
   if (args.stageId !== retro.currentStageId) {
     throw refusal("stage", NOT_CURRENT_STAGE);
   }
   await ctx.db.patch(retro._id, {
     stages: retro.stages.map((entry) => (entry.id === args.stageId ? patch(entry) : entry)),
   });
-  await updateRoomActivity(ctx, args.roomId);
+  await updateRoomActivity(ctx, args.room);
 }
 
 /**
@@ -191,7 +303,7 @@ async function patchCurrentStage(
  */
 export async function setCardsVisible(
   ctx: MutationCtx,
-  args: { roomId: Id<"rooms">; stageId: string; value: Visibility }
+  args: { room: Doc<"rooms">; stageId: string; value: Visibility }
 ): Promise<void> {
   await patchCurrentStage(ctx, args, (entry) => ({ ...entry, cardsVisible: args.value }));
 }
@@ -203,7 +315,7 @@ export async function setCardsVisible(
  */
 export async function setTimebox(
   ctx: MutationCtx,
-  args: { roomId: Id<"rooms">; stageId: string; minutes?: number }
+  args: { room: Doc<"rooms">; stageId: string; minutes?: number }
 ): Promise<void> {
   const { minutes } = args;
   if (minutes !== undefined && (!Number.isInteger(minutes) || minutes <= 0)) {
@@ -213,6 +325,246 @@ export async function setTimebox(
     const { timeboxMinutes: _dropped, ...rest } = entry;
     return minutes === undefined ? rest : { ...rest, timeboxMinutes: minutes };
   });
+}
+
+// --- Settings (ADR-0021, spec §6.4) ---
+
+/**
+ * Rename the retro. The room's name rule is shared with poker; its plain
+ * error becomes a `forbidden` refusal here so the retro client can tell a
+ * rule from a transient failure (spec §4.5).
+ */
+export async function renameRetro(
+  ctx: MutationCtx,
+  args: { room: Doc<"rooms">; name: string }
+): Promise<void> {
+  let name: string;
+  try {
+    name = validateRoomName(args.name);
+  } catch (error) {
+    throw refusal("forbidden", error instanceof Error ? error.message : NAME_INVALID);
+  }
+  await ctx.db.patch(args.room._id, { name });
+  await updateRoomActivity(ctx, args.room);
+}
+
+/**
+ * The join policy (ADR-0013): `teamMembers` is offered only when a Team
+ * keeps the retro, since nobody could satisfy it otherwise.
+ */
+export async function setJoinPolicy(
+  ctx: MutationCtx,
+  args: { room: Doc<"rooms">; joinPolicy: JoinPolicy }
+): Promise<void> {
+  if (args.joinPolicy === "teamMembers" && args.room.teamId === undefined) {
+    throw refusal("forbidden", TEAM_MEMBERS_NEEDS_TEAM);
+  }
+  await ctx.db.patch(args.room._id, { joinPolicy: args.joinPolicy });
+  await updateRoomActivity(ctx, args.room);
+}
+
+/** The advisory cards-due date (ADR-0020); undefined clears it. It closes nothing. */
+export async function setCollectUntil(
+  ctx: MutationCtx,
+  args: { room: Doc<"rooms">; collectUntil?: number }
+): Promise<void> {
+  const retro = await requireRetro(ctx, args.room._id);
+  await ctx.db.patch(retro._id, { collectUntil: args.collectUntil });
+  await updateRoomActivity(ctx, args.room);
+}
+
+/** The label, trimmed, or a refusal when blank. */
+function validatePromptLabel(label: string): string {
+  const trimmed = label.trim();
+  if (!trimmed) {
+    throw refusal("forbidden", PROMPT_LABEL_REQUIRED);
+  }
+  return trimmed;
+}
+
+function validateTint(color: string): string {
+  if (!isRetroTint(color)) {
+    throw refusal("forbidden", TINT_OUTSIDE_PALETTE);
+  }
+  return color;
+}
+
+/** Write the retro's prompts back, renumbered; the name is kept. */
+async function writePrompts(
+  ctx: MutationCtx,
+  room: Doc<"rooms">,
+  retro: Doc<"retros">,
+  prompts: readonly FormatPrompt[]
+): Promise<void> {
+  await ctx.db.patch(retro._id, {
+    format: { ...retro.format, prompts: renumberPrompts(prompts) },
+  });
+  await updateRoomActivity(ctx, room);
+}
+
+export interface PromptEdit {
+  label?: string;
+  /** An empty string clears the hint. */
+  hint?: string;
+}
+
+/**
+ * Edit a prompt's label or hint at any stage (spec §6.4; the tint is a
+ * create-form choice, §6.1). Renaming changes no card: a card stores the
+ * prompt's id, never its label (ADR-0016).
+ */
+export async function updatePrompt(
+  ctx: MutationCtx,
+  args: { room: Doc<"rooms">; promptId: string } & PromptEdit
+): Promise<void> {
+  const retro = await requireRetro(ctx, args.room._id);
+  const prompt = retro.format.prompts.find((p) => p.id === args.promptId);
+  if (!prompt) {
+    throw refusal("missing", PROMPT_NOT_FOUND);
+  }
+  const edited: FormatPrompt = { ...prompt };
+  if (args.label !== undefined) edited.label = validatePromptLabel(args.label);
+  if (args.hint !== undefined) {
+    const hint = args.hint.trim();
+    if (hint) edited.hint = hint;
+    else delete edited.hint;
+  }
+  await writePrompts(
+    ctx,
+    args.room,
+    retro,
+    retro.format.prompts.map((p) => (p.id === prompt.id ? edited : p))
+  );
+}
+
+/** Add a prompt at any stage, last in order, up to the cap. */
+export async function addPrompt(
+  ctx: MutationCtx,
+  args: { room: Doc<"rooms">; label: string; hint?: string; color: string }
+): Promise<string> {
+  const retro = await requireRetro(ctx, args.room._id);
+  if (retro.format.prompts.length >= MAX_PROMPTS) {
+    throw refusal("forbidden", TOO_MANY_PROMPTS);
+  }
+  const prompt: FormatPrompt = {
+    id: newPromptId(),
+    label: validatePromptLabel(args.label),
+    color: validateTint(args.color),
+    order: retro.format.prompts.length,
+  };
+  const hint = args.hint?.trim();
+  if (hint) prompt.hint = hint;
+  await writePrompts(ctx, args.room, retro, [...retro.format.prompts, prompt]);
+  return prompt.id;
+}
+
+/**
+ * Remove a prompt only while no card answers it (spec §6.4): a card keeps
+ * its prompt id for life, so removing an answered prompt would orphan it.
+ * The check reads the card table through `by_room_prompt`. `forbidden`,
+ * never `stage`: the rule is about cards, not the pointer.
+ */
+export async function removePrompt(
+  ctx: MutationCtx,
+  args: { room: Doc<"rooms">; promptId: string }
+): Promise<void> {
+  const retro = await requireRetro(ctx, args.room._id);
+  if (!retro.format.prompts.some((p) => p.id === args.promptId)) {
+    throw refusal("missing", PROMPT_NOT_FOUND);
+  }
+  if (retro.format.prompts.length <= 1) {
+    throw refusal("forbidden", LAST_PROMPT);
+  }
+  const answered = await ctx.db
+    .query("retroCards")
+    .withIndex("by_room_prompt", (q) => q.eq("roomId", args.room._id).eq("promptId", args.promptId))
+    .first();
+  if (answered) {
+    throw refusal("forbidden", CARDS_STILL_ANSWER);
+  }
+  await writePrompts(
+    ctx,
+    args.room,
+    retro,
+    retro.format.prompts.filter((p) => p.id !== args.promptId)
+  );
+}
+
+/** Write the stage list back; the pointer is untouched. */
+async function writeStages(
+  ctx: MutationCtx,
+  room: Doc<"rooms">,
+  retro: Doc<"retros">,
+  stages: readonly StageEntry[]
+): Promise<void> {
+  await ctx.db.patch(retro._id, { stages: [...stages] });
+  await updateRoomActivity(ctx, room);
+}
+
+/**
+ * Add an entry of a kind with the seed's defaults, at `index` or at the
+ * end, up to the cap. Any kind may repeat (a second vote is a second round
+ * of dots); the existing entries are the same rows afterwards.
+ */
+export async function addStage(
+  ctx: MutationCtx,
+  args: { room: Doc<"rooms">; kind: StageKind; index?: number }
+): Promise<string> {
+  const retro = await requireRetro(ctx, args.room._id);
+  if (retro.stages.length >= MAX_STAGES) {
+    throw refusal("forbidden", TOO_MANY_STAGES);
+  }
+  const entry = newStageEntry(args.kind);
+  await writeStages(ctx, args.room, retro, insertStage(retro.stages, entry, args.index));
+  return entry.id;
+}
+
+/**
+ * Remove an entry except `collect`, `discuss` and the current one (spec
+ * §6.4): the two kinds because the write stage and the walk stay in every
+ * retro (a second entry of either is free to go), the current one because
+ * the ground under the shared pointer never moves.
+ */
+export async function removeStage(
+  ctx: MutationCtx,
+  args: { room: Doc<"rooms">; stageId: string }
+): Promise<void> {
+  const retro = await requireRetro(ctx, args.room._id);
+  if (!retro.stages.some((stage) => stage.id === args.stageId)) {
+    throw refusal("missing", STAGE_ENTRY_NOT_FOUND);
+  }
+  if (isLockedKindEntry(retro.stages, args.stageId)) {
+    throw refusal("forbidden", STAGE_KIND_LOCKED);
+  }
+  if (args.stageId === retro.currentStageId) {
+    throw refusal("forbidden", STAGE_CURRENT_LOCKED);
+  }
+  await writeStages(
+    ctx,
+    args.room,
+    retro,
+    retro.stages.filter((stage) => stage.id !== args.stageId)
+  );
+}
+
+/**
+ * Reorder the list (spec §6.4): a permutation in which the current entry
+ * keeps its index and collect stays ahead of discuss; see
+ * `reorderKeepsLocks`. Entries are re-listed, never rewritten.
+ */
+export async function reorderStages(
+  ctx: MutationCtx,
+  args: { room: Doc<"rooms">; stageIds: string[] }
+): Promise<void> {
+  const retro = await requireRetro(ctx, args.room._id);
+  const check = reorderKeepsLocks(retro.stages, args.stageIds, retro.currentStageId);
+  if (!check.ok) {
+    throw refusal(
+      "forbidden",
+      check.reason === "not-a-permutation" ? STAGE_ORDER_INVALID : STAGE_ORDER_LOCKED
+    );
+  }
+  await writeStages(ctx, args.room, retro, orderStagesBy(retro.stages, args.stageIds));
 }
 
 /**
