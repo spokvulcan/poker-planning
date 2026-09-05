@@ -232,6 +232,12 @@ export async function deleteAction(
 const sameTopic = (a: TopicRef, b: TopicRef) => a.kind === b.kind && a.id === b.id;
 
 /**
+ * How many action rows one index read carries: a retro's items, a Team's
+ * open items, a source's re-point (ADR-0024: bounded, never a stored counter).
+ */
+export const MAX_ACTION_ROWS = 500;
+
+/**
  * A topic's departure (spec §10.3, §13): the sources naming it are nulled
  * when a cluster is dissolved or a card deleted, and re-pointed to the
  * survivor when clusters merge, so a link never dangles. Bounded like the
@@ -246,7 +252,7 @@ export async function repointSources(
   const rows = await ctx.db
     .query("retroActions")
     .withIndex("by_room", (q) => q.eq("roomId", roomId))
-    .take(MAX_REVIEW_ROWS);
+    .take(MAX_ACTION_ROWS);
   await Promise.all(
     rows
       .filter((row) => row.source !== undefined && sameTopic(row.source, from))
@@ -255,9 +261,6 @@ export async function repointSources(
 }
 
 // --- Reads (spec §13, §5): this retro's items, the review, the team page ---
-
-/** How many rows one team-index read carries (ADR-0024: bounded, never a stored counter). */
-export const MAX_REVIEW_ROWS = 500;
 
 /** How many memberships one room's reassign roster carries. */
 const MAX_ROSTER_ROWS = 500;
@@ -301,11 +304,13 @@ export interface ActionRoomRead {
   name: string;
   /** Every attendee, for the reassign picker: an owner must attend (spec §13). */
   members: { userId: Id<"users">; name: string }[];
+  /** Whether the viewer attends; a Team reader reads and acts on nothing (ADR-0009). */
+  attending: boolean;
 }
 
 export interface ActionsRead {
   items: ActionRead[];
-  /** The rooms the items belong to, once each. */
+  /** The rooms the items belong to, once each; a retro's own read carries its room even with no items. */
   rooms: ActionRoomRead[];
 }
 
@@ -390,16 +395,20 @@ async function sourceOf(
 export async function projectActions(
   ctx: QueryCtx,
   viewer: Doc<"users">,
-  actions: readonly Doc<"retroActions">[]
+  actions: readonly Doc<"retroActions">[],
+  /** Rooms in the read whatever the rows: the retro whose panel composes the next item. */
+  always: readonly Id<"rooms">[] = []
 ): Promise<ActionsRead> {
   const users = new Map<Id<"users">, Doc<"users"> | null>();
   const contexts = new Map<Id<"rooms">, RoomContext | null>();
+  const contextOf = async (roomId: Id<"rooms">) => {
+    if (!contexts.has(roomId)) contexts.set(roomId, await loadRoomContext(ctx, viewer, roomId, users));
+    return contexts.get(roomId) ?? null;
+  };
+  for (const roomId of always) await contextOf(roomId);
   const items: ActionRead[] = [];
   for (const action of actions) {
-    if (!contexts.has(action.roomId)) {
-      contexts.set(action.roomId, await loadRoomContext(ctx, viewer, action.roomId, users));
-    }
-    const context = contexts.get(action.roomId);
+    const context = await contextOf(action.roomId);
     if (!context) continue;
     const [owner, creator] = await Promise.all([
       action.ownerId !== undefined ? userOf(ctx, users, action.ownerId) : null,
@@ -428,7 +437,14 @@ export async function projectActions(
   }
   const rooms: ActionRoomRead[] = [];
   for (const [roomId, context] of contexts) {
-    if (context) rooms.push({ roomId, name: context.room.name, members: context.members });
+    if (context) {
+      rooms.push({
+        roomId,
+        name: context.room.name,
+        members: context.members,
+        attending: context.membership !== null,
+      });
+    }
   }
   return { items, rooms };
 }
@@ -444,8 +460,8 @@ export async function roomActions(
   const rows = await ctx.db
     .query("retroActions")
     .withIndex("by_room", (q) => q.eq("roomId", roomId))
-    .take(MAX_REVIEW_ROWS);
-  return projectActions(ctx, viewer, rows.sort(byCreation));
+    .take(MAX_ACTION_ROWS);
+  return projectActions(ctx, viewer, rows.sort(byCreation), [roomId]);
 }
 
 /** The Team's open items from the index, a bounded window, oldest first. */
@@ -453,7 +469,7 @@ async function openTeamRows(ctx: QueryCtx, teamId: Id<"teams">): Promise<Doc<"re
   const rows = await ctx.db
     .query("retroActions")
     .withIndex("by_team_status", (q) => q.eq("teamId", teamId).eq("status", "open"))
-    .take(MAX_REVIEW_ROWS);
+    .take(MAX_ACTION_ROWS);
   return rows.sort(byCreation);
 }
 

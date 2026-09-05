@@ -27,7 +27,7 @@ const read: ActionsRead = {
       rights: { edit: false, manage: false },
     },
   ],
-  rooms: [{ roomId: "r1" as Id<"rooms">, name: "Sprint 11", members: [] }],
+  rooms: [{ roomId: "r1" as Id<"rooms">, name: "Sprint 11", members: [], attending: false }],
 };
 
 describe("ReviewPanel", () => {

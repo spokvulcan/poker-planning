@@ -16,7 +16,8 @@ import {
   ACTION_SUBMIT,
   ACTION_TEXT_LABEL,
   ACTION_TEXT_PLACEHOLDER,
-  NO_OWNER_OPTION,
+  CLEAR_SOURCE,
+  UNOWNED_ACTION,
 } from "@/convex/retroCopy";
 import type { ActionMember } from "./action-row";
 import { parseDueDate } from "./actions";
@@ -84,7 +85,7 @@ export function ActionComposer({ members, source, onClearSource, onSubmit }: Act
             {ACTION_SOURCE_LABEL}: {source.label}
           </span>
           {onClearSource && (
-            <Button type="button" variant="ghost" size="icon-xs" aria-label="Clear" onClick={onClearSource}>
+            <Button type="button" variant="ghost" size="icon-xs" aria-label={CLEAR_SOURCE} onClick={onClearSource}>
               <X className="size-3" />
             </Button>
           )}
@@ -116,7 +117,7 @@ export function ActionComposer({ members, source, onClearSource, onSubmit }: Act
             onChange={(e) => setOwnerId(e.target.value)}
             className="h-8 rounded-md border border-input bg-transparent px-1.5 text-xs dark:bg-input/30"
           >
-            <option value="">{NO_OWNER_OPTION}</option>
+            <option value="">{UNOWNED_ACTION}</option>
             {members.map((member) => (
               <option key={member.userId} value={member.userId}>
                 {member.name}

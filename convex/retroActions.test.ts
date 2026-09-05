@@ -9,7 +9,7 @@ import { DEFAULT_RETRO_FORMAT } from "./model/retroFormats";
 import { DEFAULT_RETRO_PERMISSIONS } from "./permissions";
 import { type T, seedUser as seedNamedUser } from "./analytics.seeds";
 import { FORMER_MEMBER, UNOWNED_ACTION } from "./retroCopy";
-import { MAX_REVIEW_ROWS } from "./model/retroActions";
+import { MAX_ACTION_ROWS } from "./model/retroActions";
 import * as Users from "./model/users";
 
 // Action items (spec §13, ADR-0017): a short text with at most one named
@@ -343,6 +343,23 @@ describe("the retro's actions read (spec §13): creator and owner named in both 
       Theirs: { edit: false, manage: false },
     });
   });
+
+  it("the read carries the retro's roster and whether the viewer attends, even before its first item", async () => {
+    const t = convexTest(schema, modules);
+    const { teamId, memberId } = await seedTeam(t);
+    const roomId = await createRetro(t, "admin", { teamId });
+    // The first item of a retro must be ownable (spec §13): the roster is there with nothing to list.
+    const empty = await as(t, "admin").query(api.retro.actions, { roomId });
+    expect(empty.items).toEqual([]);
+    expect(empty.rooms.map((room) => ({ roomId: room.roomId, attending: room.attending }))).toEqual([
+      { roomId, attending: true },
+    ]);
+    expect(empty.rooms[0].members.map((m) => m.name)).toEqual(["admin"]);
+    // A Team member who never attended reads the same roster and is told so.
+    const reader = await as(t, "member").query(api.retro.actions, { roomId });
+    expect(reader.rooms[0].attending).toBe(false);
+    expect(reader.rooms[0].members.some((m) => m.userId === memberId)).toBe(false);
+  });
 });
 
 describe("carryover: retro.reviewActions (spec §13, ADR-0017)", () => {
@@ -402,9 +419,9 @@ describe("carryover: retro.reviewActions (spec §13, ADR-0017)", () => {
   it("reads a bounded window of the team index", async () => {
     const t = convexTest(schema, modules);
     const { first, current, at } = await seedHistory(t);
-    for (let i = 0; i < MAX_REVIEW_ROWS + 5; i++) await at(first, `a${i}`, i);
+    for (let i = 0; i < MAX_ACTION_ROWS + 5; i++) await at(first, `a${i}`, i);
     const read = await as(t, "admin").query(api.retro.reviewActions, { roomId: current });
-    expect(read.items.length).toBeLessThanOrEqual(MAX_REVIEW_ROWS);
+    expect(read.items.length).toBeLessThanOrEqual(MAX_ACTION_ROWS);
   });
 
   it("an action written before its retro was adopted into the Team reaches review and the team list afterwards", async () => {

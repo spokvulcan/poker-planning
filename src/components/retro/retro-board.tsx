@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { ReactFlow, ReactFlowProvider, useStore, type Node, type NodeTypes, type ReactFlowInstance } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { ListChecks, Plus, Users } from "lucide-react";
+import { cn } from "@/lib/utils";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
 import type { ResolvedDecision } from "@/convex/permissions";
 import type { UserWithPresence } from "@/hooks/useRoomPresence";
@@ -15,7 +16,7 @@ import { RetroHeader, type RetroTeam } from "./retro-header";
 import { PromptZoneNodeView, type PromptZoneNode } from "./prompt-zone-node";
 import { layoutZones } from "./zones";
 import { StageNav, type StageControls } from "./stage-nav";
-import { StageEmptyState, isStageEmpty } from "./stage-empty-state";
+import { StageEmptyState, emptyStageOf } from "./stage-empty-state";
 import { RetroRoster } from "./retro-roster";
 import { CardNodeView, type CardNode } from "./card-node";
 import { ClusterNodeView, type ClusterNode, type ClusterChipActions, type ClusterTarget } from "./cluster-node";
@@ -492,7 +493,7 @@ export function RetroBoard({
     <ActionsPanel
       roomId={retro.roomId}
       read={actions}
-      atClose={atClose}
+      stageKind={currentStage.kind}
       actions={actionItems}
       source={pendingSource}
       onClearSource={clearSource}
@@ -509,7 +510,6 @@ export function RetroBoard({
       onClick={() => setActionsOpen((open) => !open)}
     >
       <ListChecks className="size-4" />
-      {actions !== undefined ? actions.items.length : ""}
     </Button>
   );
 
@@ -639,6 +639,7 @@ export function RetroBoard({
     />
   );
 
+  const emptyStage = emptyStageOf(viewStage.kind, cards.length);
   const stageNav = (
     <StageNav
       stages={retro.stages}
@@ -659,7 +660,7 @@ export function RetroBoard({
         data-zoom-level={level}
         data-chrome="mobile"
       >
-        {isStageEmpty(viewStage.kind, cards.length) && <StageEmptyState kind={viewStage.kind} />}
+        {emptyStage && <StageEmptyState kind={emptyStage} />}
         {canvas}
         <MobileChrome
           name={name}
@@ -673,13 +674,13 @@ export function RetroBoard({
         >
           {banner}
           {stageNav}
-          {reviewPanel && <div className="border-t pt-3">{reviewPanel}</div>}
-          {walkPanel && <div className="border-t pt-3">{walkPanel}</div>}
+          {reviewPanel && <SheetSection>{reviewPanel}</SheetSection>}
+          {walkPanel && <SheetSection>{walkPanel}</SheetSection>}
           <div className="flex justify-end gap-1">
             {actionsToggle}
             {menu}
           </div>
-          {actionsPanel && <div className="border-t pt-3">{actionsPanel}</div>}
+          {actionsPanel && <SheetSection>{actionsPanel}</SheetSection>}
           {roster}
         </MobileChrome>
         {composer}
@@ -725,7 +726,7 @@ export function RetroBoard({
       {stageNav}
       <div className="relative flex min-h-0 flex-1">
         <div className="relative min-w-0 flex-1">
-          {isStageEmpty(viewStage.kind, cards.length) && <StageEmptyState kind={viewStage.kind} />}
+          {emptyStage && <StageEmptyState kind={emptyStage} />}
           {canvas}
           <div className="absolute top-3 left-3 flex flex-col items-start gap-2">
             {budget && <div className="rounded-lg border bg-white/95 px-2.5 py-1.5 shadow-md dark:bg-surface-2/95">{budget}</div>}
@@ -747,20 +748,26 @@ export function RetroBoard({
             </Button>
           )}
         </div>
-        {reviewPanel && (
-          <aside className="w-80 shrink-0 overflow-y-auto border-l bg-white p-4 dark:bg-surface-1">{reviewPanel}</aside>
-        )}
-        {walkPanel && (
-          <aside className="w-72 shrink-0 overflow-y-auto border-l bg-white p-4 dark:bg-surface-1">{walkPanel}</aside>
-        )}
-        {actionsPanel && (
-          <aside className="w-80 shrink-0 overflow-y-auto border-l bg-white p-4 dark:bg-surface-1">{actionsPanel}</aside>
-        )}
-        {rosterOpen && (
-          <aside className="w-64 shrink-0 overflow-y-auto border-l bg-white p-4 dark:bg-surface-1">{roster}</aside>
-        )}
+        {reviewPanel && <BoardAside className="w-80">{reviewPanel}</BoardAside>}
+        {walkPanel && <BoardAside className="w-72">{walkPanel}</BoardAside>}
+        {actionsPanel && <BoardAside className="w-80">{actionsPanel}</BoardAside>}
+        {rosterOpen && <BoardAside className="w-64">{roster}</BoardAside>}
       </div>
       {composer}
     </div>
   );
+}
+
+/** One of the desktop chrome's side panels, right of the canvas. */
+function BoardAside({ className, children }: { className: string; children: React.ReactNode }) {
+  return (
+    <aside className={cn("shrink-0 overflow-y-auto border-l bg-white p-4 dark:bg-surface-1", className)}>
+      {children}
+    </aside>
+  );
+}
+
+/** One panel inside the phone's sheet, ruled off from the one above. */
+function SheetSection({ children }: { children: React.ReactNode }) {
+  return <div className="border-t pt-3">{children}</div>;
 }

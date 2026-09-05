@@ -275,7 +275,7 @@ describe("TeamContent — the open action items (spec §5, §13)", () => {
           rights: { edit: true, manage: false },
         },
       ],
-      rooms: [{ roomId: "r1", name: "First", members: [] }],
+      rooms: [{ roomId: "r1", name: "First", members: [], attending: true }],
     };
     render(<TeamContent />);
     const list = screen.getByTestId("team-open-actions");

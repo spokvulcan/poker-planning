@@ -22,6 +22,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import {
   ACTION_DELETE,
+  ACTION_DELETE_CONFIRM,
+  ACTION_DELETE_TITLE,
   ACTION_DONE,
   ACTION_DROP,
   ACTION_DUE_LABEL,
@@ -35,7 +37,7 @@ import {
   ACTION_STATUS_LABELS,
   ACTION_TEXT_LABEL,
   CANCEL_BUTTON,
-  NO_OWNER_OPTION,
+  NOT_ATTENDING,
   OVERDUE,
   UNOWNED_ACTION,
   dueOn,
@@ -62,6 +64,8 @@ export interface ActionRowProps {
   item: ActionRead;
   /** The item's retro's attendees: an owner must attend (spec §13). */
   members: readonly ActionMember[];
+  /** Whether the viewer attends the item's retro; a Team reader who does not is told so. */
+  attending?: boolean;
   /** The clock the overdue state reads; defaults to now. */
   now?: number;
   /** Name the retro the item lives in: the review and the team page. */
@@ -70,7 +74,8 @@ export interface ActionRowProps {
   actions?: ActionRowActions;
 }
 
-type Pending = { status: "done" | "dropped" } | { edit: true } | null;
+/** The inline form the row is showing, if any. */
+type Pending = { kind: "note"; status: "done" | "dropped" } | { kind: "edit" } | null;
 
 /**
  * One action item (spec §13, §19; ADR-0017): text; the owner by name or
@@ -81,7 +86,7 @@ type Pending = { status: "done" | "dropped" } | { edit: true } | null;
  * the category: the owner picker among the retro's attendees, and delete
  * behind a confirmation. No priority, no comments, no count copy.
  */
-export function ActionRow({ item, members, now, showRoom = false, actions }: ActionRowProps) {
+export function ActionRow({ item, members, attending = true, now, showRoom = false, actions }: ActionRowProps) {
   // The clock is read once per mount when the caller passes none; overdue is a
   // rendering state and a re-read every render would be an impure render.
   const [mountedAt] = useState(() => Date.now());
@@ -91,23 +96,24 @@ export function ActionRow({ item, members, now, showRoom = false, actions }: Act
   const [due, setDue] = useState(toDateInput(item.dueAt));
   const [confirmDelete, setConfirmDelete] = useState(false);
   const overdue = isOverdue(item, now ?? mountedAt);
-  const canEdit = actions !== undefined && item.rights.edit;
-  const canManage = actions !== undefined && item.rights.manage;
+  const editing = actions !== undefined && item.rights.edit ? actions : undefined;
+  const managing = actions !== undefined && item.rights.manage ? actions : undefined;
 
   const openEdit = () => {
     setText(item.text);
     setDue(toDateInput(item.dueAt));
-    setPending({ edit: true });
+    setPending({ kind: "edit" });
   };
   const saveEdit = () => {
     const trimmed = text.trim();
-    if (!trimmed) return;
-    actions!.onEdit(item._id, trimmed, parseDueDate(due) ?? null);
+    if (!trimmed || !editing) return;
+    editing.onEdit(item._id, trimmed, parseDueDate(due) ?? null);
     setPending(null);
   };
   const saveStatus = (status: "done" | "dropped") => {
+    if (!editing) return;
     const trimmed = note.trim();
-    actions!.onSetStatus(item._id, status, trimmed === "" ? undefined : trimmed);
+    editing.onSetStatus(item._id, status, trimmed === "" ? undefined : trimmed);
     setNote("");
     setPending(null);
   };
@@ -124,14 +130,8 @@ export function ActionRow({ item, members, now, showRoom = false, actions }: Act
         item.status !== "open" && "bg-gray-50 text-muted-foreground dark:bg-surface-2"
       )}
     >
-      {pending && "edit" in pending ? (
-        <form
-          className="grid gap-2"
-          onSubmit={(e) => {
-            e.preventDefault();
-            saveEdit();
-          }}
-        >
+      {pending?.kind === "edit" ? (
+        <RowForm onSubmit={saveEdit} onCancel={() => setPending(null)} disabled={!text.trim()}>
           <div className="grid gap-1">
             <Label htmlFor={`action-text-${item._id}`}>{ACTION_TEXT_LABEL}</Label>
             <Textarea
@@ -147,15 +147,7 @@ export function ActionRow({ item, members, now, showRoom = false, actions }: Act
             <Label htmlFor={`action-due-${item._id}`}>{ACTION_DUE_LABEL}</Label>
             <Input id={`action-due-${item._id}`} type="date" value={due} onChange={(e) => setDue(e.target.value)} />
           </div>
-          <div className="flex justify-end gap-2">
-            <Button type="button" variant="ghost" size="xs" onClick={() => setPending(null)}>
-              {CANCEL_BUTTON}
-            </Button>
-            <Button type="submit" size="xs" disabled={!text.trim()}>
-              {ACTION_SAVE}
-            </Button>
-          </div>
-        </form>
+        </RowForm>
       ) : (
         <>
           <div className="flex items-start gap-2">
@@ -170,7 +162,7 @@ export function ActionRow({ item, members, now, showRoom = false, actions }: Act
                 {OVERDUE}
               </span>
             )}
-            {canManage && (
+            {managing && (
               <Button
                 type="button"
                 variant="ghost"
@@ -183,18 +175,18 @@ export function ActionRow({ item, members, now, showRoom = false, actions }: Act
             )}
           </div>
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-            {canManage ? (
+            {managing ? (
               <label className="flex items-center gap-1">
                 <span>{ACTION_OWNER_LABEL}</span>
                 <select
                   aria-label={ACTION_OWNER_LABEL}
                   value={item.ownerId ?? ""}
                   onChange={(e) =>
-                    actions!.onAssign(item._id, e.target.value === "" ? undefined : (e.target.value as Id<"users">))
+                    managing.onAssign(item._id, e.target.value === "" ? undefined : (e.target.value as Id<"users">))
                   }
                   className="h-6 rounded-md border border-input bg-transparent px-1 text-xs dark:bg-input/30"
                 >
-                  <option value="">{NO_OWNER_OPTION}</option>
+                  <option value="">{UNOWNED_ACTION}</option>
                   {members.map((member) => (
                     <option key={member.userId} value={member.userId}>
                       {member.name}
@@ -222,14 +214,8 @@ export function ActionRow({ item, members, now, showRoom = false, actions }: Act
           {item.note !== undefined && item.status !== "open" && (
             <p className="text-xs italic text-muted-foreground">{item.note}</p>
           )}
-          {pending && "status" in pending ? (
-            <form
-              className="grid gap-2"
-              onSubmit={(e) => {
-                e.preventDefault();
-                saveStatus(pending.status);
-              }}
-            >
+          {pending?.kind === "note" ? (
+            <RowForm onSubmit={() => saveStatus(pending.status)} onCancel={() => setPending(null)}>
               <div className="grid gap-1">
                 <Label htmlFor={`action-note-${item._id}`}>{ACTION_NOTE_LABEL}</Label>
                 <Textarea
@@ -242,50 +228,57 @@ export function ActionRow({ item, members, now, showRoom = false, actions }: Act
                   autoFocus
                 />
               </div>
-              <div className="flex justify-end gap-2">
-                <Button type="button" variant="ghost" size="xs" onClick={() => setPending(null)}>
-                  {CANCEL_BUTTON}
-                </Button>
-                <Button type="submit" size="xs">
-                  {ACTION_SAVE}
-                </Button>
-              </div>
-            </form>
-          ) : (
-            canEdit && (
-              <div className="flex flex-wrap gap-1">
-                {item.status === "open" ? (
-                  <>
-                    <Button type="button" variant="outline" size="xs" onClick={() => setPending({ status: "done" })}>
-                      {ACTION_DONE}
-                    </Button>
-                    <Button type="button" variant="outline" size="xs" onClick={() => setPending({ status: "dropped" })}>
-                      {ACTION_DROP}
-                    </Button>
-                  </>
-                ) : (
+            </RowForm>
+          ) : editing ? (
+            <div className="flex flex-wrap gap-1">
+              {item.status === "open" ? (
+                <>
                   <Button
                     type="button"
                     variant="outline"
                     size="xs"
-                    onClick={() => actions!.onSetStatus(item._id, "open", undefined)}
+                    onClick={() => setPending({ kind: "note", status: "done" })}
                   >
-                    {ACTION_REOPEN}
+                    {ACTION_DONE}
                   </Button>
-                )}
-                <Button type="button" variant="ghost" size="xs" onClick={openEdit}>
-                  {ACTION_EDIT}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="xs"
+                    onClick={() => setPending({ kind: "note", status: "dropped" })}
+                  >
+                    {ACTION_DROP}
+                  </Button>
+                </>
+              ) : (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="xs"
+                  onClick={() => editing.onSetStatus(item._id, "open", undefined)}
+                >
+                  {ACTION_REOPEN}
                 </Button>
-              </div>
+              )}
+              <Button type="button" variant="ghost" size="xs" onClick={openEdit}>
+                {ACTION_EDIT}
+              </Button>
+            </div>
+          ) : (
+            actions !== undefined &&
+            !attending && (
+              <p data-testid="not-attending" className="text-xs text-muted-foreground">
+                {NOT_ATTENDING}
+              </p>
             )
           )}
         </>
       )}
-      {canManage && (
+      {managing && (
         <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
           <AlertDialogContent size="sm">
             <AlertDialogHeader>
-              <AlertDialogTitle>{ACTION_DELETE}?</AlertDialogTitle>
+              <AlertDialogTitle>{ACTION_DELETE_TITLE}</AlertDialogTitle>
               <AlertDialogDescription>{item.text}</AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
@@ -294,15 +287,48 @@ export function ActionRow({ item, members, now, showRoom = false, actions }: Act
                 variant="destructive"
                 onClick={() => {
                   setConfirmDelete(false);
-                  actions!.onDelete(item._id);
+                  managing.onDelete(item._id);
                 }}
               >
-                Delete
+                {ACTION_DELETE_CONFIRM}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
       )}
     </li>
+  );
+}
+
+/** The row's inline form shell: its fields, then Cancel and Save. */
+function RowForm({
+  children,
+  onSubmit,
+  onCancel,
+  disabled = false,
+}: {
+  children: React.ReactNode;
+  onSubmit: () => void;
+  onCancel: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <form
+      className="grid gap-2"
+      onSubmit={(e) => {
+        e.preventDefault();
+        onSubmit();
+      }}
+    >
+      {children}
+      <div className="flex justify-end gap-2">
+        <Button type="button" variant="ghost" size="xs" onClick={onCancel}>
+          {CANCEL_BUTTON}
+        </Button>
+        <Button type="submit" size="xs" disabled={disabled}>
+          {ACTION_SAVE}
+        </Button>
+      </div>
+    </form>
   );
 }

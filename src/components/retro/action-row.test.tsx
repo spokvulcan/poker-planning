@@ -8,7 +8,7 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, cleanup, fireEvent, within } from "@testing-library/react";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { ActionRead } from "@/convex/model/retroActions";
-import { FORMER_MEMBER, OVERDUE, UNOWNED_ACTION } from "@/convex/retroCopy";
+import { FORMER_MEMBER, NOT_ATTENDING, OVERDUE, UNOWNED_ACTION } from "@/convex/retroCopy";
 import { ActionRow, type ActionRowActions } from "./action-row";
 
 afterEach(cleanup);
@@ -91,6 +91,17 @@ describe("ActionRow", () => {
     render(<ActionRow item={base} members={members} now={NOW} actions={actions()} />);
     expect(screen.queryByRole("button")).toBeNull();
     expect(screen.queryByRole("combobox")).toBeNull();
+    expect(screen.queryByText(NOT_ATTENDING)).toBeNull();
+  });
+
+  it("tells a viewer who never attended the item's retro why there is nothing to press", () => {
+    render(<ActionRow item={base} members={members} now={NOW} attending={false} actions={actions()} showRoom />);
+    expect(screen.getByTestId("not-attending").textContent).toBe(NOT_ATTENDING);
+    expect(screen.queryByRole("button")).toBeNull();
+    cleanup();
+    // Without the acts at all (a reader's surface) the line is not needed.
+    render(<ActionRow item={base} members={members} now={NOW} attending={false} showRoom />);
+    expect(screen.queryByText(NOT_ATTENDING)).toBeNull();
   });
 
   it("with edit rights: done and drop invite a note and reopen does not", () => {

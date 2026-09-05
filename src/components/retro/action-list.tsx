@@ -25,10 +25,7 @@ export interface ActionListProps {
  * room, so one list serves the retro's panel, the review and the team page.
  */
 export function ActionList({ read, empty, showRoom, actions, now, testId = "action-list" }: ActionListProps) {
-  const membersByRoom = useMemo(
-    () => new Map((read?.rooms ?? []).map((room) => [room.roomId, room.members])),
-    [read]
-  );
+  const roomsById = useMemo(() => new Map((read?.rooms ?? []).map((room) => [room.roomId, room])), [read]);
   const bound = useMemo<((roomId: Id<"rooms">) => ActionRowActions) | undefined>(
     () =>
       actions &&
@@ -52,16 +49,20 @@ export function ActionList({ read, empty, showRoom, actions, now, testId = "acti
   }
   return (
     <ul data-testid={testId} data-count={read.items.length} className="flex flex-col gap-1.5">
-      {read.items.map((item) => (
-        <ActionRow
-          key={item._id}
-          item={item}
-          members={membersByRoom.get(item.roomId) ?? []}
-          now={now}
-          showRoom={showRoom}
-          actions={bound?.(item.roomId)}
-        />
-      ))}
+      {read.items.map((item) => {
+        const room = roomsById.get(item.roomId);
+        return (
+          <ActionRow
+            key={item._id}
+            item={item}
+            members={room?.members ?? []}
+            attending={room?.attending ?? true}
+            now={now}
+            showRoom={showRoom}
+            actions={bound?.(item.roomId)}
+          />
+        );
+      })}
     </ul>
   );
 }

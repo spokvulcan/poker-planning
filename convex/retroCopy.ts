@@ -92,20 +92,18 @@ export const STAGE_LABELS: Record<
 
 export const STAGE_PILL_LABEL = "Stage";
 
+/** The stages whose empty state is about cards; `review` and `close` speak through their panels (spec §13). */
+export type CardStageKind = "collect" | "group" | "vote" | "discuss";
 /**
- * Each kind's empty state (ADR-0010): entering a stage with nothing in it
- * renders an explanation, never a lock.
+ * Each card stage's empty state (ADR-0010): entering a stage with nothing
+ * in it renders an explanation, never a lock. The review's and the close's
+ * lines are `REVIEW_EMPTY` and `ACTIONS_EMPTY`.
  */
-export const STAGE_EMPTY: Record<
-  "collect" | "review" | "group" | "vote" | "discuss" | "close",
-  string
-> = {
+export const STAGE_EMPTY: Record<CardStageKind, string> = {
   collect: "No cards yet. Every prompt has a zone; write into any of them.",
-  review: "No open actions from earlier retros",
   group: "Nothing to group yet. Cards written in Collect show up here.",
   vote: "Nothing to vote on yet. Cards and groups show up here once written.",
   discuss: "Nothing to discuss yet. Topics show up here once cards are written.",
-  close: "No action items yet.",
 };
 export const TIMEBOX_OVER = "Timebox over";
 
@@ -395,10 +393,12 @@ export const ACTION_DONE = "Done";
 export const ACTION_DROP = "Drop";
 export const ACTION_REOPEN = "Reopen";
 export const ACTION_DELETE = "Delete action";
-/** Unowned action (spec §19). */
+export const ACTION_DELETE_TITLE = "Delete this action item?";
+export const ACTION_DELETE_CONFIRM = "Delete";
+/** The composer's source line: drop the topic, keep the text. */
+export const CLEAR_SOURCE = "Clear source";
+/** Unowned action (spec §19): the rendered state, and the owner picker's empty choice. */
 export const UNOWNED_ACTION = "Nobody owns this yet";
-/** The owner picker's empty choice. */
-export const NO_OWNER_OPTION = UNOWNED_ACTION;
 /** Overdue: `dueAt` past and still `open` — a rendering state, not a status. */
 export const OVERDUE = "Overdue";
 export const ACTION_STATUS_LABELS: Record<"open" | "done" | "dropped", string> = {
