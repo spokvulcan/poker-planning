@@ -229,7 +229,7 @@ export function validateStageList(stages: readonly StageEntry[]): StageEntry[] {
 }
 
 /** The retros row of a room, or null for a poker room. */
-async function getRetro(
+export async function getRetro(
   ctx: QueryCtx,
   roomId: Id<"rooms">
 ): Promise<Doc<"retros"> | null> {

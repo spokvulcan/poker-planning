@@ -1,17 +1,16 @@
 /**
- * Every stage kind renders an empty state, never a lock (ADR-0010): a
- * line naming the stage and explaining what is not there yet, with the
- * review line from the copy register.
+ * Every card stage renders an empty state, never a lock (ADR-0010): a line
+ * naming the stage and explaining what is not there yet. Review and close
+ * speak through their panels (spec §13).
  */
 import { describe, it, expect, afterEach } from "vitest";
 import { render, screen, cleanup } from "@testing-library/react";
-import { StageEmptyState, isStageEmpty } from "./stage-empty-state";
-import { STAGE_EMPTY, STAGE_LABELS } from "@/convex/retroCopy";
-import type { StageKind } from "@/convex/model/retroFormats";
+import { StageEmptyState, emptyStageOf } from "./stage-empty-state";
+import { STAGE_EMPTY, STAGE_LABELS, type CardStageKind } from "@/convex/retroCopy";
 
 afterEach(cleanup);
 
-const KINDS: StageKind[] = ["collect", "review", "group", "vote", "discuss", "close"];
+const KINDS: CardStageKind[] = ["collect", "group", "vote", "discuss"];
 
 describe("StageEmptyState", () => {
   it.each(KINDS)("%s reads its label and its line", (kind) => {
@@ -23,15 +22,11 @@ describe("StageEmptyState", () => {
     expect(state.textContent?.toLowerCase()).not.toMatch(/lock/);
   });
 
-  it("the review line is the register's", () => {
-    expect(STAGE_EMPTY.review).toBe("No open actions from earlier retros");
-  });
-
-  it("a card stage is empty only with no cards; review and close read empty until action items land (spec §7)", () => {
-    expect(isStageEmpty("collect", 0)).toBe(true);
-    expect(isStageEmpty("collect", 1)).toBe(false);
-    expect(isStageEmpty("group", 2)).toBe(false);
-    expect(isStageEmpty("review", 5)).toBe(true);
-    expect(isStageEmpty("close", 5)).toBe(true);
+  it("a card stage is empty only with no cards; review and close speak through their panels (spec §7, §13)", () => {
+    expect(emptyStageOf("collect", 0)).toBe("collect");
+    expect(emptyStageOf("collect", 1)).toBeUndefined();
+    expect(emptyStageOf("group", 2)).toBeUndefined();
+    expect(emptyStageOf("review", 0)).toBeUndefined();
+    expect(emptyStageOf("close", 0)).toBeUndefined();
   });
 });

@@ -92,20 +92,18 @@ export const STAGE_LABELS: Record<
 
 export const STAGE_PILL_LABEL = "Stage";
 
+/** The stages whose empty state is about cards; `review` and `close` speak through their panels (spec §13). */
+export type CardStageKind = "collect" | "group" | "vote" | "discuss";
 /**
- * Each kind's empty state (ADR-0010): entering a stage with nothing in it
- * renders an explanation, never a lock.
+ * Each card stage's empty state (ADR-0010): entering a stage with nothing
+ * in it renders an explanation, never a lock. The review's and the close's
+ * lines are `REVIEW_EMPTY` and `ACTIONS_EMPTY`.
  */
-export const STAGE_EMPTY: Record<
-  "collect" | "review" | "group" | "vote" | "discuss" | "close",
-  string
-> = {
+export const STAGE_EMPTY: Record<CardStageKind, string> = {
   collect: "No cards yet. Every prompt has a zone; write into any of them.",
-  review: "No open actions from earlier retros",
   group: "Nothing to group yet. Cards written in Collect show up here.",
   vote: "Nothing to vote on yet. Cards and groups show up here once written.",
   discuss: "Nothing to discuss yet. Topics show up here once cards are written.",
-  close: "No action items yet.",
 };
 export const TIMEBOX_OVER = "Timebox over";
 
@@ -377,3 +375,59 @@ export const CURRENT_TOPIC = "Now";
 /** The late marker on a card (spec §12.3), at every zoom level. */
 export const LATE_CARD_MARKER = "New";
 export const WALK_ACT_FAILED = "That did not go through. Try again.";
+
+// --- Action items (spec §13, §19; ADR-0017) ---
+
+export const ACTIONS_TITLE = "Action items";
+export const ADD_ACTION = "Add action";
+export const ACTION_TEXT_LABEL = "Action";
+export const ACTION_TEXT_PLACEHOLDER = "What will be done";
+export const ACTION_OWNER_LABEL = "Owner";
+export const ACTION_DUE_LABEL = "Due";
+export const ACTION_NOTE_LABEL = "Note";
+export const ACTION_NOTE_PLACEHOLDER = "Why, in a sentence (optional)";
+export const ACTION_SUBMIT = "Add";
+export const ACTION_SAVE = "Save";
+export const ACTION_EDIT = "Edit";
+export const ACTION_DONE = "Done";
+export const ACTION_DROP = "Drop";
+export const ACTION_REOPEN = "Reopen";
+export const ACTION_DELETE = "Delete action";
+export const ACTION_DELETE_TITLE = "Delete this action item?";
+export const ACTION_DELETE_CONFIRM = "Delete";
+/** The composer's source line: drop the topic, keep the text. */
+export const CLEAR_SOURCE = "Clear source";
+/** Unowned action (spec §19): the rendered state, and the owner picker's empty choice. */
+export const UNOWNED_ACTION = "Nobody owns this yet";
+/** Overdue: `dueAt` past and still `open` — a rendering state, not a status. */
+export const OVERDUE = "Overdue";
+export const ACTION_STATUS_LABELS: Record<"open" | "done" | "dropped", string> = {
+  open: "Open",
+  done: "Done",
+  dropped: "Dropped",
+};
+/** Close panel facts (spec §19): never a judgement about the count. */
+export const closeFacts = (n: number, unowned: number) =>
+  `${n} ${n === 1 ? "action" : "actions"}, ${unowned} unowned`;
+/** Review empty state (spec §19). */
+export const REVIEW_EMPTY = "No open actions from earlier retros";
+export const ACTIONS_EMPTY = "No action items yet.";
+export const ownedBy = (name: string) => `Owner: ${name}`;
+export const dueOn = (date: string) => `Due ${date}`;
+export const fromRetro = (name: string) => `From ${name}`;
+export const ACTION_SOURCE_LABEL = "About";
+export const OPEN_ACTIONS_TITLE = "Open action items";
+export const OPEN_ACTIONS_EMPTY = "No open action items across this team's retros.";
+/** A team member who never attended the item's retro reads it and cannot act (ADR-0008). */
+export const NOT_ATTENDING = "Join that retro to act on its action items";
+
+/** Refusal `missing`: an action act naming a row the room does not carry. */
+export const ACTION_NOT_FOUND = "That action item is no longer here";
+export const ACTION_TEXT_REQUIRED = "An action item needs some text";
+export const ACTION_TEXT_TOO_LONG = "An action item holds at most 500 characters";
+export const ACTION_NOTE_TOO_LONG = "A note holds at most 500 characters";
+/** Refusal `forbidden`: an owner who is not a member of the retro. */
+export const OWNER_NOT_MEMBER = "Only someone in this retro can own an action item";
+/** Refusal `forbidden`: a note on a change that does not leave `open`. */
+export const NOTE_ONLY_ON_LEAVING_OPEN = "A note goes with marking an action done or dropped";
+export const ACTION_ACT_FAILED = "That did not go through. Try again.";

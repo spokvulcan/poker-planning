@@ -6,6 +6,7 @@ import { updateRoomActivity } from "./rooms";
 import { requireRetro } from "./retro";
 import { refusal } from "./refusal";
 import { editKeyOpens, hashEditKey, mintEditKey } from "./editKeys";
+import { repointSources } from "./retroActions";
 import {
   CARD_NOT_FOUND,
   CARD_TEXT_REQUIRED,
@@ -213,13 +214,14 @@ export async function moveCards(
   await updateRoomActivity(ctx, args.room);
 }
 
-/** Delete a card: own, or under `cardManagement`. */
+/** Delete a card: own, or under `cardManagement`. An action item that named it loses its source (spec §13). */
 export async function deleteCard(
   ctx: MutationCtx,
   args: { room: Doc<"rooms">; actor: CardActor; clientId: string; editKey?: string }
 ): Promise<void> {
   const card = await requireCard(ctx, args.room._id, args.clientId);
   await cardRights(ctx, args.room, args.actor)(card, args.editKey);
+  await repointSources(ctx, args.room._id, { kind: "card", id: card._id });
   await ctx.db.delete(card._id);
   await updateRoomActivity(ctx, args.room);
 }

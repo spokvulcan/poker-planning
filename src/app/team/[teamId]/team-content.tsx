@@ -28,7 +28,9 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { UserAvatar } from "@/components/user-menu/user-avatar";
 import { RetroDefaultsPanel, type RetroDefaults } from "@/components/team/retro-defaults-panel";
 import { RetroRows } from "@/components/retro/retro-list";
-import { TEAM_RETROS_EMPTY, TEAM_RETROS_TITLE } from "@/convex/retroCopy";
+import { ActionList } from "@/components/retro/action-list";
+import { useActionActions } from "@/components/retro/use-action-actions";
+import { OPEN_ACTIONS_EMPTY, OPEN_ACTIONS_TITLE, TEAM_RETROS_EMPTY, TEAM_RETROS_TITLE } from "@/convex/retroCopy";
 import { copyTextToClipboard } from "@/utils/copy-text-to-clipboard";
 import { toast } from "@/lib/toast";
 import { runAct } from "@/lib/run-act";
@@ -47,8 +49,9 @@ function Centered({ title, body }: { title: string; body: string }) {
 /**
  * The team page (spec §5, §18.1), members only: the Team's retros in
  * creation order, members with roles, the invite link, the retro-defaults
- * panel, New retro, and admin-only Delete team. The history row, action
- * items and export arrive with #299.
+ * panel, New retro, and admin-only Delete team; the open action items
+ * across its retros with done, drop, edit and reassign in place for
+ * whoever attended (spec §13). The history row and export arrive with #299.
  */
 export function TeamContent() {
   const params = useParams();
@@ -58,6 +61,8 @@ export function TeamContent() {
 
   const team = useQuery(api.teams.get, isAuthenticated ? { teamId } : "skip");
   const retros = useQuery(api.retro.listForTeam, isAuthenticated ? { teamId } : "skip");
+  const openActions = useQuery(api.teams.openActions, isAuthenticated ? { teamId } : "skip");
+  const actionItems = useActionActions();
 
   const rename = useMutation(api.teams.rename);
   const rotateInvite = useMutation(api.teams.rotateInvite);
@@ -193,6 +198,16 @@ export function TeamContent() {
               ) : (
                 <RetroRows rows={retros} />
               )}
+            </CardContent>
+          </Card>
+
+          {/* Open action items (spec §5, §13): the cross-retro door to completion */}
+          <Card>
+            <CardHeader>
+              <CardTitle>{OPEN_ACTIONS_TITLE}</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ActionList read={openActions} empty={OPEN_ACTIONS_EMPTY} showRoom actions={actionItems} testId="team-open-actions" />
             </CardContent>
           </Card>
 

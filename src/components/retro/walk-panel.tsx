@@ -8,6 +8,7 @@ import type { ResolvedDecision } from "@/convex/permissions";
 import { permissionProps } from "@/hooks/usePermissions";
 import type { OutsideTopic, TopicRef, WalkRead } from "@/convex/model/walk";
 import {
+  ADD_ACTION,
   COVERED_LABEL,
   CURRENT_TOPIC,
   GO_TO_TOPIC,
@@ -35,6 +36,8 @@ export interface WalkPanelProps {
   /** Pan this viewer to the topic; open to everyone. */
   onGo: (ref: TopicRef) => void;
   actions?: WalkPanelActions;
+  /** "Add action" on the current topic (spec §13): opens the composer with the source filled; absent for a Team reader. */
+  onAddAction?: (ref: TopicRef) => void;
   className?: string;
 }
 
@@ -47,7 +50,7 @@ export interface WalkPanelProps {
  * Raise. Go on an order row moves the shared cursor for a `stageFlow`
  * holder and pans for anyone else; nothing here is optimistic.
  */
-export function WalkPanel({ walk, labelOf, onGo, actions, className }: WalkPanelProps) {
+export function WalkPanel({ walk, labelOf, onGo, actions, onAddAction, className }: WalkPanelProps) {
   const allowed = actions?.decision.allowed === true;
   const deny = actions ? permissionProps(actions.decision) : {};
   const late = walk.outside.filter((topic) => topic.late);
@@ -106,6 +109,11 @@ export function WalkPanel({ walk, labelOf, onGo, actions, className }: WalkPanel
                   <span className="rounded-full bg-blue-100 px-1.5 text-[10px] font-semibold text-blue-800 uppercase dark:bg-status-info-bg dark:text-status-info-fg">
                     {CURRENT_TOPIC}
                   </span>
+                )}
+                {current && onAddAction && (
+                  <Button type="button" variant="outline" size="xs" onClick={() => onAddAction(entry.ref)}>
+                    {ADD_ACTION}
+                  </Button>
                 )}
                 <Button
                   type="button"

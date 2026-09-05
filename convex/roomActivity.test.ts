@@ -620,6 +620,27 @@ describe("room activity — the Team's side of a retro bumps (spec §14)", () =>
     }
   });
 
+  it("every action item mutation bumps (spec §14), the team page's completion included", async () => {
+    const t = convexTest(schema, modules);
+    const { roomId, memberId } = await seedTeamRetro(t, true);
+    const me = as(t, "auth-member");
+    let id: Id<"retroActions">;
+    const acts = [
+      async () => void (id = await me.mutation(api.retro.createAction, { roomId, text: "Do it" })),
+      () => me.mutation(api.retro.updateAction, { roomId, actionId: id, text: "Do it well", dueAt: 1 }),
+      () => me.mutation(api.retro.assignAction, { roomId, actionId: id, ownerId: memberId }),
+      () => me.mutation(api.retro.setActionStatus, { roomId, actionId: id, status: "done", note: "ok" }),
+      () => me.mutation(api.retro.setActionStatus, { roomId, actionId: id, status: "open" }),
+      () => me.mutation(api.retro.deleteAction, { roomId, actionId: id }),
+    ];
+    for (const act of acts) {
+      const stale = Date.now() - HOUR - 60_000;
+      await t.run((ctx) => ctx.db.patch(roomId, { lastActivityAt: stale }));
+      await act();
+      await expectBumped(t, roomId, stale);
+    }
+  });
+
   it("every cluster mutation bumps (spec §14)", async () => {
     const t = convexTest(schema, modules);
     const { roomId } = await seedTeamRetro(t, false);

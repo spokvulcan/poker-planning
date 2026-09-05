@@ -1,24 +1,22 @@
-import { STAGE_EMPTY, STAGE_LABELS } from "@/convex/retroCopy";
+import { STAGE_EMPTY, STAGE_LABELS, type CardStageKind } from "@/convex/retroCopy";
 import type { StageKind } from "@/convex/model/retroFormats";
 
-/** The kinds whose line is about cards; the others speak of action items. */
-const CARD_KINDS: ReadonlySet<StageKind> = new Set(["collect", "group", "vote", "discuss"]);
+const isCardStage = (kind: StageKind): kind is CardStageKind => kind in STAGE_EMPTY;
 
 /**
- * Whether the viewed entry has nothing in it (spec §7): no cards for a
- * card stage; for `review` and `close` the line is about action items,
- * which arrive with their own ticket, so until then those entries always
- * read empty.
+ * The card stage the viewed entry is empty in (spec §7): a card stage with
+ * no cards. `review` and `close` never read empty here: their panels carry
+ * the register's line for no action items (spec §13).
  */
-export function isStageEmpty(kind: StageKind, cardCount: number): boolean {
-  return CARD_KINDS.has(kind) ? cardCount === 0 : true;
+export function emptyStageOf(kind: StageKind, cardCount: number): CardStageKind | undefined {
+  return isCardStage(kind) && cardCount === 0 ? kind : undefined;
 }
 
 /**
  * A stage with nothing in it (ADR-0010): an explanation over the canvas,
  * never a lock.
  */
-export function StageEmptyState({ kind }: { kind: StageKind }) {
+export function StageEmptyState({ kind }: { kind: CardStageKind }) {
   return (
     <div
       data-testid="stage-empty-state"
