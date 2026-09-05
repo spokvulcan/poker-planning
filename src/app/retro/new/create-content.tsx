@@ -26,11 +26,25 @@ import { NewTeamDialog } from "@/components/team/new-team-dialog";
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 import { tintClasses } from "@/components/retro/tints";
+import { FormatEditor } from "@/components/retro/format-editor";
+import {
+  addPrompt,
+  addStage,
+  draftFromLibrary,
+  removePrompt,
+  removeStage,
+  renameFormat,
+  reorderStages,
+  setCardsVisible,
+  updatePrompt,
+  type FormatDraft,
+} from "@/components/retro/format-draft";
 import {
   DEFAULT_RETRO_FORMAT,
   RETRO_FORMATS,
   findFormat,
   type RetroFormat,
+  type StampedFormat,
 } from "@/convex/model/retroFormats";
 import {
   COLLECT_UNTIL_DESCRIPTION,
@@ -41,6 +55,7 @@ import {
   FORMAT_CHANGE,
   FORMAT_COLLAPSE,
   FORMAT_LABEL,
+  LAST_USED_DESCRIPTION,
   NEW_RETRO_DESCRIPTION,
   NEW_RETRO_TITLE,
   NEW_TEAM_OPTION,
@@ -66,7 +81,7 @@ function parseCollectUntil(value: string): number | undefined {
 /** The picker's "New team" option value; never a Team id. */
 const NEW_TEAM_VALUE = "__new";
 
-function PromptList({ format }: { format: RetroFormat }) {
+function PromptList({ format }: { format: StampedFormat }) {
   return (
     <ul className="flex flex-wrap gap-1.5">
       {format.prompts.map((prompt) => {
@@ -91,8 +106,10 @@ function PromptList({ format }: { format: RetroFormat }) {
  * retro; `?team=` pre-selects one. The format opens pre-selected — the
  * chosen Team's newest retro's format, else the default — and collapsed to
  * one line; expanding shows the six-format library with the pre-selected
- * format first. The write-time disclosure shows before the retro exists.
- * Editing a format before stamping is #290.
+ * format first, and the chosen format's prompts and stage list, editable
+ * before stamping (ADR-0021): the edited copy is what is stamped, the
+ * shipped constant is never touched. The write-time disclosure shows before
+ * the retro exists.
  */
 export function CreateRetroContent() {
   const router = useRouter();
@@ -108,8 +125,8 @@ export function CreateRetroContent() {
    * reflects it, so a quick Start never creates a teamless retro.
    */
   const [createdTeam, setCreatedTeam] = useState<{ _id: Id<"teams">; name: string } | null>(null);
-  /** The person's explicit pick; null means "the pre-selection". */
-  const [chosenFormat, setChosenFormat] = useState<RetroFormat | null>(null);
+  /** The edited copy; null means "the pre-selection, unedited". */
+  const [draft, setDraft] = useState<FormatDraft | null>(null);
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [collectUntil, setCollectUntil] = useState("");
   const [isCreating, setIsCreating] = useState(false);
@@ -125,18 +142,32 @@ export function CreateRetroContent() {
     selectedTeam ? { teamId: selectedTeam._id } : "skip"
   );
 
-  // Pre-selection (spec §6.1): the Team's newest retro's format when it is
-  // one the library carries, else the default. The edited-copy case (#290)
-  // widens this to the stamped format itself.
-  const preselected = useMemo(
-    () => (lastFormat ? findFormat(lastFormat.name) : undefined) ?? DEFAULT_RETRO_FORMAT,
-    [lastFormat]
-  );
-  const format = chosenFormat ?? preselected;
+  // Pre-selection (spec §6.1): the Team's newest retro's format, edited or
+  // not — a library entry when the name is one the library carries, else
+  // the stamped copy itself as a library entry of its own — else the default.
+  const preselected = useMemo<RetroFormat>(() => {
+    if (!lastFormat) return DEFAULT_RETRO_FORMAT;
+    return (
+      findFormat(lastFormat.name) ?? {
+        name: lastFormat.name,
+        description: LAST_USED_DESCRIPTION,
+        prompts: lastFormat.prompts,
+      }
+    );
+  }, [lastFormat]);
+  const hasTeam = selectedTeam !== undefined;
+  // The unedited draft of the pre-selection, minted once per pre-selection so
+  // its stage ids stay put across renders.
+  const baseDraft = useMemo(() => draftFromLibrary(preselected, { hasTeam }), [preselected, hasTeam]);
+  const current = draft ?? baseDraft;
   const library = useMemo(
     () => [preselected, ...RETRO_FORMATS.filter((entry) => entry.name !== preselected.name)],
     [preselected]
   );
+  /** The library entry the draft started from, by name; an edited name matches none. */
+  const [pickedName, setPickedName] = useState<string | null>(null);
+  const selectedName = pickedName ?? preselected.name;
+  const edit = (reduce: (d: FormatDraft) => FormatDraft) => setDraft(reduce(current));
 
   const handleTeamChange = (value: string) => {
     if (value === NEW_TEAM_VALUE) {
@@ -144,9 +175,10 @@ export function CreateRetroContent() {
       return;
     }
     setTeamId(value);
-    // A new Team brings its own pre-selection; a pick made for the old one
-    // does not carry over.
-    setChosenFormat(null);
+    // A new Team brings its own pre-selection and seed; a pick or an edit
+    // made for the old one does not carry over.
+    setDraft(null);
+    setPickedName(null);
   };
 
   const handleCreate = useCallback(async () => {
@@ -164,9 +196,15 @@ export function CreateRetroContent() {
 
     try {
       const due = parseCollectUntil(collectUntil);
+      // Unedited and shipped: by name, so the server stamps the constant.
+      // Edited, or a Team's own format: the copy itself, prompts and stages.
+      const shape =
+        draft === null && findFormat(preselected.name)
+          ? { formatName: preselected.name }
+          : { format: current.format, stages: current.stages };
       const roomId = await createRetro({
         name: name.trim() || defaultRetroName(new Date()),
-        formatName: format.name,
+        ...shape,
         ...(due !== undefined ? { collectUntil: due } : {}),
         ...(selectedTeam ? { teamId: selectedTeam._id } : {}),
       });
@@ -176,7 +214,7 @@ export function CreateRetroContent() {
       toast.error(CREATE_RETRO_FAILED);
       setIsCreating(false);
     }
-  }, [ensureSession, collectUntil, createRetro, name, format, selectedTeam, router]);
+  }, [ensureSession, collectUntil, createRetro, name, draft, preselected, current, selectedTeam, router]);
 
   // A Team named in the URL that the reads have not confirmed yet would be
   // silently dropped, and a Team whose last format is still loading would
@@ -240,7 +278,7 @@ export function CreateRetroContent() {
                       <div data-testid="format-library" className="space-y-2">
                         {library.map((entry) => {
                           const id = `format-${entry.name.replace(/\W+/g, "-").toLowerCase()}`;
-                          const selected = entry.name === format.name;
+                          const selected = entry.name === selectedName;
                           return (
                             <label
                               key={entry.name}
@@ -259,7 +297,10 @@ export function CreateRetroContent() {
                                   name="format"
                                   value={entry.name}
                                   checked={selected}
-                                  onChange={() => setChosenFormat(entry)}
+                                  onChange={() => {
+                                    setPickedName(entry.name);
+                                    setDraft(draftFromLibrary(entry, { hasTeam }));
+                                  }}
                                   aria-label={entry.name}
                                   className="mt-0.5 accent-primary"
                                 />
@@ -276,6 +317,17 @@ export function CreateRetroContent() {
                             </label>
                           );
                         })}
+                        <FormatEditor
+                          draft={current}
+                          onRenameFormat={(value) => edit((d) => renameFormat(d, value))}
+                          onUpdatePrompt={(promptId, change) => edit((d) => updatePrompt(d, promptId, change))}
+                          onAddPrompt={() => edit(addPrompt)}
+                          onRemovePrompt={(promptId) => edit((d) => removePrompt(d, promptId))}
+                          onAddStage={(kind) => edit((d) => addStage(d, kind))}
+                          onRemoveStage={(stageId) => edit((d) => removeStage(d, stageId))}
+                          onReorderStages={(ids) => edit((d) => reorderStages(d, ids))}
+                          onSetCardsVisible={(stageId, value) => edit((d) => setCardsVisible(d, stageId, value))}
+                        />
                         <Button
                           type="button"
                           variant="outline"
@@ -291,8 +343,8 @@ export function CreateRetroContent() {
                         className="flex items-center justify-between gap-3 rounded-lg border p-3"
                       >
                         <div className="min-w-0 space-y-1.5">
-                          <div className="truncate text-sm font-medium">{format.name}</div>
-                          <PromptList format={format} />
+                          <div className="truncate text-sm font-medium">{current.format.name}</div>
+                          <PromptList format={current.format} />
                         </div>
                         <Button
                           type="button"

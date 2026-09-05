@@ -182,6 +182,8 @@ function AttendeeBoard({ roomId, roomData, retro, team, userId, myTeams }: Atten
   );
 
   const role = roomData.users.find((u) => u._id === userId)?.role ?? "participant";
+  const retroSettings =
+    permissions.ceremony === "retro" ? permissions.retroSettings : NOT_A_RETRO_DECISION;
   return (
     <RetroBoard
       name={roomData.room.name}
@@ -196,6 +198,12 @@ function AttendeeBoard({ roomId, roomData, retro, team, userId, myTeams }: Atten
           role={role}
           isOwnerAbsent={roomData.isOwnerAbsent}
           myTeams={myTeams}
+          settings={{
+            name: roomData.room.name,
+            joinPolicy: roomData.room.joinPolicy ?? "anyone",
+            retro,
+            decision: retroSettings,
+          }}
         />
       }
     />

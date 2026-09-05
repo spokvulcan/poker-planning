@@ -77,6 +77,11 @@ vi.mock("@/components/ui/dialog", () => {
   };
 });
 
+vi.mock("./retro-settings-dialog", () => ({
+  RetroSettingsDialog: ({ open, name, hasTeam, decision }: { open: boolean; name: string; hasTeam: boolean; decision: { allowed: boolean } }) =>
+    open ? <div data-testid="settings" data-team={String(hasTeam)} data-allowed={String(decision.allowed)}>{name}</div> : null,
+}));
+
 import { RetroMenu } from "./retro-menu";
 import { deleteRetroConfirm, keptByTeam } from "@/convex/retroCopy";
 
@@ -186,5 +191,29 @@ describe("RetroMenu — keep with a team", () => {
     cleanup();
     render(<RetroMenu roomId={roomId} role="owner" isOwnerAbsent={false} myTeams={[]} />);
     expect(screen.queryByRole("menuitem", { name: "Keep with a team…" })).toBeNull();
+  });
+});
+
+describe("RetroMenu — settings", () => {
+  const settings = {
+    name: "Sprint 12",
+    joinPolicy: "anyone" as const,
+    retro: {} as never,
+    decision: { allowed: false as const, message: "Only facilitators and the owner can do this" },
+  };
+
+  it("opens the settings dialog with the retro and the decision, for a team retro", () => {
+    render(<RetroMenu roomId={roomId} team={acme} role="participant" isOwnerAbsent={false} myTeams={[]} settings={settings} />);
+    expect(screen.queryByTestId("settings")).toBeNull();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Retro settings…" }));
+    const dialog = screen.getByTestId("settings");
+    expect(dialog.textContent).toBe("Sprint 12");
+    expect(dialog.getAttribute("data-team")).toBe("true");
+    expect(dialog.getAttribute("data-allowed")).toBe("false");
+  });
+
+  it("has no settings item when nothing is handed to it", () => {
+    render(<RetroMenu roomId={roomId} role="owner" isOwnerAbsent={false} myTeams={[]} />);
+    expect(screen.queryByRole("menuitem", { name: "Retro settings…" })).toBeNull();
   });
 });

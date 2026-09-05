@@ -53,6 +53,8 @@ export const RETRO_NAME_DESCRIPTION = "Leave empty for a dated name";
 export const FORMAT_LABEL = "Format";
 export const FORMAT_CHANGE = "Change";
 export const FORMAT_COLLAPSE = "Done";
+/** The picker line under a Team's own edited format (ADR-0021). */
+export const LAST_USED_DESCRIPTION = "What this team used last.";
 export const COLLECT_UNTIL_LABEL = "Cards due";
 export const COLLECT_UNTIL_DESCRIPTION =
   "Optional. Shown on the board as a reminder; it closes nothing by itself.";
@@ -146,6 +148,40 @@ export const TEAM_LABEL = "Team";
 export const NO_TEAM_OPTION = NO_TEAM_GROUP;
 export const NEW_TEAM_OPTION = "New team…";
 export const TEAM_DESCRIPTION = "A team keeps the retro and decides who can read it later.";
+
+// --- Retro settings (spec §6.4) ---
+
+export const SETTINGS_MENU_ITEM = "Retro settings…";
+export const SETTINGS_TITLE = "Retro settings";
+export const SETTINGS_DESCRIPTION =
+  "Prompts and stages can change at any stage. Collect, Discuss and the current stage keep their place.";
+export const JOIN_POLICY_LABEL = "Who can join";
+export const JOIN_POLICY_OPTIONS: { value: "anyone" | "permanentAccounts" | "teamMembers"; label: string }[] = [
+  { value: "anyone", label: "Anyone with the link" },
+  { value: "permanentAccounts", label: "Signed-in accounts" },
+  { value: "teamMembers", label: "Team members" },
+];
+export const SETTINGS_FAILED = "That change did not go through. Try again.";
+
+// --- The format editor (spec §6.1, §6.4) ---
+
+export const FORMAT_NAME_LABEL = "Format name";
+export const PROMPTS_TITLE = "Prompts";
+export const PROMPT_LABEL_FIELD = "Prompt label";
+export const PROMPT_HINT_FIELD = "Hint";
+export const PROMPT_HINT_PLACEHOLDER = "Shown while writing, never on the board";
+export const TINT_FIELD = "Tint";
+export const ADD_PROMPT = "Add prompt";
+export const NEW_PROMPT_LABEL = "New prompt";
+export const removePromptLabel = (label: string) => `Remove ${label}`;
+export const STAGES_TITLE = "Stages";
+export const ADD_STAGE = "Add stage";
+export const removeStageLabel = (label: string) => `Remove ${label}`;
+export const moveStageUpLabel = (label: string) => `Move ${label} up`;
+export const moveStageDownLabel = (label: string) => `Move ${label} down`;
+export const cardsHiddenIn = (label: string) => `Cards hidden in ${label}`;
+export const cardsVisibleIn = (label: string) => `Cards visible in ${label}`;
+export const CURRENT_STAGE_TAG = "current";
 
 // --- Prompt and stage-list edits (spec §6.4) ---
 
