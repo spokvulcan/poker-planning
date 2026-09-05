@@ -1,9 +1,11 @@
 import {
+  insertStage,
   isLockedKindEntry,
   MAX_PROMPTS,
   MAX_STAGES,
   newPromptId,
   newStageEntry,
+  orderStagesBy,
   renumberPrompts,
   reorderKeepsLocks,
   RETRO_TINTS,
@@ -16,6 +18,7 @@ import {
   type StampedFormat,
   type Visibility,
 } from "@/convex/model/retroFormats";
+import type { PromptEdit } from "@/convex/model/retro";
 import { NEW_PROMPT_LABEL } from "@/convex/retroCopy";
 
 /**
@@ -36,29 +39,14 @@ export function draftFromLibrary(entry: RetroFormat, options: { hasTeam: boolean
   return { format: stampFormat(entry), stages: seedStages(entry, options) };
 }
 
-/**
- * A fresh draft from a stamped format (a Team's edited last format): its
- * prompts copied, and the standard seed for the stages, since a stamped
- * format carries no stage list of its own.
- */
-export function draftFromStamped(format: StampedFormat, options: { hasTeam: boolean }): FormatDraft {
-  return {
-    format: { name: format.name, prompts: format.prompts.map((p) => ({ ...p })) },
-    stages: seedStages({ collectVisible: false }, options),
-  };
-}
-
 export function renameFormat(draft: FormatDraft, name: string): FormatDraft {
   return { ...draft, format: { ...draft.format, name } };
 }
 
-export interface PromptEdit {
-  label?: string;
-  hint?: string;
-  color?: string;
-}
+/** The server's prompt edit plus the tint, which only the create form changes (spec §6.1). */
+export type PromptDraftEdit = PromptEdit & { color?: string };
 
-export function updatePrompt(draft: FormatDraft, promptId: string, edit: PromptEdit): FormatDraft {
+export function updatePrompt(draft: FormatDraft, promptId: string, edit: PromptDraftEdit): FormatDraft {
   return {
     ...draft,
     format: {
@@ -119,10 +107,7 @@ export function canAddStage(draft: FormatDraft): boolean {
 
 export function addStage(draft: FormatDraft, kind: StageKind, index?: number): FormatDraft {
   if (!canAddStage(draft)) return draft;
-  const stages = [...draft.stages];
-  const at = index === undefined ? stages.length : Math.max(0, Math.min(index, stages.length));
-  stages.splice(at, 0, newStageEntry(kind));
-  return { ...draft, stages };
+  return { ...draft, stages: insertStage(draft.stages, newStageEntry(kind), index) };
 }
 
 /** Whether the entry may be removed or moved: not the last collect or discuss, not the current entry. */
@@ -157,8 +142,7 @@ export function movedOrder(
 
 export function reorderStages(draft: FormatDraft, stageIds: readonly string[], currentStageId?: string): FormatDraft {
   if (!reorderKeepsLocks(draft.stages, stageIds, currentStageId).ok) return draft;
-  const byId = new Map(draft.stages.map((s) => [s.id, s]));
-  return { ...draft, stages: stageIds.map((id) => byId.get(id)!) };
+  return { ...draft, stages: orderStagesBy(draft.stages, stageIds) };
 }
 
 export function setCardsVisible(draft: FormatDraft, stageId: string, value: Visibility): FormatDraft {

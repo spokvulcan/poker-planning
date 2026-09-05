@@ -319,6 +319,7 @@ export function CreateRetroContent() {
                         })}
                         <FormatEditor
                           draft={current}
+                          canEditTint
                           onRenameFormat={(value) => edit((d) => renameFormat(d, value))}
                           onUpdatePrompt={(promptId, change) => edit((d) => updatePrompt(d, promptId, change))}
                           onAddPrompt={() => edit(addPrompt)}

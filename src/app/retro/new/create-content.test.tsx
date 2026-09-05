@@ -265,12 +265,16 @@ describe("CreateRetroContent — editing the format before stamping (spec §6.1)
     expect(kinds()).toEqual(["collect", "group", "vote", "discuss", "close"]);
     fireEvent.click(editor.getByRole("button", { name: "Move Vote up" }));
     expect(kinds()).toEqual(["collect", "vote", "group", "discuss", "close"]);
-    // Group cannot move down past discuss; collect cannot move at all.
-    expect((editor.getByRole("button", { name: "Move Group down" }) as HTMLButtonElement).disabled).toBe(true);
-    expect((editor.getByRole("button", { name: "Move Collect down" }) as HTMLButtonElement).disabled).toBe(true);
+    // A free entry passes discuss; discuss never passes collect.
+    fireEvent.click(editor.getByRole("button", { name: "Move Close up" }));
+    expect(kinds()).toEqual(["collect", "vote", "group", "close", "discuss"]);
+    expect((editor.getByRole("button", { name: "Move Discuss up" }) as HTMLButtonElement).disabled).toBe(false);
+    expect((editor.getByRole("button", { name: "Move Collect up" }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.change(editor.getByLabelText("Add stage"), { target: { value: "review" } });
     fireEvent.click(editor.getByRole("button", { name: "Add stage" }));
-    expect(kinds()).toEqual(["collect", "vote", "group", "discuss", "close", "review"]);
+    expect(kinds()).toEqual(["collect", "vote", "group", "close", "discuss", "review"]);
+    fireEvent.click(editor.getByRole("button", { name: "Move Review up" }));
+    expect(kinds()).toEqual(["collect", "vote", "group", "close", "review", "discuss"]);
   });
 
   it("the creator may rename an edited format; a fresh library pick starts over from its stamp", async () => {

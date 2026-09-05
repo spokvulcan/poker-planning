@@ -195,6 +195,7 @@ export const CARDS_STILL_ANSWER = "Cards still answer this prompt";
 
 export const TOO_MANY_STAGES = "A retro has at most 10 stages";
 export const FORMAT_NAME_REQUIRED = "A format needs a name";
+export const NAME_INVALID = "That name will not do";
 export const PROMPT_IDS_UNIQUE = "Every prompt needs its own id";
 export const STAGE_IDS_UNIQUE = "Every stage needs its own id";
 export const VOTE_BUDGET_INVALID = "Vote budget must be a whole number of dots";

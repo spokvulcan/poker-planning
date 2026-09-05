@@ -16,11 +16,13 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "@/lib/toast";
+import { permissionInputProps } from "@/hooks/usePermissions";
 import {
   COLLECT_UNTIL_DESCRIPTION,
   COLLECT_UNTIL_LABEL,
   JOIN_POLICY_LABEL,
   JOIN_POLICY_OPTIONS,
+  NEW_PROMPT_LABEL,
   RETRO_NAME_LABEL,
   SETTINGS_DESCRIPTION,
   SETTINGS_FAILED,
@@ -28,7 +30,6 @@ import {
 } from "@/convex/retroCopy";
 import { FormatEditor } from "./format-editor";
 import { nextTint, type FormatDraft } from "./format-draft";
-import { NEW_PROMPT_LABEL } from "@/convex/retroCopy";
 
 interface RetroSettingsDialogProps {
   open: boolean;
@@ -78,7 +79,7 @@ export function RetroSettingsDialog({
   const removeStage = useMutation(api.retro.removeStage);
   const reorderStages = useMutation(api.retro.reorderStages);
 
-  const denial = decision.allowed ? undefined : decision.message;
+  const denyInput = permissionInputProps(decision);
   const [nameDraft, setNameDraft] = useState(name);
   const dueValue = retro.collectUntil === undefined ? "" : formatDate(retro.collectUntil, "yyyy-MM-dd");
   // Drafted locally so the field reads what was typed until the write lands.
@@ -115,13 +116,13 @@ export function RetroSettingsDialog({
               onChange={(e) => setNameDraft(e.target.value)}
               onBlur={() => {
                 const trimmed = nameDraft.trim();
-                if (denial || !trimmed || trimmed === name) {
+                if (!decision.allowed || !trimmed || trimmed === name) {
                   setNameDraft(name);
                   return;
                 }
                 void run(rename({ roomId, name: trimmed }));
               }}
-              {...(denial ? { readOnly: true, title: denial } : {})}
+              {...denyInput}
             />
           </div>
           <div className="grid gap-1.5">
@@ -131,8 +132,8 @@ export function RetroSettingsDialog({
               value={joinPolicy}
               onChange={(e) => void run(setJoinPolicy({ roomId, joinPolicy: e.target.value as JoinPolicy }))}
               className="h-9 rounded-lg border border-input bg-transparent px-2.5 text-sm dark:bg-input/30"
-              disabled={denial !== undefined}
-              title={denial}
+              disabled={!decision.allowed}
+              title={decision.allowed ? undefined : decision.message}
             >
               {policies.map((o) => (
                 <option key={o.value} value={o.value}>
@@ -152,14 +153,14 @@ export function RetroSettingsDialog({
                 const due = parseDate(e.target.value);
                 void run(setCollectUntil({ roomId, ...(due !== undefined ? { collectUntil: due } : {}) }));
               }}
-              {...(denial ? { readOnly: true, title: denial } : {})}
+              {...denyInput}
             />
             <p className="text-xs text-muted-foreground">{COLLECT_UNTIL_DESCRIPTION}</p>
           </div>
           <FormatEditor
             draft={draft}
             currentStageId={retro.currentStageId}
-            denial={denial}
+            decision={decision}
             onUpdatePrompt={(promptId, edit) => void run(updatePrompt({ roomId, promptId, ...edit }))}
             onAddPrompt={() =>
               void run(addPrompt({ roomId, label: NEW_PROMPT_LABEL, color: nextTint(retro.format.prompts) }))

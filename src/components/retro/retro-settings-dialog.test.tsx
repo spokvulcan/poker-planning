@@ -132,7 +132,7 @@ describe("RetroSettingsDialog — the retro", () => {
 });
 
 describe("RetroSettingsDialog — prompts and stages", () => {
-  it("edits a prompt's label, hint and tint as three mutations; adds and removes prompts", async () => {
+  it("edits a prompt's label and hint as two mutations, offers no tint; adds and removes prompts", async () => {
     const d = renderDialog();
     const labels = d.getAllByLabelText("Prompt label") as HTMLInputElement[];
     fireEvent.change(labels[0], { target: { value: "What worked?" } });
@@ -140,12 +140,12 @@ describe("RetroSettingsDialog — prompts and stages", () => {
     const hints = d.getAllByLabelText("Hint") as HTMLInputElement[];
     fireEvent.change(hints[1], { target: { value: "Half-formed is fine." } });
     fireEvent.blur(hints[1]);
-    fireEvent.change(d.getAllByLabelText("Tint")[0], { target: { value: "teal" } });
+    // The tint is a create-form choice (spec §6.1), not a running retro's.
+    expect(d.queryAllByLabelText("Tint")).toHaveLength(0);
     await waitFor(() =>
       expect(calledWith("retro:updatePrompt")).toEqual([
         { roomId, promptId: "went-well", label: "What worked?" },
         { roomId, promptId: "ideas", hint: "Half-formed is fine." },
-        { roomId, promptId: "went-well", color: "teal" },
       ])
     );
 
@@ -168,10 +168,12 @@ describe("RetroSettingsDialog — prompts and stages", () => {
     expect((d.getByRole("button", { name: "Remove Collect" }) as HTMLButtonElement).disabled).toBe(true);
     expect((d.getByRole("button", { name: "Remove Discuss" }) as HTMLButtonElement).disabled).toBe(true);
     expect((d.getByRole("button", { name: "Remove Close" }) as HTMLButtonElement).disabled).toBe(true);
-    // A move that would shift discuss or the current entry is disabled.
-    expect((d.getByRole("button", { name: "Move Vote down" }) as HTMLButtonElement).disabled).toBe(true);
+    // A move that would shift the current entry's index is disabled; a free
+    // entry may pass discuss, and collect may not pass discuss.
     expect((d.getByRole("button", { name: "Move Close up" }) as HTMLButtonElement).disabled).toBe(true);
-    expect((d.getByRole("button", { name: "Move Collect down" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((d.getByRole("button", { name: "Move Discuss down" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((d.getByRole("button", { name: "Move Vote down" }) as HTMLButtonElement).disabled).toBe(false);
+    expect((d.getByRole("button", { name: "Move Collect down" }) as HTMLButtonElement).disabled).toBe(false);
 
     fireEvent.click(d.getByRole("button", { name: "Remove Group" }));
     await waitFor(() => expect(calledWith("retro:removeStage")).toEqual([{ roomId, stageId: "s2" }]));
@@ -192,8 +194,12 @@ describe("RetroSettingsDialog — prompts and stages", () => {
     expect(name.readOnly).toBe(true);
     expect(name.title).toBe(denied.message);
     expect((d.getByLabelText("Who can join") as HTMLSelectElement).disabled).toBe(true);
-    expect((d.getByRole("button", { name: "Add prompt" }) as HTMLButtonElement).disabled).toBe(true);
-    expect((d.getByRole("button", { name: "Remove Close" }) as HTMLButtonElement).disabled).toBe(true);
+    // Denied buttons read the denial as their accessible name (permissionProps).
+    expect(d.queryByRole("button", { name: "Add prompt" })).toBeNull();
+    expect(d.queryByRole("button", { name: "Remove Close" })).toBeNull();
+    const deniedButtons = d.getAllByRole("button", { name: denied.message }) as HTMLButtonElement[];
+    expect(deniedButtons.length).toBeGreaterThanOrEqual(2);
+    expect(deniedButtons.every((b) => b.disabled)).toBe(true);
     fireEvent.change(name, { target: { value: "x" } });
     fireEvent.blur(name);
     await new Promise((r) => setTimeout(r, 0));

@@ -55,7 +55,7 @@ async function seedCard(t: T, roomId: Id<"rooms">, promptId: string) {
 }
 
 describe("retro.rename, setJoinPolicy, setCollectUntil", () => {
-  it("a retroSettings holder renames the retro; a participant at defaults is refused", async () => {
+  it("a retroSettings holder renames the retro; a participant at defaults and a blank name are refused", async () => {
     const t = convexTest(schema, modules);
     const { roomId } = await seedRetro(t);
 
@@ -65,9 +65,9 @@ describe("retro.rename, setJoinPolicy, setCollectUntil", () => {
     await expect(
       as(t, "guest").mutation(api.retro.rename, { roomId, name: "Mine" })
     ).rejects.toThrow("Only facilitators and the owner");
-    await expect(
-      as(t, "owner").mutation(api.retro.rename, { roomId, name: "  " })
-    ).rejects.toThrow("Room name is required");
+    // A refusal, not a plain error (spec §4.5).
+    const blank = await as(t, "owner").mutation(api.retro.rename, { roomId, name: "  " }).catch((e) => e);
+    expect(blank.data).toEqual({ code: "forbidden", message: "Room name is required" });
   });
 
   it("edits the join policy, refusing teamMembers on a teamless retro", async () => {
@@ -102,7 +102,7 @@ describe("retro.rename, setJoinPolicy, setCollectUntil", () => {
 });
 
 describe("retro prompts", () => {
-  it("edits a prompt's label, hint and tint at any stage, changing no card", async () => {
+  it("edits a prompt's label and hint at any stage, changing no card", async () => {
     const t = convexTest(schema, modules);
     const { roomId, retro } = await seedRetro(t);
     const prompt = retro.format.prompts[0];
@@ -115,7 +115,6 @@ describe("retro prompts", () => {
       promptId: prompt.id,
       label: "What worked?",
       hint: "Keep it.",
-      color: "teal",
     });
 
     const after = await retroRow(t, roomId);
@@ -123,7 +122,6 @@ describe("retro prompts", () => {
       ...prompt,
       label: "What worked?",
       hint: "Keep it.",
-      color: "teal",
     });
     expect(after.format.prompts.slice(1)).toEqual(retro.format.prompts.slice(1));
     expect((await t.run((ctx) => ctx.db.get(cardId)))?.promptId).toBe(prompt.id);
@@ -140,7 +138,7 @@ describe("retro prompts", () => {
       as(t, "owner").mutation(api.retro.updatePrompt, { roomId, promptId, label: "  " })
     ).rejects.toThrow("A prompt needs a label");
     await expect(
-      as(t, "owner").mutation(api.retro.updatePrompt, { roomId, promptId, color: "chartreuse" })
+      as(t, "owner").mutation(api.retro.addPrompt, { roomId, label: "P", color: "chartreuse" })
     ).rejects.toThrow("Pick a tint from the palette");
     await expect(
       as(t, "owner").mutation(api.retro.updatePrompt, { roomId, promptId: "nope", label: "x" })
@@ -272,31 +270,35 @@ describe("retro stage list", () => {
     expect((await retroRow(t, roomId)).stages).toEqual(retro.stages);
   });
 
-  it("reorders the list as a permutation, with collect, discuss and the current entry holding their place", async () => {
+  it("reorders the list as a permutation: the current entry keeps its index, collect stays ahead of discuss, the rest move freely", async () => {
     const t = convexTest(schema, modules);
     const { roomId, retro } = await seedRetro(t);
     const [collect, group, vote, discuss, close] = retro.stages;
 
-    // Swap group and vote: collect (current) and discuss keep their index.
+    // Close moves ahead of discuss; vote after it. Collect (current) keeps index 0.
     await as(t, "owner").mutation(api.retro.reorderStages, {
       roomId,
-      stageIds: [collect.id, vote.id, group.id, discuss.id, close.id],
+      stageIds: [collect.id, group.id, close.id, discuss.id, vote.id],
     });
     const after = await retroRow(t, roomId);
-    expect(after.stages).toEqual([collect, vote, group, discuss, close]);
+    expect(after.stages).toEqual([collect, group, close, discuss, vote]);
 
+    // The current entry shifted.
     await expect(
       as(t, "owner").mutation(api.retro.reorderStages, {
         roomId,
-        stageIds: [vote.id, collect.id, group.id, discuss.id, close.id],
+        stageIds: [group.id, collect.id, close.id, discuss.id, vote.id],
       })
     ).rejects.toThrow("Collect, Discuss and the current stage keep their place");
+    // Discuss ahead of collect.
+    await as(t, "owner").mutation(api.retro.advance, { roomId, toStageId: vote.id });
     await expect(
       as(t, "owner").mutation(api.retro.reorderStages, {
         roomId,
-        stageIds: [collect.id, vote.id, group.id, close.id, discuss.id],
+        stageIds: [discuss.id, group.id, close.id, collect.id, vote.id],
       })
     ).rejects.toThrow("Collect, Discuss and the current stage keep their place");
+    await as(t, "owner").mutation(api.retro.advance, { roomId, toStageId: collect.id });
     await expect(
       as(t, "owner").mutation(api.retro.reorderStages, {
         roomId,
@@ -315,7 +317,7 @@ describe("retro stage list", () => {
         stageIds: [collect.id, group.id, vote.id, discuss.id, close.id],
       })
     ).rejects.toThrow("Only facilitators and the owner");
-    expect((await retroRow(t, roomId)).stages).toEqual([collect, vote, group, discuss, close]);
+    expect((await retroRow(t, roomId)).stages).toEqual([collect, group, close, discuss, vote]);
   });
 });
 

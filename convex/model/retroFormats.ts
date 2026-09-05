@@ -243,10 +243,12 @@ export function isLockedKindEntry(stages: readonly StageEntry[], stageId: string
 }
 
 /**
- * Whether `next` is a permutation of `stages` in which every locked entry —
- * the last of a locked kind, and the current entry when there is one —
- * keeps its index. The reorder rule for the create form and the running
- * retro alike.
+ * Whether `nextIds` is a legal reorder of `stages` (spec §6.4): a
+ * permutation in which the current entry keeps its index (the ground under
+ * the shared pointer never moves) and the locked kinds keep their order
+ * among themselves (collect stays ahead of discuss); every other entry may
+ * be placed anywhere, before or after them. The rule for the create form
+ * (no current entry) and the running retro alike.
  */
 export function reorderKeepsLocks(
   stages: readonly StageEntry[],
@@ -260,9 +262,29 @@ export function reorderKeepsLocks(
   if (!ids.every((id) => nextIds.includes(id))) {
     return { ok: false, reason: "not-a-permutation" };
   }
-  const held = ids.every(
-    (id, index) =>
-      (!isLockedKindEntry(stages, id) && id !== currentStageId) || nextIds[index] === id
-  );
+  if (currentStageId !== undefined && ids.indexOf(currentStageId) !== nextIds.indexOf(currentStageId)) {
+    return { ok: false, reason: "locked-moved" };
+  }
+  const lockedBefore = ids.filter((id) => isLockedKindEntry(stages, id));
+  const lockedAfter = nextIds.filter((id) => isLockedKindEntry(stages, id));
+  const held = lockedBefore.every((id, i) => lockedAfter[i] === id);
   return held ? { ok: true } : { ok: false, reason: "locked-moved" };
+}
+
+/** The list with `entry` inserted at `index` (clamped), or at the end. */
+export function insertStage(
+  stages: readonly StageEntry[],
+  entry: StageEntry,
+  index?: number
+): StageEntry[] {
+  const next = [...stages];
+  const at = index === undefined ? next.length : Math.max(0, Math.min(index, next.length));
+  next.splice(at, 0, entry);
+  return next;
+}
+
+/** The same entries re-listed in the order of `ids`; the caller has checked `ids` is a permutation. */
+export function orderStagesBy(stages: readonly StageEntry[], ids: readonly string[]): StageEntry[] {
+  const byId = new Map(stages.map((stage) => [stage.id, stage]));
+  return ids.map((id) => byId.get(id)!);
 }

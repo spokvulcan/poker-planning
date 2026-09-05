@@ -8,6 +8,7 @@ import { listTeamsForUser } from "./teams";
 import {
   currentStageOf,
   findFormat,
+  insertStage,
   isLockedKindEntry,
   isRetroTint,
   LOCKED_STAGE_KINDS,
@@ -15,6 +16,7 @@ import {
   MAX_STAGES,
   newPromptId,
   newStageEntry,
+  orderStagesBy,
   reorderKeepsLocks,
   renumberPrompts,
   seedStages,
@@ -30,6 +32,7 @@ import {
   CARDS_STILL_ANSWER,
   FORMAT_NAME_REQUIRED,
   LAST_PROMPT,
+  NAME_INVALID,
   NO_TEAM_GROUP,
   NOT_A_RETRO,
   NOT_CURRENT_STAGE,
@@ -148,11 +151,14 @@ function resolveCreateShape(
 ): { format: StampedFormat; stages: StageEntry[] } {
   const hasTeam = args.team !== undefined;
   if (args.format) {
+    // An edited copy without a stage list seeds as its base library entry
+    // does (a Lean Coffee copy keeps its visible collect), else the standard.
+    const base = findFormat(args.format.name);
     return {
       format: validateStampedFormat(args.format),
       stages: args.stages
         ? validateStageList(args.stages)
-        : seedStages({ collectVisible: false }, { hasTeam }),
+        : seedStages({ collectVisible: base?.collectVisible }, { hasTeam }),
     };
   }
   const library = args.formatName === undefined ? undefined : findFormat(args.formatName);
@@ -331,6 +337,25 @@ export async function setTimebox(
 // --- Settings (ADR-0021, spec §6.4) ---
 
 /**
+ * Rename the retro. The room's name rule is shared with poker; its plain
+ * error becomes a `forbidden` refusal here so the retro client can tell a
+ * rule from a transient failure (spec §4.5).
+ */
+export async function renameRetro(
+  ctx: MutationCtx,
+  args: { roomId: Id<"rooms">; name: string }
+): Promise<void> {
+  let name: string;
+  try {
+    name = validateRoomName(args.name);
+  } catch (error) {
+    throw refusal("forbidden", error instanceof Error ? error.message : NAME_INVALID);
+  }
+  await ctx.db.patch(args.roomId, { name });
+  await updateRoomActivity(ctx, args.roomId);
+}
+
+/**
  * The join policy (ADR-0013): `teamMembers` is offered only when a Team
  * keeps the retro, since nobody could satisfy it otherwise.
  */
@@ -387,12 +412,12 @@ export interface PromptEdit {
   label?: string;
   /** An empty string clears the hint. */
   hint?: string;
-  color?: string;
 }
 
 /**
- * Edit a prompt's label, hint or tint at any stage. Renaming changes no
- * card: a card stores the prompt's id, never its label (ADR-0016).
+ * Edit a prompt's label or hint at any stage (spec §6.4; the tint is a
+ * create-form choice, §6.1). Renaming changes no card: a card stores the
+ * prompt's id, never its label (ADR-0016).
  */
 export async function updatePrompt(
   ctx: MutationCtx,
@@ -405,7 +430,6 @@ export async function updatePrompt(
   }
   const edited: FormatPrompt = { ...prompt };
   if (args.label !== undefined) edited.label = validatePromptLabel(args.label);
-  if (args.color !== undefined) edited.color = validateTint(args.color);
   if (args.hint !== undefined) {
     const hint = args.hint.trim();
     if (hint) edited.hint = hint;
@@ -494,11 +518,7 @@ export async function addStage(
     throw refusal("forbidden", TOO_MANY_STAGES);
   }
   const entry = newStageEntry(args.kind);
-  const at =
-    args.index === undefined ? retro.stages.length : Math.max(0, Math.min(args.index, retro.stages.length));
-  const stages = [...retro.stages];
-  stages.splice(at, 0, entry);
-  await writeStages(ctx, retro, stages);
+  await writeStages(ctx, retro, insertStage(retro.stages, entry, args.index));
   return entry.id;
 }
 
@@ -530,9 +550,9 @@ export async function removeStage(
 }
 
 /**
- * Reorder the list: a permutation of the existing ids in which `collect`,
- * `discuss` and the current entry hold their index. Entries are re-listed,
- * never rewritten.
+ * Reorder the list (spec §6.4): a permutation in which the current entry
+ * keeps its index and collect stays ahead of discuss; see
+ * `reorderKeepsLocks`. Entries are re-listed, never rewritten.
  */
 export async function reorderStages(
   ctx: MutationCtx,
@@ -546,12 +566,7 @@ export async function reorderStages(
       check.reason === "not-a-permutation" ? STAGE_ORDER_INVALID : STAGE_ORDER_LOCKED
     );
   }
-  const byId = new Map(retro.stages.map((stage) => [stage.id, stage]));
-  await writeStages(
-    ctx,
-    retro,
-    args.stageIds.map((id) => byId.get(id)!)
-  );
+  await writeStages(ctx, retro, orderStagesBy(retro.stages, args.stageIds));
 }
 
 /**

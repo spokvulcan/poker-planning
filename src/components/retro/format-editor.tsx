@@ -31,14 +31,16 @@ import {
   removePromptLabel,
   removeStageLabel,
 } from "@/convex/retroCopy";
+import { RESOLVED_ALLOWED, type ResolvedDecision } from "@/convex/permissions";
+import { permissionInputProps, permissionProps } from "@/hooks/usePermissions";
 import { tintClasses } from "./tints";
-import { canAddPrompt, canAddStage, canRemovePrompt, isStageLocked, movedOrder, type FormatDraft, type PromptEdit } from "./format-draft";
+import { canAddPrompt, canAddStage, canRemovePrompt, isStageLocked, movedOrder, type FormatDraft, type PromptDraftEdit } from "./format-draft";
 
 /** What the editor does when a person edits; the create form reduces a draft, the settings dialog calls mutations. */
 export interface FormatEditorActions {
   /** Offered pre-stamp only: a running retro's format name is user-facing history. */
   onRenameFormat?: (name: string) => void;
-  onUpdatePrompt: (promptId: string, edit: PromptEdit) => void;
+  onUpdatePrompt: (promptId: string, edit: PromptDraftEdit) => void;
   onAddPrompt: () => void;
   onRemovePrompt: (promptId: string) => void;
   onAddStage: (kind: StageKind) => void;
@@ -52,8 +54,10 @@ interface FormatEditorProps extends FormatEditorActions {
   draft: FormatDraft;
   /** The running retro's shared pointer, which locks its entry; absent on the create form. */
   currentStageId?: string;
-  /** A denial: every control disabled with this copy. */
-  denial?: string;
+  /** Whether a prompt's tint may change: the create form's choice (spec §6.1), never a running retro's. */
+  canEditTint?: boolean;
+  /** The `retroSettings` decision: denied renders every control disabled with the copy. */
+  decision?: ResolvedDecision;
 }
 
 const STAGE_KINDS: StageKind[] = ["collect", "review", "group", "vote", "discuss", "close"];
@@ -64,9 +68,16 @@ const STAGE_KINDS: StageKind[] = ["collect", "review", "group", "vote", "discuss
  * and the current entry). One component for the create form and the
  * running retro's settings; the locks are the same rules the server keeps.
  */
-export function FormatEditor({ draft, currentStageId, denial, ...actions }: FormatEditorProps) {
-  const disabled = denial !== undefined;
-  const deny = disabled ? { disabled: true, title: denial } : {};
+export function FormatEditor({
+  draft,
+  currentStageId,
+  canEditTint = false,
+  decision = RESOLVED_ALLOWED,
+  ...actions
+}: FormatEditorProps) {
+  const disabled = !decision.allowed;
+  const deny = permissionProps(decision);
+  const denyInput = permissionInputProps(decision);
   const [newKind, setNewKind] = useState<StageKind>("group");
 
   return (
@@ -81,7 +92,7 @@ export function FormatEditor({ draft, currentStageId, denial, ...actions }: Form
             value={draft.format.name}
             maxLength={60}
             onChange={(e) => actions.onRenameFormat?.(e.target.value)}
-            {...deny}
+            {...denyInput}
           />
         </div>
       )}
@@ -94,7 +105,8 @@ export function FormatEditor({ draft, currentStageId, denial, ...actions }: Form
               key={prompt.id}
               prompt={prompt}
               canRemove={canRemovePrompt(draft)}
-              denial={denial}
+              canEditTint={canEditTint}
+              decision={decision}
               onUpdate={(edit) => actions.onUpdatePrompt(prompt.id, edit)}
               onRemove={() => actions.onRemovePrompt(prompt.id)}
             />
@@ -105,8 +117,8 @@ export function FormatEditor({ draft, currentStageId, denial, ...actions }: Form
           variant="outline"
           size="sm"
           onClick={actions.onAddPrompt}
-          disabled={disabled || !canAddPrompt(draft)}
-          title={denial}
+          disabled={!canAddPrompt(draft)}
+          {...deny}
         >
           <Plus className="size-4" />
           {ADD_PROMPT}
@@ -136,16 +148,16 @@ export function FormatEditor({ draft, currentStageId, denial, ...actions }: Form
                   )}
                 </span>
                 {stage.kind === "collect" && actions.onSetCardsVisible && (
-                  <CollectVisibilityToggle stage={stage} label={label} denial={denial} onSet={actions.onSetCardsVisible} />
+                  <CollectVisibilityToggle stage={stage} label={label} decision={decision} onSet={actions.onSetCardsVisible} />
                 )}
                 <Button
                   type="button"
                   variant="ghost"
                   size="icon-xs"
                   aria-label={moveStageUpLabel(label)}
-                  disabled={disabled || up === null}
-                  title={denial}
+                  disabled={up === null}
                   onClick={() => up && actions.onReorderStages(up)}
+                  {...deny}
                 >
                   <ArrowUp className="size-3.5" />
                 </Button>
@@ -154,9 +166,9 @@ export function FormatEditor({ draft, currentStageId, denial, ...actions }: Form
                   variant="ghost"
                   size="icon-xs"
                   aria-label={moveStageDownLabel(label)}
-                  disabled={disabled || down === null}
-                  title={denial}
+                  disabled={down === null}
                   onClick={() => down && actions.onReorderStages(down)}
+                  {...deny}
                 >
                   <ArrowDown className="size-3.5" />
                 </Button>
@@ -165,9 +177,9 @@ export function FormatEditor({ draft, currentStageId, denial, ...actions }: Form
                   variant="ghost"
                   size="icon-xs"
                   aria-label={removeStageLabel(label)}
-                  disabled={disabled || locked}
-                  title={denial}
+                  disabled={locked}
                   onClick={() => actions.onRemoveStage(stage.id)}
+                  {...deny}
                 >
                   <X className="size-3.5" />
                 </Button>
@@ -181,7 +193,8 @@ export function FormatEditor({ draft, currentStageId, denial, ...actions }: Form
             value={newKind}
             onChange={(e) => setNewKind(e.target.value as StageKind)}
             className="h-8 rounded-lg border border-input bg-transparent px-2 text-sm dark:bg-input/30"
-            {...deny}
+            disabled={disabled}
+            title={decision.allowed ? undefined : decision.message}
           >
             {STAGE_KINDS.map((kind) => (
               <option key={kind} value={kind}>
@@ -194,8 +207,8 @@ export function FormatEditor({ draft, currentStageId, denial, ...actions }: Form
             variant="outline"
             size="sm"
             onClick={() => actions.onAddStage(newKind)}
-            disabled={disabled || !canAddStage(draft)}
-            title={denial}
+            disabled={!canAddStage(draft)}
+            {...deny}
           >
             <Plus className="size-4" />
             {ADD_STAGE}
@@ -209,12 +222,12 @@ export function FormatEditor({ draft, currentStageId, denial, ...actions }: Form
 function CollectVisibilityToggle({
   stage,
   label,
-  denial,
+  decision,
   onSet,
 }: {
   stage: StageEntry;
   label: string;
-  denial?: string;
+  decision: ResolvedDecision;
   onSet: (stageId: string, value: Visibility) => void;
 }) {
   const hidden = stage.cardsVisible === "hidden";
@@ -225,9 +238,9 @@ function CollectVisibilityToggle({
       variant="ghost"
       size="xs"
       aria-label={text}
-      title={denial ?? text}
-      disabled={denial !== undefined}
+      title={text}
       onClick={() => onSet(stage.id, hidden ? "visible" : "hidden")}
+      {...permissionProps(decision)}
     >
       {hidden ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
       <span className="text-xs">{hidden ? "hidden" : "visible"}</span>
@@ -235,23 +248,25 @@ function CollectVisibilityToggle({
   );
 }
 
-/** One prompt: label and hint commit on blur; the tint commits at once. */
+/** One prompt: label and hint commit on blur; the tint, when editable, commits at once. */
 function PromptRow({
   prompt,
   canRemove,
-  denial,
+  canEditTint,
+  decision,
   onUpdate,
   onRemove,
 }: {
   prompt: StampedFormat["prompts"][number];
   canRemove: boolean;
-  denial?: string;
-  onUpdate: (edit: PromptEdit) => void;
+  canEditTint: boolean;
+  decision: ResolvedDecision;
+  onUpdate: (edit: PromptDraftEdit) => void;
   onRemove: () => void;
 }) {
   const [label, setLabel] = useState(prompt.label);
   const [hint, setHint] = useState(prompt.hint ?? "");
-  const disabled = denial !== undefined;
+  const denyInput = permissionInputProps(decision);
   const tint = tintClasses(prompt.color);
   return (
     <li className={cn("flex flex-wrap items-center gap-2 rounded-md border p-2", tint.zone)}>
@@ -266,7 +281,7 @@ function PromptRow({
           if (!trimmed) setLabel(prompt.label);
           else if (trimmed !== prompt.label) onUpdate({ label: trimmed });
         }}
-        {...(disabled ? { readOnly: true, title: denial } : {})}
+        {...denyInput}
       />
       <Input
         aria-label={PROMPT_HINT_FIELD}
@@ -278,30 +293,32 @@ function PromptRow({
         onBlur={() => {
           if (hint.trim() !== (prompt.hint ?? "")) onUpdate({ hint: hint.trim() });
         }}
-        {...(disabled ? { readOnly: true, title: denial } : {})}
+        {...denyInput}
       />
-      <select
-        aria-label={TINT_FIELD}
-        value={prompt.color}
-        onChange={(e) => onUpdate({ color: e.target.value })}
-        className={cn("h-8 rounded-lg border border-input bg-white/70 px-2 text-sm capitalize dark:bg-surface-1/70", tint.label)}
-        disabled={disabled}
-        title={denial}
-      >
-        {RETRO_TINTS.map((color) => (
-          <option key={color} value={color}>
-            {color}
-          </option>
-        ))}
-      </select>
+      {canEditTint && (
+        <select
+          aria-label={TINT_FIELD}
+          value={prompt.color}
+          onChange={(e) => onUpdate({ color: e.target.value })}
+          className={cn("h-8 rounded-lg border border-input bg-white/70 px-2 text-sm capitalize dark:bg-surface-1/70", tint.label)}
+          disabled={!decision.allowed}
+          title={decision.allowed ? undefined : decision.message}
+        >
+          {RETRO_TINTS.map((color) => (
+            <option key={color} value={color}>
+              {color}
+            </option>
+          ))}
+        </select>
+      )}
       <Button
         type="button"
         variant="ghost"
         size="icon-xs"
         aria-label={removePromptLabel(prompt.label)}
-        disabled={disabled || !canRemove}
-        title={denial}
+        disabled={!canRemove}
         onClick={onRemove}
+        {...permissionProps(decision)}
       >
         <X className="size-3.5" />
       </Button>

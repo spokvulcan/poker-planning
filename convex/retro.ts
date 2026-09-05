@@ -8,7 +8,6 @@ import {
   stageKindValidator,
   visibilityValidator,
 } from "./schema";
-import * as Rooms from "./model/rooms";
 import { refusal } from "./model/refusal";
 import { ROOM_NOT_FOUND } from "./retroCopy";
 import {
@@ -93,7 +92,7 @@ export const rename = mutation({
   args: { roomId: v.id("rooms"), name: v.string() },
   handler: async (ctx, args) => {
     await requireCan(ctx, args.roomId, { kind: "category", category: "retroSettings" });
-    await Rooms.renameRoom(ctx, args);
+    await Retro.renameRetro(ctx, args);
   },
 });
 
@@ -118,14 +117,13 @@ export const setCollectUntil = mutation({
   },
 });
 
-/** Edit a prompt's label, hint or tint at any stage (`retroSettings`). */
+/** Edit a prompt's label or hint at any stage (`retroSettings`). */
 export const updatePrompt = mutation({
   args: {
     roomId: v.id("rooms"),
     promptId: v.string(),
     label: v.optional(v.string()),
     hint: v.optional(v.string()),
-    color: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     await requireCan(ctx, args.roomId, { kind: "category", category: "retroSettings" });
