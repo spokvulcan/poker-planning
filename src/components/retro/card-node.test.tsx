@@ -73,4 +73,30 @@ describe("CardNodeView", () => {
     renderCard({ card: { ...base, own: false }, color: "green", authorName: "Ada", editingBy: "Ben", editable: false });
     expect(screen.getByTestId("editing-chip").textContent).toContain("Ben");
   });
+
+  it("at headline draws the clamped first line only, at shape a tinted block; a silhouette is a block below detail (spec §10.2)", () => {
+    const long = { ...base, text: "first line of a long card that goes on\nsecond line" };
+    const { unmount } = renderCard({ card: long, color: "green", authorName: "Ada", editable: true, level: "headline", onEditText: vi.fn() });
+    let root = document.querySelector("[data-card-id='a']") as HTMLElement;
+    expect(root.getAttribute("data-level")).toBe("headline");
+    expect(root.textContent).toBe("first line of a long card that goes on");
+    expect(screen.queryByTestId("author-chip")).toBeNull();
+    expect(screen.queryByLabelText("Card text")).toBeNull();
+    expect(root.style.height).toBe("56px");
+    unmount();
+
+    renderCard({ card: long, color: "green", authorName: "Ada", editable: true, level: "shape", onEditText: vi.fn() });
+    root = document.querySelector("[data-card-id='a']") as HTMLElement;
+    expect(root.getAttribute("data-level")).toBe("shape");
+    expect(root.textContent).toBe("");
+    expect(root.getAttribute("data-hidden")).toBe("false");
+    expect(root.style.height).toBe("96px");
+    cleanup();
+
+    renderCard({ card: { ...base, hidden: true, text: undefined, own: false }, color: "green", editable: false, level: "headline" });
+    root = document.querySelector("[data-card-id='a']") as HTMLElement;
+    expect(root.getAttribute("data-hidden")).toBe("true");
+    expect(root.getAttribute("aria-label")).toBe("Hidden card");
+    expect(root.textContent).toBe("");
+  });
 });

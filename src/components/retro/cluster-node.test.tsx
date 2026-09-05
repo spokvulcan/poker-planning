@@ -7,7 +7,8 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, cleanup, fireEvent, within, act } from "@testing-library/react";
 import { cloneElement, type ReactElement, type ReactNode } from "react";
-import type { NodeProps } from "@xyflow/react";
+import { useLayoutEffect } from "react";
+import { ReactFlowProvider, useStoreApi, type NodeProps } from "@xyflow/react";
 
 vi.mock("@/components/ui/dropdown-menu", () => ({
   DropdownMenu: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
@@ -29,18 +30,34 @@ vi.mock("@/components/ui/dialog", () => {
   };
 });
 
-import { ClusterNodeView, type ClusterNode } from "./cluster-node";
+import { ClusterNodeView, type ClusterId, type ClusterNode } from "./cluster-node";
 
 afterEach(cleanup);
 
-const chip = { clusterId: "k1", name: "Group 1", position: { x: 100, y: 50 }, count: 3 };
-const others = [{ clusterId: "k2", name: "Group 2" }];
+const k1 = "k1" as ClusterId;
+const k2 = "k2" as ClusterId;
+const chip = { clusterId: k1, name: "Group 1", position: { x: 100, y: 50 }, count: 3 };
+const others = [{ clusterId: k2, name: "Group 2" }];
 const allowed = { allowed: true as const };
 const denied = { allowed: false as const, message: "Only facilitators can manage cards" };
 
-function renderChip(data: ClusterNode["data"]) {
+/** The viewport zoom the node reads, set on the store the provider owns. */
+function AtZoom({ zoom }: { zoom: number }) {
+  const store = useStoreApi();
+  useLayoutEffect(() => {
+    store.setState({ transform: [0, 0, zoom] });
+  }, [store, zoom]);
+  return null;
+}
+
+function renderChip(data: ClusterNode["data"], zoom = 1) {
   const props = { id: data.chip.clusterId, data } as unknown as NodeProps<ClusterNode>;
-  return render(<ClusterNodeView {...props} />);
+  return render(
+    <ReactFlowProvider>
+      <AtZoom zoom={zoom} />
+      <ClusterNodeView {...props} />
+    </ReactFlowProvider>
+  );
 }
 
 const actions = () => ({
@@ -98,5 +115,17 @@ describe("ClusterNodeView", () => {
   it("merge is disabled when there is no other cluster", () => {
     renderChip({ chip, others: [], decision: allowed, actions: actions() });
     expect((screen.getByRole("menuitem", { name: "Merge into…" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("at shape zoom the chip is scaled by the inverse zoom so it holds constant screen size (spec §10.2)", () => {
+    renderChip({ chip, others }, 0.25);
+    const root = document.querySelector("[data-cluster-chip='k1']") as HTMLElement;
+    expect(root.getAttribute("data-level")).toBe("shape");
+    expect(root.style.transform).toBe("translate(-50%, -50%) scale(4)");
+    cleanup();
+    renderChip({ chip, others }, 1);
+    const detail = document.querySelector("[data-cluster-chip='k1']") as HTMLElement;
+    expect(detail.getAttribute("data-level")).toBe("detail");
+    expect(detail.style.transform).toBe("translate(-50%, -50%) scale(1)");
   });
 });

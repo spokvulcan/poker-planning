@@ -49,6 +49,21 @@ describe("tidyPositions", () => {
     ]);
   });
 
+  it("reads a measured height over the level's: the chip centres on the real box, and a tidy row is as tall as its tallest member", () => {
+    const tall = { ...card("a", 0, 0, "k1"), height: 300 };
+    const short = card("b", 400, 0, "k1");
+    // Centres (100, 150) and (500, 50) → centroid (300, 100), not (300, 50).
+    expect(clusterChips([{ _id: "k1", name: "Group 1" }], [tall, short], size)[0].position).toEqual({ x: 300, y: 100 });
+    const moves = tidyPositions([tall, short, card("c", 0, 600), card("d", 400, 600)], size, 20);
+    // Row one is 300 tall, row two 100: a 420 × 420 grid around the centroid of the centres, (300, 375).
+    expect(moves.map((m) => m.position)).toEqual([
+      { x: 90, y: 165 },
+      { x: 310, y: 165 },
+      { x: 90, y: 485 },
+      { x: 310, y: 485 },
+    ]);
+  });
+
   it("a single member is left where it is", () => {
     expect(tidyPositions([card("a", 40, 50)], size)).toEqual([{ clientId: "a", position: { x: 40, y: 50 } }]);
   });

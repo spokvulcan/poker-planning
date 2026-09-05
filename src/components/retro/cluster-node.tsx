@@ -1,7 +1,7 @@
 "use client";
 
 import { memo, useState } from "react";
-import type { Node, NodeProps } from "@xyflow/react";
+import { useStore, type Node, type NodeProps } from "@xyflow/react";
 import { ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -35,22 +35,32 @@ import {
   TIDY_GROUP,
   cardsCount,
 } from "@/convex/retroCopy";
+import type { Id } from "@/convex/_generated/dataModel";
 import type { ClusterChip } from "./clusters";
+import { zoomLevelOf } from "./zoom";
 
 /** The `cardManagement` acts on one cluster, as the board wires them. */
+export type ClusterId = Id<"retroClusters">;
+
 export interface ClusterChipActions {
-  rename: (clusterId: string, name: string) => Promise<boolean>;
-  merge: (from: string, into: string) => Promise<boolean>;
-  dissolve: (clusterId: string) => Promise<boolean>;
+  rename: (clusterId: ClusterId, name: string) => Promise<boolean>;
+  merge: (from: ClusterId, into: ClusterId) => Promise<boolean>;
+  dissolve: (clusterId: ClusterId) => Promise<boolean>;
   /** Tidy: the board computes the positions and issues the one move batch. */
-  tidy: (clusterId: string) => void;
+  tidy: (clusterId: ClusterId) => void;
+}
+
+/** A merge target: another cluster on the board. */
+export interface ClusterTarget {
+  clusterId: ClusterId;
+  name: string;
 }
 
 // A type alias: React Flow node data must satisfy Record<string, unknown>.
 export type ClusterNodeData = {
-  chip: ClusterChip;
+  chip: ClusterChip<ClusterId>;
   /** The other clusters on the board, as merge targets. */
-  others: readonly { clusterId: string; name: string }[];
+  others: readonly ClusterTarget[];
   /** The `cardManagement` decision; absent for a Team reader, who gets the label alone. */
   decision?: ResolvedDecision;
   actions?: ClusterChipActions;
@@ -58,24 +68,32 @@ export type ClusterNodeData = {
 
 export type ClusterNode = Node<ClusterNodeData, "cluster">;
 
+const selectZoom = (state: { transform: [number, number, number] }) => state.transform[2];
+
 /**
  * A cluster's label chip (spec §10.3, ADR-0011): the name and member count,
  * centred on the members' centroid at render time. The chip is the one
  * place a cluster is acted on: rename, merge, tidy and dissolve sit in its
  * menu under `cardManagement`, disabled with the decision's copy otherwise.
- * It never moves its members; tidy is the explicit opt-in.
+ * It never moves its members; tidy is the explicit opt-in. At the shape
+ * level the chip is held at constant screen size and becomes the board's
+ * content (spec §10.2).
  */
 export const ClusterNodeView = memo(function ClusterNodeView({ data }: NodeProps<ClusterNode>) {
   const { chip, others, decision, actions } = data;
+  const zoom = useStore(selectZoom);
+  const level = zoomLevelOf(zoom);
   const [renaming, setRenaming] = useState(false);
   const [merging, setMerging] = useState(false);
   const managed = decision !== undefined && actions !== undefined;
   const allowed = managed && decision.allowed;
+  const scale = level === "shape" ? 1 / zoom : 1;
   return (
     <div
       data-cluster-chip={chip.clusterId}
       data-count={chip.count}
-      className="-translate-x-1/2 -translate-y-1/2"
+      data-level={level}
+      style={{ transform: `translate(-50%, -50%) scale(${scale})` }}
     >
       <div
         className={cn(
@@ -192,11 +210,11 @@ function MergeDialog({
   onClose,
   onMerge,
 }: {
-  others: readonly { clusterId: string; name: string }[];
+  others: readonly ClusterTarget[];
   onClose: () => void;
-  onMerge: (into: string) => Promise<boolean>;
+  onMerge: (into: ClusterId) => Promise<boolean>;
 }) {
-  const [into, setInto] = useState(others[0]?.clusterId ?? "");
+  const [into, setInto] = useState<ClusterId | "">(others[0]?.clusterId ?? "");
   const [merging, setMerging] = useState(false);
   const merge = async () => {
     if (!into || merging) return;
@@ -223,7 +241,7 @@ function MergeDialog({
             <select
               id="merge-into"
               value={into}
-              onChange={(e) => setInto(e.target.value)}
+              onChange={(e) => setInto(e.target.value as ClusterId)}
               className="h-9 rounded-lg border border-input bg-transparent px-2.5 text-sm dark:bg-input/30"
             >
               {others.map((other) => (

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { ReactFlow, ReactFlowProvider, type Node, type NodeTypes } from "@xyflow/react";
+import { ReactFlow, ReactFlowProvider, useStore, type Node, type NodeTypes } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { Plus, Users } from "lucide-react";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
@@ -18,12 +18,17 @@ import { StageNav, type StageControls } from "./stage-nav";
 import { StageEmptyState, isStageEmpty } from "./stage-empty-state";
 import { RetroRoster } from "./retro-roster";
 import { CardNodeView, type CardNode } from "./card-node";
-import { ClusterNodeView, type ClusterNode, type ClusterChipActions } from "./cluster-node";
+import { ClusterNodeView, type ClusterNode, type ClusterChipActions, type ClusterTarget } from "./cluster-node";
+import { HullNodeView, type HullNode } from "./hull-node";
+import { hullsFor } from "./hulls";
+import { MobileChrome } from "./mobile-chrome";
+import { cardSizeAt, zoomLevelOf, type ZoomLevel } from "./zoom";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { SelectionBar } from "./selection-bar";
-import { clusterChips, tidyPositions } from "./clusters";
+import { clusterChips, tidyPositions, type Member, type Size } from "./clusters";
 import type { ClusterActions } from "./use-cluster-actions";
 import { CardComposer } from "./card-composer";
-import { CARD_MIN_HEIGHT, CARD_WIDTH, placeNewCard, type BoardCard } from "./cards";
+import { CARD_MIN_HEIGHT, placeNewCard, type BoardCard } from "./cards";
 import { useHand } from "./use-hand";
 import { editingOf } from "./readiness";
 import type { CardActions } from "./use-card-actions";
@@ -66,13 +71,25 @@ interface RetroBoardProps {
 }
 
 // Outside the component so React Flow sees one stable object.
-const nodeTypes: NodeTypes = { zone: PromptZoneNodeView, card: CardNodeView, cluster: ClusterNodeView };
+const nodeTypes: NodeTypes = {
+  zone: PromptZoneNodeView,
+  card: CardNodeView,
+  cluster: ClusterNodeView,
+  hull: HullNodeView,
+};
 
 /** React Flow elevates a selected node to 1000; a chip stays above its members either way. */
 const CHIP_Z_INDEX = 1001;
 
-/** The card size the chip centroid and tidy assume; never stored (spec §10.2). */
-const CARD_SIZE = { width: CARD_WIDTH, height: CARD_MIN_HEIGHT };
+
+const selectZoomLevel = (state: { transform: [number, number, number] }) => zoomLevelOf(state.transform[2]);
+
+/** Inside the provider: reports the semantic level whenever the viewport crosses a boundary. */
+function ZoomLevelSync({ onLevel }: { onLevel: (level: ZoomLevel) => void }) {
+  const level = useStore(selectZoomLevel);
+  useEffect(() => onLevel(level), [level, onLevel]);
+  return null;
+}
 
 const noMoves = () => {};
 
@@ -86,7 +103,13 @@ const noMoves = () => {};
  *
  * The root shows the shared stage (`data-stage`); the viewer's own view may
  * sit on another entry (`data-view-stage`) without moving anyone
- * (ADR-0010). `data-zoom-level` is fixed to `detail` until the zoom PR.
+ * (ADR-0010). `data-zoom-level` follows the viewport through the three
+ * semantic levels (spec §10.2); the cards and the chips read the level, the
+ * board stores nothing about it.
+ *
+ * On a phone (spec §10.4) the header and strip give way to one stage pill
+ * and one bottom sheet, the canvas pans on one finger, and grouping is
+ * tap-select-then-group with the selection held in the hand.
  *
  * Clusters are identities (spec §10.3): the chip at the members' centroid
  * is derived here from the cluster rows and the cards' derived positions,
@@ -111,6 +134,8 @@ export function RetroBoard({
   const [viewStageId, setViewStageId] = useState<string | null>(null);
   const [rosterOpen, setRosterOpen] = useState(false);
   const [composing, setComposing] = useState(false);
+  const [level, setLevel] = useState<ZoomLevel>("detail");
+  const isMobile = useIsMobile();
   const viewStage = retro.stages.find((stage) => stage.id === viewStageId) ?? currentStage;
 
   // The page is titled by the retro's name (spec §18.1). Set here rather than
@@ -137,7 +162,7 @@ export function RetroBoard({
     [zones]
   );
 
-  const hand = useHand({ cards, onDrop: viewer?.cards.move ?? noMoves });
+  const hand = useHand({ cards, onDrop: viewer?.cards.move ?? noMoves, tapSelect: isMobile });
 
   const namesById = useMemo(() => new Map(users.map((user) => [user._id as string, user.name])), [users]);
   const tintByPrompt = useMemo(
@@ -164,7 +189,8 @@ export function RetroBoard({
           type: "card",
           position: hand.positions.get(card.clientId) ?? card.position,
           ...(hand.measured.has(card.clientId) ? { measured: hand.measured.get(card.clientId) } : {}),
-          selected: hand.selected.has(card.clientId),
+          // On a phone the selection stays out of React Flow's view (see useHand).
+          selected: !isMobile && hand.selected.has(card.clientId),
           draggable: editable,
           data: {
             card,
@@ -174,45 +200,74 @@ export function RetroBoard({
               : {}),
             ...(editingBy.has(card.clientId) ? { editingBy: editingBy.get(card.clientId) } : {}),
             editable,
+            level,
+            ...(isMobile && hand.selected.has(card.clientId) ? { tapSelected: true } : {}),
             ...(viewer && editable
               ? { onEditText: viewer.cards.editText, onDelete: viewer.cards.remove, onEditing: viewer.onEditing }
               : {}),
           },
         };
       }),
-    [cards, viewer, hand.positions, hand.measured, hand.selected, tintByPrompt, named, namesById, editingBy]
+    [cards, viewer, hand.positions, hand.measured, hand.selected, tintByPrompt, named, namesById, editingBy, level, isMobile]
   );
 
-  const chips = useMemo(
+  /** The cards as geometry: positions read through the hand, heights as measured. */
+  const members = useMemo<Member<Id<"retroClusters">>[]>(
     () =>
-      clusterChips(
-        clusters,
-        cards.map((card) => ({
+      cards.map((card) => {
+        const measured = hand.measured.get(card.clientId);
+        return {
           clientId: card.clientId,
           position: hand.positions.get(card.clientId) ?? card.position,
           ...(card.clusterId !== undefined ? { clusterId: card.clusterId } : {}),
-        })),
-        CARD_SIZE
-      ),
-    [clusters, cards, hand.positions]
+          ...(measured ? { height: measured.height } : {}),
+        };
+      }),
+    [cards, hand.positions, hand.measured]
   );
+  /** The level's card box, for a card not yet measured. */
+  const cardSize = useMemo<Size>(() => {
+    const size = cardSizeAt(level);
+    return { width: size.width, height: size.height ?? CARD_MIN_HEIGHT };
+  }, [level]);
+
+  // Hulls only while the shared pointer is in `group` (spec §10.3); the
+  // card box is what is drawn, so a hull hugs it.
+  const hullNodes = useMemo<HullNode[]>(() => {
+    return hullsFor(currentStage.kind, members, cardSize).map(
+      (hull) => ({
+        id: `hull-${hull.key}`,
+        type: "hull",
+        position: hull.position,
+        draggable: false,
+        selectable: false,
+        focusable: false,
+        zIndex: -1,
+        data: { hull },
+      })
+    );
+  }, [currentStage.kind, members, cardSize]);
+
+  const chips = useMemo(() => clusterChips(clusters, members, cardSize), [clusters, members, cardSize]);
 
   const clusterActions = viewer?.clusters;
   const moveCards = viewer?.cards.move;
   const chipActions = useMemo<ClusterChipActions | undefined>(() => {
     if (!clusterActions || !moveCards) return undefined;
     return {
-      rename: (clusterId, name) => clusterActions.rename(clusterId as Id<"retroClusters">, name),
-      merge: (from, into) => clusterActions.merge(from as Id<"retroClusters">, into as Id<"retroClusters">),
-      dissolve: (clusterId) => clusterActions.dissolve(clusterId as Id<"retroClusters">),
+      rename: clusterActions.rename,
+      merge: clusterActions.merge,
+      dissolve: clusterActions.dissolve,
       tidy: (clusterId) => {
-        const members = cards
-          .filter((card) => card.clusterId === clusterId)
-          .map((card) => ({ clientId: card.clientId, position: hand.positions.get(card.clientId) ?? card.position }));
-        moveCards(tidyPositions(members, CARD_SIZE));
+        moveCards(
+          tidyPositions(
+            members.filter((member) => member.clusterId === clusterId),
+            cardSize
+          )
+        );
       },
     };
-  }, [clusterActions, moveCards, cards, hand.positions]);
+  }, [clusterActions, moveCards, members, cardSize]);
 
   const clusterNodes = useMemo<ClusterNode[]>(
     () =>
@@ -234,9 +289,10 @@ export function RetroBoard({
     [chips, viewer, chipActions]
   );
 
+  // Zones, then hulls (same z, later in order so they draw above), cards, chips.
   const nodes = useMemo<Node[]>(
-    () => [...zoneNodes, ...cardNodes, ...clusterNodes],
-    [zoneNodes, cardNodes, clusterNodes]
+    () => [...zoneNodes, ...hullNodes, ...cardNodes, ...clusterNodes],
+    [zoneNodes, hullNodes, cardNodes, clusterNodes]
   );
 
   const selectedIds = useMemo(
@@ -247,9 +303,10 @@ export function RetroBoard({
     () => cards.filter((card) => hand.selected.has(card.clientId) && card.clusterId !== undefined).length,
     [cards, hand.selected]
   );
-  const clusterTargets = useMemo(
-    () => clusters.map((cluster) => ({ clusterId: cluster._id as string, name: cluster.name })),
-    [clusters]
+  // Only a cluster with members is a target: an emptied one keeps its row but shows nowhere.
+  const clusterTargets = useMemo<ClusterTarget[]>(
+    () => chips.map((chip) => ({ clusterId: chip.clusterId, name: chip.name })),
+    [chips]
   );
   const clearSelection = hand.clearSelection;
   const onGroup = useCallback(() => {
@@ -257,8 +314,8 @@ export function RetroBoard({
     clearSelection();
   }, [clusterActions, selectedIds, clearSelection]);
   const onAddTo = useCallback(
-    (clusterId: string) => {
-      clusterActions?.addTo(clusterId as Id<"retroClusters">, selectedIds);
+    (clusterId: Id<"retroClusters">) => {
+      clusterActions?.addTo(clusterId, selectedIds);
       clearSelection();
     },
     [clusterActions, selectedIds, clearSelection]
@@ -267,6 +324,18 @@ export function RetroBoard({
     clusterActions?.removeFrom(selectedIds);
     clearSelection();
   }, [clusterActions, selectedIds, clearSelection]);
+  const selection = viewer
+    ? {
+        count: selectedIds.length,
+        inCluster: selectedInCluster,
+        clusters: clusterTargets,
+        onGroup,
+        onAddTo,
+        onRemove,
+        onClear: clearSelection,
+      }
+    : undefined;
+
 
   const onSubmitCard = useCallback(
     async (promptId: string, text: string) => {
@@ -286,13 +355,106 @@ export function RetroBoard({
   const onlineCount = viewer ? users.filter((user) => user.isOnline).length : undefined;
   const writerSet = useMemo(() => (named ? new Set(writers) : undefined), [named, writers]);
 
+  const canvas = (
+    <ReactFlowProvider>
+      <ReactFlow
+        nodes={nodes}
+        nodeTypes={nodeTypes}
+        onNodesChange={hand.onNodesChange}
+        onNodeDragStop={hand.onNodeDragStop}
+        fitView
+        fitViewOptions={{ padding: 0.1, maxZoom: 1 }}
+        proOptions={{ hideAttribution: true }}
+        minZoom={0.1}
+        maxZoom={4}
+        nodesConnectable={false}
+        onlyRenderVisibleElements
+        panOnScroll
+        // A phone pans on one finger; a desktop pans on the primary button
+        // and trackpad and draws a marquee on drag.
+        panOnDrag={isMobile ? true : [1, 2]}
+        selectionOnDrag={!isMobile}
+        zoomOnPinch
+        preventScrolling={false}
+      >
+        <CanvasDotsBackground />
+        <ZoomLevelSync onLevel={setLevel} />
+      </ReactFlow>
+    </ReactFlowProvider>
+  );
+
+  const composer = viewer && (
+    <CardComposer
+      open={composing}
+      onOpenChange={setComposing}
+      prompts={retro.format.prompts}
+      viewerName={viewer.name}
+      attribution={retro.attribution}
+      hidden={currentStage.cardsVisible === "hidden"}
+      onSubmit={onSubmitCard}
+    />
+  );
+
+  const roster = (
+    <RetroRoster
+      users={users}
+      currentStage={currentStage}
+      myUserId={viewer?.userId}
+      onSetReady={viewer?.onSetReady}
+      writers={writerSet}
+      cardCount={cards.length}
+    />
+  );
+
+  const stageNav = (
+    <StageNav
+      stages={retro.stages}
+      currentStageId={currentStage.id}
+      viewStageId={viewStageId}
+      onView={setViewStageId}
+      controls={viewer?.controls}
+    />
+  );
+
+  if (isMobile) {
+    return (
+      <div
+        className="relative h-dvh w-screen overflow-hidden bg-white dark:bg-surface-1"
+        data-testid="retro-board"
+        data-stage={currentStage.kind}
+        data-view-stage={viewStage.kind}
+        data-zoom-level={level}
+        data-chrome="mobile"
+      >
+        {isStageEmpty(viewStage.kind, cards.length) && <StageEmptyState kind={viewStage.kind} />}
+        {canvas}
+        <MobileChrome
+          name={name}
+          teamName={team?.name}
+          stageKind={currentStage.kind}
+          timeboxMinutes={currentStage.timeboxMinutes}
+          enteredAt={retro.currentStageEnteredAt}
+          selection={selection}
+          onCompose={viewer ? () => setComposing(true) : undefined}
+        >
+          {banner}
+          {stageNav}
+          {menu && <div className="flex justify-end">{menu}</div>}
+          {roster}
+        </MobileChrome>
+        {composer}
+      </div>
+    );
+  }
+
   return (
     <div
       className="flex h-screen w-screen flex-col bg-white dark:bg-surface-1"
       data-testid="retro-board"
       data-stage={currentStage.kind}
       data-view-stage={viewStage.kind}
-      data-zoom-level="detail"
+      data-zoom-level={level}
+      data-chrome="desktop"
     >
       <RetroHeader
         name={name}
@@ -319,46 +481,14 @@ export function RetroBoard({
         }
       />
       {banner}
-      <StageNav
-        stages={retro.stages}
-        currentStageId={currentStage.id}
-        viewStageId={viewStageId}
-        onView={setViewStageId}
-        controls={viewer?.controls}
-      />
+      {stageNav}
       <div className="relative flex min-h-0 flex-1">
         <div className="relative min-w-0 flex-1">
           {isStageEmpty(viewStage.kind, cards.length) && <StageEmptyState kind={viewStage.kind} />}
-          <ReactFlowProvider>
-            <ReactFlow
-              nodes={nodes}
-              nodeTypes={nodeTypes}
-              onNodesChange={hand.onNodesChange}
-              onNodeDragStop={hand.onNodeDragStop}
-              fitView
-              fitViewOptions={{ padding: 0.1, maxZoom: 1 }}
-              proOptions={{ hideAttribution: true }}
-              minZoom={0.1}
-              maxZoom={4}
-              nodesConnectable={false}
-              onlyRenderVisibleElements
-              panOnScroll
-              panOnDrag={[1, 2]}
-              selectionOnDrag
-              preventScrolling={false}
-            >
-              <CanvasDotsBackground />
-            </ReactFlow>
-          </ReactFlowProvider>
-          {viewer && (
+          {canvas}
+          {selection && (
             <SelectionBar
-              count={selectedIds.length}
-              inCluster={selectedInCluster}
-              clusters={clusterTargets}
-              onGroup={onGroup}
-              onAddTo={onAddTo}
-              onRemove={onRemove}
-              onClear={clearSelection}
+              {...selection}
               className="absolute top-3 left-3 rounded-lg border bg-white/95 p-1.5 shadow-md dark:bg-surface-2/95"
             />
           )}
@@ -374,29 +504,10 @@ export function RetroBoard({
           )}
         </div>
         {rosterOpen && (
-          <aside className="w-64 shrink-0 overflow-y-auto border-l bg-white p-4 dark:bg-surface-1">
-            <RetroRoster
-              users={users}
-              currentStage={currentStage}
-              myUserId={viewer?.userId}
-              onSetReady={viewer?.onSetReady}
-              writers={writerSet}
-              cardCount={cards.length}
-            />
-          </aside>
+          <aside className="w-64 shrink-0 overflow-y-auto border-l bg-white p-4 dark:bg-surface-1">{roster}</aside>
         )}
       </div>
-      {viewer && (
-        <CardComposer
-          open={composing}
-          onOpenChange={setComposing}
-          prompts={retro.format.prompts}
-          viewerName={viewer.name}
-          attribution={retro.attribution}
-          hidden={currentStage.cardsVisible === "hidden"}
-          onSubmit={onSubmitCard}
-        />
-      )}
+      {composer}
     </div>
   );
 }

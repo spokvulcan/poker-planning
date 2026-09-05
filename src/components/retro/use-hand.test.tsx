@@ -30,7 +30,7 @@ const node = (id: string, x: number, y: number): Node => ({ id, position: { x, y
  * applies the optimistic value to the cards synchronously — what
  * `withOptimisticUpdate` does before the request leaves.
  */
-function harness(initial: BoardCard[]) {
+function harness(initial: BoardCard[], tapSelect = false) {
   const drops: Move[][] = [];
   return {
     drops,
@@ -38,6 +38,7 @@ function harness(initial: BoardCard[]) {
       const [cards, setCards] = useState(initial);
       const hand = useHand({
         cards,
+        tapSelect,
         onDrop: (moves) => {
           drops.push(moves);
           setCards((prev) =>
@@ -121,5 +122,28 @@ describe("useHand", () => {
       hook.result.current.onNodesChange([{ type: "select", id: "a", selected: false }]);
     });
     expect([...hook.result.current.selected]).toEqual(["b"]);
+  });
+
+  it("tap-select toggles a card per select:true, ignores select:false, and clears on demand", () => {
+    const { hook } = harness([card("a"), card("b")], true);
+    act(() => {
+      hook.result.current.onNodesChange([{ type: "select", id: "a", selected: true }]);
+    });
+    act(() => {
+      // A second tap elsewhere: React Flow would deselect the first; a tap keeps it.
+      hook.result.current.onNodesChange([
+        { type: "select", id: "a", selected: false },
+        { type: "select", id: "b", selected: true },
+      ]);
+    });
+    expect([...hook.result.current.selected].sort()).toEqual(["a", "b"]);
+    act(() => {
+      hook.result.current.onNodesChange([{ type: "select", id: "a", selected: true }]);
+    });
+    expect([...hook.result.current.selected]).toEqual(["b"]);
+    act(() => {
+      hook.result.current.clearSelection();
+    });
+    expect(hook.result.current.selected.size).toBe(0);
   });
 });

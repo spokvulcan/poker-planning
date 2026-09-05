@@ -27,6 +27,15 @@ interface UseHandArgs {
    * (`withOptimisticUpdate`), so the derived position never jumps.
    */
   onDrop: (moves: Move[]) => void;
+  /**
+   * Tap-select (spec §10.4): on touch, a tap toggles a card in the
+   * selection held here. The board then renders every node unselected to
+   * React Flow, so each tap arrives as a fresh `select: true` change (the
+   * pointer-down React Flow does deliver on touch, where no click follows)
+   * and toggles; the `select: false` changes React Flow would use to
+   * replace the selection are ignored.
+   */
+  tapSelect?: boolean;
 }
 
 /**
@@ -35,7 +44,7 @@ interface UseHandArgs {
  * with the override read ahead of it; nothing is written on pointer-move,
  * and every drop is one write.
  */
-export function useHand({ cards, onDrop }: UseHandArgs) {
+export function useHand({ cards, onDrop, tapSelect = false }: UseHandArgs) {
   const [overrides, setOverrides] = useState<ReadonlyMap<string, Position>>(new Map());
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   // What React Flow measured per node. Derived nodes are rebuilt from the
@@ -46,12 +55,15 @@ export function useHand({ cards, onDrop }: UseHandArgs) {
   const onNodesChange = useCallback((changes: NodeChange[]) => {
     const moved: [string, Position][] = [];
     const selection: [string, boolean][] = [];
+    const tapped: string[] = [];
     const sized: [string, Measured][] = [];
     for (const change of changes) {
       if (change.type === "position" && change.dragging && change.position) {
         moved.push([change.id, change.position]);
-      } else if (change.type === "select") {
+      } else if (change.type === "select" && !tapSelect) {
         selection.push([change.id, change.selected]);
+      } else if (change.type === "select" && change.selected) {
+        tapped.push(change.id);
       } else if (change.type === "dimensions" && change.dimensions) {
         sized.push([change.id, change.dimensions]);
       }
@@ -80,7 +92,17 @@ export function useHand({ cards, onDrop }: UseHandArgs) {
         return next;
       });
     }
-  }, []);
+    if (tapped.length > 0) {
+      setSelected((prev) => {
+        const next = new Set(prev);
+        for (const id of tapped) {
+          if (next.has(id)) next.delete(id);
+          else next.add(id);
+        }
+        return next;
+      });
+    }
+  }, [tapSelect]);
 
   const onNodeDragStop = useCallback(
     (_event: MouseEvent | TouchEvent, _node: Node, nodes: Node[]) => {

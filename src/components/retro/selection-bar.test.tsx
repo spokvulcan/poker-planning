@@ -18,6 +18,7 @@ vi.mock("@/components/ui/dropdown-menu", () => ({
 }));
 
 import { SelectionBar } from "./selection-bar";
+import type { ClusterId } from "./cluster-node";
 
 afterEach(cleanup);
 
@@ -47,7 +48,7 @@ describe("SelectionBar", () => {
       <SelectionBar
         count={1}
         inCluster={1}
-        clusters={[{ clusterId: "k1", name: "Group 1" }, { clusterId: "k2", name: "Demo" }]}
+        clusters={[{ clusterId: "k1" as ClusterId, name: "Group 1" }, { clusterId: "k2" as ClusterId, name: "Demo" }]}
         {...h}
       />
     );
