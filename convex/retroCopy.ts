@@ -333,3 +333,7 @@ export const TIDY_GROUP = "Tidy";
 export const DISSOLVE_GROUP = "Dissolve group";
 export const GROUP_MENU = "Group actions";
 export const CLUSTER_ACT_FAILED = "That did not go through. Try again.";
+
+// --- Mobile chrome (spec §10.4) ---
+
+export const BOARD_MENU = "Board menu";
