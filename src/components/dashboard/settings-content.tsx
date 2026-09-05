@@ -2,15 +2,18 @@
 
 import { useSearchParams } from "next/navigation";
 import { useState, Suspense } from "react";
-import { Puzzle } from "lucide-react";
+import { Puzzle, UserRound } from "lucide-react";
 import { IntegrationsSettings } from "./integrations-settings";
+import { AccountSettings } from "./account-settings";
+import { ACCOUNT_TAB_LABEL, SETTINGS_PAGE_DESCRIPTION } from "@/convex/retroCopy";
 
 function SettingsTabs() {
   const searchParams = useSearchParams();
   const tabFromUrl = searchParams.get("tab");
-  const [activeTab, setActiveTab] = useState(tabFromUrl ?? "integrations");
+  const [activeTab, setActiveTab] = useState(tabFromUrl ?? "account");
 
   const tabs = [
+    { id: "account", label: ACCOUNT_TAB_LABEL, icon: UserRound },
     { id: "integrations", label: "Integrations", icon: Puzzle },
   ] as const;
 
@@ -19,7 +22,7 @@ function SettingsTabs() {
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Settings</h1>
         <p className="text-muted-foreground text-sm mt-1">
-          Manage your integrations and preferences.
+          {SETTINGS_PAGE_DESCRIPTION}
         </p>
       </div>
 
@@ -44,6 +47,7 @@ function SettingsTabs() {
       </div>
 
       <div>
+        {activeTab === "account" && <AccountSettings />}
         {activeTab === "integrations" && <IntegrationsSettings />}
       </div>
     </div>

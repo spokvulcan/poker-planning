@@ -8,6 +8,7 @@ import * as Teams from "./teams";
 import { accountTypeOf, evaluateJoin, type MemberRole } from "../permissions";
 import { refusal } from "./refusal";
 import { JOIN_DENIED_PERMANENT, joinDeniedTeam } from "../retroCopy";
+import { requireUnsubscribeSecret, verifyUnsubscribeToken } from "./unsubscribe";
 
 export interface JoinRoomArgs {
   roomId: Id<"rooms">;
@@ -342,6 +343,36 @@ export async function updateGlobalUserName(
   }
 
   await ctx.db.patch(user._id, { name });
+}
+
+/**
+ * The Settings toggle (spec §16.4): one flag covering every nudge and
+ * reminder. Written explicitly either way, so "opted in" is a stored
+ * `false` after a toggle and `undefined` before one; both read as in.
+ */
+export async function setEmailOptOut(
+  ctx: MutationCtx,
+  userId: Id<"users">,
+  optOut: boolean
+): Promise<void> {
+  await ctx.db.patch(userId, { emailOptOut: optOut });
+}
+
+/**
+ * One-click unsubscribe (spec §16.4): re-derives the token's MAC under the
+ * deployment's secret, flips the flag on a match and nothing otherwise.
+ * Returns whether a flag was flipped. No auth guard by design — the link
+ * must work signed out — so the MAC is the whole authorization. A token
+ * for an account that is gone flips nothing.
+ */
+export async function unsubscribeByToken(ctx: MutationCtx, token: string): Promise<boolean> {
+  const userId = await verifyUnsubscribeToken(token, requireUnsubscribeSecret());
+  if (userId === null) return false;
+  const id = ctx.db.normalizeId("users", userId);
+  const user = id ? await ctx.db.get(id) : null;
+  if (!user) return false;
+  await ctx.db.patch(user._id, { emailOptOut: true });
+  return true;
 }
 
 /**

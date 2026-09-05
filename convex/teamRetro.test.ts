@@ -598,6 +598,51 @@ describe("listings (spec §16.5, §18.1)", () => {
     expect(groups[0].retros.map((r) => r.roomId)).toEqual([roomId]);
   });
 
+  it("a named collect retro tells the viewer they have not added a card yet; anonymous and other stages never do", async () => {
+    const t = convexTest(schema, modules);
+    const adminId = await seedUser(t, "admin", "permanent");
+    const memberId = await seedUser(t, "member", "permanent");
+    const teamId = await createTeam(t, "admin", "Acme Squad");
+    await joinTeam(t, teamId, "member");
+    const named = await createRetro(t, "admin", { teamId, name: "Named" });
+    const grouped = await createRetro(t, "admin", { teamId, name: "Grouped" });
+    await advanceTo(t, grouped, "group");
+    await as(t, "admin").mutation(api.teams.updateRetroDefaults, {
+      teamId,
+      retroDefaults: { ...CUSTOM_DEFAULTS, attribution: "anonymous", joinPolicy: "anyone" },
+    });
+    const anonymous = await createRetro(t, "admin", { teamId, name: "Anonymous" });
+    await joinRoom(t, named, "member");
+    await joinRoom(t, anonymous, "member");
+    void adminId;
+    void memberId;
+
+    const hintOf = (rows: { roomId: Id<"rooms">; noCardYet?: true }[]) =>
+      Object.fromEntries(rows.map((r) => [r.roomId, r.noCardYet ?? false]));
+
+    // The team page, from the member's seat: only the named collect retro hints.
+    expect(hintOf(await as(t, "member").query(api.retro.listForTeam, { teamId }))).toEqual({
+      [named]: true,
+      [grouped]: false,
+      [anonymous]: false,
+    });
+    // The dashboard, same rule.
+    const groups = await as(t, "member").query(api.retro.listMine, {});
+    expect(hintOf(groups[0].retros)).toEqual({ [named]: true, [anonymous]: false });
+
+    // Writing a card clears it for the writer alone.
+    const retro = (await retroRow(t, named))!;
+    await as(t, "member").mutation(api.retro.createCard, {
+      roomId: named,
+      clientId: "c1",
+      text: "x",
+      promptId: retro.format.prompts[0].id,
+      position: { x: 0, y: 0 },
+    });
+    expect(hintOf(await as(t, "member").query(api.retro.listForTeam, { teamId }))[named]).toBe(false);
+    expect(hintOf(await as(t, "admin").query(api.retro.listForTeam, { teamId }))[named]).toBe(true);
+  });
+
   it("the dashboard is empty for an anonymous visitor and for someone who attended nothing", async () => {
     const t = convexTest(schema, modules);
     await seedUser(t, "nobody");

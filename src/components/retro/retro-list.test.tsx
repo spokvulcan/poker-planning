@@ -34,4 +34,18 @@ describe("RetroRows", () => {
     expect(screen.getByRole("link", { name: /Collecting/ }).getAttribute("href")).toBe("/room/r1");
     expect(screen.getByRole("link", { name: /Closed/ }).getAttribute("href")).toBe("/room/r2");
   });
+
+  it("shows the viewer's own hint on a row that carries it, and nowhere else (spec §16.5)", () => {
+    render(
+      <RetroRows
+        rows={[
+          { roomId: "r1" as never, name: "Named", stageKind: "collect", createdAt: 2, noCardYet: true },
+          { roomId: "r2" as never, name: "Anonymous", stageKind: "collect", createdAt: 1 },
+        ]}
+      />
+    );
+    const rows = screen.getAllByTestId("retro-row");
+    expect(rows[0].textContent).toContain("You haven't added a card yet");
+    expect(rows[1].textContent).not.toContain("You haven't added a card yet");
+  });
 });

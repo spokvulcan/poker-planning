@@ -277,6 +277,7 @@ npx convex env set GOOGLE_CLIENT_ID "your-google-client-id"
 npx convex env set GOOGLE_CLIENT_SECRET "your-google-client-secret"
 npx convex env set RESEND_API_KEY "re_..."
 npx convex env set EMAIL_FROM_ADDRESS "AgileKit <noreply@agilekit.app>"
+npx convex env set UNSUBSCRIBE_SECRET "$(openssl rand -base64 32)"
 
 # Production
 npx convex env set SITE_URL https://your-domain.com
@@ -285,6 +286,7 @@ npx convex env set GOOGLE_CLIENT_ID "your-production-client-id"
 npx convex env set GOOGLE_CLIENT_SECRET "your-production-client-secret"
 npx convex env set RESEND_API_KEY "re_production_..."
 npx convex env set EMAIL_FROM_ADDRESS "AgileKit <noreply@agilekit.app>"
+npx convex env set UNSUBSCRIBE_SECRET "<your-production-secret>"
 ```
 
 | Variable | Purpose |
@@ -293,8 +295,9 @@ npx convex env set EMAIL_FROM_ADDRESS "AgileKit <noreply@agilekit.app>"
 | `BETTER_AUTH_SECRET` | Secret key for signing sessions (min 32 chars) |
 | `GOOGLE_CLIENT_ID` | OAuth Client ID from Google Cloud Console |
 | `GOOGLE_CLIENT_SECRET` | OAuth Client Secret from Google Cloud Console |
-| `RESEND_API_KEY` | Resend key used for dispatching Magic Link emails |
-| `EMAIL_FROM_ADDRESS` | From address for transactional emails |
+| `RESEND_API_KEY` | Resend key used for every email: the magic link, retro nudges and action-item reminders (`convex/email.ts`) |
+| `EMAIL_FROM_ADDRESS` | From address for every email |
+| `UNSUBSCRIBE_SECRET` | HMAC secret signing the one-click unsubscribe token in retro and action-item emails; the magic link carries none |
 
 ## Session Configuration
 

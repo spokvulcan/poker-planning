@@ -7,6 +7,7 @@ import * as RetroClusters from "./model/retroClusters";
 import * as RetroVotes from "./model/retroVotes";
 import * as RetroWalk from "./model/retroWalk";
 import * as RetroActions from "./model/retroActions";
+import * as RetroNudge from "./model/retroNudge";
 import {
   joinPolicyValidator,
   retroFormatValidator,
@@ -42,6 +43,8 @@ export const create = mutation({
     stages: v.optional(v.array(retroStageValidator)),
     collectUntil: v.optional(v.number()),
     teamId: v.optional(v.id("teams")),
+    /** "Email the team that it's open" (spec §6.1); ignored without a Team. */
+    emailTeam: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const { user } = await requireAuthUser(ctx);
@@ -162,6 +165,32 @@ export const setJoinPolicy = mutation({
       category: "retroSettings",
     });
     await Retro.setJoinPolicy(ctx, { room, joinPolicy: args.joinPolicy });
+  },
+});
+
+/**
+ * The nudge (spec §16.2, ADR-0020): `stageFlow`, team retro, shared pointer
+ * in `collect`, at most once a day. Records `lastNudge` and schedules the
+ * send; the action resolves who gets it.
+ */
+export const nudge = mutation({
+  args: { roomId: v.id("rooms") },
+  handler: async (ctx, args) => {
+    const { room, user } = await requireCan(ctx, args.roomId, { kind: "category", category: "stageFlow" });
+    await RetroNudge.nudge(ctx, { room, actorId: user._id });
+  },
+});
+
+/**
+ * What the nudge button reads: recipients from the viewer's seat and the
+ * last send. `stageFlow`, like the press itself: a count of who has not
+ * written is the button's business and nobody else's.
+ */
+export const nudgeStatus = query({
+  args: { roomId: v.id("rooms") },
+  handler: async (ctx, args) => {
+    const { room, user } = await requireCan(ctx, args.roomId, { kind: "category", category: "stageFlow" });
+    return await RetroNudge.nudgeStatus(ctx, { room, viewerId: user._id });
   },
 });
 
@@ -319,8 +348,8 @@ export const lastFormat = query({
 export const listForTeam = query({
   args: { teamId: v.id("teams") },
   handler: async (ctx, args) => {
-    await requireTeamRole(ctx, args.teamId, "member");
-    return await Retro.listForTeam(ctx, args.teamId);
+    const { user } = await requireTeamRole(ctx, args.teamId, "member");
+    return await Retro.listForTeam(ctx, args.teamId, user._id);
   },
 });
 

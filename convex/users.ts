@@ -169,6 +169,19 @@ export const editGlobalUser = mutation({
   },
 });
 
+/** The Settings toggle "Email me about retros and action items" (spec §16.4). */
+export const setEmailOptOut = mutation({
+  args: { optOut: v.boolean() },
+  handler: async (ctx, args) => {
+    const identity = await requireAuth(ctx);
+    const user = await Users.getGlobalUserByAuthUserId(ctx, identity.subject);
+    if (!user) {
+      throw new Error("User not found");
+    }
+    await Users.setEmailOptOut(ctx, user._id, args.optOut);
+  },
+});
+
 // Delete user completely (called on sign out)
 export const deleteUser = mutation({
   args: {},

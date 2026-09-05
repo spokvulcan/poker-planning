@@ -57,6 +57,7 @@ import {
 import { refusal } from "./refusal";
 import { hashEditKeys } from "./editKeys";
 import { isLate, orderIds, projectWalk, snapshotOrder, votedEntryBefore, type WalkRead } from "./walk";
+import { emailTeamOpen } from "./retroNudge";
 
 /**
  * The retro (ADR-0016): one room with its ceremony state in a `retros` row
@@ -80,6 +81,8 @@ export interface CreateRetroArgs {
   stages?: StageEntry[];
   /** Advisory cards-due date (ADR-0020). */
   collectUntil?: number;
+  /** The create form's "Email the team that it's open" (spec §6.1); nothing without a Team. */
+  emailTeam?: boolean;
   /**
    * The Team that keeps the retro, already guarded (the caller ran
    * `requireTeamRole`). Its retro defaults are copied by value (ADR-0013).
@@ -121,7 +124,7 @@ export async function createRetro(
     permissions: { ...(defaults?.permissions ?? DEFAULT_RETRO_PERMISSIONS) },
   });
 
-  await ctx.db.insert("retros", {
+  const retroId = await ctx.db.insert("retros", {
     roomId,
     attribution: defaults?.attribution ?? "named",
     format,
@@ -138,6 +141,14 @@ export async function createRetro(
     role: "owner",
     joinedAt: now,
   });
+
+  // The "it's open" email (spec §16.2): a team retro only, and only when
+  // the form left the box ticked. Last, so the room is whole before the
+  // send is scheduled.
+  if (args.team && args.emailTeam) {
+    const retro = (await ctx.db.get(retroId))!;
+    await emailTeamOpen(ctx, { retro, creatorId: args.ownerId });
+  }
 
   return roomId;
 }
@@ -1059,26 +1070,52 @@ export interface RetroListRow {
   stageKind: StageKind;
   collectUntil?: number;
   createdAt: number;
+  /**
+   * "You haven't added a card yet" (spec §16.5, ADR-0024): the viewer's
+   * own fact, in a named retro whose shared stage is `collect`. Never a
+   * count, never anyone else's.
+   */
+  noCardYet?: true;
 }
 
-function toRow(room: Doc<"rooms">, retro: Doc<"retros">): RetroListRow {
+async function toRow(
+  ctx: QueryCtx,
+  room: Doc<"rooms">,
+  retro: Doc<"retros">,
+  viewerId: Id<"users">
+): Promise<RetroListRow> {
   const current = currentStageOf(retro);
+  const noCardYet =
+    current.kind === "collect" &&
+    retro.attribution === "named" &&
+    (await ctx.db
+      .query("retroCards")
+      .withIndex("by_room_author", (q) => q.eq("roomId", room._id).eq("authorId", viewerId))
+      .first()) === null;
   return {
     roomId: room._id,
     name: room.name,
     stageKind: current.kind,
     ...(retro.collectUntil !== undefined ? { collectUntil: retro.collectUntil } : {}),
     createdAt: room.createdAt,
+    ...(noCardYet ? { noCardYet: true as const } : {}),
   };
 }
 
 /** Rows for the retro rooms among `rooms`, in the order given; poker rooms drop out. */
-async function rowsOf(ctx: QueryCtx, rooms: Doc<"rooms">[]): Promise<RetroListRow[]> {
+async function rowsOf(
+  ctx: QueryCtx,
+  rooms: Doc<"rooms">[],
+  viewerId: Id<"users">
+): Promise<RetroListRow[]> {
   const retros = await Promise.all(rooms.map((room) => getRetro(ctx, room._id)));
-  return rooms.flatMap((room, i) => {
-    const retro = retros[i];
-    return retro ? [toRow(room, retro)] : [];
-  });
+  const rows = await Promise.all(
+    rooms.map((room, i) => {
+      const retro = retros[i];
+      return retro ? toRow(ctx, room, retro, viewerId) : Promise.resolve(null);
+    })
+  );
+  return rows.filter((row): row is RetroListRow => row !== null);
 }
 
 /** How many of a Team's retros a listing shows; the history row (#299) pages. */
@@ -1093,14 +1130,15 @@ const MAX_SCANNED_MEMBERSHIPS = 1000;
  */
 export async function listForTeam(
   ctx: QueryCtx,
-  teamId: Id<"teams">
+  teamId: Id<"teams">,
+  viewerId: Id<"users">
 ): Promise<RetroListRow[]> {
   const rooms = await ctx.db
     .query("rooms")
     .withIndex("by_team", (q) => q.eq("teamId", teamId))
     .order("desc")
     .take(MAX_LISTED_ROOMS);
-  return rowsOf(ctx, rooms.reverse());
+  return rowsOf(ctx, rooms.reverse(), viewerId);
 }
 
 /**
@@ -1147,7 +1185,7 @@ export async function listMine(
     if (room?.roomType === "retro") rooms.push(room);
     if (rooms.length >= MAX_LISTED_ROOMS || ++scanned >= MAX_SCANNED_MEMBERSHIPS) break;
   }
-  const rows = await rowsOf(ctx, rooms);
+  const rows = await rowsOf(ctx, rooms, userId);
   const roomById = new Map(rooms.map((room) => [room._id, room]));
 
   const byTeam = new Map<Id<"teams"> | undefined, RetroListRow[]>();

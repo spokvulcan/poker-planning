@@ -22,6 +22,8 @@ vi.mock("@/convex/_generated/api", () => ({
       board: "retro.board",
       mine: "retro.mine",
       advance: "retro.advance",
+      nudge: "retro.nudge",
+      nudgeStatus: "retro.nudgeStatus",
       setCardsVisible: "retro.setCardsVisible",
       setTimebox: "retro.setTimebox",
       createCard: "retro.createCard",
@@ -59,14 +61,15 @@ vi.mock("@/components/retro/retro-join-form", () => ({
   ),
 }));
 vi.mock("@/components/retro/retro-board", () => ({
-  RetroBoard: ({ retro, cards, team, menu, banner, viewer }: { retro: { currentStageId: string }; cards: { clientId: string; hidden: boolean }[]; team?: { name: string }; menu?: React.ReactNode; banner?: React.ReactNode; viewer?: { userId: string; onSetReady: (ready: boolean) => void; onEditing: (clientId?: string) => void; controls: { onAdvance: (id: string) => void; stageFlow: { allowed: boolean } }; cards: { move: (moves: unknown[]) => void } } }) => (
-    <div data-testid="board" data-team={team?.name} data-viewer={viewer?.userId} data-stage-flow={String(viewer?.controls.stageFlow.allowed)} data-cards={cards.map((c) => `${c.clientId}:${c.hidden}`).join(",")}>
+  RetroBoard: ({ retro, cards, team, menu, banner, viewer }: { retro: { currentStageId: string }; cards: { clientId: string; hidden: boolean }[]; team?: { name: string }; menu?: React.ReactNode; banner?: React.ReactNode; viewer?: { userId: string; onSetReady: (ready: boolean) => void; onEditing: (clientId?: string) => void; controls: { onAdvance: (id: string) => void; stageFlow: { allowed: boolean }; nudge?: { status: unknown; attribution: string; onNudge: () => void } }; cards: { move: (moves: unknown[]) => void } } }) => (
+    <div data-testid="board" data-team={team?.name} data-viewer={viewer?.userId} data-stage-flow={String(viewer?.controls.stageFlow.allowed)} data-cards={cards.map((c) => `${c.clientId}:${c.hidden}`).join(",")} data-nudge={JSON.stringify(viewer?.controls.nudge?.status ?? null)} data-nudge-attribution={viewer?.controls.nudge?.attribution}>
       {retro.currentStageId}
       {menu}
       {banner}
       {viewer && <button onClick={() => viewer.onSetReady(true)}>ready</button>}
       {viewer && <button onClick={() => viewer.onEditing("c1")}>edit</button>}
       {viewer && <button onClick={() => viewer.controls.onAdvance("s2")}>advance</button>}
+      {viewer?.controls.nudge && <button onClick={() => viewer.controls.nudge!.onNudge()}>nudge</button>}
       {viewer && <button onClick={() => viewer.cards.move([{ clientId: "c1", position: { x: 1, y: 1 } }])}>move</button>}
     </div>
   ),
@@ -102,7 +105,7 @@ beforeEach(() => {
   mocks.auth.accountType = "anonymous";
   mocks.queries = {
     "retro.board": {
-      retro: { currentStageId: "s1", stages: [{ id: "s1", kind: "collect" }, { id: "s2", kind: "group" }] },
+      retro: { currentStageId: "s1", attribution: "named", stages: [{ id: "s1", kind: "collect" }, { id: "s2", kind: "group" }] },
       clusters: [],
       cards: [
         { _id: "id1", clientId: "c1", position: { x: 0, y: 0 }, promptId: "p1" },
@@ -165,6 +168,36 @@ describe("RetroRoomContent", () => {
       { fn: "retro.advance", args: { roomId, toStageId: "s2" } },
       { fn: "retro.moveCards", args: { roomId, moves: [{ clientId: "c1", position: { x: 1, y: 1 } }] } },
     ]);
+  });
+
+  it("an attendee of a team retro reads the nudge status and presses the nudge; a teamless retro reads none", async () => {
+    mocks.auth.accountType = "permanent";
+    mocks.queries["teams.listMine"] = [{ _id: "team-1", name: "Acme Squad" }];
+    mocks.queries["retro.nudgeStatus"] = { recipientCount: 2, lastNudge: null };
+    const asOwner = { ...(teamed as object), users: [{ _id: "user1", role: "owner" }] } as never;
+    render(<RetroRoomContent roomId={roomId} roomData={asOwner} membership={{ _id: "user1" as never }} />);
+    const board = screen.getByTestId("board");
+    expect(JSON.parse(board.getAttribute("data-nudge")!)).toEqual({ recipientCount: 2, lastNudge: null });
+    expect(board.getAttribute("data-nudge-attribution")).toBe("named");
+    fireEvent.click(screen.getByRole("button", { name: "nudge" }));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(mocks.mutations).toContainEqual({ fn: "retro.nudge", args: { roomId } });
+    cleanup();
+
+    render(<RetroRoomContent roomId={roomId} roomData={teamless} membership={{ _id: "user1" as never }} />);
+    expect(screen.getByTestId("board").getAttribute("data-nudge")).toBe("null");
+  });
+
+  it("a participant without stageFlow is handed no nudge control and never opens its read", () => {
+    mocks.auth.accountType = "permanent";
+    mocks.queries["teams.listMine"] = [{ _id: "team-1", name: "Acme Squad" }];
+    mocks.queries["retro.nudgeStatus"] = { recipientCount: 2, lastNudge: null };
+    const asParticipant = { ...(teamed as object), users: [{ _id: "user1", role: "participant" }] } as never;
+    render(<RetroRoomContent roomId={roomId} roomData={asParticipant} membership={{ _id: "user1" as never }} />);
+    const board = screen.getByTestId("board");
+    expect(board.getAttribute("data-stage-flow")).toBe("false");
+    expect(board.getAttribute("data-nudge")).toBe("null");
+    expect(screen.queryByRole("button", { name: "nudge" })).toBeNull();
   });
 
   it("merges the board with mine: own silhouettes carry text, others stay hidden; a Team reader gets no mine", () => {
