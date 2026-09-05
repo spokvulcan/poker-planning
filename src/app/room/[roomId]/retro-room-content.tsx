@@ -39,9 +39,12 @@ interface RetroRoomContentProps {
  * written until they take it. An attendee gets the board and its menu.
  */
 export function RetroRoomContent({ roomId, roomData, membership }: RetroRoomContentProps) {
-  const { isLoading: authLoading, isAuthenticated } = useAuth();
+  const { isLoading: authLoading, isAuthenticated, accountType } = useAuth();
   const isMember = membership !== null && membership !== undefined;
-  const myTeams = useQuery(api.teams.listMine, isAuthenticated ? {} : "skip");
+  // Only a permanent account can hold a Team membership (ADR-0008), so an
+  // anonymous visitor never opens the read.
+  const isPermanent = accountType === "permanent";
+  const myTeams = useQuery(api.teams.listMine, isPermanent ? {} : "skip");
   const [wantsToJoin, setWantsToJoin] = useState(false);
 
   const { room } = roomData;
@@ -52,7 +55,11 @@ export function RetroRoomContent({ roomId, roomData, membership }: RetroRoomCont
   // The board read takes the reader guard; never subscribe before it passes.
   const retro = useQuery(api.retro.board, canRead ? { roomId } : "skip");
 
-  if (authLoading || (isAuthenticated && (membership === undefined || myTeams === undefined))) {
+  if (
+    authLoading ||
+    (isAuthenticated && membership === undefined) ||
+    (isPermanent && myTeams === undefined)
+  ) {
     return <CenteredMessage title={LOADING_TITLE} body={CHECKING_SESSION} />;
   }
 

@@ -11,7 +11,7 @@ import { render, screen, cleanup, fireEvent } from "@testing-library/react";
 const mocks = vi.hoisted(() => ({
   queries: {} as Record<string, unknown>,
   join: vi.fn(),
-  auth: { authUserId: "auth-1", isLoading: false, isAuthenticated: true, accountType: "anonymous" },
+  auth: { authUserId: "auth-1", isLoading: false, isAuthenticated: true, accountType: "anonymous" as string },
 }));
 
 vi.mock("@/convex/_generated/api", () => ({
@@ -62,6 +62,7 @@ const teamed = {
 
 beforeEach(() => {
   mocks.join.mockReset();
+  mocks.auth.accountType = "anonymous";
   mocks.queries = { "retro.board": { currentStageId: "collect" }, "teams.listMine": [] };
 });
 afterEach(cleanup);
@@ -75,7 +76,8 @@ describe("RetroRoomContent", () => {
     expect(screen.queryByTestId("board")).toBeNull();
   });
 
-  it("hands the join form the Team's name and whether the visitor is in it", () => {
+  it("hands the join form the Team's name and whether the visitor is in it; an anonymous visitor never reads Teams", () => {
+    mocks.queries["teams.listMine"] = undefined;
     render(<RetroRoomContent roomId={roomId} roomData={teamed} membership={null} />);
     const form = screen.getByTestId("join-form");
     expect(form.getAttribute("data-team")).toBe("Acme Squad");
@@ -91,6 +93,7 @@ describe("RetroRoomContent", () => {
   });
 
   it("a Team member who never joined reads the board with no menu, and joins only on their own click", async () => {
+    mocks.auth.accountType = "permanent";
     mocks.queries["teams.listMine"] = [{ _id: "team-1", name: "Acme Squad", role: "member" }];
     render(<RetroRoomContent roomId={roomId} roomData={teamed} membership={null} />);
     const board = screen.getByTestId("board");
@@ -105,7 +108,8 @@ describe("RetroRoomContent", () => {
     expect(screen.getByTestId("join-form").getAttribute("data-team-member")).toBe("true");
   });
 
-  it("waits for the Teams read before deciding a signed-in visitor is not a Team member", () => {
+  it("waits for the Teams read before deciding a permanent account is not a Team member", () => {
+    mocks.auth.accountType = "permanent";
     mocks.queries["teams.listMine"] = undefined;
     render(<RetroRoomContent roomId={roomId} roomData={teamed} membership={null} />);
     expect(screen.queryByTestId("join-form")).toBeNull();

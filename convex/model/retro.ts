@@ -301,6 +301,9 @@ async function rowsOf(ctx: QueryCtx, rooms: Doc<"rooms">[]): Promise<RetroListRo
 /** How many of a Team's retros a listing shows; the history row (#299) pages. */
 const MAX_LISTED_ROOMS = 200;
 
+/** How many memberships the dashboard walks looking for retros. */
+const MAX_SCANNED_MEMBERSHIPS = 1000;
+
 /**
  * The team page's listing (spec §5): the Team's retros in creation order.
  * The bound keeps the newest, so a long history drops its oldest rows.
@@ -347,16 +350,19 @@ export async function listMine(
   userId: Id<"users">
 ): Promise<RetroListGroup[]> {
   // Walk the person's memberships newest first and keep the retro rooms
-  // among them, up to the bound: poker memberships share the index and
-  // must not use up the budget before a retro is reached.
+  // among them, up to the listing bound: poker memberships share the index
+  // and must not use up the budget before a retro is reached. The scan has
+  // its own bound so a heavy poker player's dashboard degrades to "not
+  // every retro" rather than to a read-limit failure.
   const rooms: Doc<"rooms">[] = [];
+  let scanned = 0;
   for await (const membership of ctx.db
     .query("roomMemberships")
     .withIndex("by_user", (q) => q.eq("userId", userId))
     .order("desc")) {
     const room = await ctx.db.get(membership.roomId);
     if (room?.roomType === "retro") rooms.push(room);
-    if (rooms.length >= MAX_LISTED_ROOMS) break;
+    if (rooms.length >= MAX_LISTED_ROOMS || ++scanned >= MAX_SCANNED_MEMBERSHIPS) break;
   }
   const rows = await rowsOf(ctx, rooms);
   const roomById = new Map(rooms.map((room) => [room._id, room]));
