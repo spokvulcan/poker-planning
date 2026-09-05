@@ -31,6 +31,7 @@ vi.mock("@/components/ui/sheet", () => {
 });
 
 import { MobileChrome } from "./mobile-chrome";
+import { VoteBudget } from "./vote-budget";
 import { CardComposer } from "./card-composer";
 import { useState } from "react";
 
@@ -114,5 +115,18 @@ describe("MobileChrome", () => {
     fireEvent.change(screen.getByLabelText("Your card"), { target: { value: "Try mob sessions" } });
     fireEvent.click(screen.getByRole("button", { name: "Post card" }));
     await vi.waitFor(() => expect(onSubmit).toHaveBeenCalledWith("p2", "Try mob sessions"));
+  });
+
+  it("carries the vote budget in the bar while the entry takes dots, with the anonymous line (spec §11, §19)", () => {
+    render(
+      <MobileChrome name="R" stageKind="vote" note={<VoteBudget left={3} budget={5} anonymous />}>
+        <p />
+      </MobileChrome>
+    );
+    const budget = screen.getByTestId("vote-budget");
+    expect(screen.getByTestId("mobile-bar").contains(budget)).toBe(true);
+    expect(budget.getAttribute("data-left")).toBe("3");
+    expect(budget.textContent).toContain("3 of 5 votes left");
+    expect(budget.textContent).toContain("Nobody is shown how you voted.");
   });
 });

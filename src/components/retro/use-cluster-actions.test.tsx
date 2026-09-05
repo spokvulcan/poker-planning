@@ -83,17 +83,26 @@ describe("useClusterActions: group and ungroup", () => {
 });
 
 describe("useClusterActions: cardManagement acts", () => {
-  it("rename, merge and dissolve resolve true on success and pass their arguments through", async () => {
-    mocks.outcomes.push(() => Promise.resolve(), () => Promise.resolve(), () => Promise.resolve());
+  it("rename, merge and dissolve resolve on success and pass their arguments through", async () => {
+    mocks.outcomes.push(() => Promise.resolve(), () => Promise.resolve(), () => Promise.resolve({ dissolved: true }));
     const { result } = renderHook(() => useClusterActions(roomId));
     expect(await result.current.rename(k1, "Demo")).toBe(true);
     expect(await result.current.merge(k1, k2)).toBe(true);
-    expect(await result.current.dissolve(k2)).toBe(true);
+    expect(await result.current.dissolve(k2)).toBe("done");
     expect(mocks.calls).toEqual([
       { fn: "retro.renameCluster", args: { roomId, clusterId: k1, name: "Demo" } },
       { fn: "retro.mergeClusters", args: { roomId, from: k1, into: k2 } },
       { fn: "retro.dissolveCluster", args: { roomId, clusterId: k2 } },
     ]);
+  });
+
+  it("dissolving a cluster with dots hands back the count, then goes through with consent (spec §19)", async () => {
+    mocks.outcomes.push(() => Promise.resolve({ dissolved: false, votes: 4 }), () => Promise.resolve({ dissolved: true }));
+    const { result } = renderHook(() => useClusterActions(roomId));
+    expect(await result.current.dissolve(k1)).toEqual({ votes: 4 });
+    expect(await result.current.dissolve(k1, true)).toBe("done");
+    expect(mocks.calls[1]).toEqual({ fn: "retro.dissolveCluster", args: { roomId, clusterId: k1, removeVotes: true } });
+    expect(mocks.toast.error).not.toHaveBeenCalled();
   });
 
   it("a refused rename resolves false and toasts the refusal's copy", async () => {

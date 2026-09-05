@@ -652,6 +652,18 @@ export async function linkAnonymousToPermanent(
       }
     }
 
+    // Dots always store their voter (spec §8.2): re-point the anonymous
+    // account's rows in every room it attended.
+    for (const membership of memberships) {
+      const dots = await ctx.db
+        .query("retroVotes")
+        .withIndex("by_room", (q) => q.eq("roomId", membership.roomId))
+        .collect();
+      for (const dot of dots) {
+        if (dot.voterId === user._id) await ctx.db.patch(dot._id, { voterId: existingPermanent._id });
+      }
+    }
+
     // Delete the old anonymous user record
     await ctx.db.delete(user._id);
     return;

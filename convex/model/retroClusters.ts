@@ -5,6 +5,7 @@ import { updateRoomActivity } from "./rooms";
 import { refusal } from "./refusal";
 import { getCardByClientId, type CardActor } from "./retroCards";
 import { MAX_BOARD_ROWS } from "./retro";
+import { dotsOnCluster } from "./retroVotes";
 import {
   CARD_NOT_FOUND,
   CLUSTER_NAME_REQUIRED,
@@ -179,21 +180,39 @@ export async function mergeClusters(
   const from = await requireCluster(ctx, args.room._id, args.from);
   const into = await requireCluster(ctx, args.room._id, args.into);
   await requireCardManagement(ctx, args.room, args.actor);
-  const members = await membersOf(ctx, from._id);
-  await Promise.all(members.map((card) => ctx.db.patch(card._id, { clusterId: into._id })));
+  const [members, dots] = await Promise.all([membersOf(ctx, from._id), dotsOnCluster(ctx, args.room._id, from._id)]);
+  await Promise.all([
+    ...members.map((card) => ctx.db.patch(card._id, { clusterId: into._id })),
+    // The merged cluster's dots follow it (spec §10.3).
+    ...dots.map((dot) => ctx.db.patch(dot._id, { target: { kind: "cluster" as const, id: into._id } })),
+  ]);
   await ctx.db.delete(from._id);
   await updateRoomActivity(ctx, args.room);
 }
 
-/** Dissolve a cluster (`cardManagement`): every member's `clusterId` nulled, the row deleted. */
+export type DissolveOutcome = { dissolved: true } | { dissolved: false; votes: number };
+
+/**
+ * Dissolve a cluster (`cardManagement`): every member's `clusterId` nulled,
+ * the row deleted. A cluster with dots is dissolved only with consent
+ * (spec §10.3, §19): without `removeVotes` nothing changes and the count
+ * comes back for the confirmation; with it the dots go too.
+ */
 export async function dissolveCluster(
   ctx: MutationCtx,
-  args: { room: Doc<"rooms">; actor: CardActor; clusterId: Id<"retroClusters"> }
-): Promise<void> {
+  args: { room: Doc<"rooms">; actor: CardActor; clusterId: Id<"retroClusters">; removeVotes?: boolean }
+): Promise<DissolveOutcome> {
   const cluster = await requireCluster(ctx, args.room._id, args.clusterId);
   await requireCardManagement(ctx, args.room, args.actor);
-  const members = await membersOf(ctx, cluster._id);
-  await Promise.all(members.map((card) => ctx.db.patch(card._id, { clusterId: undefined })));
+  const [members, dots] = await Promise.all([membersOf(ctx, cluster._id), dotsOnCluster(ctx, args.room._id, cluster._id)]);
+  if (dots.length > 0 && args.removeVotes !== true) {
+    return { dissolved: false, votes: dots.length };
+  }
+  await Promise.all([
+    ...members.map((card) => ctx.db.patch(card._id, { clusterId: undefined })),
+    ...dots.map((dot) => ctx.db.delete(dot._id)),
+  ]);
   await ctx.db.delete(cluster._id);
   await updateRoomActivity(ctx, args.room);
+  return { dissolved: true };
 }

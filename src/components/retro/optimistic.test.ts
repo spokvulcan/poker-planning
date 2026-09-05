@@ -11,7 +11,18 @@ import { getFunctionName, type FunctionReference } from "convex/server";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { BoardRead, FullCard } from "@/convex/model/retro";
-import { applyAddToCluster, applyCreate, applyDelete, applyFormCluster, applyMove, applyTextEdit, applyUngroup } from "./optimistic";
+import type { TallyRead } from "@/convex/model/retroVotes";
+import {
+  applyAddToCluster,
+  applyCreate,
+  applyDelete,
+  applyFormCluster,
+  applyMove,
+  applyPlaceDot,
+  applyRemoveDot,
+  applyTextEdit,
+  applyUngroup,
+} from "./optimistic";
 
 const roomId = "room-1" as Id<"rooms">;
 const me = "u-me" as Id<"users">;
@@ -73,6 +84,7 @@ const full = (clientId: string, authorId: Id<"users">, text = clientId): FullCar
 // `api.retro.board` names "retro:board"; the fake keys on the last segment.
 const BOARD = getFunctionName(api.retro.board).split(/[:.]/).pop()!;
 const MINE = getFunctionName(api.retro.mine).split(/[:.]/).pop()!;
+const TALLY = getFunctionName(api.retro.tally).split(/[:.]/).pop()!;
 
 describe("applyCreate", () => {
   it("in collect inserts a silhouette into board, the full card into mine, and names the writer", () => {
@@ -195,5 +207,54 @@ describe("group and ungroup (spec §10.7): clusterId in board only", () => {
     expect(next.cards.map((c) => c.clusterId)).toEqual([undefined, "k1", undefined]);
     expect(next.cards.map((c) => "clusterId" in c)).toEqual([false, true, false]);
     expect(next.clusters.map((k) => k._id)).toEqual(["k1", "k2"]);
+  });
+});
+
+describe("dots (spec §10.7): a dot patches retro.tally only", () => {
+  const tally = (patch: Partial<TallyRead> = {}): TallyRead => ({
+    stageEntryId: "v1",
+    visible: false,
+    counts: {},
+    mine: {},
+    spent: 0,
+    budget: 5,
+    ...patch,
+  });
+  const onCard = { kind: "card" as const, id: "id-a" as Id<"retroCards"> };
+
+  it("applyPlaceDot bumps own dots and the spend; the aggregate only where the entry shows it", () => {
+    const { store, writes, value } = fakeStore({ [TALLY]: tally(), [BOARD]: board("visible", [full("a", me)]) });
+    applyPlaceDot(store, { roomId, target: onCard });
+    expect(writes).toEqual([TALLY]);
+    expect(value<TallyRead>(TALLY)).toEqual(tally({ mine: { "id-a": 1 }, spent: 1 }));
+
+    const shown = fakeStore({ [TALLY]: tally({ visible: true, counts: { "id-a": 2 } }) });
+    applyPlaceDot(shown.store, { roomId, target: onCard });
+    expect(shown.value<TallyRead>(TALLY).counts).toEqual({ "id-a": 3 });
+  });
+
+  it("a dot on a grouped card also counts for its cluster, read from the cached board (ADR-0016)", () => {
+    const { store, value } = fakeStore({
+      [TALLY]: tally({ visible: true }),
+      [BOARD]: board("visible", [inCluster(full("a", me), "k1")], [cluster("k1", "Group 1")]),
+    });
+    applyPlaceDot(store, { roomId, target: onCard });
+    expect(value<TallyRead>(TALLY).counts).toEqual({ "id-a": 1, k1: 1 });
+    applyRemoveDot(store, { roomId, target: onCard });
+    expect(value<TallyRead>(TALLY)).toEqual(tally({ visible: true }));
+  });
+
+  it("applyRemoveDot takes one own dot off and never goes below none", () => {
+    const { store, value } = fakeStore({ [TALLY]: tally({ visible: true, counts: { "id-a": 2 }, mine: { "id-a": 1 }, spent: 1 }) });
+    applyRemoveDot(store, { roomId, target: onCard });
+    expect(value<TallyRead>(TALLY)).toEqual(tally({ visible: true, counts: { "id-a": 1 } }));
+    applyRemoveDot(store, { roomId, target: onCard });
+    expect(value<TallyRead>(TALLY)).toEqual(tally({ visible: true, counts: { "id-a": 1 } }));
+  });
+
+  it("does nothing when the tally is not cached", () => {
+    const { store, writes } = fakeStore({ [BOARD]: board("visible") });
+    applyPlaceDot(store, { roomId, target: onCard });
+    expect(writes).toEqual([]);
   });
 });

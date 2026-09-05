@@ -99,4 +99,27 @@ describe("CardNodeView", () => {
     expect(root.getAttribute("aria-label")).toBe("Hidden card");
     expect(root.textContent).toBe("");
   });
+
+  it("dots (spec §11): the tally hidden shows own dots only; the count at headline; none without a tally", () => {
+    const onPlace = vi.fn();
+    const onRemove = vi.fn();
+    renderCard({ card: base, color: "green", editable: false, dots: { mine: 2, onPlace, onRemove } });
+    let dots = screen.getByTestId("dots");
+    expect(dots.getAttribute("data-count")).toBe("");
+    expect(dots.getAttribute("data-mine")).toBe("2");
+    fireEvent.click(screen.getByRole("button", { name: "Vote" }));
+    expect(onPlace).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "Remove vote" }));
+    expect(onRemove).toHaveBeenCalledTimes(1);
+    cleanup();
+
+    renderCard({ card: base, color: "green", editable: false, level: "headline", dots: { count: 4, mine: 0, onPlace } });
+    dots = screen.getByTestId("dots");
+    expect(dots.textContent).toContain("4 votes");
+    expect(screen.queryByRole("button", { name: "Vote" })).toBeNull();
+    cleanup();
+
+    renderCard({ card: base, color: "green", editable: false });
+    expect(screen.queryByTestId("dots")).toBeNull();
+  });
 });
