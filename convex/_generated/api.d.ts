@@ -42,6 +42,7 @@ import type * as model_permissions from "../model/permissions.js";
 import type * as model_refusal from "../model/refusal.js";
 import type * as model_retro from "../model/retro.js";
 import type * as model_retroCards from "../model/retroCards.js";
+import type * as model_retroClusters from "../model/retroClusters.js";
 import type * as model_retroFormats from "../model/retroFormats.js";
 import type * as model_roles from "../model/roles.js";
 import type * as model_roomAggregate from "../model/roomAggregate.js";
@@ -110,6 +111,7 @@ declare const fullApi: ApiFromModules<{
   "model/refusal": typeof model_refusal;
   "model/retro": typeof model_retro;
   "model/retroCards": typeof model_retroCards;
+  "model/retroClusters": typeof model_retroClusters;
   "model/retroFormats": typeof model_retroFormats;
   "model/roles": typeof model_roles;
   "model/roomAggregate": typeof model_roomAggregate;

@@ -344,7 +344,7 @@ export function projectCard(
 }
 
 /** How many cards and clusters one board read carries; a retro never approaches it. */
-const MAX_BOARD_ROWS = 2000;
+export const MAX_BOARD_ROWS = 2000;
 
 export interface BoardRead {
   retro: Doc<"retros">;

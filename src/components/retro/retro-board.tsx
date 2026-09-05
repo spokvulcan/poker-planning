@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react
 import { ReactFlow, ReactFlowProvider, type Node, type NodeTypes } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { Plus, Users } from "lucide-react";
-import type { Doc } from "@/convex/_generated/dataModel";
+import type { Doc, Id } from "@/convex/_generated/dataModel";
 import type { ResolvedDecision } from "@/convex/permissions";
 import type { UserWithPresence } from "@/hooks/useRoomPresence";
 import { CanvasDotsBackground } from "@/components/canvas-dots-background";
@@ -18,8 +18,12 @@ import { StageNav, type StageControls } from "./stage-nav";
 import { StageEmptyState, isStageEmpty } from "./stage-empty-state";
 import { RetroRoster } from "./retro-roster";
 import { CardNodeView, type CardNode } from "./card-node";
+import { ClusterNodeView, type ClusterNode, type ClusterChipActions } from "./cluster-node";
+import { SelectionBar } from "./selection-bar";
+import { clusterChips, tidyPositions } from "./clusters";
+import type { ClusterActions } from "./use-cluster-actions";
 import { CardComposer } from "./card-composer";
-import { placeNewCard, type BoardCard } from "./cards";
+import { CARD_MIN_HEIGHT, CARD_WIDTH, placeNewCard, type BoardCard } from "./cards";
 import { useHand } from "./use-hand";
 import { editingOf } from "./readiness";
 import type { CardActions } from "./use-card-actions";
@@ -34,7 +38,8 @@ export interface BoardViewer {
   onEditing: (clientId: string | undefined) => void;
   controls: StageControls;
   cards: CardActions;
-  /** Another person's card is touchable only under this decision (spec §4.2). */
+  clusters: ClusterActions;
+  /** Another person's card, and a cluster's rename, merge, tidy and dissolve, only under this decision (spec §4.2). */
   cardManagement: ResolvedDecision;
 }
 
@@ -44,6 +49,8 @@ interface RetroBoardProps {
   retro: Doc<"retros">;
   /** Every card after the board and mine merge (spec §9). */
   cards: readonly BoardCard[];
+  /** Every cluster row: a name and nothing else (ADR-0016). */
+  clusters: readonly Pick<Doc<"retroClusters">, "_id" | "name">[];
   /** Who has written, in a named retro (ADR-0012); empty under `anonymous`. */
   writers: readonly string[];
   /** The roster's members with presence merged on; a Team reader sees everyone offline. */
@@ -59,7 +66,13 @@ interface RetroBoardProps {
 }
 
 // Outside the component so React Flow sees one stable object.
-const nodeTypes: NodeTypes = { zone: PromptZoneNodeView, card: CardNodeView };
+const nodeTypes: NodeTypes = { zone: PromptZoneNodeView, card: CardNodeView, cluster: ClusterNodeView };
+
+/** React Flow elevates a selected node to 1000; a chip stays above its members either way. */
+const CHIP_Z_INDEX = 1001;
+
+/** The card size the chip centroid and tidy assume; never stored (spec §10.2). */
+const CARD_SIZE = { width: CARD_WIDTH, height: CARD_MIN_HEIGHT };
 
 const noMoves = () => {};
 
@@ -73,12 +86,19 @@ const noMoves = () => {};
  *
  * The root shows the shared stage (`data-stage`); the viewer's own view may
  * sit on another entry (`data-view-stage`) without moving anyone
- * (ADR-0010). `data-zoom-level` is fixed to `detail` until #293.
+ * (ADR-0010). `data-zoom-level` is fixed to `detail` until the zoom PR.
+ *
+ * Clusters are identities (spec §10.3): the chip at the members' centroid
+ * is derived here from the cluster rows and the cards' derived positions,
+ * so it follows a drag without a write. The selection bar turns a
+ * selection into a cluster; tidy computes the grid here and issues the
+ * one move batch.
  */
 export function RetroBoard({
   name,
   retro,
   cards,
+  clusters,
   writers,
   users,
   team,
@@ -163,7 +183,90 @@ export function RetroBoard({
     [cards, viewer, hand.positions, hand.measured, hand.selected, tintByPrompt, named, namesById, editingBy]
   );
 
-  const nodes = useMemo<Node[]>(() => [...zoneNodes, ...cardNodes], [zoneNodes, cardNodes]);
+  const chips = useMemo(
+    () =>
+      clusterChips(
+        clusters,
+        cards.map((card) => ({
+          clientId: card.clientId,
+          position: hand.positions.get(card.clientId) ?? card.position,
+          ...(card.clusterId !== undefined ? { clusterId: card.clusterId } : {}),
+        })),
+        CARD_SIZE
+      ),
+    [clusters, cards, hand.positions]
+  );
+
+  const clusterActions = viewer?.clusters;
+  const moveCards = viewer?.cards.move;
+  const chipActions = useMemo<ClusterChipActions | undefined>(() => {
+    if (!clusterActions || !moveCards) return undefined;
+    return {
+      rename: (clusterId, name) => clusterActions.rename(clusterId as Id<"retroClusters">, name),
+      merge: (from, into) => clusterActions.merge(from as Id<"retroClusters">, into as Id<"retroClusters">),
+      dissolve: (clusterId) => clusterActions.dissolve(clusterId as Id<"retroClusters">),
+      tidy: (clusterId) => {
+        const members = cards
+          .filter((card) => card.clusterId === clusterId)
+          .map((card) => ({ clientId: card.clientId, position: hand.positions.get(card.clientId) ?? card.position }));
+        moveCards(tidyPositions(members, CARD_SIZE));
+      },
+    };
+  }, [clusterActions, moveCards, cards, hand.positions]);
+
+  const clusterNodes = useMemo<ClusterNode[]>(
+    () =>
+      chips.map((chip) => ({
+        id: `cluster-${chip.clusterId}`,
+        type: "cluster",
+        position: chip.position,
+        draggable: false,
+        selectable: false,
+        focusable: false,
+        // Above a selected card, which React Flow elevates to 1000.
+        zIndex: CHIP_Z_INDEX,
+        data: {
+          chip,
+          others: chips.filter((other) => other.clusterId !== chip.clusterId),
+          ...(viewer && chipActions ? { decision: viewer.cardManagement, actions: chipActions } : {}),
+        },
+      })),
+    [chips, viewer, chipActions]
+  );
+
+  const nodes = useMemo<Node[]>(
+    () => [...zoneNodes, ...cardNodes, ...clusterNodes],
+    [zoneNodes, cardNodes, clusterNodes]
+  );
+
+  const selectedIds = useMemo(
+    () => cards.filter((card) => hand.selected.has(card.clientId)).map((card) => card.clientId),
+    [cards, hand.selected]
+  );
+  const selectedInCluster = useMemo(
+    () => cards.filter((card) => hand.selected.has(card.clientId) && card.clusterId !== undefined).length,
+    [cards, hand.selected]
+  );
+  const clusterTargets = useMemo(
+    () => clusters.map((cluster) => ({ clusterId: cluster._id as string, name: cluster.name })),
+    [clusters]
+  );
+  const clearSelection = hand.clearSelection;
+  const onGroup = useCallback(() => {
+    clusterActions?.form(selectedIds);
+    clearSelection();
+  }, [clusterActions, selectedIds, clearSelection]);
+  const onAddTo = useCallback(
+    (clusterId: string) => {
+      clusterActions?.addTo(clusterId as Id<"retroClusters">, selectedIds);
+      clearSelection();
+    },
+    [clusterActions, selectedIds, clearSelection]
+  );
+  const onRemove = useCallback(() => {
+    clusterActions?.removeFrom(selectedIds);
+    clearSelection();
+  }, [clusterActions, selectedIds, clearSelection]);
 
   const onSubmitCard = useCallback(
     async (promptId: string, text: string) => {
@@ -247,6 +350,18 @@ export function RetroBoard({
               <CanvasDotsBackground />
             </ReactFlow>
           </ReactFlowProvider>
+          {viewer && (
+            <SelectionBar
+              count={selectedIds.length}
+              inCluster={selectedInCluster}
+              clusters={clusterTargets}
+              onGroup={onGroup}
+              onAddTo={onAddTo}
+              onRemove={onRemove}
+              onClear={clearSelection}
+              className="absolute top-3 left-3 rounded-lg border bg-white/95 p-1.5 shadow-md dark:bg-surface-2/95"
+            />
+          )}
           {viewer && (
             <Button
               type="button"

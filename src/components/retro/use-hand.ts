@@ -96,11 +96,14 @@ export function useHand({ cards, onDrop }: UseHandArgs) {
     [onDrop]
   );
 
+  /** Drop the selection: after a group or ungroup, or from the bar's clear. */
+  const clearSelection = useCallback(() => setSelected(new Set()), []);
+
   const positions = useMemo(() => {
     const map = new Map<string, Position>();
     for (const card of cards) map.set(card.clientId, overrides.get(card.clientId) ?? card.position);
     return map;
   }, [cards, overrides]);
 
-  return { overrides, selected, measured, positions, onNodesChange, onNodeDragStop };
+  return { overrides, selected, measured, positions, onNodesChange, onNodeDragStop, clearSelection };
 }
