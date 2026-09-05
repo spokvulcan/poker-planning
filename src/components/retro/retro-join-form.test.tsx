@@ -21,7 +21,7 @@ vi.mock("next/link", () => ({
 }));
 
 import { RetroJoinForm } from "./retro-join-form";
-import { JOIN_DENIED_PERMANENT } from "@/convex/retroCopy";
+import { JOIN_DENIED_PERMANENT, joinDeniedTeam } from "@/convex/retroCopy";
 import type { Id } from "@/convex/_generated/dataModel";
 
 const roomId = "room1" as Id<"rooms">;
@@ -53,6 +53,18 @@ describe("RetroJoinForm", () => {
     expect(screen.getByText(JOIN_DENIED_PERMANENT)).toBeTruthy();
     fireEvent.change(screen.getByLabelText("Your name"), { target: { value: "Ada" } });
     expect((screen.getByRole("button", { name: "Join retro" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("is disabled with the team-members-only copy naming the Team", () => {
+    render(
+      <RetroJoinForm roomId={roomId} roomName="R" joinPolicy="teamMembers" isTeamMember={false} teamName="Acme Squad" />
+    );
+    expect(screen.getByText(joinDeniedTeam("Acme Squad"))).toBeTruthy();
+    expect(screen.getByText("This retro is for members of Acme Squad. Ask an admin for the invite link.")).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Your name"), { target: { value: "Ada" } });
+    expect((screen.getByRole("button", { name: "Join retro" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Join retro" }));
+    expect(mocks.join).not.toHaveBeenCalled();
   });
 
   it("a team member passes every policy", () => {

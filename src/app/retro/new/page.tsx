@@ -1,4 +1,5 @@
 import { Metadata } from "next";
+import { Suspense } from "react";
 import { CreateRetroContent } from "./create-content";
 
 export const metadata: Metadata = {
@@ -16,5 +17,11 @@ export const metadata: Metadata = {
 };
 
 export default function NewRetroPage() {
-  return <CreateRetroContent />;
+  // The team picker reads `?team=` (useSearchParams), which needs a
+  // Suspense boundary for the static shell.
+  return (
+    <Suspense fallback={null}>
+      <CreateRetroContent />
+    </Suspense>
+  );
 }

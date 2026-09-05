@@ -27,6 +27,7 @@ type Team = {
 
 const mocks = vi.hoisted(() => ({
   team: undefined as Team | undefined,
+  retros: [] as unknown[] | undefined,
   calls: [] as { fn: string; args: unknown }[],
   fail: {} as Record<string, string>,
   push: vi.fn(),
@@ -36,7 +37,8 @@ const mocks = vi.hoisted(() => ({
 vi.mock("convex/react", async () => {
   const { getFunctionName } = await import("convex/server");
   return {
-    useQuery: () => mocks.team,
+    useQuery: (ref: unknown) =>
+      getFunctionName(ref as never) === "retro:listForTeam" ? mocks.retros : mocks.team,
     useMutation: (ref: unknown) => {
       const fn = getFunctionName(ref as never);
       return async (args: unknown) => {
@@ -59,6 +61,15 @@ vi.mock("@/components/auth/auth-provider", () => ({
 vi.mock("@/components/navbar", () => ({ Navbar: () => null }));
 vi.mock("@/components/footer", () => ({ Footer: () => null }));
 vi.mock("@/components/user-menu/user-avatar", () => ({ UserAvatar: () => null }));
+vi.mock("@/components/retro/retro-list", () => ({
+  RetroRows: ({ rows }: { rows: { roomId: string; name: string }[] }) => (
+    <ul data-testid="retro-rows">
+      {rows.map((row) => (
+        <li key={row.roomId}>{row.name}</li>
+      ))}
+    </ul>
+  ),
+}));
 vi.mock("@/utils/copy-text-to-clipboard", () => ({ copyTextToClipboard: async () => true }));
 vi.mock("@/lib/toast", () => ({
   toast: {
@@ -118,6 +129,7 @@ const dialog = () => within(screen.getByRole("dialog"));
 
 beforeEach(() => {
   mocks.team = team("admin");
+  mocks.retros = [];
   mocks.calls = [];
   mocks.fail = {};
   mocks.toasts = [];
@@ -217,6 +229,26 @@ describe("TeamContent as an admin", () => {
     await waitFor(() => expect(mocks.toasts).toContainEqual({ kind: "error", message: "boom" }));
     expect(dialog().getByRole("button", { name: "Delete team" })).toBeTruthy();
     expect((dialog().getByRole("button", { name: "Delete team" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+});
+
+describe("TeamContent — the Team's retros", () => {
+  it("lists the rows the listing query returns, in its order, and New retro pre-selects the Team", () => {
+    mocks.retros = [
+      { roomId: "r1", name: "First", stageKind: "close", createdAt: 1 },
+      { roomId: "r2", name: "Second", stageKind: "collect", createdAt: 2 },
+    ];
+    render(<TeamContent />);
+    const rows = within(screen.getByTestId("retro-rows")).getAllByRole("listitem");
+    expect(rows.map((row) => row.textContent)).toEqual(["First", "Second"]);
+    expect(screen.getByRole("link", { name: /New retro/ }).getAttribute("href")).toBe("/retro/new?team=team-1");
+  });
+
+  it("shows the empty line when the Team has no retros yet", () => {
+    mocks.retros = [];
+    render(<TeamContent />);
+    expect(screen.getByText("No retros yet. Start one and this team keeps it.")).toBeTruthy();
+    expect(screen.queryByTestId("retro-rows")).toBeNull();
   });
 });
 

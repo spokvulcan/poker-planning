@@ -8,9 +8,62 @@
 
 // --- Board header disclosures (ADR-0008, ADR-0019) ---
 
-/** Board header, teamless retro. The team line arrives with #289. */
+/** Board header and create form, teamless retro. */
 export const TEAMLESS_DISCLOSURE =
   "Not kept by a team. This retro disappears after 5 quiet days.";
+
+/** Board header and create form, team retro. Doubles as the team-page link. */
+export const keptByTeam = (teamName: string) =>
+  `Kept by ${teamName}. Its members can read this later, until the retro or the team is deleted.`;
+
+/** A Team member reading a retro they never joined (ADR-0009). */
+export const readingAsTeamMember = (teamName: string) =>
+  `You're reading this as a member of ${teamName}. Join to take part.`;
+
+// --- Team (spec §5) ---
+
+export const TEAM_LABEL = "Team";
+export const NO_TEAM_OPTION = "No team";
+export const NEW_TEAM_OPTION = "New team…";
+export const TEAM_DESCRIPTION = "A team keeps the retro and decides who can read it later.";
+
+/** `adoptIntoTeam` by an attendee who does not own the room. */
+export const ONLY_OWNER_CAN_ADOPT = "Only the room owner can give this retro to a team.";
+
+/** `adoptIntoTeam` on a room whose `teamId` is already set (set once, ADR-0008). */
+export const ALREADY_KEPT_BY_TEAM = "This retro already belongs to a team.";
+
+export const ADOPT_MENU_ITEM = "Keep with a team…";
+export const ADOPT_TITLE = "Keep this retro with a team";
+export const ADOPT_DESCRIPTION =
+  "The team's members can read it later, and it no longer disappears after 5 quiet days. This cannot be undone.";
+export const ADOPT_BUTTON = "Keep with team";
+export const ADOPT_FAILED = "Failed to give this retro to the team";
+
+// --- Claim, delete (spec §4.3, §15.2) ---
+
+export const CLAIM_MENU_ITEM = "Claim ownership";
+export const CLAIM_FAILED = "Failed to claim this retro";
+export const CLAIMED = "You now own this retro";
+
+export const DELETE_MENU_ITEM = "Delete retro";
+export const DELETE_TITLE = "Delete this retro?";
+export const deleteRetroConfirm = (cards: number, openActions: number) =>
+  `${cards} ${cards === 1 ? "card" : "cards"}, ${openActions} open ${
+    openActions === 1 ? "action item" : "action items"
+  } and its history are removed permanently. This cannot be undone.`;
+export const DELETE_BUTTON = "Delete retro";
+export const DELETING_BUTTON = "Deleting…";
+export const DELETE_FAILED = "Failed to delete this retro";
+export const RETRO_DELETED = "Retro deleted";
+
+// --- Listings (spec §16.5, §18.1) ---
+
+export const NO_TEAM_GROUP = "No team";
+export const TEAM_RETROS_TITLE = "Retros";
+export const TEAM_RETROS_EMPTY = "No retros yet. Start one and this team keeps it.";
+export const MY_RETROS_TITLE = "Your retros";
+export const MY_RETROS_EMPTY = "Retros you take part in show up here.";
 
 // --- Join (spec §4.4) ---
 

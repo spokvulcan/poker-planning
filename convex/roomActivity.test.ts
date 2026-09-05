@@ -499,3 +499,57 @@ describe("room activity — the chokepoint owns the clock's precision (ADR-0018)
     expect(await lastActivityAt(t, roomId)).toBeGreaterThanOrEqual(before);
   });
 });
+
+describe("room activity — the Team's side of a retro bumps (spec §14)", () => {
+  const HOUR = Rooms.RETRO_ACTIVITY_GRANULARITY_MS;
+  const as = (t: T, subject: string) => t.withIdentity({ subject });
+
+  async function seedPermanent(t: T, authUserId: string): Promise<Id<"users">> {
+    return t.run((ctx) =>
+      ctx.db.insert("users", {
+        authUserId,
+        name: authUserId,
+        createdAt: Date.now(),
+        accountType: "permanent",
+      })
+    );
+  }
+
+  /** A Team with an admin and a member, and a retro by the member, seeded over an hour stale. */
+  async function seedTeamRetro(t: T, teamed: boolean) {
+    await seedPermanent(t, "auth-admin");
+    const memberId = await seedPermanent(t, "auth-member");
+    const teamId = await as(t, "auth-admin").mutation(api.teams.create, { name: "T" });
+    const team = (await t.run((ctx) => ctx.db.get(teamId)))!;
+    await as(t, "auth-member").mutation(api.teams.joinByInvite, { inviteToken: team.inviteToken });
+    const roomId = await as(t, "auth-member").mutation(api.retro.create, {
+      name: "R",
+      formatName: "Went well, Do differently, Ideas",
+      ...(teamed ? { teamId } : {}),
+    });
+    const stale = Date.now() - HOUR - 60_000;
+    await t.run((ctx) => ctx.db.patch(roomId, { lastActivityAt: stale }));
+    return { teamId, roomId, memberId, stale };
+  }
+
+  it("adoptIntoTeam bumps", async () => {
+    const t = convexTest(schema, modules);
+    const { teamId, roomId, stale } = await seedTeamRetro(t, false);
+
+    await as(t, "auth-member").mutation(api.retro.adoptIntoTeam, { roomId, teamId });
+
+    await expectBumped(t, roomId, stale);
+  });
+
+  it("claim bumps", async () => {
+    const t = convexTest(schema, modules);
+    const { roomId, memberId, stale } = await seedTeamRetro(t, true);
+    await as(t, "auth-admin").mutation(api.users.join, { roomId, name: "A", authUserId: "auth-admin" });
+    await as(t, "auth-member").mutation(api.users.leave, { roomId, userId: memberId });
+    await t.run((ctx) => ctx.db.patch(roomId, { lastActivityAt: stale }));
+
+    await as(t, "auth-admin").mutation(api.retro.claim, { roomId });
+
+    await expectBumped(t, roomId, stale);
+  });
+});

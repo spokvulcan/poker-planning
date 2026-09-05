@@ -1,15 +1,31 @@
 import { MutationCtx, QueryCtx } from "../_generated/server";
 import { Doc, Id } from "../_generated/dataModel";
+import { internal } from "../_generated/api";
 import { DEFAULT_RETRO_PERMISSIONS } from "../permissions";
-import { validateRoomName } from "./rooms";
-import { findFormat, seedStages, stampFormat } from "./retroFormats";
-import { NOT_A_RETRO, UNKNOWN_FORMAT } from "../retroCopy";
+import { validateRoomName, updateRoomActivity } from "./rooms";
+import { deleteRoomAggregateChunk } from "./roomAggregate";
+import { listTeamsForUser } from "./teams";
+import {
+  findFormat,
+  seedStages,
+  stampFormat,
+  type StageKind,
+  type StampedFormat,
+} from "./retroFormats";
+import {
+  ALREADY_KEPT_BY_TEAM,
+  NO_TEAM_GROUP,
+  NOT_A_RETRO,
+  ONLY_OWNER_CAN_ADOPT,
+  UNKNOWN_FORMAT,
+} from "../retroCopy";
 import { refusal } from "./refusal";
 
 /**
  * The retro (ADR-0016): one room with its ceremony state in a `retros` row
- * beside it. This module holds creation and the board read; cards, clusters,
- * dots and the walk arrive with their own tickets.
+ * beside it. This module holds creation, the board read, the Team's side of
+ * a retro's life (adoption, claim, deletion) and the two listings; cards,
+ * clusters, dots and the walk arrive with their own tickets.
  */
 
 export interface CreateRetroArgs {
@@ -19,16 +35,21 @@ export interface CreateRetroArgs {
   formatName: string;
   /** Advisory cards-due date (ADR-0020). */
   collectUntil?: number;
+  /**
+   * The Team that keeps the retro, already guarded (the caller ran
+   * `requireTeamRole`). Its retro defaults are copied by value (ADR-0013).
+   */
+  team?: Doc<"teams">;
 }
 
 /**
- * Creates a teamless retro: the room (`roomType: "retro"`, always owned,
- * `joinPolicy: "anyone"`, the retro permission defaults, not retained) and
- * the `retros` row (attribution `named`, the format copied whole, the stamped
- * stage list with the first entry current) in one mutation, then the
- * creator's owner membership. Its own function rather than a branch of
- * `Rooms.createRoom`, which hard-codes the canvas type and seeds canvas
- * nodes a retro never has.
+ * Creates a retro: the room (`roomType: "retro"`, always owned, the join
+ * policy and permissions from the Team's defaults or the teamless values,
+ * `retained` iff a Team keeps it) and the `retros` row (the attribution from
+ * the same defaults, the format copied whole, the stamped stage list with
+ * the first entry current) in one mutation, then the creator's owner
+ * membership. Its own function rather than a branch of `Rooms.createRoom`,
+ * which hard-codes the canvas type and seeds canvas nodes a retro never has.
  */
 export async function createRetro(
   ctx: MutationCtx,
@@ -40,6 +61,9 @@ export async function createRetro(
   }
   const name = validateRoomName(args.name);
   const now = Date.now();
+  // Copied by value, whole (ADR-0008): the room's stored values are
+  // authoritative from here on, whatever the Team's defaults become.
+  const defaults = args.team?.retroDefaults;
 
   const roomId = await ctx.db.insert("rooms", {
     name,
@@ -48,16 +72,17 @@ export async function createRetro(
     isGameOver: false,
     createdAt: now,
     lastActivityAt: now,
-    retained: false,
+    retained: args.team !== undefined,
     ownerId: args.ownerId,
-    joinPolicy: "anyone",
-    permissions: { ...DEFAULT_RETRO_PERMISSIONS },
+    ...(args.team ? { teamId: args.team._id } : {}),
+    joinPolicy: defaults?.joinPolicy ?? "anyone",
+    permissions: { ...(defaults?.permissions ?? DEFAULT_RETRO_PERMISSIONS) },
   });
 
-  const stages = seedStages(format, { hasTeam: false });
+  const stages = seedStages(format, { hasTeam: args.team !== undefined });
   await ctx.db.insert("retros", {
     roomId,
-    attribution: "named",
+    attribution: defaults?.attribution ?? "named",
     format: stampFormat(format),
     stages,
     currentStageId: stages[0].id,
@@ -101,4 +126,248 @@ export async function getBoard(
     throw refusal("missing", NOT_A_RETRO);
   }
   return retro;
+}
+
+/**
+ * Adoption (spec §5, ADR-0019): the room owner gives a teamless retro to a
+ * Team they belong to. Sets the set-once `teamId`, flips `retained`, and
+ * stamps `teamId` onto the room's existing action items so they reach the
+ * team page. Nothing else is rewritten — not the stage list (no `review`
+ * comes back), not the join policy, attribution or permissions.
+ *
+ * The caller has already guarded attendance (`requireRoomMember`) and Team
+ * membership (`requireTeamRole`); the ownership rule is an identity rule and
+ * lives here, after the guards, like `transferOwnership`'s.
+ */
+export async function adoptIntoTeam(
+  ctx: MutationCtx,
+  args: { room: Doc<"rooms">; actorUserId: Id<"users">; teamId: Id<"teams"> }
+): Promise<void> {
+  const { room } = args;
+  if (room.roomType !== "retro") {
+    throw refusal("missing", NOT_A_RETRO);
+  }
+  if (room.ownerId !== args.actorUserId) {
+    throw refusal("forbidden", ONLY_OWNER_CAN_ADOPT);
+  }
+  if (room.teamId !== undefined) {
+    throw refusal("forbidden", ALREADY_KEPT_BY_TEAM);
+  }
+
+  await ctx.db.patch(room._id, { teamId: args.teamId, retained: true });
+
+  // A retro's action items are a handful (ADR-0017: one home each), so one
+  // indexed read stamps them all inside the adoption transaction.
+  const actions = await ctx.db
+    .query("retroActions")
+    .withIndex("by_room", (q) => q.eq("roomId", room._id))
+    .collect();
+  await Promise.all(actions.map((action) => ctx.db.patch(action._id, { teamId: args.teamId })));
+
+  await updateRoomActivity(ctx, room._id);
+}
+
+/**
+ * `claim` (ADR-0013): the guard has already decided the actor may (a team
+ * admin, attending, the owner absent or out of the Team). The actor becomes
+ * `ownerId` and their membership `owner`; the previous owner's membership,
+ * if present, becomes `participant`, keeping exactly one owner-role
+ * membership in the room (ADR-0001).
+ */
+export async function claim(
+  ctx: MutationCtx,
+  args: { room: Doc<"rooms">; actorMembership: Doc<"roomMemberships"> }
+): Promise<void> {
+  const { room, actorMembership } = args;
+  if (room.ownerId && room.ownerId !== actorMembership.userId) {
+    const previous = await ctx.db
+      .query("roomMemberships")
+      .withIndex("by_room_user", (q) => q.eq("roomId", room._id).eq("userId", room.ownerId!))
+      .unique();
+    if (previous) {
+      await ctx.db.patch(previous._id, { role: "participant" });
+    }
+  }
+  await ctx.db.patch(actorMembership._id, { role: "owner" });
+  await ctx.db.patch(room._id, { ownerId: actorMembership.userId });
+  await updateRoomActivity(ctx, room._id);
+}
+
+/**
+ * `delete` (ADR-0019): hard delete through the room cascade. The first
+ * bounded step runs inside this mutation, so a retro of ordinary size is
+ * gone when the call returns; a continuation is scheduled only when a full
+ * batch remains.
+ */
+export async function deleteRetro(
+  ctx: MutationCtx,
+  roomId: Id<"rooms">
+): Promise<void> {
+  const step = await deleteRoomAggregateChunk(ctx, roomId);
+  if (!step.done) {
+    await ctx.scheduler.runAfter(0, internal.maintenance.deleteRoomAggregateChunk, { roomId });
+  }
+}
+
+/**
+ * The counts the delete confirmation names (spec §19), read from the card
+ * and action tables. Bounded reads: the copy needs a number, and a retro
+ * never approaches the bound.
+ */
+const MAX_COUNTED_ROWS = 1000;
+
+export async function deleteCounts(
+  ctx: QueryCtx,
+  roomId: Id<"rooms">
+): Promise<{ cards: number; openActions: number }> {
+  const [cards, actions] = await Promise.all([
+    ctx.db
+      .query("retroCards")
+      .withIndex("by_room", (q) => q.eq("roomId", roomId))
+      .take(MAX_COUNTED_ROWS),
+    ctx.db
+      .query("retroActions")
+      .withIndex("by_room", (q) => q.eq("roomId", roomId))
+      .take(MAX_COUNTED_ROWS),
+  ]);
+  return {
+    cards: cards.length,
+    openActions: actions.filter((action) => action.status === "open").length,
+  };
+}
+
+/**
+ * The create form's pre-selection (spec §6.1): the Team's newest retro's
+ * format, edited or not, or null for a Team with no retros yet.
+ */
+export async function lastFormat(
+  ctx: QueryCtx,
+  teamId: Id<"teams">
+): Promise<StampedFormat | null> {
+  const newest = await ctx.db
+    .query("rooms")
+    .withIndex("by_team", (q) => q.eq("teamId", teamId))
+    .order("desc")
+    .first();
+  if (!newest) return null;
+  const retro = await getRetro(ctx, newest._id);
+  return retro ? retro.format : null;
+}
+
+/** One listing row (spec §16.5): the minimal row until #299's history row. */
+export interface RetroListRow {
+  roomId: Id<"rooms">;
+  name: string;
+  /** The resting stage's kind: the shared pointer. */
+  stageKind: StageKind;
+  collectUntil?: number;
+  createdAt: number;
+}
+
+function toRow(room: Doc<"rooms">, retro: Doc<"retros">): RetroListRow {
+  const current =
+    retro.stages.find((stage) => stage.id === retro.currentStageId) ?? retro.stages[0];
+  return {
+    roomId: room._id,
+    name: room.name,
+    stageKind: current.kind,
+    ...(retro.collectUntil !== undefined ? { collectUntil: retro.collectUntil } : {}),
+    createdAt: room.createdAt,
+  };
+}
+
+/** Rows for the retro rooms among `rooms`, in the order given; poker rooms drop out. */
+async function rowsOf(ctx: QueryCtx, rooms: Doc<"rooms">[]): Promise<RetroListRow[]> {
+  const retros = await Promise.all(rooms.map((room) => getRetro(ctx, room._id)));
+  return rooms.flatMap((room, i) => {
+    const retro = retros[i];
+    return retro ? [toRow(room, retro)] : [];
+  });
+}
+
+/** How many of a Team's retros a listing shows; the history row (#299) pages. */
+const MAX_LISTED_ROOMS = 200;
+
+/** The team page's listing (spec §5): the Team's retros in creation order. */
+export async function listForTeam(
+  ctx: QueryCtx,
+  teamId: Id<"teams">
+): Promise<RetroListRow[]> {
+  const rooms = await ctx.db
+    .query("rooms")
+    .withIndex("by_team", (q) => q.eq("teamId", teamId))
+    .take(MAX_LISTED_ROOMS);
+  return rowsOf(ctx, rooms);
+}
+
+/**
+ * The dashboard's ordering (spec §16.5): retros whose shared stage is
+ * `collect` first, newest first within each half.
+ */
+export function orderForDashboard(rows: RetroListRow[]): RetroListRow[] {
+  return [...rows].sort((a, b) => {
+    const aCollect = a.stageKind === "collect" ? 0 : 1;
+    const bCollect = b.stageKind === "collect" ? 0 : 1;
+    return aCollect - bCollect || b.createdAt - a.createdAt;
+  });
+}
+
+export interface RetroListGroup {
+  /** Undefined for the "No team" group. */
+  teamId?: Id<"teams">;
+  teamName: string;
+  retros: RetroListRow[];
+}
+
+/**
+ * `/dashboard/retros` (spec §18.1): the retros the person attended, grouped
+ * by Team in the order they joined their Teams, teamless ones last under
+ * "No team", `collect` first within each group. A group with no retros is
+ * left out; the person's Teams have their own list beside this one.
+ */
+export async function listMine(
+  ctx: QueryCtx,
+  userId: Id<"users">
+): Promise<RetroListGroup[]> {
+  const memberships = await ctx.db
+    .query("roomMemberships")
+    .withIndex("by_user", (q) => q.eq("userId", userId))
+    .take(MAX_LISTED_ROOMS);
+  const rooms = (await Promise.all(memberships.map((m) => ctx.db.get(m.roomId)))).filter(
+    (room): room is Doc<"rooms"> => room !== null && room.roomType === "retro"
+  );
+  const rows = await rowsOf(ctx, rooms);
+  const roomById = new Map(rooms.map((room) => [room._id, room]));
+
+  const byTeam = new Map<Id<"teams"> | undefined, RetroListRow[]>();
+  for (const row of rows) {
+    const teamId = roomById.get(row.roomId)?.teamId;
+    byTeam.set(teamId, [...(byTeam.get(teamId) ?? []), row]);
+  }
+
+  const groups: RetroListGroup[] = [];
+  for (const team of await listTeamsForUser(ctx, userId)) {
+    const retros = byTeam.get(team._id);
+    if (retros) {
+      groups.push({ teamId: team._id, teamName: team.name, retros: orderForDashboard(retros) });
+      byTeam.delete(team._id);
+    }
+  }
+  // Retros of a Team the person has since left, or whose Team is gone, are
+  // still theirs by attendance; they list under the Team's name when it
+  // still exists.
+  for (const [teamId, retros] of byTeam) {
+    if (teamId === undefined) continue;
+    const team = await ctx.db.get(teamId);
+    groups.push({
+      teamId,
+      teamName: team?.name ?? NO_TEAM_GROUP,
+      retros: orderForDashboard(retros),
+    });
+  }
+  const teamless = byTeam.get(undefined);
+  if (teamless) {
+    groups.push({ teamName: NO_TEAM_GROUP, retros: orderForDashboard(teamless) });
+  }
+  return groups;
 }

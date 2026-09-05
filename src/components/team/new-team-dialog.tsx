@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useMutation } from "convex/react";
 import Link from "next/link";
 import { api } from "@/convex/_generated/api";
+import type { Id } from "@/convex/_generated/dataModel";
 import { SIGN_IN_TO_CREATE } from "@/convex/teamCopy";
 import { useAuth } from "@/components/auth/auth-provider";
 import { Button } from "@/components/ui/button";
@@ -24,6 +25,11 @@ interface NewTeamDialogProps {
   onOpenChange: (open: boolean) => void;
   /** Where the sign-in link returns to for an anonymous account. */
   returnTo: string;
+  /**
+   * Called with the new Team instead of opening its page — the create form's
+   * picker keeps the person where they were and selects the Team.
+   */
+  onCreated?: (teamId: Id<"teams">) => void;
 }
 
 /**
@@ -31,7 +37,7 @@ interface NewTeamDialogProps {
  * admin; an anonymous account is told to sign in first. The server enforces
  * the same rule, so this dialog only shapes the copy.
  */
-export function NewTeamDialog({ open, onOpenChange, returnTo }: NewTeamDialogProps) {
+export function NewTeamDialog({ open, onOpenChange, returnTo, onCreated }: NewTeamDialogProps) {
   const router = useRouter();
   const { accountType } = useAuth();
   const createTeam = useMutation(api.teams.create);
@@ -54,7 +60,11 @@ export function NewTeamDialog({ open, onOpenChange, returnTo }: NewTeamDialogPro
     try {
       const teamId = await createTeam({ name: trimmed });
       close(false);
-      router.push(`/team/${teamId}`);
+      if (onCreated) {
+        onCreated(teamId);
+      } else {
+        router.push(`/team/${teamId}`);
+      }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to create team");
     } finally {
