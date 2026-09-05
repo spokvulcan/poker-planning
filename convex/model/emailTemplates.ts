@@ -1,9 +1,8 @@
 /**
- * The per-kind email templates (spec §16.1): `magicLink`, `retroOpen` and
- * `nudge` here; `ownerAssigned` and `dueToday` arrive with the reminders
- * (#298). Plain functions from resolved content to `{ subject, html }`,
- * with no I/O, so a test can read what a body says and what it never
- * says. Every value is escaped on the way in.
+ * The per-kind email templates (spec §16.1): `magicLink`, `retroOpen`,
+ * `nudge`, `ownerAssigned` and `dueToday`. Plain functions from resolved
+ * content to `{ subject, html }`, with no I/O, so a test can read what a
+ * body says and what it never says. Every value is escaped on the way in.
  */
 
 export function escapeHtml(value: string): string {
@@ -123,6 +122,60 @@ export function nudge(args: RetroEmailArgs, unsubscribe: UnsubscribeLinks): Emai
       </p>
       ${retroFacts(args)}
       ${button(args.roomUrl, "Add your cards")}`,
+      unsubscribe
+    ),
+  };
+}
+
+/** What both reminders carry (spec §16.3): the item's own facts and its retro; never another person's. */
+export interface ReminderEmailArgs {
+  text: string;
+  retroName: string;
+  teamName: string;
+  dueAt?: number;
+  roomUrl: string;
+}
+
+function actionFacts(args: ReminderEmailArgs): string {
+  const due = args.dueAt !== undefined ? `<p style="color: #555; margin-bottom: 24px;">Due ${escapeHtml(dateLine(args.dueAt))}</p>` : "";
+  return `<blockquote style="margin: 0 0 16px; padding: 12px 16px; border-left: 3px solid #ddd; color: #222;">
+        ${escapeHtml(args.text)}
+      </blockquote>
+      <p style="color: #555; margin-bottom: ${due ? "8px" : "24px"};">
+        ${escapeHtml(args.retroName)} · ${escapeHtml(args.teamName)}
+      </p>
+      ${due}`;
+}
+
+/** Who assigned it is a name in the body (spec §16.3); no reply-to, unlike the nudge. */
+export function ownerAssigned(
+  args: ReminderEmailArgs & { senderName: string },
+  unsubscribe: UnsubscribeLinks
+): EmailBody {
+  return {
+    subject: `${args.senderName} made you the owner of an action item`,
+    html: layout(
+      "An action item is yours",
+      `<p style="color: #555; margin-bottom: 16px;">
+        ${escapeHtml(args.senderName)} made you the owner of this action item in ${escapeHtml(args.retroName)}.
+      </p>
+      ${actionFacts(args)}
+      ${button(args.roomUrl, "Open the retro")}`,
+      unsubscribe
+    ),
+  };
+}
+
+export function dueToday(args: ReminderEmailArgs, unsubscribe: UnsubscribeLinks): EmailBody {
+  return {
+    subject: "Your action item is due today",
+    html: layout(
+      "Due today",
+      `<p style="color: #555; margin-bottom: 16px;">
+        This action item from ${escapeHtml(args.retroName)} is due today.
+      </p>
+      ${actionFacts(args)}
+      ${button(args.roomUrl, "Open the retro")}`,
       unsubscribe
     ),
   };

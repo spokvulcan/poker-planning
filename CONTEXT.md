@@ -286,7 +286,7 @@ _Avoid_: summary card, tile, preview
 
 ### Retro notifications
 
-Decided on [map #253](https://github.com/spokvulcan/poker-planning/issues/253). The nudge, the email channel and the opt-out are built ([#297](https://github.com/spokvulcan/poker-planning/issues/297)); reminders follow in [#298](https://github.com/spokvulcan/poker-planning/issues/298). See [ADR-0020](docs/adr/0020-a-nudge-is-sent-by-a-person-and-a-reminder-by-a-date.md).
+Decided on [map #253](https://github.com/spokvulcan/poker-planning/issues/253). The nudge, the email channel and the opt-out are built ([#297](https://github.com/spokvulcan/poker-planning/issues/297)), and so are the reminders ([#298](https://github.com/spokvulcan/poker-planning/issues/298)). See [ADR-0020](docs/adr/0020-a-nudge-is-sent-by-a-person-and-a-reminder-by-a-date.md).
 
 **Nudge**:
 The email a person sends to their **Team** asking for cards while a retro's **collection window** is open. Always a human act by someone who may **advance** the stage, never scheduled, at most once a day per retro. In a named retro it goes only to team members who have not written; in an anonymous retro it goes to everyone, because no one can tell. It counts cards and names its sender; it never quotes a card or names who has not written. A teamless retro has no nudge, because it has no addressable audience.

@@ -6,16 +6,20 @@ import * as Users from "./model/users";
 import * as Templates from "./model/emailTemplates";
 import { mintUnsubscribeToken, requireUnsubscribeSecret } from "./model/unsubscribe";
 import { resolveRetroSend, type ResolvedRetroSend } from "./model/retroNudge";
+import { resolveReminderSend, type ReminderJob, type ResolvedReminderSend } from "./model/retroReminders";
+import type { EmailRecipient } from "./model/retroNudge";
 
 /**
  * The email channel (spec §16.1, ADR-0020): raw `fetch` to Resend, one
- * call per recipient, from "AgileKit". `send` is the one action; the
- * mutation that wants an email records its intent and schedules it with
- * `runAfter(0)`. Recipients are resolved here at send time through
- * `ctx.runQuery`, never carried in the job, so an account that opted out,
- * left the Team or was deleted in between is never emailed and no
- * reference to a deleted account is ever followed. No send log. The magic
- * link is transactional: no opt-out, no unsubscribe headers.
+ * call per recipient, from "AgileKit". `send` carries the retro emails
+ * (a room and a sender) and `sendReminder` the action item's (an item);
+ * the mutation that wants an email records its intent and schedules it,
+ * with `runAfter(0)` or, for the due date, `runAt`. Recipients are
+ * resolved here at send time through `ctx.runQuery`, never carried in
+ * the job, so an account that opted out, left the Team or was deleted in
+ * between is never emailed and no reference to a deleted account is ever
+ * followed. No send log. The magic link is transactional: no opt-out, no
+ * unsubscribe headers.
  */
 
 const DEFAULT_FROM = "AgileKit <noreply@agilekit.app>";
@@ -96,6 +100,24 @@ async function unsubscribeFor(userId: Id<"users">): Promise<{
   };
 }
 
+/**
+ * One recipient's delivery of a non-magic-link email: the body the caller
+ * chose, wrapped in that person's unsubscribe headers and footer link.
+ */
+async function deliverTo(
+  recipient: EmailRecipient,
+  body: (links: Templates.UnsubscribeLinks) => Templates.EmailBody,
+  replyTo?: string
+): Promise<void> {
+  const unsubscribe = await unsubscribeFor(recipient.userId);
+  await deliver({
+    to: recipient.email,
+    ...body(unsubscribe.links),
+    ...(replyTo !== undefined ? { replyTo } : {}),
+    headers: unsubscribe.headers,
+  });
+}
+
 /** The magic link (auth.ts): kept by name, now a thin wrapper over the channel. */
 export const sendMagicLinkEmail = internalAction({
   args: { to: v.string(), url: v.string() },
@@ -105,7 +127,7 @@ export const sendMagicLinkEmail = internalAction({
 });
 
 // A top-level args validator must be an object (Convex rejects a union at
-// the top), so the kind is a field; the reminder kinds arrive with #298.
+// the top), so the kind is a field.
 const sendArgs = {
   kind: v.union(v.literal("retroOpen"), v.literal("nudge")),
   roomId: v.id("rooms"),
@@ -148,17 +170,12 @@ export const send = internalAction({
     const failures: string[] = [];
     for (const recipient of recipients) {
       try {
-        const unsubscribe = await unsubscribeFor(recipient.userId);
-        const body =
-          content.kind === "nudge"
-            ? Templates.nudge(templateArgs, unsubscribe.links)
-            : Templates.retroOpen(templateArgs, unsubscribe.links);
-        await deliver({
-          to: recipient.email,
-          ...body,
-          ...(content.senderEmail !== undefined ? { replyTo: content.senderEmail } : {}),
-          headers: unsubscribe.headers,
-        });
+        await deliverTo(
+          recipient,
+          (links) =>
+            content.kind === "nudge" ? Templates.nudge(templateArgs, links) : Templates.retroOpen(templateArgs, links),
+          content.senderEmail
+        );
       } catch (error) {
         failures.push(`${recipient.userId}: ${error instanceof Error ? error.message : String(error)}`);
       }
@@ -168,6 +185,66 @@ export const send = internalAction({
         `${content.kind} for room ${content.roomId}: ${failures.length} of ${recipients.length} sends failed — ${failures.join("; ")}`
       );
     }
+  },
+});
+
+// The reminder job (spec §16.3): the item, and for an assignment the owner
+// it named and who named them. The same flat-object rule as `sendArgs`.
+const reminderArgs = {
+  kind: v.union(v.literal("ownerAssigned"), v.literal("dueToday")),
+  actionId: v.id("retroActions"),
+  ownerId: v.optional(v.id("users")),
+  senderId: v.optional(v.id("users")),
+};
+
+/** The validated flat args back into the model's job shape; a malformed assignment job is a bug. */
+function reminderJobOf(args: {
+  kind: ReminderJob["kind"];
+  actionId: Id<"retroActions">;
+  ownerId?: Id<"users">;
+  senderId?: Id<"users">;
+}): ReminderJob {
+  if (args.kind === "dueToday") return { kind: "dueToday", actionId: args.actionId };
+  if (args.ownerId === undefined || args.senderId === undefined) {
+    throw new Error(`ownerAssigned job for ${args.actionId} names no owner or sender`);
+  }
+  return { kind: "ownerAssigned", actionId: args.actionId, ownerId: args.ownerId, senderId: args.senderId };
+}
+
+/** The send-time read behind `sendReminder`; a query, so it can never patch the room. */
+export const resolveReminder = internalQuery({
+  args: reminderArgs,
+  handler: async (ctx, args) => {
+    return await resolveReminderSend(ctx, reminderJobOf(args));
+  },
+});
+
+/**
+ * The action item's send (spec §16.3): re-reads the item now and emails
+ * its owner, once, with that person's unsubscribe headers and footer. An
+ * item that is gone, closed, unowned, reassigned since, roomless or
+ * teamless, or an owner the channel filters out, is a quiet no-op. A
+ * failed delivery throws so the scheduler's log names it; nothing is
+ * retried, and the item's state is untouched either way.
+ */
+export const sendReminder = internalAction({
+  args: reminderArgs,
+  handler: async (ctx, args) => {
+    const resolved: ResolvedReminderSend | null = await ctx.runQuery(internal.email.resolveReminder, args);
+    if (!resolved) return;
+    const { content, recipient } = resolved;
+    const templateArgs: Templates.ReminderEmailArgs = {
+      text: content.text,
+      retroName: content.retroName,
+      teamName: content.teamName,
+      ...(content.dueAt !== undefined ? { dueAt: content.dueAt } : {}),
+      roomUrl: `${siteUrl()}/room/${content.roomId}`,
+    };
+    await deliverTo(recipient, (links) =>
+      content.kind === "ownerAssigned"
+        ? Templates.ownerAssigned({ ...templateArgs, senderName: content.senderName }, links)
+        : Templates.dueToday(templateArgs, links)
+    );
   },
 });
 

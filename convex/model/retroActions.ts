@@ -7,6 +7,7 @@ import type { CardActor } from "./retroCards";
 import { refusal } from "./refusal";
 import type { TopicRef } from "./walk";
 import { getRetro, policyOf, projectCard, type FullCard, type ProjectedCard, type ProjectionPolicy } from "./retro";
+import * as Reminders from "./retroReminders";
 import {
   ACTION_NOT_FOUND,
   ACTION_NOTE_TOO_LONG,
@@ -29,7 +30,9 @@ import {
  * `actionManagement` allows may do so to another's, assign, and delete.
  * Every act bumps the activity chokepoint (spec §14), completing from the
  * team page included. Attribution never reaches an action (ADR-0012):
- * creator and owner are named in both modes.
+ * creator and owner are named in both modes. An item reminds its owner
+ * (spec §16.3): every write here hands the row to `retroReminders`, which
+ * schedules the assignment's send and keeps the due-date job in step.
  */
 
 export const MAX_ACTION_TEXT = 500;
@@ -149,6 +152,7 @@ export async function createAction(
     createdAt: now,
     updatedAt: now,
   });
+  await Reminders.afterWrite(ctx, { actionId: id, actorId: args.actor.user._id });
   await updateRoomActivity(ctx, args.room);
   return id;
 }
@@ -171,6 +175,7 @@ export async function updateAction(
     ...(args.dueAt === null ? { dueAt: undefined } : args.dueAt !== undefined ? { dueAt: args.dueAt } : {}),
     updatedAt: Date.now(),
   });
+  await Reminders.afterWrite(ctx, { actionId: action._id, before: action, actorId: args.actor.user._id });
   await updateRoomActivity(ctx, args.room);
 }
 
@@ -202,6 +207,7 @@ export async function setActionStatus(
     note: args.status === "open" ? undefined : note !== undefined && note !== "" ? note : action.note,
     updatedAt: Date.now(),
   });
+  await Reminders.afterWrite(ctx, { actionId: action._id, before: action, actorId: args.actor.user._id });
   await updateRoomActivity(ctx, args.room);
 }
 
@@ -214,6 +220,7 @@ export async function assignAction(
   await requireManagement(ctx, args.room, args.actor);
   if (args.ownerId !== undefined) await requireOwnerAttends(ctx, args.room._id, args.ownerId);
   await ctx.db.patch(action._id, { ownerId: args.ownerId, updatedAt: Date.now() });
+  await Reminders.afterWrite(ctx, { actionId: action._id, before: action, actorId: args.actor.user._id });
   await updateRoomActivity(ctx, args.room);
 }
 
@@ -224,6 +231,7 @@ export async function deleteAction(
 ): Promise<void> {
   const action = await requireAction(ctx, args.room._id, args.actionId);
   await requireManagement(ctx, args.room, args.actor);
+  await Reminders.cancelDueReminder(ctx, action);
   await ctx.db.delete(action._id);
   await updateRoomActivity(ctx, args.room);
 }
