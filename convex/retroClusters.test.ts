@@ -127,22 +127,22 @@ describe("retro.formCluster (spec §10.3)", () => {
     expect(await clustersOf(t, roomId)).toHaveLength(0);
   });
 
-  it("a card already in a cluster is re-pointed, and a cluster emptied that way is removed", async () => {
+  it("a card already in a cluster is re-pointed; the cluster emptied that way keeps its row (only merge or dissolve removes one)", async () => {
     const t = convexTest(schema, modules);
     const { roomId } = await seedRetro(t);
     const me = as(t, "owner");
     const first = await me.mutation(api.retro.formCluster, { roomId, clientIds: ["o1"] });
     const second = await me.mutation(api.retro.formCluster, { roomId, clientIds: ["o1", "o2"] });
     const clusters = await clustersOf(t, roomId);
-    expect(clusters.map((c) => c._id)).toEqual([second]);
-    expect(clusters[0]._id).not.toBe(first);
+    expect(clusters.map((c) => c._id).sort()).toEqual([first, second].sort());
+    expect(second).not.toBe(first);
     const cards = await cardsOf(t, roomId);
     expect(cards.find((c) => c.clientId === "o1")!.clusterId).toBe(second);
   });
 });
 
 describe("membership (spec §10.3): open to everyone", () => {
-  it("addToCluster and removeFromCluster set and null clusterId without moving anyone; the last removal deletes the row", async () => {
+  it("addToCluster and removeFromCluster set and null clusterId without moving anyone; the last removal keeps the row, since deleting one is dissolve", async () => {
     const t = convexTest(schema, modules);
     const { roomId } = await seedRetro(t);
     const clusterId = await as(t, "owner").mutation(api.retro.formCluster, { roomId, clientIds: ["o1"] });
@@ -159,7 +159,7 @@ describe("membership (spec §10.3): open to everyone", () => {
     expect(await clustersOf(t, roomId)).toHaveLength(1);
 
     await as(t, "guest").mutation(api.retro.removeFromCluster, { roomId, clientIds: ["g1"] });
-    expect(await clustersOf(t, roomId)).toHaveLength(0);
+    expect(await clustersOf(t, roomId)).toHaveLength(1);
     expect((await cardsOf(t, roomId)).every((c) => c.clusterId === undefined)).toBe(true);
   });
 

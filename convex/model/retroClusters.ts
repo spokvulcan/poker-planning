@@ -4,6 +4,7 @@ import { resolveRoomAction } from "./auth";
 import { updateRoomActivity } from "./rooms";
 import { refusal } from "./refusal";
 import { getCardByClientId, type CardActor } from "./retroCards";
+import { MAX_BOARD_ROWS } from "./retro";
 import {
   CARD_NOT_FOUND,
   CLUSTER_NAME_REQUIRED,
@@ -67,7 +68,7 @@ async function membersOf(ctx: QueryCtx, clusterId: Id<"retroClusters">): Promise
   return ctx.db
     .query("retroCards")
     .withIndex("by_cluster", (q) => q.eq("clusterId", clusterId))
-    .collect();
+    .take(MAX_BOARD_ROWS);
 }
 
 /** The `cardManagement` decision as a `forbidden` refusal the client can tell from a failure. */
@@ -94,31 +95,27 @@ async function defaultName(ctx: QueryCtx, roomId: Id<"rooms">): Promise<string> 
     await ctx.db
       .query("retroClusters")
       .withIndex("by_room", (q) => q.eq("roomId", roomId))
-      .collect()
+      .take(MAX_BOARD_ROWS)
   );
 }
 
 /**
- * Point cards at a cluster (or at none), then drop any cluster the change
- * emptied. Positions are untouched.
+ * Point cards at a cluster (or at none). Positions are untouched, and a
+ * cluster the change leaves empty keeps its row: deleting one is dissolve,
+ * which is `cardManagement` (spec §4.2), while membership is open to
+ * everyone. Only merge removes a row (spec §10.3). An empty cluster draws
+ * no chip and is deleted with the room.
  */
 async function repoint(
   ctx: MutationCtx,
   cards: readonly Doc<"retroCards">[],
   clusterId: Id<"retroClusters"> | undefined
 ): Promise<void> {
-  const vacated = new Set<Id<"retroClusters">>();
-  for (const card of cards) {
-    if (card.clusterId !== undefined && card.clusterId !== clusterId) vacated.add(card.clusterId);
-  }
   await Promise.all(
     cards.map((card) =>
       ctx.db.patch(card._id, clusterId === undefined ? { clusterId: undefined } : { clusterId })
     )
   );
-  for (const id of vacated) {
-    if ((await membersOf(ctx, id)).length === 0) await ctx.db.delete(id);
-  }
 }
 
 /**
@@ -152,7 +149,7 @@ export async function addToCluster(
   await updateRoomActivity(ctx, args.room);
 }
 
-/** Take cards out of whatever cluster they are in (everyone); a cluster left empty is removed. */
+/** Take cards out of whatever cluster they are in (everyone); a cluster left empty keeps its row. */
 export async function removeFromCluster(
   ctx: MutationCtx,
   args: { room: Doc<"rooms">; actor: CardActor; clientIds: string[] }

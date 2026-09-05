@@ -147,18 +147,15 @@ export interface UngroupArgs {
  * change left empty — the server's own rule, no more: a row that was
  * already empty is the server's to remove.
  */
+/** Re-point the named cards; a cluster left empty keeps its row, as on the server. */
 function repointBoard(board: BoardRead, clientIds: readonly string[], clusterId: Id<"retroClusters"> | undefined): BoardRead {
   const named = new Set(clientIds);
-  const vacated = new Set<Id<"retroClusters">>();
   const cards = board.cards.map((card): ProjectedCard => {
     if (!named.has(card.clientId)) return card;
-    if (card.clusterId !== undefined && card.clusterId !== clusterId) vacated.add(card.clusterId);
     const { clusterId: _dropped, ...rest } = card;
     return clusterId === undefined ? rest : { ...rest, clusterId };
   });
-  if (vacated.size === 0) return { ...board, cards };
-  const populated = new Set(cards.map((card) => card.clusterId));
-  return { ...board, cards, clusters: board.clusters.filter((k) => !vacated.has(k._id) || populated.has(k._id)) };
+  return { ...board, cards };
 }
 
 /**

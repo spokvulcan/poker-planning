@@ -165,7 +165,7 @@ describe("group and ungroup (spec §10.7): clusterId in board only", () => {
     expect(next.cards.map((c) => c.clusterId)).toEqual(["opt-1", "opt-1", undefined]);
   });
 
-  it("applyAddToCluster re-points the members and drops a cluster left empty; positions are untouched", () => {
+  it("applyAddToCluster re-points the members and keeps a cluster left empty; positions are untouched", () => {
     const { store, value } = fakeStore({
       [BOARD]: board(
         "visible",
@@ -177,10 +177,10 @@ describe("group and ungroup (spec §10.7): clusterId in board only", () => {
     const next = value<BoardRead>(BOARD);
     expect(next.cards.map((c) => c.clusterId)).toEqual(["k2", "k2"]);
     expect(next.cards.map((c) => c.position)).toEqual([{ x: 0, y: 0 }, { x: 0, y: 0 }]);
-    expect(next.clusters.map((k) => k._id)).toEqual(["k2"]);
+    expect(next.clusters.map((k) => k._id)).toEqual(["k1", "k2"]);
   });
 
-  it("applyUngroup nulls clusterId and drops a cluster left empty, touching mine never", () => {
+  it("applyUngroup nulls clusterId and keeps a cluster left empty, touching mine never", () => {
     const { store, writes, value } = fakeStore({
       [BOARD]: board(
         "visible",
@@ -194,6 +194,6 @@ describe("group and ungroup (spec §10.7): clusterId in board only", () => {
     const next = value<BoardRead>(BOARD);
     expect(next.cards.map((c) => c.clusterId)).toEqual([undefined, "k1", undefined]);
     expect(next.cards.map((c) => "clusterId" in c)).toEqual([false, true, false]);
-    expect(next.clusters.map((k) => k._id)).toEqual(["k1"]);
+    expect(next.clusters.map((k) => k._id)).toEqual(["k1", "k2"]);
   });
 });
