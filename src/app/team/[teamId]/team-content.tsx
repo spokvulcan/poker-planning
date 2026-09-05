@@ -27,6 +27,8 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { UserAvatar } from "@/components/user-menu/user-avatar";
 import { RetroDefaultsPanel, type RetroDefaults } from "@/components/team/retro-defaults-panel";
+import { RetroRows } from "@/components/retro/retro-list";
+import { TEAM_RETROS_EMPTY, TEAM_RETROS_TITLE } from "@/convex/retroCopy";
 import { copyTextToClipboard } from "@/utils/copy-text-to-clipboard";
 import { toast } from "@/lib/toast";
 
@@ -56,9 +58,10 @@ async function run(fn: () => Promise<unknown>, fallback: string): Promise<boolea
 }
 
 /**
- * The team page (spec §5, §18.1), members only: members with roles, the
- * invite link, the retro-defaults panel, New retro, and admin-only Delete
- * team. Retro history, action items and export arrive with #288/#289.
+ * The team page (spec §5, §18.1), members only: the Team's retros in
+ * creation order, members with roles, the invite link, the retro-defaults
+ * panel, New retro, and admin-only Delete team. The history row, action
+ * items and export arrive with #299.
  */
 export function TeamContent() {
   const params = useParams();
@@ -67,6 +70,7 @@ export function TeamContent() {
   const { isAuthenticated, isLoading: authLoading } = useAuth();
 
   const team = useQuery(api.teams.get, isAuthenticated ? { teamId } : "skip");
+  const retros = useQuery(api.retro.listForTeam, isAuthenticated ? { teamId } : "skip");
 
   const rename = useMutation(api.teams.rename);
   const rotateInvite = useMutation(api.teams.rotateInvite);
@@ -188,6 +192,22 @@ export function TeamContent() {
               New retro
             </Button>
           </div>
+
+          {/* Retros (spec §5): the Team's history in creation order */}
+          <Card>
+            <CardHeader>
+              <CardTitle>{TEAM_RETROS_TITLE}</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {retros === undefined ? (
+                <div className="h-10 animate-pulse rounded-lg bg-muted" />
+              ) : retros.length === 0 ? (
+                <p className="text-sm text-muted-foreground">{TEAM_RETROS_EMPTY}</p>
+              ) : (
+                <RetroRows rows={retros} />
+              )}
+            </CardContent>
+          </Card>
 
           {/* Members */}
           <Card>

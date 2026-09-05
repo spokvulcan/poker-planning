@@ -70,7 +70,7 @@ _Avoid_: retrospective (in UI), retro room (a retro *is* a room), meeting
 
 ### Teams
 
-Decided on [map #253](https://github.com/spokvulcan/poker-planning/issues/253); the Team itself (create, invite, roles, deletion, the reader guard's Team half) is built, retros in it are not yet. See [ADR-0008](docs/adr/0008-a-team-is-the-permanent-visibility-boundary.md) and [ADR-0009](docs/adr/0009-room-access-and-room-attendance-are-separate-guards.md).
+Decided on [map #253](https://github.com/spokvulcan/poker-planning/issues/253); the Team itself (create, invite, roles, deletion, the reader guard's Team half) and the team retro (defaults copied by value, adoption, **claim**, deletion, the two listings) are built. See [ADR-0008](docs/adr/0008-a-team-is-the-permanent-visibility-boundary.md) and [ADR-0009](docs/adr/0009-room-access-and-room-attendance-are-separate-guards.md).
 
 **Team**:
 The permanent boundary that owns retro history and fixes who may read it. Deliberately minimal — it exists to give retros continuity and a knowable set of readers, nothing else (no seats, billing, SSO or org roles). A room names its team through a set-once `teamId`, and the team *is* the series: its history is its rooms in creation order, with no separate series entity.
@@ -218,7 +218,7 @@ _Avoid_: reveal cards (that is the poker **permission category**), unblur, show 
 
 ### Retro permissions
 
-Decided on [map #253](https://github.com/spokvulcan/poker-planning/issues/253) and not yet built. See [ADR-0013](docs/adr/0013-retro-permissions-extend-the-one-decision.md).
+Decided on [map #253](https://github.com/spokvulcan/poker-planning/issues/253); the join policy, the retro defaults bundle and **claim** are built, the retro categories gate nothing yet. See [ADR-0013](docs/adr/0013-retro-permissions-extend-the-one-decision.md).
 
 **Join policy**:
 A room's admission rule — `anyone`, `permanentAccounts`, or `teamMembers` (offered only when the room has a **Team**). Decides who may *become* an attendee; it says nothing about **room access**, and a **Team membership** satisfies every value because reading the archive is the stronger claim. Stamped at creation by copy from the Team's **retro defaults**; a teamless room is `anyone`. Edited through the **retro settings** category.
@@ -258,7 +258,7 @@ _Avoid_: import, roll over, transfer, parking lot
 
 ### Retro retention
 
-Decided on [map #253](https://github.com/spokvulcan/poker-planning/issues/253) and not yet built. See [ADR-0019](docs/adr/0019-retention-follows-the-team-and-export-never-widens-access.md).
+Decided on [map #253](https://github.com/spokvulcan/poker-planning/issues/253); the flag, the sweep, adoption and retro deletion are built, export is not. See [ADR-0019](docs/adr/0019-retention-follows-the-team-and-export-never-widens-access.md).
 
 **Retained**:
 A room the five-day sweep leaves alone — true exactly when the room belongs to a **Team**, and for no other reason. Set when the room is created or adopted into a team; a teamless retro is a throwaway whoever created it, and keeping one means giving it a team. Stored as its own flag rather than derived, so it is the one field a future retention policy would flip. Retention is not visibility: what a retained retro's readers can see is fixed by **room access**, disclosed before the first card is written.

@@ -1,9 +1,10 @@
 "use client";
 
-import { useCallback, useState } from "react";
-import { useRouter } from "next/navigation";
-import { useMutation } from "convex/react";
+import { useCallback, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import type { Id } from "@/convex/_generated/dataModel";
 import { ArrowRight } from "lucide-react";
 
 import { useAuth } from "@/components/auth/auth-provider";
@@ -21,12 +22,14 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { NewTeamDialog } from "@/components/team/new-team-dialog";
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 import { tintClasses } from "@/components/retro/tints";
 import {
   DEFAULT_RETRO_FORMAT,
   RETRO_FORMATS,
+  findFormat,
   type RetroFormat,
 } from "@/convex/model/retroFormats";
 import {
@@ -40,10 +43,16 @@ import {
   FORMAT_LABEL,
   NEW_RETRO_DESCRIPTION,
   NEW_RETRO_TITLE,
+  NEW_TEAM_OPTION,
+  NO_TEAM_OPTION,
   RETRO_NAME_DESCRIPTION,
   RETRO_NAME_LABEL,
   RETRO_NAME_PLACEHOLDER,
+  TEAMLESS_DISCLOSURE,
+  TEAM_DESCRIPTION,
+  TEAM_LABEL,
   defaultRetroName,
+  keptByTeam,
 } from "@/convex/retroCopy";
 
 /** A `<input type="date">` value as the end of that local day, or undefined. */
@@ -53,6 +62,9 @@ function parseCollectUntil(value: string): number | undefined {
   if (!y || !m || !d) return undefined;
   return new Date(y, m - 1, d, 23, 59, 59).getTime();
 }
+
+/** The picker's "New team" option value; never a Team id. */
+const NEW_TEAM_VALUE = "__new";
 
 function PromptList({ format }: { format: RetroFormat }) {
   return (
@@ -73,23 +85,69 @@ function PromptList({ format }: { format: RetroFormat }) {
 }
 
 /**
- * `/retro/new` (spec §6.1): name, format and an optional cards-due date.
- * The format opens pre-selected and collapsed to one line; expanding shows
- * the six-format library with its picker lines and prompts. Editing a format
- * before stamping is #290; the team picker is #289. Anyone, anonymous
- * included, creates a teamless retro.
+ * `/retro/new` (spec §6.1): name, team, format and an optional cards-due
+ * date. The team picker lists the person's Teams with *New team* and is
+ * hidden entirely for an anonymous account, who can only create a teamless
+ * retro; `?team=` pre-selects one. The format opens pre-selected — the
+ * chosen Team's newest retro's format, else the default — and collapsed to
+ * one line; expanding shows the six-format library with the pre-selected
+ * format first. The write-time disclosure shows before the retro exists.
+ * Editing a format before stamping is #290.
  */
 export function CreateRetroContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const { isLoading: authLoading, accountType } = useAuth();
+  const ensureSession = useEnsureSession();
+  const createRetro = useMutation(api.retro.create);
+
   const [name, setName] = useState("");
-  const [format, setFormat] = useState<RetroFormat>(DEFAULT_RETRO_FORMAT);
+  const [teamId, setTeamId] = useState<string>(searchParams.get("team") ?? "");
+  /**
+   * A Team created from the picker, known here before the Teams read
+   * reflects it, so a quick Start never creates a teamless retro.
+   */
+  const [createdTeam, setCreatedTeam] = useState<{ _id: Id<"teams">; name: string } | null>(null);
+  /** The person's explicit pick; null means "the pre-selection". */
+  const [chosenFormat, setChosenFormat] = useState<RetroFormat | null>(null);
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [collectUntil, setCollectUntil] = useState("");
   const [isCreating, setIsCreating] = useState(false);
+  const [newTeamOpen, setNewTeamOpen] = useState(false);
 
-  const router = useRouter();
-  const { isLoading: authLoading } = useAuth();
-  const ensureSession = useEnsureSession();
-  const createRetro = useMutation(api.retro.create);
+  const isPermanent = accountType === "permanent";
+  const myTeams = useQuery(api.teams.listMine, isPermanent ? {} : "skip");
+  const selectedTeam =
+    myTeams?.find((team) => team._id === teamId) ??
+    (createdTeam && createdTeam._id === teamId ? createdTeam : undefined);
+  const lastFormat = useQuery(
+    api.retro.lastFormat,
+    selectedTeam ? { teamId: selectedTeam._id } : "skip"
+  );
+
+  // Pre-selection (spec §6.1): the Team's newest retro's format when it is
+  // one the library carries, else the default. The edited-copy case (#290)
+  // widens this to the stamped format itself.
+  const preselected = useMemo(
+    () => (lastFormat ? findFormat(lastFormat.name) : undefined) ?? DEFAULT_RETRO_FORMAT,
+    [lastFormat]
+  );
+  const format = chosenFormat ?? preselected;
+  const library = useMemo(
+    () => [preselected, ...RETRO_FORMATS.filter((entry) => entry.name !== preselected.name)],
+    [preselected]
+  );
+
+  const handleTeamChange = (value: string) => {
+    if (value === NEW_TEAM_VALUE) {
+      setNewTeamOpen(true);
+      return;
+    }
+    setTeamId(value);
+    // A new Team brings its own pre-selection; a pick made for the old one
+    // does not carry over.
+    setChosenFormat(null);
+  };
 
   const handleCreate = useCallback(async () => {
     setIsCreating(true);
@@ -110,6 +168,7 @@ export function CreateRetroContent() {
         name: name.trim() || defaultRetroName(new Date()),
         formatName: format.name,
         ...(due !== undefined ? { collectUntil: due } : {}),
+        ...(selectedTeam ? { teamId: selectedTeam._id } : {}),
       });
       router.push(`/room/${roomId}`);
     } catch (error) {
@@ -117,7 +176,15 @@ export function CreateRetroContent() {
       toast.error(CREATE_RETRO_FAILED);
       setIsCreating(false);
     }
-  }, [ensureSession, collectUntil, createRetro, name, format, router]);
+  }, [ensureSession, collectUntil, createRetro, name, format, selectedTeam, router]);
+
+  // A Team named in the URL that the reads have not confirmed yet would be
+  // silently dropped, and a Team whose last format is still loading would
+  // stamp the default; hold the button until both have settled.
+  const teamPending =
+    isPermanent &&
+    teamId !== "" &&
+    (myTeams === undefined || (selectedTeam !== undefined && lastFormat === undefined));
 
   return (
     <div className="flex min-h-screen flex-col bg-white dark:bg-black">
@@ -146,11 +213,32 @@ export function CreateRetroContent() {
                     <FieldDescription>{RETRO_NAME_DESCRIPTION}</FieldDescription>
                   </Field>
 
+                  {isPermanent && (
+                    <Field>
+                      <FieldLabel htmlFor="retro-team">{TEAM_LABEL}</FieldLabel>
+                      <select
+                        id="retro-team"
+                        value={selectedTeam ? selectedTeam._id : ""}
+                        onChange={(e) => handleTeamChange(e.target.value)}
+                        className="h-9 rounded-lg border border-input bg-transparent px-2.5 text-sm dark:bg-input/30"
+                      >
+                        <option value="">{NO_TEAM_OPTION}</option>
+                        {(myTeams ?? []).map((team) => (
+                          <option key={team._id} value={team._id}>
+                            {team.name}
+                          </option>
+                        ))}
+                        <option value={NEW_TEAM_VALUE}>{NEW_TEAM_OPTION}</option>
+                      </select>
+                      <FieldDescription>{TEAM_DESCRIPTION}</FieldDescription>
+                    </Field>
+                  )}
+
                   <Field>
                     <FieldLabel>{FORMAT_LABEL}</FieldLabel>
                     {libraryOpen ? (
                       <div data-testid="format-library" className="space-y-2">
-                        {RETRO_FORMATS.map((entry) => {
+                        {library.map((entry) => {
                           const id = `format-${entry.name.replace(/\W+/g, "-").toLowerCase()}`;
                           const selected = entry.name === format.name;
                           return (
@@ -171,7 +259,7 @@ export function CreateRetroContent() {
                                   name="format"
                                   value={entry.name}
                                   checked={selected}
-                                  onChange={() => setFormat(entry)}
+                                  onChange={() => setChosenFormat(entry)}
                                   aria-label={entry.name}
                                   className="mt-0.5 accent-primary"
                                 />
@@ -228,6 +316,14 @@ export function CreateRetroContent() {
                     />
                     <FieldDescription>{COLLECT_UNTIL_DESCRIPTION}</FieldDescription>
                   </Field>
+
+                  <p
+                    data-testid="disclosure"
+                    data-kept={selectedTeam ? "team" : "none"}
+                    className="text-xs text-muted-foreground"
+                  >
+                    {selectedTeam ? keptByTeam(selectedTeam.name) : TEAMLESS_DISCLOSURE}
+                  </p>
                 </FieldGroup>
               </CardContent>
 
@@ -241,7 +337,7 @@ export function CreateRetroContent() {
                   // Wait until the auth state is known: creating while it is
                   // still resolving would trigger a second anonymous sign-in
                   // for a user who already has a session.
-                  disabled={isCreating || authLoading}
+                  disabled={isCreating || authLoading || teamPending}
                 >
                   {isCreating ? CREATING_RETRO_BUTTON : CREATE_RETRO_BUTTON}
                   {!isCreating && <ArrowRight className="ml-2 h-4 w-4" />}
@@ -253,6 +349,16 @@ export function CreateRetroContent() {
       </main>
 
       <Footer />
+
+      <NewTeamDialog
+        open={newTeamOpen}
+        onOpenChange={setNewTeamOpen}
+        returnTo="/retro/new"
+        onCreated={(team) => {
+          setCreatedTeam(team);
+          handleTeamChange(team._id);
+        }}
+      />
     </div>
   );
 }
