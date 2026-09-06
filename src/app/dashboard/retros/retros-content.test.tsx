@@ -37,8 +37,8 @@ vi.mock("@/components/team/new-team-dialog", () => ({
     return open ? <div role="dialog">New team dialog</div> : null;
   },
 }));
-vi.mock("@/components/retro/retro-list", () => ({
-  RetroRows: ({ rows }: { rows: { roomId: string; name: string }[] }) => (
+vi.mock("@/components/retro/history-row", () => ({
+  HistoryRows: ({ rows }: { rows: { roomId: string; name: string }[] }) => (
     <ul data-testid="retro-rows">
       {rows.map((row) => (
         <li key={row.roomId}>{row.name}</li>

@@ -27,10 +27,18 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { UserAvatar } from "@/components/user-menu/user-avatar";
 import { RetroDefaultsPanel, type RetroDefaults } from "@/components/team/retro-defaults-panel";
-import { RetroRows } from "@/components/retro/retro-list";
+import { HistoryRows } from "@/components/retro/history-row";
 import { ActionList } from "@/components/retro/action-list";
 import { useActionActions } from "@/components/retro/use-action-actions";
-import { OPEN_ACTIONS_EMPTY, OPEN_ACTIONS_TITLE, TEAM_RETROS_EMPTY, TEAM_RETROS_TITLE } from "@/convex/retroCopy";
+import {
+  OPEN_ACTIONS_EMPTY,
+  OPEN_ACTIONS_TITLE,
+  TEAM_RETROS_EMPTY,
+  TEAM_RETROS_TITLE,
+  deleteTeamConfirm,
+  deleteTeamTitle,
+  teamCountLine,
+} from "@/convex/retroCopy";
 import { copyTextToClipboard } from "@/utils/copy-text-to-clipboard";
 import { toast } from "@/lib/toast";
 import { runAct } from "@/lib/run-act";
@@ -51,7 +59,8 @@ function Centered({ title, body }: { title: string; body: string }) {
  * creation order, members with roles, the invite link, the retro-defaults
  * panel, New retro, and admin-only Delete team; the open action items
  * across its retros with done, drop, edit and reassign in place for
- * whoever attended (spec §13). The history row and export arrive with #299.
+ * whoever attended (spec §13), under one count line (spec §17). Export
+ * arrives with the second half of #299.
  */
 export function TeamContent() {
   const params = useParams();
@@ -62,6 +71,7 @@ export function TeamContent() {
   const team = useQuery(api.teams.get, isAuthenticated ? { teamId } : "skip");
   const retros = useQuery(api.retro.listForTeam, isAuthenticated ? { teamId } : "skip");
   const openActions = useQuery(api.teams.openActions, isAuthenticated ? { teamId } : "skip");
+  const facts = useQuery(api.teams.facts, isAuthenticated ? { teamId } : "skip");
   const actionItems = useActionActions();
 
   const rename = useMutation(api.teams.rename);
@@ -185,7 +195,7 @@ export function TeamContent() {
             </Button>
           </div>
 
-          {/* Retros (spec §5): the Team's history in creation order */}
+          {/* Retros (spec §5, §17): the Team's history in creation order */}
           <Card>
             <CardHeader>
               <CardTitle>{TEAM_RETROS_TITLE}</CardTitle>
@@ -196,15 +206,20 @@ export function TeamContent() {
               ) : retros.length === 0 ? (
                 <p className="text-sm text-muted-foreground">{TEAM_RETROS_EMPTY}</p>
               ) : (
-                <RetroRows rows={retros} />
+                <HistoryRows rows={retros} />
               )}
             </CardContent>
           </Card>
 
-          {/* Open action items (spec §5, §13): the cross-retro door to completion */}
+          {/* Open action items (spec §5, §13) under the count line (spec §17): facts with a unit, the same for every member */}
           <Card>
             <CardHeader>
               <CardTitle>{OPEN_ACTIONS_TITLE}</CardTitle>
+              {facts && (
+                <CardDescription data-testid="team-count-line" className="tabular-nums">
+                  {teamCountLine(facts.open, facts.done, facts.dropped, facts.retros)}
+                </CardDescription>
+              )}
             </CardHeader>
             <CardContent>
               <ActionList read={openActions} empty={OPEN_ACTIONS_EMPTY} showRoom actions={actionItems} testId="team-open-actions" />
@@ -398,10 +413,8 @@ export function TeamContent() {
       <AlertDialog open={confirmDelete} onOpenChange={(open) => !isDeleting && setConfirmDelete(open)}>
         <AlertDialogContent size="sm">
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete {team.name}?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Its {team.roomCount} {team.roomCount === 1 ? "retro" : "retros"} and their action items are removed permanently. This cannot be undone.
-            </AlertDialogDescription>
+            <AlertDialogTitle>{deleteTeamTitle(team.name)}</AlertDialogTitle>
+            <AlertDialogDescription>{deleteTeamConfirm(team.roomCount)}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
