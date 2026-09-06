@@ -1,14 +1,13 @@
 import { Metadata } from "next";
 import { FeaturesContent } from "./features-content";
+import { META } from "./copy";
 
 export const metadata: Metadata = {
-  title: "Planning Poker Features",
-  description:
-    "Explore AgileKit's features: real-time voting, analytics, timer sync, and whiteboard canvas. Everything your Scrum team needs for accurate sprint estimation.",
+  title: META.title,
+  description: META.description,
   openGraph: {
-    title: "Planning Poker Features | AgileKit",
-    description:
-      "Explore AgileKit's features: real-time voting, analytics, timer sync, and whiteboard canvas. Everything for accurate estimation.",
+    title: META.openGraph.title,
+    description: META.openGraph.description,
     url: "https://agilekit.app/features",
   },
   alternates: {

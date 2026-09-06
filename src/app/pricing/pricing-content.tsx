@@ -11,76 +11,7 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
-
-const comparisonCategories = [
-  {
-    category: "Core Planning",
-    features: [
-      { name: "Team members", free: "Unlimited", pro: "Unlimited" },
-      { name: "Planning sessions", free: "Unlimited", pro: "Unlimited" },
-      { name: "Real-time voting & whiteboard", free: true, pro: true },
-      { name: "Spectator mode", free: true, pro: true },
-      { name: "Session timer", free: true, pro: true },
-    ],
-  },
-  {
-    category: "History & Retention",
-    features: [
-      { name: "Session history", free: "5-day rolling", pro: "Unlimited" },
-      { name: "Issue & vote data retention", free: "5 days", pro: "Unlimited" },
-    ],
-  },
-  {
-    category: "Analytics & Insights",
-    features: [
-      { name: "Basic results summary", free: true, pro: true },
-      { name: "Time-to-consensus tracking", free: false, pro: true },
-      { name: "Voter alignment matrix", free: false, pro: true },
-      { name: "Sprint predictability score", free: false, pro: true },
-      { name: "Estimation accuracy trends", free: false, pro: true },
-      { name: "Automated session summaries", free: false, pro: true },
-    ],
-  },
-  {
-    category: "Exports & Integrations",
-    features: [
-      { name: "CSV export", free: true, pro: true },
-      { name: "JSON & analytics export", free: false, pro: true },
-      { name: "Two-way Jira Cloud sync", free: false, pro: true },
-      { name: "GitHub integration", free: false, pro: true },
-    ],
-  },
-  {
-    category: "Support",
-    features: [
-      { name: "Community support", free: true, pro: true },
-      { name: "Priority email support", free: false, pro: true },
-    ],
-  },
-];
-
-const faqs = [
-  {
-    question: "Do all team members need a Pro account?",
-    answer:
-      "No! Only the room owner will need Pro to enable advanced features for that room. Other participants will still be able to join and use those features for free.",
-  },
-  {
-    question: "What happens to my past sessions on the Free tier?",
-    answer:
-      "Until paid plans launch, current retention rules stay as they are today. If we introduce a shorter free-tier history window in the future, we will publish that change on this page before it takes effect.",
-  },
-  {
-    question: "Can I cancel my Pro subscription anytime?",
-    answer:
-      "Paid checkout is not live yet. Before Pro launches, we will publish the final cancellation flow, billing cadence, and any downgrade rules on this page and at checkout.",
-  },
-  {
-    question: "Is there a free trial for Pro?",
-    answer:
-      "The Free tier has unlimited usage for core features. When Pro fully launches, existing active accounts will receive early access to evaluate the new features.",
-  },
-];
+import { HERO, STATUS, COMPARISON, FAQ, CTA } from "./copy";
 
 export function PricingContent() {
   return (
@@ -95,29 +26,21 @@ export function PricingContent() {
           <div className="mx-auto max-w-[90rem] px-6 lg:px-8 relative z-10">
             <div className="mx-auto max-w-4xl text-center">
               <h1 className="text-6xl sm:text-7xl lg:text-8xl font-bold tracking-tighter text-gray-900 dark:text-white leading-[0.95]">
-                Simple pricing,<br />
-                <span className="text-gray-300 dark:text-zinc-700">infinite value.</span>
+                {HERO.headline}<br />
+                <span className="text-gray-300 dark:text-zinc-700">{HERO.headlineMuted}</span>
               </h1>
 
               <p className="mt-8 text-xl sm:text-2xl leading-relaxed text-gray-600 dark:text-gray-400 max-w-2xl mx-auto font-light">
-                AgileKit is completely free for core planning sessions today.
-                Pro is in development and is planned to add deeper insights,
-                longer retention, and workflow integrations.
+                {HERO.description}
               </p>
 
               <div className="mt-12 flex flex-wrap items-center justify-center gap-x-8 gap-y-4 text-base font-medium text-gray-500 dark:text-gray-400">
-                <div className="flex items-center gap-2">
-                  <Check className="h-5 w-5 text-gray-900 dark:text-white" />
-                  <span>No credit card required for Free</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Check className="h-5 w-5 text-gray-900 dark:text-white" />
-                  <span>Pro checkout not live yet</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Check className="h-5 w-5 text-gray-900 dark:text-white" />
-                  <span>Open source</span>
-                </div>
+                {HERO.points.map((point) => (
+                  <div key={point} className="flex items-center gap-2">
+                    <Check className="h-5 w-5 text-gray-900 dark:text-white" />
+                    <span>{point}</span>
+                  </div>
+                ))}
               </div>
             </div>
           </div>
@@ -129,26 +52,23 @@ export function PricingContent() {
             <div className="flex flex-col lg:flex-row items-center justify-between gap-8">
               <div className="max-w-2xl">
                 <p className="text-sm font-bold tracking-widest text-primary uppercase mb-2">
-                  Launch status
+                  {STATUS.eyebrow}
                 </p>
                 <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-gray-900 dark:text-white mb-4">
-                  Paid checkout is not live yet
+                  {STATUS.heading}
                 </h2>
                 <p className="text-lg font-light leading-relaxed text-gray-600 dark:text-gray-400">
-                  We are preparing the site for payment-provider approval
-                  before enabling any live checkout. Exact launch pricing,
-                  final billing terms, and any Pro-specific retention rules
-                  will be published here before checkout goes live.
+                  {STATUS.description}
                 </p>
               </div>
               <div className="shrink-0 flex flex-col gap-4 w-full lg:w-auto">
                 <div className="rounded-2xl border border-gray-200/50 bg-white p-6 text-center text-base font-medium text-gray-600 dark:border-zinc-800/50 dark:bg-zinc-900/50 dark:text-gray-400">
-                  Custom or enterprise pricing is not currently offered.
+                  {STATUS.enterprise}
                 </div>
                 <div className="flex flex-wrap justify-center gap-4 text-sm font-medium text-gray-500 dark:text-gray-400">
-                  <Link href="/refund-policy" className="hover:text-gray-900 dark:hover:text-white transition-colors underline underline-offset-4">Refund policy</Link>
-                  <Link href="/terms" className="hover:text-gray-900 dark:hover:text-white transition-colors underline underline-offset-4">Terms</Link>
-                  <a href="mailto:support@agilekit.app" className="hover:text-gray-900 dark:hover:text-white transition-colors underline underline-offset-4">Contact billing</a>
+                  <Link href={STATUS.links.refund.href} className="hover:text-gray-900 dark:hover:text-white transition-colors underline underline-offset-4">{STATUS.links.refund.label}</Link>
+                  <Link href={STATUS.links.terms.href} className="hover:text-gray-900 dark:hover:text-white transition-colors underline underline-offset-4">{STATUS.links.terms.label}</Link>
+                  <a href={STATUS.links.billing.href} className="hover:text-gray-900 dark:hover:text-white transition-colors underline underline-offset-4">{STATUS.links.billing.label}</a>
                 </div>
               </div>
             </div>
@@ -163,11 +83,11 @@ export function PricingContent() {
           <div className="mx-auto max-w-[90rem] px-6 lg:px-8">
             <div className="mb-16 max-w-2xl">
               <p className="text-sm font-bold tracking-widest text-primary uppercase mb-4">
-                Compare Plans
+                {COMPARISON.eyebrow}
               </p>
               <h2 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tighter text-gray-900 dark:text-white leading-[1.1]">
-                Everything you need,<br />
-                <span className="text-gray-400 dark:text-zinc-600">nothing you don&apos;t.</span>
+                {COMPARISON.heading}<br />
+                <span className="text-gray-400 dark:text-zinc-600">{COMPARISON.headingMuted}</span>
               </h2>
             </div>
 
@@ -175,18 +95,18 @@ export function PricingContent() {
               {/* Header */}
               <div className="grid grid-cols-[1fr_120px_120px] sm:grid-cols-3 bg-gray-50/80 dark:bg-zinc-900/80 border-b border-gray-200/50 dark:border-zinc-800/50">
                 <div className="px-6 sm:px-8 py-6 text-sm font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase">
-                  Feature
+                  {COMPARISON.columns.feature}
                 </div>
                 <div className="px-4 sm:px-8 py-6 text-center text-base sm:text-lg font-bold tracking-tight text-gray-900 dark:text-white border-l border-gray-200/50 dark:border-zinc-800/50">
-                  Free
+                  {COMPARISON.columns.free}
                 </div>
                 <div className="px-4 sm:px-8 py-6 text-center text-base sm:text-lg font-bold tracking-tight text-white bg-gray-900 dark:bg-white dark:text-black border-l border-gray-900 dark:border-white">
-                  Pro
+                  {COMPARISON.columns.pro}
                 </div>
               </div>
 
               {/* Category groups */}
-              {comparisonCategories.map((group, groupIndex) => (
+              {COMPARISON.categories.map((group, groupIndex) => (
                 <div key={group.category}>
                   {/* Category header */}
                   <div className="grid grid-cols-[1fr_120px_120px] sm:grid-cols-3 border-b border-gray-200/50 dark:border-zinc-800/50 bg-gray-50/60 dark:bg-zinc-900/40">
@@ -272,7 +192,7 @@ export function PricingContent() {
                   </div>
 
                   {/* Separator between groups */}
-                  {groupIndex < comparisonCategories.length - 1 && (
+                  {groupIndex < COMPARISON.categories.length - 1 && (
                     <div className="border-b-2 border-gray-200/80 dark:border-zinc-800/80" />
                   )}
                 </div>
@@ -287,20 +207,19 @@ export function PricingContent() {
             <div className="grid lg:grid-cols-12 gap-16">
               <div className="lg:col-span-5">
                 <p className="text-sm font-bold tracking-widest text-primary uppercase mb-4">
-                  FAQ
+                  {FAQ.eyebrow}
                 </p>
                 <h2 className="text-4xl sm:text-5xl font-bold tracking-tighter text-gray-900 dark:text-white leading-[1.1] mb-6">
-                  Frequently asked questions.
+                  {FAQ.heading}
                 </h2>
                 <p className="text-lg font-light leading-relaxed text-gray-600 dark:text-gray-400">
-                  Everything you need to know about AgileKit pricing and plans.
-                  Can&apos;t find what you&apos;re looking for? Reach out to our team.
+                  {FAQ.description}
                 </p>
               </div>
 
               <div className="lg:col-span-7">
                 <Accordion className="space-y-4">
-                  {faqs.map((faq, index) => (
+                  {FAQ.items.map((faq, index) => (
                     <AccordionItem
                       key={faq.question}
                       value={`item-${index}`}
@@ -325,26 +244,25 @@ export function PricingContent() {
           <div className="mx-auto max-w-[90rem] px-6 lg:px-8">
             <div className="mx-auto max-w-4xl text-center">
               <h2 className="text-5xl sm:text-6xl lg:text-7xl font-bold tracking-tighter text-gray-900 dark:text-white leading-[0.95]">
-                Ready to plan better?
+                {CTA.heading}
               </h2>
               <p className="mt-8 text-xl sm:text-2xl text-gray-600 dark:text-gray-400 font-light leading-relaxed">
-                Start using AgileKit for faster, more accurate sprint estimation
-                — jump right in, completely free.
+                {CTA.description}
               </p>
               <div className="mt-12 flex flex-col sm:flex-row items-center justify-center gap-4">
                 <Link
-                  href="/room/new"
+                  href={CTA.start.href}
                   className="inline-flex h-16 items-center justify-center gap-2 bg-black dark:bg-white px-12 text-lg font-bold tracking-tight text-white dark:text-black hover:scale-105 transition-transform duration-200 rounded-2xl w-full sm:w-auto"
                 >
-                  Start planning for free
+                  {CTA.start.label}
                   <ArrowRight className="h-5 w-5" />
                 </Link>
                 <Link
-                  href="/demo"
+                  href={CTA.demo.href}
                   className="inline-flex h-16 items-center justify-center gap-2 bg-white dark:bg-zinc-950 border-2 border-gray-200 dark:border-zinc-800 px-12 text-lg font-bold tracking-tight text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-zinc-900 transition-colors rounded-2xl w-full sm:w-auto"
                 >
                   <Play className="h-5 w-5" fill="currentColor" />
-                  View demo
+                  {CTA.demo.label}
                 </Link>
               </div>
             </div>

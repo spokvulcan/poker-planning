@@ -8,6 +8,11 @@
 import { describe, it, expect } from "vitest";
 import * as homepage from "@/components/homepage/copy";
 import * as seo from "@/components/seo/copy";
+import * as site from "@/lib/site-copy";
+import * as features from "@/app/features/copy";
+import * as about from "@/app/about/copy";
+import * as pricing from "@/app/pricing/copy";
+import { siteConfig } from "@/lib/site-config";
 
 describe("the hero (spec §18.2)", () => {
   it("keeps the earned line and widens it", () => {
@@ -34,6 +39,32 @@ describe("the hero (spec §18.2)", () => {
 });
 
 const saysRetro = (text: string) => /\bretros?\b/i.test(text);
+
+describe("metadata, features and about (spec §18.1, §18.2)", () => {
+  it("sets the site default title", () => {
+    expect(site.SITE.title).toBe("Free Planning Poker & Retros Online | AgileKit");
+    expect(site.SITE.openGraph.title).toBe(site.SITE.title);
+    expect(site.SITE.twitter.title).toBe(site.SITE.title);
+  });
+
+  it("drops Planning Poker from the features page title and its Open Graph title", () => {
+    expect(features.META.title).not.toMatch(/planning poker/i);
+    expect(features.META.openGraph.title).not.toMatch(/planning poker/i);
+  });
+
+  it("anchors the features page at #planning-poker and #retro", () => {
+    expect(features.POKER.anchor).toBe("planning-poker");
+    expect(features.RETRO.anchor).toBe("retro");
+    expect(features.RETRO.items.length).toBeGreaterThanOrEqual(4);
+    expect(features.POKER.items.length).toBeGreaterThanOrEqual(4);
+  });
+
+  it("gives the About page the position", () => {
+    expect(about.HERO.position).toBe(
+      "AgileKit is the free, open-source way for distributed Scrum teams to estimate and reflect in writing, everyone at once, with nothing forgotten between sprints.",
+    );
+  });
+});
 
 describe("two ceremonies, one toolkit (spec §18.2)", () => {
   it("puts one card per ceremony under the hero, each with its own CTA", () => {
@@ -194,10 +225,15 @@ describe("the checker itself", () => {
   });
 });
 
-/** The copy modules under the register. PR (b) adds features, about, pricing and the site metadata. */
+/** The copy modules under the register; the pricing page is in scope (issue #300). */
 const MODULES: [string, unknown][] = [
   ["homepage", homepage],
   ["seo", seo],
+  ["site", site],
+  ["features", features],
+  ["about", about],
+  ["pricing", pricing],
+  ["siteConfig", { blog: siteConfig.blog, description: siteConfig.description }],
 ];
 
 describe("the claims register and the words rule (spec §18.3, §18.4)", () => {
