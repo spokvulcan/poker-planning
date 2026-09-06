@@ -1,4 +1,5 @@
 export * from "./banner";
+export * from "./ceremonies";
 export * from "./how-it-works";
 export * from "./faq";
 export * from "./use-cases";

@@ -6,6 +6,7 @@ export class HomePage {
   readonly heroHeading: Locator;
   readonly heroDescription: Locator;
   readonly startGameButton: Locator;
+  readonly startRetroButton: Locator;
   readonly githubLink: Locator;
   readonly skipToMainLink: Locator;
   readonly trustIndicators: {
@@ -20,9 +21,10 @@ export class HomePage {
     // Hero section elements
     this.heroHeading = page.locator("h1");
     this.heroDescription = page.locator(
-      "text=A radically simple estimation tool"
+      "text=Planning poker and retros for Scrum teams"
     );
     this.startGameButton = page.getByTestId("hero-start-button");
+    this.startRetroButton = page.getByTestId("hero-retro-button");
     this.githubLink = page.getByTestId("hero-github-link").first();
     this.skipToMainLink = page.getByRole("link", {
       name: /skip to main content/i,
@@ -51,10 +53,10 @@ export class HomePage {
 
   async verifyHeroSection(): Promise<void> {
     await expect(this.heroHeading).toBeVisible();
-    await expect(this.heroHeading).toContainText("Planning poker");
+    await expect(this.heroHeading).toContainText("Estimate and reflect");
 
     await expect(this.heroDescription).toBeVisible();
-    await expect(this.heroDescription).toContainText("estimation tool");
+    await expect(this.heroDescription).toContainText("No accounts required");
   }
 
   async verifyTrustIndicators(): Promise<void> {

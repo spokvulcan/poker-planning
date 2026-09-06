@@ -3,44 +3,9 @@
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { ArrowRight, Check } from "lucide-react";
+import { PRICING_SECTION } from "./copy";
 
-const tiers = [
-  {
-    name: "Free",
-    id: "free",
-    price: "$0",
-    period: "forever",
-    description: "For ad-hoc teams and quick estimating sessions.",
-    features: [
-      "Unlimited participants",
-      "Real-time voting & whiteboard",
-      "5-day session history",
-      "Basic results analytics",
-      "CSV exports",
-    ],
-    cta: "Start planning for free",
-    href: "/room/new",
-  },
-  {
-    name: "Pro",
-    id: "pro",
-    price: "Coming Soon",
-    period: "",
-    description:
-      "For engineering teams that need deep insights and workflow automation.",
-    features: [
-      "Everything in Free, plus:",
-      "Time-to-consensus tracking",
-      "Voter alignment matrix",
-      "Sprint predictability score",
-      "Two-way Jira & GitHub sync",
-      "Unlimited session history",
-    ],
-    cta: "Join Waitlist",
-    href: "#",
-    disabled: true,
-  },
-];
+const { tiers } = PRICING_SECTION;
 
 export function PricingSection() {
   return (
@@ -48,14 +13,13 @@ export function PricingSection() {
       <div className="mx-auto max-w-[90rem] px-6 lg:px-8">
         <div className="max-w-2xl mb-16">
           <h2 className="text-sm font-bold tracking-widest text-primary uppercase mb-4">
-            Pricing
+            {PRICING_SECTION.eyebrow}
           </h2>
           <h3 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tighter text-gray-900 dark:text-white leading-[1.1] mb-6">
-            Transparent pricing.
+            {PRICING_SECTION.heading}
           </h3>
           <p className="text-lg sm:text-xl text-gray-600 dark:text-gray-400 font-light max-w-xl">
-            Start using AgileKit completely free today. Our Pro tier brings
-            powerful integrations and team insights, currently in development.
+            {PRICING_SECTION.description}
           </p>
         </div>
 
@@ -72,7 +36,7 @@ export function PricingSection() {
             >
               {tier.disabled && (
                 <div className="absolute top-6 right-6 px-4 py-1.5 bg-white/20 dark:bg-black/10 backdrop-blur-md rounded-full text-xs font-bold tracking-wider uppercase">
-                  In Development
+                  {PRICING_SECTION.badge}
                 </div>
               )}
 

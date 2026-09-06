@@ -21,10 +21,10 @@ test.describe("Home Page - Basic Elements", () => {
 
   test("should display description text", async ({ page }) => {
     const description = page.locator(
-      "text=A radically simple estimation tool"
+      "text=Planning poker and retros for Scrum teams"
     );
     await expect(description).toBeVisible();
-    await expect(description).toContainText("estimation tool");
+    await expect(description).toContainText("No accounts required");
   });
 
   test("should display key action buttons", async ({ page }) => {
@@ -32,6 +32,9 @@ test.describe("Home Page - Basic Elements", () => {
     const startButton = page.getByTestId("hero-start-button");
     await expect(startButton).toBeVisible();
     await expect(startButton).toBeEnabled();
+
+    // The retro CTA beside it (spec §18.2); its href is pinned by the node test
+    await expect(page.getByTestId("hero-retro-button")).toBeVisible();
 
     // GitHub link with data-testid
     const githubLink = page.getByTestId("hero-github-link");
@@ -81,6 +84,11 @@ test.describe("Home Page - Room Creation Flow", () => {
     
     expect(roomId).toMatch(/^[a-z0-9]+$/);
     await expect(page).toHaveURL(/\/room\/[a-z0-9]+/);
+  });
+
+  test("should open the retro create page from Start a retro", async ({ page }) => {
+    await homePage.startRetroButton.click();
+    await expect(page).toHaveURL(/\/retro\/new/);
   });
 
   test("should copy room URL to clipboard", async ({ page }) => {

@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowRight, Play } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import {
+  Ceremonies,
   HowItWorks,
   FAQ,
   UseCases,
@@ -13,6 +14,7 @@ import {
 } from "@/components/homepage";
 import { Navbar } from "@/components/navbar";
 import { Footer } from "@/components/footer";
+import { HERO } from "@/components/homepage/copy";
 
 interface VersionInfo {
   version: string;
@@ -48,41 +50,41 @@ export function HomeContent({ versionInfo }: HomeContentProps) {
               {/* Left Column */}
               <div className="flex flex-col items-start lg:py-20">
                 <Link
-                  href="/blog/jira-integration"
+                  href={HERO.badgeHref}
                   className="inline-flex items-center gap-2 mb-8 rounded-full bg-white/60 dark:bg-zinc-800/60 backdrop-blur-md px-4 py-1.5 text-sm font-medium text-primary hover:bg-white/80 dark:hover:bg-zinc-800/80 transition-colors shadow-sm"
                 >
                   <span className="inline-flex items-center rounded-full bg-primary px-2 py-0.5 text-[11px] font-bold text-primary-foreground leading-none">
                     {versionInfo ? `v${versionInfo.version}` : "New"}
                   </span>
-                  <span>Jira Cloud integration is here</span>
+                  <span>{HERO.badge}</span>
                   <ArrowRight className="h-3.5 w-3.5" />
                 </Link>
                 
                 <h1 className="text-6xl sm:text-7xl lg:text-8xl font-bold tracking-tighter text-gray-900 dark:text-white leading-[0.95]">
-                  Planning poker,<br />
-                  <span className="text-gray-300 dark:text-zinc-700">without the noise.</span>
+                  {HERO.headline}<br />
+                  <span className="text-gray-300 dark:text-zinc-700">{HERO.headlineMuted}</span>
                 </h1>
                 
                 <p className="mt-8 text-xl sm:text-2xl leading-relaxed text-gray-600 dark:text-gray-400 max-w-xl font-light">
-                  A radically simple estimation tool for agile teams. 
-                  No accounts required. Free forever. Start a session instantly.
+                  {HERO.description}
                 </p>
                 
                 <div className="mt-12 flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                   <Link
-                    href="/room/new"
-                    data-testid="hero-start-button"
+                    href={HERO.estimate.href}
+                    data-testid={HERO.estimate.testId}
                     className="inline-flex h-16 items-center justify-center gap-2 bg-black dark:bg-white px-12 text-lg font-bold tracking-tight text-white dark:text-black hover:scale-105 transition-transform duration-200 rounded-2xl w-full sm:w-auto"
                   >
-                    Start Session
+                    {HERO.estimate.label}
                     <ArrowRight className="h-5 w-5" />
                   </Link>
                   <Link
-                    href="/demo"
+                    href={HERO.retro.href}
+                    data-testid={HERO.retro.testId}
                     className="inline-flex h-16 items-center justify-center gap-2 bg-white dark:bg-zinc-950 border-2 border-gray-200 dark:border-zinc-800 px-12 text-lg font-bold tracking-tight text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-zinc-900 transition-colors rounded-2xl w-full sm:w-auto"
                   >
-                    <Play className="h-5 w-5" fill="currentColor" />
-                    Interactive Demo
+                    {HERO.retro.label}
+                    <ArrowRight className="h-5 w-5" />
                   </Link>
                 </div>
               </div>
@@ -103,7 +105,7 @@ export function HomeContent({ versionInfo }: HomeContentProps) {
                   <iframe
                     src="/demo?embed=true"
                     className="absolute inset-0 w-[calc(100%+2px)] h-[calc(100%+2px)] -left-[1px] -top-[1px] border-none outline-none ring-0"
-                    title="Live Planning Poker Demo"
+                    title={HERO.demoFrameTitle}
                     sandbox="allow-scripts allow-same-origin"
                     style={{ border: 'none', outline: 'none' }}
                   />
@@ -113,6 +115,7 @@ export function HomeContent({ versionInfo }: HomeContentProps) {
           </div>
         </section>
 
+        <Ceremonies />
         <HowItWorks />
         <AppPreview />
         <FeaturesSection />
