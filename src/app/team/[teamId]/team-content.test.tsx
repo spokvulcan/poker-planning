@@ -32,6 +32,7 @@ const mocks = vi.hoisted(() => ({
   facts: undefined as { open: number; done: number; dropped: number; retros: number } | undefined,
   calls: [] as { fn: string; args: unknown }[],
   fail: {} as Record<string, string>,
+  downloads: [] as unknown[][],
   push: vi.fn(),
   toasts: [] as { kind: "success" | "error"; message: string }[],
 }));
@@ -53,8 +54,19 @@ vi.mock("convex/react", async () => {
         if (mocks.fail[fn]) throw new Error(mocks.fail[fn]);
       };
     },
+    useAction: (ref: unknown) => {
+      const fn = getFunctionName(ref as never);
+      return async (args: unknown) => {
+        mocks.calls.push({ fn, args });
+        if (mocks.fail[fn]) throw new Error(mocks.fail[fn]);
+        return { filename: "Acme.json", content: "{}" };
+      };
+    },
   };
 });
+vi.mock("@/utils/download-file", () => ({
+  downloadFile: (...args: unknown[]) => mocks.downloads.push(args),
+}));
 vi.mock("next/navigation", () => {
   const router = { push: (href: string) => mocks.push(href), replace: vi.fn() };
   return { useParams: () => ({ teamId: "team-1" }), useRouter: () => router };
@@ -141,6 +153,7 @@ beforeEach(() => {
   mocks.retros = [];
   mocks.calls = [];
   mocks.fail = {};
+  mocks.downloads = [];
   mocks.toasts = [];
   mocks.push.mockReset();
 });
@@ -258,6 +271,25 @@ describe("TeamContent — the Team's retros", () => {
     render(<TeamContent />);
     expect(screen.getByText("No retros yet. Start one and this team keeps it.")).toBeTruthy();
     expect(screen.queryByTestId("retro-rows")).toBeNull();
+  });
+});
+
+describe("TeamContent — export history (spec §15.4)", () => {
+  it("any member takes the Team's history as one JSON file under the server's name", async () => {
+    mocks.team = team("member");
+    render(<TeamContent />);
+    fireEvent.click(screen.getByRole("button", { name: "Export history" }));
+    await waitFor(() => expect(calledWith("teams:exportHistory")).toEqual([{ teamId: "team-1" }]));
+    await waitFor(() => expect(mocks.downloads).toEqual([["{}", "Acme.json", "application/json"]]));
+    expect(mocks.toasts).toEqual([]);
+  });
+
+  it("a refused export surfaces the server's copy and downloads nothing", async () => {
+    mocks.fail["teams:exportHistory"] = "You are not a member of this team";
+    render(<TeamContent />);
+    fireEvent.click(screen.getByRole("button", { name: "Export history" }));
+    await waitFor(() => expect(mocks.toasts).toContainEqual({ kind: "error", message: "You are not a member of this team" }));
+    expect(mocks.downloads).toEqual([]);
   });
 });
 

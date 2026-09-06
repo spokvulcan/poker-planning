@@ -126,6 +126,32 @@ export function tallyEntryOf(retro: { stages: readonly StageEntry[]; currentStag
 }
 
 /**
+ * The one dot-count rule (spec §9, §15.3), pure over loaded rows: dots per
+ * topic key, a dot on a member card carrying into its cluster's count
+ * (ADR-0016). The tally and the export both count this way, and neither
+ * lets a voter out.
+ */
+export function countDots(
+  rows: readonly Pick<Doc<"retroVotes">, "target">[],
+  cards: readonly Pick<Doc<"retroCards">, "_id" | "clusterId">[]
+): Record<string, number> {
+  const clusterOf = new Map<string, Id<"retroClusters">>();
+  for (const card of cards) {
+    if (card.clusterId !== undefined) clusterOf.set(card._id, card.clusterId);
+  }
+  const counts: Record<string, number> = {};
+  const bump = (key: string) => {
+    counts[key] = (counts[key] ?? 0) + 1;
+  };
+  for (const row of rows) {
+    bump(topicKey(row.target));
+    const clusterId = row.target.kind === "card" ? clusterOf.get(row.target.id) : undefined;
+    if (clusterId !== undefined) bump(clusterId);
+  }
+  return counts;
+}
+
+/**
  * `retro.tally` (spec §9, §8.2): per viewer and small. Counts are
  * aggregate and carry no voter in either attribution mode; the viewer's
  * own dots are theirs to see whatever the entry shows.
@@ -144,34 +170,19 @@ export async function tally(ctx: QueryCtx, args: { roomId: Id<"rooms">; viewerId
       .withIndex("by_room", (q) => q.eq("roomId", args.roomId))
       .take(MAX_BOARD_ROWS),
   ]);
-  const clusterOf = new Map<string, Id<"retroClusters">>();
-  for (const card of cards) {
-    if (card.clusterId !== undefined) clusterOf.set(card._id, card.clusterId);
-  }
   const visible = current.tallyVisible === "visible";
-  const counts: Record<string, number> = {};
   const mine: Record<string, number> = {};
   let spent = 0;
-  const bump = (record: Record<string, number>, key: string) => {
-    record[key] = (record[key] ?? 0) + 1;
-  };
   for (const row of rows) {
+    if (row.voterId !== args.viewerId) continue;
+    spent += 1;
     const key = topicKey(row.target);
-    const own = row.voterId === args.viewerId;
-    if (own) {
-      spent += 1;
-      bump(mine, key);
-    }
-    if (!visible) continue;
-    bump(counts, key);
-    // A dot on a member card carries into its cluster's tally (ADR-0016).
-    const clusterId = row.target.kind === "card" ? clusterOf.get(row.target.id) : undefined;
-    if (clusterId !== undefined) bump(counts, clusterId);
+    mine[key] = (mine[key] ?? 0) + 1;
   }
   return {
     stageEntryId: entry.id,
     visible,
-    counts,
+    counts: visible ? countDots(rows, cards) : {},
     mine,
     spent: current.id === entry.id ? spent : 0,
     ...(current.voteBudget !== undefined ? { budget: current.voteBudget } : {}),

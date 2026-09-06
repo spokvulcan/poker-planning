@@ -1,7 +1,10 @@
-import { mutation, query } from "./_generated/server";
+import { action, mutation, query } from "./_generated/server";
 import { v } from "convex/values";
+import { paginationOptsValidator } from "convex/server";
+import { api } from "./_generated/api";
 import * as Teams from "./model/teams";
 import * as RetroActions from "./model/retroActions";
+import * as RetroExport from "./model/retroExport";
 import { retroDefaultsValidator } from "./schema";
 import { getOptionalAuthUser, requireAuthUser, requireTeamRole } from "./model/auth";
 
@@ -150,5 +153,65 @@ export const facts = query({
   handler: async (ctx, args) => {
     await requireTeamRole(ctx, args.teamId, "member");
     return await Teams.teamFacts(ctx, args.teamId);
+  },
+});
+
+// --- The history export (spec §15.4, ADR-0019) ---
+
+/** One page of the Team's rooms in creation order, for the export action (members only). */
+export const exportRooms = query({
+  args: { teamId: v.id("teams"), paginationOpts: paginationOptsValidator },
+  handler: async (ctx, args) => {
+    const { team } = await requireTeamRole(ctx, args.teamId, "member");
+    return await Teams.exportRoomsPage(ctx, team, args.paginationOpts);
+  },
+});
+
+/** Every action item across the Team's retros, every status, oldest first (members only). */
+export const exportActions = query({
+  args: { teamId: v.id("teams") },
+  handler: async (ctx, args) => {
+    const { user } = await requireTeamRole(ctx, args.teamId, "member");
+    return await RetroExport.exportActions(ctx, user, args.teamId);
+  },
+});
+
+/** How many rooms one page of the history export reads. */
+const EXPORT_PAGE_SIZE = 50;
+
+/**
+ * A Team's history as one JSON file (spec §15.4): every retro in creation
+ * order in the shape `retro.board` returns for that reader, plus the Team's
+ * action items. Every read runs under its own guard as the caller: the
+ * rooms page and the actions under `requireTeamRole`, each board under
+ * `requireRoomReader`, so the file holds nothing the team page and the
+ * boards would not show this member. No share page.
+ */
+export const exportHistory = action({
+  args: { teamId: v.id("teams") },
+  handler: async (ctx, args): Promise<{ filename: string; content: string }> => {
+    const retros: RetroExport.RetroExport[] = [];
+    let teamName = "";
+    let cursor: string | null = null;
+    do {
+      const page: RetroExport.ExportRoomsPage = await ctx.runQuery(api.teams.exportRooms, {
+        teamId: args.teamId,
+        paginationOpts: { numItems: EXPORT_PAGE_SIZE, cursor },
+      });
+      teamName = page.team.name;
+      // One page's boards read together; each read still runs its own guard.
+      const boards: RetroExport.RetroExport[] = await Promise.all(
+        page.page.map((roomId) => ctx.runQuery(api.retro.exportBoard, { roomId }))
+      );
+      retros.push(...boards);
+      cursor = page.isDone ? null : page.continueCursor;
+    } while (cursor !== null);
+    const actions: RetroExport.ExportedAction[] = await ctx.runQuery(api.teams.exportActions, { teamId: args.teamId });
+    const file: RetroExport.HistoryExport = {
+      team: { name: teamName, exportedAt: new Date().toISOString() },
+      retros,
+      actions,
+    };
+    return { filename: RetroExport.exportFilename(teamName, "json"), content: JSON.stringify(file, null, 2) };
   },
 });

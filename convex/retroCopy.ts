@@ -328,6 +328,8 @@ export const DELETE_CARD = "Delete card";
 export const UNSAVED_CHIP = "Unsaved";
 export const EDITING_CHIP = "Editing";
 export const HIDDEN_CARD_LABEL = "Hidden card";
+/** A silhouette in the Markdown export (spec §15.3). */
+export const HIDDEN_CARD_EXPORT = "(hidden card)";
 export const HAS_WRITTEN = "Has written";
 export const cardsCount = (n: number) => `${n} ${n === 1 ? "card" : "cards"}`;
 /** Missing user (spec §19). */
@@ -468,6 +470,7 @@ export const ACTIONS_EMPTY = "No action items yet.";
 export const ownedBy = (name: string) => `Owner: ${name}`;
 export const dueOn = (date: string) => `Due ${date}`;
 export const fromRetro = (name: string) => `From ${name}`;
+export const noteLine = (note: string) => `Note: ${note}`;
 export const ACTION_SOURCE_LABEL = "About";
 export const OPEN_ACTIONS_TITLE = "Open action items";
 export const OPEN_ACTIONS_EMPTY = "No open action items across this team's retros.";
@@ -499,6 +502,25 @@ export const ATTRIBUTION_LABELS: Record<"named" | "anonymous", string> = {
   anonymous: "Anonymous",
 };
 export const createdOn = (date: string) => `Created ${date}`;
+
+// --- Export (spec §15.3, §15.4; ADR-0019) ---
+
+export const EXPORT_MARKDOWN_MENU_ITEM = "Export as Markdown";
+export const EXPORT_MARKDOWN_FAILED = "Failed to export this retro";
+export const EXPORT_HISTORY_BUTTON = "Export history";
+export const EXPORTING_HISTORY_BUTTON = "Exporting…";
+export const EXPORT_HISTORY_FAILED = "Failed to export the team's history";
+/** The Markdown export's header line for a teamless retro. */
+export const EXPORT_NO_TEAM = "Not kept by a team";
+export const EXPORT_TEAM = "Team";
+export const EXPORT_CREATED = "Created";
+export const EXPORT_FORMAT = "Format";
+export const EXPORT_STAGES_WALKED = "Stages walked";
+export const EXPORT_DISCUSSION = "Discussion";
+export const EXPORT_OUTSIDE = "Outside the discussion";
+export const EXPORT_TOPICS = "Topics";
+export const EXPORT_NOT_COVERED = "Not covered";
+export const EXPORT_NEW = "New";
 
 // --- Account deletion (spec §15.2, §19; ADR-0019) ---
 

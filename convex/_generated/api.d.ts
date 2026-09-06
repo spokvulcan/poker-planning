@@ -45,6 +45,7 @@ import type * as model_retro from "../model/retro.js";
 import type * as model_retroActions from "../model/retroActions.js";
 import type * as model_retroCards from "../model/retroCards.js";
 import type * as model_retroClusters from "../model/retroClusters.js";
+import type * as model_retroExport from "../model/retroExport.js";
 import type * as model_retroFormats from "../model/retroFormats.js";
 import type * as model_retroNudge from "../model/retroNudge.js";
 import type * as model_retroReminders from "../model/retroReminders.js";
@@ -122,6 +123,7 @@ declare const fullApi: ApiFromModules<{
   "model/retroActions": typeof model_retroActions;
   "model/retroCards": typeof model_retroCards;
   "model/retroClusters": typeof model_retroClusters;
+  "model/retroExport": typeof model_retroExport;
   "model/retroFormats": typeof model_retroFormats;
   "model/retroNudge": typeof model_retroNudge;
   "model/retroReminders": typeof model_retroReminders;

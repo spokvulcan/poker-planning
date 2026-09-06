@@ -21,6 +21,7 @@ import type { TallyRead } from "@/convex/model/retroVotes";
 import { useEditKeys, type EditKeyStore } from "@/components/retro/use-edit-keys";
 import { useSingleFlightMutation } from "@/hooks/useSingleFlightMutation";
 import { RetroMenu, type MyTeam } from "@/components/retro/retro-menu";
+import { useExportMarkdown } from "@/components/retro/use-export-markdown";
 import type { RetroTeam } from "@/components/retro/retro-header";
 import type { StageControls } from "@/components/retro/stage-nav";
 import { currentStageOf } from "@/convex/model/retroFormats";
@@ -31,6 +32,7 @@ import { useRoomPresence, type UserWithPresence } from "@/hooks/useRoomPresence"
 import { runAct } from "@/lib/run-act";
 import {
   CHECKING_SESSION,
+  EXPORT_MARKDOWN_MENU_ITEM,
   JOIN_RETRO_BUTTON,
   LOADING_BOARD,
   LOADING_TITLE,
@@ -54,7 +56,8 @@ interface RetroRoomContentProps {
  * visitor with neither attendance nor Team access sees the join form, with
  * the join decision resolved first. A Team member who never joined reads
  * the board (ADR-0009) with a line offering to join, and no membership is
- * written until they take it. An attendee gets the board and its menu.
+ * written until they take it, and the export (spec §15.3) since they may
+ * read. An attendee gets the board and its menu.
  */
 export function RetroRoomContent({ roomId, roomData, membership }: RetroRoomContentProps) {
   const { isLoading: authLoading, isAuthenticated, accountType } = useAuth();
@@ -64,6 +67,7 @@ export function RetroRoomContent({ roomId, roomData, membership }: RetroRoomCont
   const isPermanent = accountType === "permanent";
   const myTeams = useQuery(api.teams.listMine, isPermanent ? {} : "skip");
   const [wantsToJoin, setWantsToJoin] = useState(false);
+  const exportMarkdown = useExportMarkdown(roomId);
 
   const { room } = roomData;
   const team: RetroTeam | undefined =
@@ -150,9 +154,14 @@ export function RetroRoomContent({ roomId, roomData, membership }: RetroRoomCont
             <span className="text-blue-800 dark:text-status-info-fg">
               {readingAsTeamMember(team.name)}
             </span>
-            <Button size="sm" onClick={() => setWantsToJoin(true)}>
-              {JOIN_RETRO_BUTTON}
-            </Button>
+            <span className="flex items-center gap-2">
+              <Button size="sm" variant="outline" onClick={() => void exportMarkdown()}>
+                {EXPORT_MARKDOWN_MENU_ITEM}
+              </Button>
+              <Button size="sm" onClick={() => setWantsToJoin(true)}>
+                {JOIN_RETRO_BUTTON}
+              </Button>
+            </span>
           </div>
         }
       />

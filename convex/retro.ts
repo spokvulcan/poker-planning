@@ -8,6 +8,7 @@ import * as RetroVotes from "./model/retroVotes";
 import * as RetroWalk from "./model/retroWalk";
 import * as RetroActions from "./model/retroActions";
 import * as RetroNudge from "./model/retroNudge";
+import * as RetroExport from "./model/retroExport";
 import {
   joinPolicyValidator,
   retroFormatValidator,
@@ -323,6 +324,31 @@ export const remove = mutation({
   handler: async (ctx, args) => {
     const { room } = await requireCan(ctx, args.roomId, { kind: "relationship", verb: "delete" });
     await Retro.deleteRetro(ctx, room);
+  },
+});
+
+/**
+ * One retro as Markdown (spec §15.3, ADR-0019): room access, and never more
+ * than the board shows the requester: silhouettes, no author in an
+ * anonymous retro, no voter in any.
+ */
+export const exportMarkdown = query({
+  args: { roomId: v.id("rooms") },
+  handler: async (ctx, args) => {
+    const { user, room } = await requireRoomReader(ctx, args.roomId);
+    return await RetroExport.exportMarkdown(ctx, room, user._id);
+  },
+});
+
+/**
+ * One retro for the JSON history (spec §15.4): the board read for this
+ * reader with the tally's counts and the names beside it. Room access.
+ */
+export const exportBoard = query({
+  args: { roomId: v.id("rooms") },
+  handler: async (ctx, args) => {
+    const { user, room } = await requireRoomReader(ctx, args.roomId);
+    return await RetroExport.exportBoard(ctx, room, user._id);
   },
 });
 
