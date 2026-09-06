@@ -1137,6 +1137,9 @@ async function toRow(
     formatName: retro.format.name,
     attribution: retro.attribution,
     stageKind: current.kind,
+    // The stored order's counts, dangling refs included: telling a standing
+    // topic from a dissolved one needs the cards, which a listing never
+    // reads (ADR-0024). The board's readout (`projectWalk`) is the exact one.
     ...(retro.walk ? { coverage: { covered: retro.walk.covered.length, total: retro.walk.order.length } } : {}),
     counts: countByStatus(actions),
     ...(retro.collectUntil !== undefined ? { collectUntil: retro.collectUntil } : {}),

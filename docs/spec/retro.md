@@ -436,7 +436,7 @@ The dashboard Retros section and the team page list retros whose shared stage is
 
 ## 17. Retro facts (ADR-0024)
 
-**History row**, one component reused by the team page history and the dashboard Retros list, from `retros` and `by_team_status` only: name; format name; created date; attribution; resting stage; the coverage facts when a walk exists ("7 of 10 covered"; the late count needs the cards, so the row leaves it to the board's readout); this retro's action counts ("3 open · 2 done · 1 dropped"). No card count (that is on the board), no last-active time, no per-person figure, no colour by value, no comparative copy. Done and dropped counts are facts, not links; done and dropped actions are reachable only through their home retro's board.
+**History row**, one component reused by the team page history and the dashboard Retros list, from `retros` and `by_team_status` only: name; format name; created date; attribution; resting stage; the coverage facts when a walk exists ("7 of 10 covered", the stored order's counts, dangling refs included; the late count and the exact readout need the cards, so the row leaves those to the board); this retro's action counts ("3 open · 2 done · 1 dropped"). No card count (that is on the board), no last-active time, no per-person figure, no colour by value, no comparative copy. Done and dropped counts are facts, not links; done and dropped actions are reachable only through their home retro's board.
 
 **Team page count line**, above the open-actions list: "3 open · 12 done · 2 dropped across 14 retros", a sum over `by_team_status` and a count of `by_team`.
 

@@ -5,6 +5,8 @@
  * imports here. Later retro tickets extend it; #300 tests the register
  * against it.
  */
+// Type-only, and it must stay so: permissions.ts imports CLAIM_DENIED from
+// this module, and a value import here would close the cycle.
 import type { JoinPolicy } from "./permissions";
 
 /** The last-admin rule (spec §19), owned by the Team's copy module and read from here too. */
