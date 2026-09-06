@@ -199,10 +199,11 @@ export const exportHistory = action({
         paginationOpts: { numItems: EXPORT_PAGE_SIZE, cursor },
       });
       teamName = page.team.name;
-      for (const roomId of page.page) {
-        const retro: RetroExport.RetroExport = await ctx.runQuery(api.retro.exportBoard, { roomId });
-        retros.push(retro);
-      }
+      // One page's boards read together; each read still runs its own guard.
+      const boards: RetroExport.RetroExport[] = await Promise.all(
+        page.page.map((roomId) => ctx.runQuery(api.retro.exportBoard, { roomId }))
+      );
+      retros.push(...boards);
       cursor = page.isDone ? null : page.continueCursor;
     } while (cursor !== null);
     const actions: RetroExport.ExportedAction[] = await ctx.runQuery(api.teams.exportActions, { teamId: args.teamId });

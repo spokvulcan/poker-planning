@@ -125,11 +125,12 @@ async function dotCounts(
 
 /** The display names of the referenced people, one read each; a missing row renders by the register. */
 async function namesOf(ctx: QueryCtx, ids: Iterable<Id<"users">>): Promise<Map<Id<"users">, string>> {
+  const unique = [...new Set(ids)];
+  const users = await Promise.all(unique.map((id) => ctx.db.get(id)));
   const names = new Map<Id<"users">, string>();
-  for (const id of new Set(ids)) {
-    const user = await ctx.db.get(id);
-    if (user) names.set(id, user.name);
-  }
+  users.forEach((user, i) => {
+    if (user) names.set(unique[i], user.name);
+  });
   return names;
 }
 
