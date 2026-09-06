@@ -1,5 +1,48 @@
 # Changelog
 
+## [2.10.0](https://github.com/spokvulcan/poker-planning/compare/agilekit-v2.9.7...agilekit-v2.10.0) (2026-09-06)
+
+
+### Features
+
+* retention flag, narrow release ([#305](https://github.com/spokvulcan/poker-planning/issues/305)) ([e1cdd6c](https://github.com/spokvulcan/poker-planning/commit/e1cdd6c1ca36775c2b1d8defd9cafa435aac7b1f))
+* retention flag, widen release and backfill migration ([#304](https://github.com/spokvulcan/poker-planning/issues/304)) ([136aec4](https://github.com/spokvulcan/poker-planning/commit/136aec43355dd867fc4b827f3ac93e9ebd9e3425))
+* **retro:** action item reminders ([#298](https://github.com/spokvulcan/poker-planning/issues/298)) ([#322](https://github.com/spokvulcan/poker-planning/issues/322)) ([7395866](https://github.com/spokvulcan/poker-planning/commit/739586691a410fbba97ab1b9e8ef36419dde6e51))
+* **retro:** action items and carryover ([#296](https://github.com/spokvulcan/poker-planning/issues/296)) ([#320](https://github.com/spokvulcan/poker-planning/issues/320)) ([1414eca](https://github.com/spokvulcan/poker-planning/commit/1414ecac9a9d7eccc31d9f3c60b14d94a6686e99))
+* **retro:** anonymous attribution — edit keys and the ratchet ([#292](https://github.com/spokvulcan/poker-planning/issues/292)) ([#315](https://github.com/spokvulcan/poker-planning/issues/315)) ([2ce1bf5](https://github.com/spokvulcan/poker-planning/commit/2ce1bf5a7f51cdd09a0b6d0f3bb950591a2fe23a))
+* **retro:** cards on the board — write, move, silhouettes, reveal, the hand ([#291](https://github.com/spokvulcan/poker-planning/issues/291)) ([#314](https://github.com/spokvulcan/poker-planning/issues/314)) ([f70f75f](https://github.com/spokvulcan/poker-planning/commit/f70f75f1f4edab73fdcf605b5e318cd91554e446))
+* **retro:** clusters — form, membership, rename, merge, dissolve, tidy and the label chip ([#293](https://github.com/spokvulcan/poker-planning/issues/293)) ([#316](https://github.com/spokvulcan/poker-planning/issues/316)) ([ea98f29](https://github.com/spokvulcan/poker-planning/commit/ea98f29c12d6147aaa531270e28cc42e8f71c987))
+* **retro:** create a teamless retro and open its board at collect ([#310](https://github.com/spokvulcan/poker-planning/issues/310)) ([fd281ee](https://github.com/spokvulcan/poker-planning/commit/fd281ee094552247b6bc67e36ab4d36ab76bc60d))
+* **retro:** dots and the tally ([#294](https://github.com/spokvulcan/poker-planning/issues/294)) ([#318](https://github.com/spokvulcan/poker-planning/issues/318)) ([9828379](https://github.com/spokvulcan/poker-planning/commit/9828379ba5280d5bc288cd84fbba2c3fe06d59cd))
+* **retro:** email channel, opt-out, unsubscribe and the nudge ([#297](https://github.com/spokvulcan/poker-planning/issues/297)) ([#321](https://github.com/spokvulcan/poker-planning/issues/321)) ([82b824b](https://github.com/spokvulcan/poker-planning/commit/82b824bc515dbb3fb18f29e63f0c92d9162e849e))
+* **retro:** features, metadata, about, privacy drafts and the claims register ([#300](https://github.com/spokvulcan/poker-planning/issues/300)) ([#327](https://github.com/spokvulcan/poker-planning/issues/327)) ([2f5cd91](https://github.com/spokvulcan/poker-planning/commit/2f5cd911a0ed7aa4b26502f17f86485ab5ed34e4))
+* **retro:** history row, team count line and the copy-register test ([#299](https://github.com/spokvulcan/poker-planning/issues/299)) ([#324](https://github.com/spokvulcan/poker-planning/issues/324)) ([5a7a125](https://github.com/spokvulcan/poker-planning/commit/5a7a1256d2ccfa3edbbc6f00973d9395d8a8adec))
+* **retro:** homepage — two ceremonies, one toolkit ([#300](https://github.com/spokvulcan/poker-planning/issues/300)) ([#326](https://github.com/spokvulcan/poker-planning/issues/326)) ([41b3742](https://github.com/spokvulcan/poker-planning/commit/41b37428ea305f46a20412158ee39572bb92f215))
+* **retro:** Markdown and JSON exports, delete account ([#299](https://github.com/spokvulcan/poker-planning/issues/299)) ([#325](https://github.com/spokvulcan/poker-planning/issues/325)) ([fe6b49b](https://github.com/spokvulcan/poker-planning/commit/fe6b49b9b33604beed223ff3e891c7fda701dea7))
+* **retro:** prefactor room access guard and permission decision keyed by ceremony ([#306](https://github.com/spokvulcan/poker-planning/issues/306)) ([f06e4fb](https://github.com/spokvulcan/poker-planning/commit/f06e4fbf2497446230d31afd1289cff87efa851a))
+* **retro:** semantic zoom, proximity hulls and the phone's chrome ([#293](https://github.com/spokvulcan/poker-planning/issues/293)) ([#317](https://github.com/spokvulcan/poker-planning/issues/317)) ([964efb4](https://github.com/spokvulcan/poker-planning/commit/964efb4b0f9ca05650185c71e9305ef1763388af))
+* **retro:** settings dialog, retro settings mutations and the pre-stamp format editor ([#290](https://github.com/spokvulcan/poker-planning/issues/290)) ([#313](https://github.com/spokvulcan/poker-planning/issues/313)) ([7702cde](https://github.com/spokvulcan/poker-planning/commit/7702cde1093ecda6c572d2e9680344043191cb5c))
+* **retro:** stages — advance, in-place reveal toggle, timebox, readiness, roster, own view ([#290](https://github.com/spokvulcan/poker-planning/issues/290)) ([#312](https://github.com/spokvulcan/poker-planning/issues/312)) ([a0fc264](https://github.com/spokvulcan/poker-planning/commit/a0fc26421568394cd59a9c218e3b82c5e723315f))
+* **retro:** team retro — defaults copy, adoption, claim, delete, listings ([#311](https://github.com/spokvulcan/poker-planning/issues/311)) ([e5cb213](https://github.com/spokvulcan/poker-planning/commit/e5cb213c16036a8d4c984690ac3dfc326a11feed))
+* **retro:** teams — schema, requireTeamRole, reader guard's Team half, team mutations and cascade ([#307](https://github.com/spokvulcan/poker-planning/issues/307)) ([d24e954](https://github.com/spokvulcan/poker-planning/commit/d24e954729c0d0ef2e105ccb8d8692275842a616))
+* **retro:** teams — team page, join route, sidebar, /dashboard/retros, retro-defaults panel ([#309](https://github.com/spokvulcan/poker-planning/issues/309)) ([fd02ce1](https://github.com/spokvulcan/poker-planning/commit/fd02ce14ad6a43b907b3d38cc87ecbaa5ca2be6e))
+* **retro:** the discussion walk, raise and late cards ([#295](https://github.com/spokvulcan/poker-planning/issues/295)) ([#319](https://github.com/spokvulcan/poker-planning/issues/319)) ([25e201f](https://github.com/spokvulcan/poker-planning/commit/25e201f9ce7a9c73a0d59a154541c35f351bf8d2))
+
+
+### Bug Fixes
+
+* **retro:** clear the floating navbar on the team and join pages ([461bcfd](https://github.com/spokvulcan/poker-planning/commit/461bcfdea7761e5e9ebc57d1bda1f4eb44545ecb))
+
+
+### Documentation
+
+* team retrospective research, wayfinder map, and the decisions worked off it ([#273](https://github.com/spokvulcan/poker-planning/issues/273)) ([9d26255](https://github.com/spokvulcan/poker-planning/commit/9d2625579085ff88086b312d66ea0758b7e14129))
+
+
+### Miscellaneous
+
+* **deps:** upgrade all dependencies to latest ([#303](https://github.com/spokvulcan/poker-planning/issues/303)) ([ccd7ff0](https://github.com/spokvulcan/poker-planning/commit/ccd7ff0c23685e3b621dd1b04d4365417a52f929))
+
 ## [2.9.7](https://github.com/spokvulcan/poker-planning/compare/agilekit-v2.9.6...agilekit-v2.9.7) (2026-08-18)
 
 
