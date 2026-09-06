@@ -10,6 +10,7 @@ import { getToken } from "@/lib/auth-server";
 import { isEmbeddedDocument } from "@/lib/embed";
 import { TopLevelOnly } from "@/components/top-level-only";
 import { AnalyticsConsentBanner } from "@/components/legal/analytics-consent";
+import { SITE } from "@/lib/site-copy";
 
 import "./globals.css";
 
@@ -30,23 +31,11 @@ const baseUrl = "https://agilekit.app";
 export const metadata: Metadata = {
   metadataBase: new URL(baseUrl),
   title: {
-    default: "Free Planning Poker Online | AgileKit - Scrum Estimation Tool",
-    template: "%s | AgileKit",
+    default: SITE.title,
+    template: SITE.titleTemplate,
   },
-  description:
-    "Run free online planning poker sessions with your Scrum team. No signup required. Estimate user stories in real-time with AgileKit's open-source tool.",
-  keywords: [
-    "planning poker",
-    "scrum poker",
-    "agile estimation",
-    "story points",
-    "sprint planning",
-    "free planning poker",
-    "planning poker online",
-    "scrum poker online",
-    "agile poker",
-    "estimation poker",
-  ],
+  description: SITE.description,
+  keywords: SITE.keywords,
   authors: [{ name: "AgileKit Team" }],
   creator: "AgileKit",
   publisher: "AgileKit",
@@ -66,23 +55,21 @@ export const metadata: Metadata = {
     locale: "en_US",
     url: baseUrl,
     siteName: "AgileKit",
-    title: "Free Planning Poker Online | AgileKit",
-    description:
-      "Run free online planning poker sessions with your Scrum team. No signup required. Estimate user stories in real-time.",
+    title: SITE.openGraph.title,
+    description: SITE.openGraph.description,
     images: [
       {
         url: "/og-image.png",
         width: 1200,
         height: 630,
-        alt: "AgileKit - Free Planning Poker Tool for Scrum Teams",
+        alt: SITE.openGraph.imageAlt,
       },
     ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "Free Planning Poker Online | AgileKit",
-    description:
-      "Run free online planning poker sessions with your Scrum team. No signup required.",
+    title: SITE.twitter.title,
+    description: SITE.twitter.description,
     images: ["/og-image.png"],
   },
   alternates: {

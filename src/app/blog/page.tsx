@@ -47,7 +47,7 @@ export default async function BlogPage() {
                 Blog
               </h1>
               <p className="mt-2 text-muted-foreground">
-                Tips, guides, and insights on planning poker and agile estimation.
+                {siteConfig.blog.description}
               </p>
             </div>
             <Link

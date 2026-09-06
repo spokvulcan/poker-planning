@@ -1,3 +1,5 @@
+import { BLOG_DESCRIPTION, SITE_SHORT_DESCRIPTION } from "./site-copy";
+
 export function getSiteUrl(): string {
   // Convex backend uses SITE_URL (set via `npx convex env set`)
   if (process.env.SITE_URL) {
@@ -18,14 +20,13 @@ export function getSiteUrl(): string {
 export const siteConfig = {
   name: "AgileKit",
   url: getSiteUrl(),
-  description: "Free online planning poker for Scrum teams",
+  description: SITE_SHORT_DESCRIPTION,
   author: {
     name: "AgileKit Team",
   },
   blog: {
     title: "AgileKit Blog",
-    description:
-      "Tips, guides, and insights on planning poker and agile estimation.",
+    description: BLOG_DESCRIPTION,
   },
 } as const;
 

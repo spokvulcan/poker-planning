@@ -1,14 +1,13 @@
 import { Metadata } from "next";
 import { AboutContent } from "./about-content";
+import { META } from "./copy";
 
 export const metadata: Metadata = {
-  title: "About AgileKit - Free Open Source Planning Poker",
-  description:
-    "Learn about AgileKit, the free and open-source planning poker tool for Scrum teams. Built with privacy, simplicity, and real-time collaboration in mind.",
+  title: META.title,
+  description: META.description,
   openGraph: {
-    title: "About AgileKit - Free Open Source Planning Poker",
-    description:
-      "Learn about AgileKit, the free open-source planning poker tool. Built with privacy, simplicity, and real-time collaboration.",
+    title: META.openGraph.title,
+    description: META.openGraph.description,
     url: "https://agilekit.app/about",
   },
   alternates: {
