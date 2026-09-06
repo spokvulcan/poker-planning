@@ -30,7 +30,10 @@ tests/
 
 ### 3. Data Test Attributes
 Added `data-testid` attributes to key components:
-- `hero-start-button` - Main CTA button
+- `hero-start-button` - Hero CTA *Start estimating* → `/room/new`
+- `hero-retro-button` - Hero CTA *Start a retro* → `/retro/new`
+- `toolkit-card-poker`, `toolkit-card-retro` - The two cards under the hero
+- `how-it-works-tab-poker`, `how-it-works-tab-retro`, `app-preview-tab-poker`, `app-preview-tab-retro` - Per-ceremony tabs
 - `hero-github-link` - GitHub repository link
 - `trust-free`, `trust-no-account`, `trust-realtime` - Trust indicators
 
