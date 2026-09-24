@@ -1,6 +1,8 @@
 # A custom format is the last retro's format
 
-**Status:** accepted — decided on [map #253](https://github.com/spokvulcan/poker-planning/issues/253) via [#275](https://github.com/spokvulcan/poker-planning/issues/275). Specified, not yet built. Amends [ADR-0013](0013-retro-permissions-extend-the-one-decision.md): stage-list structure edits are `retroSettings`, not `stageFlow`.
+**Status:** superseded by [ADR-0026](0026-the-retro-is-a-whiteboard-like-the-poker-room.md): a retro starts from one of five column templates, and its columns (title, emoji, colour) are renamed, added or removed on the board. No prompts or hints, stage seeds or format editor; "Start the next retro" copies the columns instead of a picker remembering them.
+
+Originally: accepted — decided on [map #253](https://github.com/spokvulcan/poker-planning/issues/253) via [#275](https://github.com/spokvulcan/poker-planning/issues/275). Specified, not yet built. Amends [ADR-0013](0013-retro-permissions-extend-the-one-decision.md): stage-list structure edits are `retroSettings`, not `stageFlow`.
 
 [ADR-0010](0010-a-retro-stage-projects-and-defaults-but-never-forbids.md) made the format the seed of a retro's stamped stage list, and [ADR-0016](0016-a-retro-is-one-room-with-its-ceremony-state-beside-it.md) fixed its shape — a name, up to ten prompts with label, hint, tint and order, and a stage seed carrying reveal, tally, budget and timebox per entry — and made it a copy on the retro, never a reference. What was left open was what a format is made of beyond that shape, which ship, how far a team may change one, and where a changed one lives.
 

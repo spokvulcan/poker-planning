@@ -13,8 +13,7 @@ const DELETE_CONFIRMATION = "I understand this will delete all data permanently"
  * Permanently deletes ALL data from the database.
  *
  * Tables affected: every room-owned table from the one inventory
- * (convex/model/roomAggregate.ts — issues, roomMemberships, votes,
- * canvasNodes, votingTimestamps, individualVotes, integrationMappings)
+ * (convex/model/roomAggregate.ts — the poker tables and the retro tables)
  * plus issueLinks (room-owned via its issue), rooms, and the user-scoped /
  * global tables (users, integrationConnections, webhookEvents).
  *

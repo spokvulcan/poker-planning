@@ -17,8 +17,8 @@ const INACTIVE_ROOMS_PER_TICK = 100;
 
 /**
  * Schedules deletion of non-retained inactive rooms (default 5 days of
- * inactivity). A retained room (ADR-0019: one that belongs to a Team) is
- * never swept, whatever its age or type. Each room's cascade runs as its own
+ * inactivity). A retained room (a retro kept by a signed-in owner) is never
+ * swept, whatever its age. Each room's cascade runs as its own
  * scheduled mutation
  * (internal.maintenance.deleteRoomAggregateChunk), so one oversized or
  * failing room can neither blow the cron's transaction limits nor take the
@@ -70,9 +70,8 @@ export async function cleanupOrphanedData(ctx: MutationCtx): Promise<{
   const existingRoomIds = new Set(allRooms.map(room => room._id));
 
   // Sweep the poker tables only. The retro tables are room-owned too (the
-  // cascade empties them) but are permanently retained data; a daily full
-  // scan of them against a fixed transaction budget is exactly what
-  // ADR-0016 rules out.
+  // cascade empties them) but hold retained data; a daily full scan of them
+  // against a fixed transaction budget is not worth its cost.
   const swept = {} as Record<OrphanSweptTable, number>;
   await Promise.all(
     ORPHAN_SWEPT_TABLES.map(async (table) => {

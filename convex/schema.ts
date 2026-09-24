@@ -35,85 +35,63 @@ export const retroPermissionsValidator = v.object({
   retroSettings: permissionLevelValidator,
 });
 
-/** Who may join a room (ADR-0013, spec §4.4). */
-export const joinPolicyValidator = v.union(
+/**
+ * Who may join a room. Legacy: written only by the retired team retro and
+ * read by nothing; kept until `migrations:purgeLegacyRetros` has run on every
+ * deployment, then dropped.
+ */
+const legacyJoinPolicyValidator = v.union(
   v.literal("anyone"),
   v.literal("permanentAccounts"),
   v.literal("teamMembers")
 );
 
-/** Whether a retro's cards carry their author (ADR-0012). */
-export const attributionValidator = v.union(
-  v.literal("named"),
-  v.literal("anonymous")
-);
-
-/**
- * The bundle a Team carries and copies by value onto every retro created in
- * it (ADR-0013, spec §5): default attribution, join policy and the four retro
- * permission levels.
- */
-export const retroDefaultsValidator = v.object({
-  attribution: attributionValidator,
-  joinPolicy: joinPolicyValidator,
-  permissions: retroPermissionsValidator,
-});
-
-/** A Team membership's standing (ADR-0008). */
-export const teamRoleValidator = v.union(
-  v.literal("admin"),
-  v.literal("member")
-);
-
-/** A retro stage entry's kind (ADR-0010, spec §2). */
-export const stageKindValidator = v.union(
-  v.literal("collect"),
-  v.literal("review"),
-  v.literal("group"),
+/** A retro's step (see retroTemplates.ts). */
+export const retroStepValidator = v.union(
+  v.literal("write"),
   v.literal("vote"),
   v.literal("discuss"),
-  v.literal("close")
+  v.literal("done")
 );
 
-/** A per-entry reveal policy (ADR-0015): cards or tally, hidden or visible. */
-export const visibilityValidator = v.union(
-  v.literal("hidden"),
-  v.literal("visible")
+export const stickyColorValidator = v.union(
+  v.literal("yellow"),
+  v.literal("green"),
+  v.literal("pink"),
+  v.literal("blue"),
+  v.literal("purple"),
+  v.literal("orange")
 );
 
-/** What a dot, a walk entry or an action item points at: a card or a cluster. */
-export const topicRefValidator = v.union(
-  v.object({ kind: v.literal("card"), id: v.id("retroCards") }),
-  v.object({ kind: v.literal("cluster"), id: v.id("retroClusters") })
-);
-
-/**
- * A retro's format, copied whole onto the retro at creation and never
- * referenced (ADR-0021): a name and up to ten prompts. The picker line the
- * library carries is not part of it.
- */
-export const retroFormatValidator = v.object({
-  name: v.string(),
-  prompts: v.array(
-    v.object({
-      id: v.string(),
-      label: v.string(),
-      hint: v.optional(v.string()),
-      color: v.string(),
-      order: v.number(),
-    })
-  ),
+/** One column of a retro board: a sticky pad with a prompt. */
+export const retroColumnValidator = v.object({
+  id: v.string(),
+  title: v.string(),
+  emoji: v.string(),
+  color: stickyColorValidator,
 });
 
-/** One entry of the stamped stage list (ADR-0010, ADR-0015, ADR-0016). */
-export const retroStageValidator = v.object({
-  id: v.string(),
-  kind: stageKindValidator,
-  cardsVisible: visibilityValidator,
-  tallyVisible: visibilityValidator,
-  voteBudget: v.optional(v.number()),
-  maxPerTopic: v.optional(v.number()),
-  timeboxMinutes: v.optional(v.number()),
+/**
+ * A retro's state, held on its room row the way poker holds its round: the
+ * step, the columns, the two settings, and where the discussion is.
+ */
+export const retroStateValidator = v.object({
+  step: retroStepValidator,
+  columns: v.array(retroColumnValidator),
+  votesPerPerson: v.number(),
+  showAuthors: v.boolean(),
+  /** The topic (a loose sticky or a stack's root) the discussion is on. */
+  focusStickyId: v.optional(v.id("retroStickies")),
+  /** The retro started from this one's wrap-up, for everyone to follow. */
+  nextRoomId: v.optional(v.id("rooms")),
+});
+
+/** A GIF on a sticky: a media link from an allowed host and its size. */
+export const gifValidator = v.object({
+  url: v.string(),
+  width: v.number(),
+  height: v.number(),
+  title: v.optional(v.string()),
 });
 
 export default defineSchema({
@@ -144,10 +122,9 @@ export default defineSchema({
     nextIssueNumber: v.optional(v.number()), // Counter for sequential IDs (1, 2, 3...)
     createdAt: v.number(),
     lastActivityAt: v.number(),
-    // Retention (ADR-0019): true iff the room belongs to a Team, so the
-    // five-day sweep leaves it alone. Every row carries it: new rows from
-    // the writers, legacy rows from the backfill that ran before this field
-    // became required.
+    // Retention: a retained room is never swept for inactivity. True for a
+    // retro created by (or later owned by) a permanent account; false for
+    // every poker room and every guest retro.
     retained: v.boolean(),
     // Room permissions & ownership
     ownerId: v.optional(v.id("users")),
@@ -157,16 +134,14 @@ export default defineSchema({
     permissions: v.optional(
       v.union(pokerPermissionsValidator, retroPermissionsValidator)
     ),
-    // Admission policy (ADR-0013, spec §4.4). Undefined on poker rooms;
-    // "teamMembers" is only meaningful once the room has a Team. Read by
-    // evaluateJoin; written by nothing yet.
-    joinPolicy: v.optional(joinPolicyValidator),
-    // The owning Team (ADR-0008): set once at creation or adoption, never
-    // changed or cleared. Undefined on poker rooms and teamless retros.
-    teamId: v.optional(v.id("teams")),
+    // The retro's state; set on every retro room, never on a poker room.
+    retro: v.optional(retroStateValidator),
+    // Legacy: the retired team retro's join policy and Team. Read by nothing;
+    // dropped once `migrations:purgeLegacyRetros` has run everywhere.
+    joinPolicy: v.optional(legacyJoinPolicyValidator),
+    teamId: v.optional(v.string()),
   })
     .index("by_retention_activity", ["retained", "lastActivityAt"]) // The sweep: non-retained rooms by staleness
-    .index("by_team", ["teamId"]) // A Team's history and its deletion cascade
     .index("by_created", ["createdAt"]) // For querying recent rooms
     .index("by_owner", ["ownerId"]), // For transferring ownership on account linking
 
@@ -204,119 +179,55 @@ export default defineSchema({
     email: v.optional(v.string()),
     avatarUrl: v.optional(v.string()),
     accountType: v.optional(v.union(v.literal("anonymous"), v.literal("permanent"))),
-    emailOptOut: v.optional(v.boolean()), // ADR-0020; undefined means opted in
+    emailOptOut: v.optional(v.boolean()), // Legacy: the retired retro emails' opt-out; read by nothing
     createdAt: v.number(),
   })
     .index("by_auth_user", ["authUserId"])
     .index("by_email", ["email"]),
 
-  // A Team (ADR-0008): the permanent visibility boundary that owns retro
-  // history. Deliberately minimal — a name, a rotatable invite token and the
-  // retro defaults it stamps onto new retros.
-  teams: defineTable({
-    name: v.string(),
-    inviteToken: v.string(), // Rotated by any admin; rotation invalidates the old link
-    retroDefaults: retroDefaultsValidator,
-    createdAt: v.number(),
-  }).index("by_invite_token", ["inviteToken"]),
-
-  // Team memberships (user <-> team relationship). Permanent accounts only,
-  // enforced in the model layer; written only by consuming the invite link.
-  teamMemberships: defineTable({
-    teamId: v.id("teams"),
-    userId: v.id("users"),
-    role: teamRoleValidator,
-    joinedAt: v.number(),
-  })
-    .index("by_team", ["teamId"])
-    .index("by_user", ["userId"])
-    .index("by_team_user", ["teamId", "userId"]),
-
-  // The retro's ceremony state, one row beside its room (ADR-0016): written
-  // in the same mutation as the room, so the guards and the room
-  // subscription never see stage churn.
-  retros: defineTable({
+  // A sticky on a retro board. The author is always stored and never leaves
+  // the server unless the retro shows authors; the column is content, the
+  // position is layout.
+  retroStickies: defineTable({
     roomId: v.id("rooms"),
-    attribution: attributionValidator, // ratchets named → anonymous only (ADR-0012)
-    format: retroFormatValidator, // copied whole at creation (ADR-0021)
-    stages: v.array(retroStageValidator), // the stamped stage list (ADR-0010); ≤ 10
-    currentStageId: v.string(), // the shared pointer
-    currentStageEnteredAt: v.number(), // re-stamped by every advance; the timebox counts from it
-    walk: v.optional(
-      v.object({
-        stageEntryId: v.string(),
-        snapshotAt: v.number(),
-        order: v.array(topicRefValidator),
-        cursor: v.number(),
-        covered: v.array(v.string()), // topic ids
-      })
-    ),
-    collectUntil: v.optional(v.number()), // advisory cards-due date (ADR-0020)
-    lastNudge: v.optional(v.object({ at: v.number(), by: v.id("users") })),
-  }).index("by_room", ["roomId"]),
-
-  // A retro card: the prompt answered is content, the position is layout
-  // (ADR-0016). Exactly one of authorId / editKeyHash (ADR-0012).
-  retroCards: defineTable({
-    roomId: v.id("rooms"),
-    clientId: v.string(), // client-minted UUID: node key and create dedupe key (ADR-0022)
+    clientId: v.string(), // client-minted: the board's node key and the create dedupe key
+    columnId: v.string(),
     text: v.string(),
-    promptId: v.string(),
+    gif: v.optional(gifValidator),
+    authorId: v.id("users"),
     position: v.object({ x: v.number(), y: v.number() }),
-    authorId: v.optional(v.id("users")),
-    editKeyHash: v.optional(v.string()),
-    clusterId: v.optional(v.id("retroClusters")),
+    // The sticky this one is stacked under; stacks are one level deep.
+    stackId: v.optional(v.id("retroStickies")),
     createdAt: v.number(),
-    updatedAt: v.number(),
-    committedAt: v.number(), // Date.now() inside the create mutation (spec §23)
   })
     .index("by_room", ["roomId"])
-    .index("by_room_author", ["roomId", "authorId"])
-    .index("by_room_prompt", ["roomId", "promptId"]) // the prompt-removal check (spec §6.4)
     .index("by_room_client", ["roomId", "clientId"])
-    .index("by_cluster", ["clusterId"]),
+    .index("by_stack", ["stackId"])
+    .index("by_author", ["authorId"]),
 
-  // A cluster is a row with a name and nothing else (ADR-0016).
-  retroClusters: defineTable({
+  // One vote: one person, one sticky. Totals stay hidden until the discussion.
+  retroStickyVotes: defineTable({
     roomId: v.id("rooms"),
-    name: v.string(),
-    createdAt: v.number(),
-  }).index("by_room", ["roomId"]),
-
-  // One row per dot, scoped to the stage entry that collected it.
-  retroVotes: defineTable({
-    roomId: v.id("rooms"),
-    stageEntryId: v.string(),
-    voterId: v.id("users"), // always stored, projected away for other readers in an anonymous retro
-    target: topicRefValidator,
-  })
-    .index("by_room", ["roomId"]) // The cascade reads every room-owned table by this name
-    .index("by_room_entry", ["roomId", "stageEntryId"])
-    .index("by_room_entry_voter", ["roomId", "stageEntryId", "voterId"])
-    .index("by_room_target", ["roomId", "target.id"]) // a topic's dots across entries: merge, dissolve
-    .index("by_voter", ["voterId"]), // account linking re-points a voter's rows
-
-  // An action item (ADR-0017): one home, denormalised to the Team.
-  retroActions: defineTable({
-    roomId: v.id("rooms"),
-    teamId: v.optional(v.id("teams")),
-    text: v.string(),
-    ownerId: v.optional(v.id("users")), // zero or one, always named
-    dueAt: v.optional(v.number()),
-    source: v.optional(topicRefValidator), // nulled when the topic is gone
-    status: v.union(v.literal("open"), v.literal("done"), v.literal("dropped")),
-    note: v.optional(v.string()), // written only when status leaves open
-    createdBy: v.id("users"),
-    createdAt: v.number(),
-    updatedAt: v.number(),
-    reminderJobId: v.optional(v.id("_scheduled_functions")), // ADR-0020
-    // Seam only, never written in v1 (ADR-0017).
-    externalRef: v.optional(
-      v.object({ provider: providerValidator, key: v.string(), url: v.string() })
-    ),
+    stickyId: v.id("retroStickies"),
+    voterId: v.id("users"),
   })
     .index("by_room", ["roomId"])
-    .index("by_team_status", ["teamId", "status"]),
+    .index("by_room_voter", ["roomId", "voterId"])
+    .index("by_sticky", ["stickyId"])
+    .index("by_voter", ["voterId"]),
+
+  // An action item: what the team agreed to do, and who does it.
+  retroActionItems: defineTable({
+    roomId: v.id("rooms"),
+    text: v.string(),
+    done: v.boolean(),
+    ownerId: v.optional(v.id("users")),
+    // Copied from the previous retro by "Start next retro".
+    carriedOver: v.optional(v.boolean()),
+    createdAt: v.number(),
+  })
+    .index("by_room", ["roomId"])
+    .index("by_owner", ["ownerId"]),
 
   // Room memberships (user <-> room relationship)
   roomMemberships: defineTable({
@@ -357,7 +268,11 @@ export default defineSchema({
       v.literal("timer"),
       v.literal("results"),
       v.literal("story"),
-      v.literal("note")
+      v.literal("note"),
+      // Retro boards
+      v.literal("retro"),
+      v.literal("pad"),
+      v.literal("actions")
     ),
     position: v.object({ x: v.number(), y: v.number() }),
     data: v.any(), // Node-specific data

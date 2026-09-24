@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { Id } from "@/convex/_generated/dataModel";
+import { Doc, Id } from "@/convex/_generated/dataModel";
 import { useAuth } from "@/components/auth/auth-provider";
 import { authClient } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
@@ -16,9 +16,14 @@ import { toast } from "@/lib/toast";
 interface JoinRoomDialogProps {
   roomId: Id<"rooms">;
   roomName: string;
+  roomType?: Doc<"rooms">["roomType"];
 }
 
-export function JoinRoomDialog({ roomId, roomName }: JoinRoomDialogProps) {
+export function JoinRoomDialog({ roomId, roomName, roomType }: JoinRoomDialogProps) {
+  // A retro has no spectators: everyone at the board writes.
+  const isRetro = roomType === "retro";
+  const noun = isRetro ? "Retro" : "Room";
+  const allowSpectator = !isRetro;
   const { authUserId } = useAuth();
   const joinRoom = useMutation(api.users.join);
 
@@ -61,7 +66,7 @@ export function JoinRoomDialog({ roomId, roomName }: JoinRoomDialogProps) {
       // and room-content.tsx will re-render with the new membership
     } catch (error) {
       console.error("Failed to join room:", error);
-      toast.error("Failed to join room");
+      toast.error(`Failed to join ${noun.toLowerCase()}`);
     } finally {
       setIsJoining(false);
     }
@@ -71,7 +76,7 @@ export function JoinRoomDialog({ roomId, roomName }: JoinRoomDialogProps) {
     <div className="min-h-screen flex items-center justify-center p-4">
       <div className="max-w-md w-full space-y-6 bg-card p-6 rounded-lg border">
         <div>
-          <h2 className="text-2xl font-bold">Join Room</h2>
+          <h2 className="text-2xl font-bold">Join {noun}</h2>
           <p className="text-muted-foreground">{roomName}</p>
         </div>
 
@@ -90,14 +95,16 @@ export function JoinRoomDialog({ roomId, roomName }: JoinRoomDialogProps) {
             />
           </div>
 
-          <div className="flex items-center space-x-2">
-            <Switch
-              id="spectator"
-              checked={isSpectator}
-              onCheckedChange={setIsSpectator}
-            />
-            <Label htmlFor="spectator">Join as spectator</Label>
-          </div>
+          {allowSpectator && (
+            <div className="flex items-center space-x-2">
+              <Switch
+                id="spectator"
+                checked={isSpectator}
+                onCheckedChange={setIsSpectator}
+              />
+              <Label htmlFor="spectator">Join as spectator</Label>
+            </div>
+          )}
 
           <Button
             onClick={handleJoin}
@@ -105,7 +112,7 @@ export function JoinRoomDialog({ roomId, roomName }: JoinRoomDialogProps) {
             className="w-full h-12 text-md"
             size="lg"
           >
-            Join Room
+            Join {noun}
           </Button>
 
           <p className="text-center text-sm text-muted-foreground">

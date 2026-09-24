@@ -35,7 +35,7 @@ vi.mock("@/lib/toast", () => ({
 }));
 
 import { useDeleteAccount } from "./useDeleteAccount";
-import { ACCOUNT_DELETED } from "@/convex/retroCopy";
+import { ACCOUNT_DELETED } from "@/convex/accountCopy";
 
 beforeEach(() => {
   spy.order = [];

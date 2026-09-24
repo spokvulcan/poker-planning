@@ -1,11 +1,11 @@
 /**
- * The homepage's copy (spec §18.2–§18.4, ADR-0014), in one plain module the
- * section components render from, so `src/lib/claims-register.test.ts` can
- * read every register-checked line without a DOM. Two ceremonies, one
- * toolkit: poker copy is kept and scoped under its ceremony, never deleted;
- * retro copy says only what the storage backs (the claims register, §18.3).
+ * The homepage's copy (ADR-0014), in one plain module the section components
+ * render from, so `src/lib/claims-register.test.ts` can read every
+ * register-checked line without a DOM. Two ceremonies, one toolkit: poker
+ * copy is kept and scoped under its ceremony, never deleted; retro copy says
+ * only what the retro whiteboard does (the claims register).
  *
- * Words (§18.4): "Retro" wherever a person reads it, "retrospective" only in
+ * Words: "Retro" wherever a person reads it, "retrospective" only in
  * long-form copy; "session" only inside planning poker; "ceremony" never.
  */
 
@@ -25,7 +25,7 @@ export const HERO = {
   headline: "Estimate and reflect,",
   headlineMuted: "without the noise.",
   description:
-    "Planning poker and retros for Scrum teams that think in writing, everyone at once. No accounts required. Free forever. Open source.",
+    "Planning poker and retros for Scrum teams, on one real-time whiteboard. No accounts required. Free forever. Open source.",
   estimate: { ...START_ESTIMATING, testId: "hero-start-button" } satisfies Cta,
   retro: { ...START_RETRO, testId: "hero-retro-button" } satisfies Cta,
   /** The framed poker simulation (ADR-0003). There is no retro demo (ADR-0014). */
@@ -39,7 +39,7 @@ export const CEREMONIES = {
   heading: "Plan the sprint.",
   headingMuted: "Reflect on it.",
   description:
-    "Planning poker for the estimates, Retro for what the team learned. Both free, both open source, both one link away.",
+    "Planning poker for the estimates, Retro for what the team learned. Same whiteboard, both free, both open source, both one link away.",
   poker: {
     name: "Planning poker",
     description:
@@ -55,11 +55,11 @@ export const CEREMONIES = {
   retro: {
     name: "Retro",
     description:
-      "Everyone writes cards at once, in the meeting or before it. Group them, vote with dots, walk the topics and leave with action items.",
+      "Everyone writes stickies at once, face-down until the reveal. Stack the similar ones, vote, talk through the top topics and leave with action items.",
     points: [
-      "Six formats, or edit your own",
-      "Anonymous or named, chosen per team",
-      "History kept for the team, free",
+      "Five templates, or your own columns",
+      "Anonymous by default",
+      "GIFs, timer and action items",
     ],
     cta: START_RETRO satisfies Cta,
   },
@@ -101,7 +101,7 @@ export const HOW_IT_WORKS = {
     animation: {
       roomName: "Sprint 42 Planning",
       startButton: "Start Session",
-      created: "Room Created!",
+      created: "Room created",
       you: "You",
       waiting: "Waiting for others...",
       consensus: "Consensus:",
@@ -113,38 +113,42 @@ export const HOW_IT_WORKS = {
         number: "01",
         title: "Open a board",
         description:
-          "Pick a format, name the retro and share the link. Keep it with a team, or run it with no account at all.",
+          "Pick a template, name the retro and share the link. Nobody needs an account.",
       },
       {
         number: "02",
-        title: "Write in parallel",
+        title: "Write face-down",
         description:
-          "Everyone writes at once, before the meeting or in it. Cards stay hidden until revealed.",
+          "Everyone writes at once. Stickies stay face-down until the facilitator reveals them.",
       },
       {
         number: "03",
-        title: "Group and vote",
+        title: "Stack and vote",
         description:
-          "Drag cards into groups, then spend your dots on what matters.",
+          "Drop a sticky on a similar one to stack them. Then vote; totals stay hidden until the discussion.",
       },
       {
         number: "04",
-        title: "Discuss and decide",
+        title: "Discuss and act",
         description:
-          "Walk the topics in vote order and write action items with owners. In a team retro, open ones come back next time.",
+          "Talk through the most-voted topics first and write action items with owners. Start the next retro and the open ones carry over.",
       },
     ],
     /** Strings the retro step animations draw. */
     animation: {
-      formatName: "Start, Stop, Continue",
+      retroName: "Sprint 42 Retro",
       startButton: "Start a retro",
       created: "Board open",
-      hidden: "Hidden until reveal",
-      cards: ["Fewer meetings", "Pairing on the API", "Flaky deploys"],
-      groupLabel: "Flow",
-      dots: 3,
-      topic: "Flaky deploys",
-      action: "Owner: Bea",
+      /** One sticky per column of the default template: Went well, To improve, Ideas. */
+      stickies: ["Pairing on the API", "Flaky deploys", "Demo on Fridays"],
+      /** Dropped on the "To improve" sticky to stack them. */
+      stacked: "CI keeps timing out",
+      yourVotes: "Your votes",
+      votesPerPerson: 3,
+      spotlight: "Discussing · #1",
+      topicVotes: 5,
+      action: "Quarantine flaky tests",
+      owner: "Bea",
     },
   },
 };
@@ -200,19 +204,19 @@ export const APP_PREVIEW = {
         id: "parallel",
         name: "Everyone at once.",
         description:
-          "Everyone writes at the same time, in the meeting or before it. Cards stay hidden until they are revealed together.",
+          "Everyone writes at the same time. Stickies stay face-down until the facilitator reveals them, like cards in planning poker.",
       },
       {
         id: "anonymous",
-        name: "Anonymous when you choose.",
+        name: "Anonymous by default.",
         description:
-          "In an anonymous retro no author is stored with a card, not even for the facilitator.",
+          "Teammates see what was written, not by whom. A setting shows authors when your team wants them.",
       },
       {
-        id: "history",
-        name: "Nothing forgotten.",
+        id: "carryover",
+        name: "Open items carry over.",
         description:
-          "History and open action items stay with the team from one retro to the next, free.",
+          "Start the next retro from this one: same columns, and every open action item comes along.",
       },
     ] as const,
   },
@@ -244,13 +248,15 @@ export const CAPABILITIES = {
   retro: {
     name: "Retro",
     features: [
-      "Six retro formats",
-      "Cards written in parallel",
-      "Anonymous or named retros",
-      "Dot voting and a guided discussion",
+      "Five column templates",
+      "Face-down until the reveal",
+      "GIFs on stickies",
+      "Stacks and votes",
+      "Discussion in vote order",
       "Action items with owners",
-      "History kept for the team",
-      "Markdown and JSON export",
+      "Open items carry over",
+      "Markdown summary",
+      "Anonymous by default",
     ],
   },
 };
@@ -276,7 +282,7 @@ export const PRICING_SECTION = {
         "5-day history for planning poker rooms",
         "Basic results analytics",
         "CSV exports",
-        "Retros, with history kept for the team",
+        "Signed-in retros kept until you delete them",
       ],
       cta: "Start planning for free",
       href: "/room/new",
@@ -310,7 +316,7 @@ export const USE_CASES = {
   eyebrow: "Architecture",
   heading: "Built for modern teams.",
   description:
-    "Under the hood, a real-time sync engine ensures every vote, card, reveal and state change lands instantly across all clients.",
+    "Under the hood, a real-time sync engine ensures every vote, sticky, reveal and state change lands instantly across all clients.",
   items: [
     {
       id: "remote",
@@ -328,10 +334,10 @@ export const USE_CASES = {
       description: "Visualize voting patterns to identify disagreement and align quickly.",
     },
     {
-      id: "async",
-      title: "Async by default",
+      id: "facedown",
+      title: "Face-down first",
       description:
-        "Open a retro before the meeting; the board is already full when everyone arrives.",
+        "Retro stickies stay face-down until the facilitator reveals them, the way planning poker hides votes.",
     },
     {
       id: "access",
@@ -339,10 +345,10 @@ export const USE_CASES = {
       description: "Designed for all teams. No accounts required to participate.",
     },
     {
-      id: "history",
-      title: "Nothing forgotten",
+      id: "carryover",
+      title: "Open items carry over",
       description:
-        "Retro history and open action items stay with the team, sprint after sprint.",
+        "Start the next retro from the last one: same columns, every open action item already on the board.",
     },
   ] as const,
 };
@@ -370,7 +376,7 @@ export const FAQ = {
     {
       question: "Does AgileKit do retros too?",
       answer:
-        "Yes. A retro is a board your team writes on together: everyone adds cards at once, in the meeting or before it, then you group them, vote with dots and walk through the topics. Start one from the homepage with no account, or keep it with a team so its history and action items are there next sprint. Retros are free for every team.",
+        "Yes. A retro runs on the same whiteboard as planning poker. Pick a template, then everyone writes stickies at once, face-down until the facilitator reveals them. Stack the similar ones, vote, talk through the top topics and write action items. When you are done, copy the retro as Markdown or start the next one with the open action items carried over. Retros are free, and nobody needs an account.",
     },
     {
       question: "How much does AgileKit cost?",
@@ -380,12 +386,12 @@ export const FAQ = {
     {
       question: "Do I need to create an account?",
       answer:
-        "No account is required! Click 'Start estimating' or 'Start a retro' and share the link with your team. We designed it this way to remove barriers and get your team going as quickly as possible. A team that wants to keep its retro history signs in, so the history has a knowable set of readers.",
+        "No. Click 'Start estimating' or 'Start a retro' and share the link with your team. A guest's retro is removed after 5 days without activity; sign in and the retros you start are kept until you delete them.",
     },
     {
-      question: "Can retro cards be anonymous?",
+      question: "Are retro stickies anonymous?",
       answer:
-        "Yes. A team can make its retros anonymous: no author is stored with a card, not even for the facilitator. Votes are counted but nobody is shown how you voted. Anyone with the link can join a retro that is not kept by a team.",
+        "By default, yes: teammates see what was written, not by whom. A setting in the retro shows authors, and it shows them on every sticky, including ones written before it was turned on. Vote totals stay hidden until the discussion starts, and nobody sees how anyone else voted.",
     },
     {
       question: "How many people can join a planning session?",
@@ -405,7 +411,7 @@ export const FAQ = {
     {
       question: "What browsers and devices are supported?",
       answer:
-        "AgileKit works on all modern browsers (Chrome, Firefox, Safari, Edge) and is fully responsive on desktop, tablet, and mobile devices. No app installation required - it works directly in your browser.",
+        "AgileKit works on all modern browsers (Chrome, Firefox, Safari, Edge) and is fully responsive on desktop, tablet, and mobile devices. No app installation required: it works directly in your browser.",
     },
     {
       question: "How does it compare to other planning poker tools?",
@@ -415,7 +421,7 @@ export const FAQ = {
     {
       question: "Can I contribute to the project?",
       answer:
-        "Yes! We welcome contributions. Visit our GitHub repository to report bugs, suggest features, or submit pull requests. You can also star the project to show your support.",
+        "Yes. We welcome contributions. Visit our GitHub repository to report bugs, suggest features, or submit pull requests. You can also star the project to show your support.",
     },
   ],
 };

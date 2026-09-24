@@ -10,6 +10,7 @@ import * as Canvas from "./model/canvas";
 import * as Timer from "./model/timer";
 import * as Rooms from "./model/rooms";
 import * as Retro from "./model/retro";
+import { DEFAULT_RETRO_PERMISSIONS } from "./permissions";
 
 const modules = import.meta.glob("./**/*.*s");
 
@@ -484,289 +485,164 @@ describe("room activity — the chokepoint owns the clock's precision (ADR-0018)
   it("creating a retro stamps a live clock", async () => {
     const t = convexTest(schema, modules);
     const before = Date.now();
-    const ownerId = await t.run((ctx) =>
-      ctx.db.insert("users", { authUserId: "auth-o", name: "O", createdAt: Date.now() })
-    );
+    const owner = await t.run(async (ctx) => {
+      const id = await ctx.db.insert("users", { authUserId: "auth-o", name: "O", createdAt: Date.now() });
+      return (await ctx.db.get(id))!;
+    });
 
-    const roomId = await t.run((ctx) =>
-      Retro.createRetro(ctx, {
-        name: "R",
-        ownerId,
-        formatName: "Went well, Do differently, Ideas",
-      })
-    );
+    const roomId = await t.run((ctx) => Retro.createRetro(ctx, { name: "R", owner }));
 
     expect(await lastActivityAt(t, roomId)).toBeGreaterThanOrEqual(before);
   });
 });
 
-describe("room activity — the Team's side of a retro bumps (spec §14)", () => {
+describe("room activity — every retro write goes through the chokepoint (ADR-0018)", () => {
   const HOUR = Rooms.RETRO_ACTIVITY_GRANULARITY_MS;
   const as = (t: T, subject: string) => t.withIdentity({ subject });
 
-  async function seedPermanent(t: T, authUserId: string): Promise<Id<"users">> {
-    return t.run((ctx) =>
-      ctx.db.insert("users", {
-        authUserId,
-        name: authUserId,
-        createdAt: Date.now(),
-        accountType: "permanent",
-      })
-    );
-  }
-
-  /** A Team with an admin and a member, and a retro by the member, seeded over an hour stale. */
-  async function seedTeamRetro(t: T, teamed: boolean) {
-    await seedPermanent(t, "auth-admin");
-    const memberId = await seedPermanent(t, "auth-member");
-    const teamId = await as(t, "auth-admin").mutation(api.teams.create, { name: "T" });
-    const team = (await t.run((ctx) => ctx.db.get(teamId)))!;
-    await as(t, "auth-member").mutation(api.teams.joinByInvite, { inviteToken: team.inviteToken });
-    const roomId = await as(t, "auth-member").mutation(api.retro.create, {
-      name: "R",
-      formatName: "Went well, Do differently, Ideas",
-      ...(teamed ? { teamId } : {}),
+  /** Sticks a sticky in the first column; its text is its clientId. */
+  const stick = (who: ReturnType<T["withIdentity"]>, roomId: Id<"rooms">, clientId: string) =>
+    who.mutation(api.retro.addSticky, {
+      roomId,
+      clientId,
+      columnId: "c1",
+      text: clientId,
+      position: { x: 0, y: 0 },
     });
-    const stale = Date.now() - HOUR - 60_000;
-    await t.run((ctx) => ctx.db.patch(roomId, { lastActivityAt: stale }));
-    return { teamId, roomId, memberId, stale };
+
+  /**
+   * A guest's retro with a participant beside its owner and a sticky each.
+   * The owner runs every act, so none is refused on permissions.
+   */
+  async function seedRetro(t: T) {
+    await t.run((ctx) =>
+      ctx.db.insert("users", { authUserId: "auth-owner", name: "O", createdAt: Date.now() })
+    );
+    const owner = as(t, "auth-owner");
+    const participant = as(t, "auth-p");
+    const roomId = await owner.mutation(api.retro.create, { name: "R" });
+    await owner.mutation(api.users.join, { roomId, name: "O", authUserId: "auth-owner" });
+    await participant.mutation(api.users.join, { roomId, name: "P", authUserId: "auth-p" });
+    const mine = await stick(owner, roomId, "mine");
+    const theirs = await stick(participant, roomId, "theirs");
+    return { roomId, owner, mine, theirs };
   }
 
-  it("adoptIntoTeam bumps", async () => {
-    const t = convexTest(schema, modules);
-    const { teamId, roomId, stale } = await seedTeamRetro(t, false);
-
-    await as(t, "auth-member").mutation(api.retro.adoptIntoTeam, { roomId, teamId });
-
-    await expectBumped(t, roomId, stale);
-  });
-
-  it("nudge bumps through the pressing mutation; the send action never does (spec §14, ADR-0020)", async () => {
-    const t = convexTest(schema, modules);
-    const { roomId, stale } = await seedTeamRetro(t, true);
-    process.env.RESEND_API_KEY = "re_test";
-    process.env.UNSUBSCRIBE_SECRET = "s";
-
-    await as(t, "auth-member").mutation(api.retro.nudge, { roomId });
-    await expectBumped(t, roomId, stale);
-
-    const again = Date.now() - HOUR - 60_000;
-    await t.run((ctx) => ctx.db.patch(roomId, { lastActivityAt: again }));
-    const memberId = (await t.run((ctx) =>
-      ctx.db.query("users").withIndex("by_auth_user", (q) => q.eq("authUserId", "auth-member")).unique()
-    ))!._id;
-    await t.action(internal.email.send, { kind: "nudge", roomId, senderId: memberId });
-    expect((await t.run((ctx) => ctx.db.get(roomId)))!.lastActivityAt).toBe(again);
-  });
-
-  it("advance, setCardsVisible and setTimebox bump (spec §7)", async () => {
-    const t = convexTest(schema, modules);
-    const { roomId } = await seedTeamRetro(t, false);
-    const retro = (await t.run((ctx) =>
-      ctx.db.query("retros").withIndex("by_room", (q) => q.eq("roomId", roomId)).unique()
-    ))!;
-    const acts = [
-      () => as(t, "auth-member").mutation(api.retro.advance, { roomId, toStageId: retro.stages[1].id }),
-      () => as(t, "auth-member").mutation(api.retro.setCardsVisible, { roomId, stageId: retro.stages[1].id, value: "hidden" }),
-      () => as(t, "auth-member").mutation(api.retro.setTimebox, { roomId, stageId: retro.stages[1].id, minutes: 5 }),
-    ];
-    for (const act of acts) {
+  /** Runs each act against a clock over an hour stale and expects it bumped. */
+  async function expectEachBumps(
+    t: T,
+    roomId: Id<"rooms">,
+    acts: Record<string, () => Promise<unknown>>
+  ) {
+    for (const [name, act] of Object.entries(acts)) {
       const stale = Date.now() - HOUR - 60_000;
       await t.run((ctx) => ctx.db.patch(roomId, { lastActivityAt: stale }));
       await act();
-      await expectBumped(t, roomId, stale);
+      expect(await lastActivityAt(t, roomId), name).toBeGreaterThan(stale);
     }
+  }
+
+  it("moving through the steps and the discussion bumps", async () => {
+    const t = convexTest(schema, modules);
+    const { roomId, owner, mine } = await seedRetro(t);
+
+    await expectEachBumps(t, roomId, {
+      setStep: () => owner.mutation(api.retro.setStep, { roomId, step: "discuss" }),
+      stepDiscussion: () => owner.mutation(api.retro.stepDiscussion, { roomId, direction: "next" }),
+      focusTopic: () => owner.mutation(api.retro.focusTopic, { roomId, stickyId: mine }),
+    });
   });
 
-  it("every retroSettings mutation bumps (spec §14)", async () => {
+  it("every settings and column write bumps", async () => {
     const t = convexTest(schema, modules);
-    const { roomId } = await seedTeamRetro(t, false);
-    const retro = (await t.run((ctx) =>
-      ctx.db.query("retros").withIndex("by_room", (q) => q.eq("roomId", roomId)).unique()
-    ))!;
-    const me = as(t, "auth-member");
-    const promptId = retro.format.prompts[0].id;
-    const close = retro.stages[retro.stages.length - 1];
-    const acts: (() => Promise<unknown>)[] = [
-      () => me.mutation(api.retro.rename, { roomId, name: "Renamed" }),
-      () => me.mutation(api.retro.setJoinPolicy, { roomId, joinPolicy: "permanentAccounts" }),
-      () => me.mutation(api.retro.setCollectUntil, { roomId, collectUntil: Date.now() + 1000 }),
-      () => me.mutation(api.retro.updatePrompt, { roomId, promptId, label: "Edited" }),
-      () => me.mutation(api.retro.addPrompt, { roomId, label: "New", color: "pink" }),
-      () => me.mutation(api.retro.removePrompt, { roomId, promptId: retro.format.prompts[1].id }),
-      () => me.mutation(api.retro.addStage, { roomId, kind: "review", index: 1 }),
-      () => me.mutation(api.retro.removeStage, { roomId, stageId: close.id }),
-    ];
-    for (const act of acts) {
-      const stale = Date.now() - HOUR - 60_000;
-      await t.run((ctx) => ctx.db.patch(roomId, { lastActivityAt: stale }));
-      await act();
-      await expectBumped(t, roomId, stale);
-    }
-    // Reorder over whatever the list now holds: the review entry was added at 1, close removed.
-    const now = (await t.run((ctx) =>
-      ctx.db.query("retros").withIndex("by_room", (q) => q.eq("roomId", roomId)).unique()
-    ))!;
-    const ids = now.stages.map((s) => s.id);
-    // Swap the two free entries after review (group, vote), keeping collect (current) and discuss.
-    const swapped = [ids[0], ids[1], ids[3], ids[2], ids[4]];
-    const stale = Date.now() - HOUR - 60_000;
-    await t.run((ctx) => ctx.db.patch(roomId, { lastActivityAt: stale }));
-    await me.mutation(api.retro.reorderStages, { roomId, stageIds: swapped });
-    await expectBumped(t, roomId, stale);
+    const { roomId, owner } = await seedRetro(t);
+    let columnId = "";
+
+    await expectEachBumps(t, roomId, {
+      rename: () => owner.mutation(api.retro.rename, { roomId, name: "Renamed" }),
+      updateSettings: () => owner.mutation(api.retro.updateSettings, { roomId, votesPerPerson: 5 }),
+      updatePermissions: () =>
+        owner.mutation(api.retro.updatePermissions, { roomId, permissions: DEFAULT_RETRO_PERMISSIONS }),
+      addColumn: async () => {
+        columnId = await owner.mutation(api.retro.addColumn, { roomId, title: "Kudos", emoji: "🎉", color: "orange" });
+      },
+      updateColumn: () => owner.mutation(api.retro.updateColumn, { roomId, columnId, title: "Thanks" }),
+      removeColumn: () => owner.mutation(api.retro.removeColumn, { roomId, columnId }),
+    });
   });
 
-  it("every card mutation bumps (spec §14)", async () => {
+  it("every sticky write bumps", async () => {
     const t = convexTest(schema, modules);
-    const { roomId } = await seedTeamRetro(t, false);
-    const retro = (await t.run((ctx) =>
-      ctx.db.query("retros").withIndex("by_room", (q) => q.eq("roomId", roomId)).unique()
-    ))!;
-    const me = as(t, "auth-member");
-    const promptId = retro.format.prompts[0].id;
-    const acts = [
-      () => me.mutation(api.retro.createCard, { roomId, clientId: "c1", text: "hi", promptId, position: { x: 0, y: 0 } }),
-      () => me.mutation(api.retro.updateCard, { roomId, clientId: "c1", text: "edited" }),
-      () => me.mutation(api.retro.moveCards, { roomId, moves: [{ clientId: "c1", position: { x: 1, y: 1 } }] }),
-      () => me.mutation(api.retro.deleteCard, { roomId, clientId: "c1" }),
-    ];
-    for (const act of acts) {
-      const stale = Date.now() - HOUR - 60_000;
-      await t.run((ctx) => ctx.db.patch(roomId, { lastActivityAt: stale }));
-      await act();
-      await expectBumped(t, roomId, stale);
-    }
+    const { roomId, owner, mine, theirs } = await seedRetro(t);
+    // Revealed, so the owner may stack someone else's sticky.
+    await owner.mutation(api.retro.setStep, { roomId, step: "vote" });
+
+    await expectEachBumps(t, roomId, {
+      addSticky: () => stick(owner, roomId, "new"),
+      updateSticky: () => owner.mutation(api.retro.updateSticky, { stickyId: mine, text: "edited" }),
+      moveStickies: () =>
+        owner.mutation(api.retro.moveStickies, { roomId, moves: [{ stickyId: theirs, position: { x: 5, y: 5 } }] }),
+      stackSticky: () => owner.mutation(api.retro.stackSticky, { stickyId: theirs, ontoId: mine }),
+      unstackSticky: () => owner.mutation(api.retro.unstackSticky, { stickyId: theirs, position: { x: 9, y: 9 } }),
+      deleteSticky: () => owner.mutation(api.retro.deleteSticky, { stickyId: theirs }),
+    });
   });
 
-  it("every action item mutation bumps (spec §14), the team page's completion included", async () => {
+  it("a vote and taking it back both bump", async () => {
     const t = convexTest(schema, modules);
-    const { roomId, memberId } = await seedTeamRetro(t, true);
-    const me = as(t, "auth-member");
-    let id: Id<"retroActions">;
-    const acts = [
-      async () => void (id = await me.mutation(api.retro.createAction, { roomId, text: "Do it" })),
-      () => me.mutation(api.retro.updateAction, { roomId, actionId: id, text: "Do it well", dueAt: 1 }),
-      () => me.mutation(api.retro.assignAction, { roomId, actionId: id, ownerId: memberId }),
-      () => me.mutation(api.retro.setActionStatus, { roomId, actionId: id, status: "done", note: "ok" }),
-      () => me.mutation(api.retro.setActionStatus, { roomId, actionId: id, status: "open" }),
-      () => me.mutation(api.retro.deleteAction, { roomId, actionId: id }),
-    ];
-    for (const act of acts) {
-      const stale = Date.now() - HOUR - 60_000;
-      await t.run((ctx) => ctx.db.patch(roomId, { lastActivityAt: stale }));
-      await act();
-      await expectBumped(t, roomId, stale);
-    }
+    const { roomId, owner, theirs } = await seedRetro(t);
+    await owner.mutation(api.retro.setStep, { roomId, step: "vote" });
+
+    await expectEachBumps(t, roomId, {
+      vote: () => owner.mutation(api.retro.toggleVote, { stickyId: theirs }),
+      unvote: () => owner.mutation(api.retro.toggleVote, { stickyId: theirs }),
+    });
   });
 
-  it("every cluster mutation bumps (spec §14)", async () => {
+  it("every action item write bumps", async () => {
     const t = convexTest(schema, modules);
-    const { roomId } = await seedTeamRetro(t, false);
-    const retro = (await t.run((ctx) =>
-      ctx.db.query("retros").withIndex("by_room", (q) => q.eq("roomId", roomId)).unique()
-    ))!;
-    const me = as(t, "auth-member");
-    const promptId = retro.format.prompts[0].id;
-    for (const clientId of ["c1", "c2", "c3"]) {
-      await me.mutation(api.retro.createCard, { roomId, clientId, text: clientId, promptId, position: { x: 0, y: 0 } });
-    }
-    let a: Id<"retroClusters">;
-    let b: Id<"retroClusters">;
-    const acts = [
-      async () => void (a = await me.mutation(api.retro.formCluster, { roomId, clientIds: ["c1"] })),
-      async () => void (b = await me.mutation(api.retro.formCluster, { roomId, clientIds: ["c2"] })),
-      () => me.mutation(api.retro.addToCluster, { roomId, clusterId: a, clientIds: ["c3"] }),
-      () => me.mutation(api.retro.removeFromCluster, { roomId, clientIds: ["c3"] }),
-      () => me.mutation(api.retro.renameCluster, { roomId, clusterId: a, name: "A" }),
-      () => me.mutation(api.retro.mergeClusters, { roomId, from: b, into: a }),
-      () => me.mutation(api.retro.dissolveCluster, { roomId, clusterId: a }),
-    ];
-    for (const act of acts) {
-      const stale = Date.now() - HOUR - 60_000;
-      await t.run((ctx) => ctx.db.patch(roomId, { lastActivityAt: stale }));
-      await act();
-      await expectBumped(t, roomId, stale);
-    }
+    const { roomId, owner } = await seedRetro(t);
+    let itemId: Id<"retroActionItems">;
+
+    await expectEachBumps(t, roomId, {
+      addActionItem: async () => {
+        itemId = await owner.mutation(api.retro.addActionItem, { roomId, text: "Do it" });
+      },
+      updateActionItem: () => owner.mutation(api.retro.updateActionItem, { itemId, done: true }),
+      deleteActionItem: () => owner.mutation(api.retro.deleteActionItem, { itemId }),
+    });
   });
 
-  it("every dot mutation bumps (spec §14)", async () => {
+  it("starting the next retro bumps the one it follows", async () => {
     const t = convexTest(schema, modules);
-    const { roomId } = await seedTeamRetro(t, false);
-    const retro = (await t.run((ctx) =>
-      ctx.db.query("retros").withIndex("by_room", (q) => q.eq("roomId", roomId)).unique()
-    ))!;
-    const me = as(t, "auth-member");
-    await me.mutation(api.retro.createCard, { roomId, clientId: "c1", text: "c1", promptId: retro.format.prompts[0].id, position: { x: 0, y: 0 } });
-    const card = (await t.run((ctx) =>
-      ctx.db.query("retroCards").withIndex("by_room", (q) => q.eq("roomId", roomId)).unique()
-    ))!;
-    // A budget on the current entry: the kind is never the test (ADR-0010).
-    await t.run((ctx) =>
-      ctx.db.patch(retro._id, {
-        stages: retro.stages.map((s) => (s.id === retro.currentStageId ? { ...s, voteBudget: 3 } : s)),
-      })
-    );
-    const target = { kind: "card" as const, id: card._id };
-    const acts = [
-      () => me.mutation(api.retro.placeDot, { roomId, target }),
-      () => me.mutation(api.retro.removeDot, { roomId, target }),
-    ];
-    for (const act of acts) {
-      const stale = Date.now() - HOUR - 60_000;
-      await t.run((ctx) => ctx.db.patch(roomId, { lastActivityAt: stale }));
-      await act();
-      await expectBumped(t, roomId, stale);
-    }
+    const { roomId, owner } = await seedRetro(t);
+
+    await expectEachBumps(t, roomId, {
+      startNext: () => owner.mutation(api.retro.startNext, { roomId }),
+    });
   });
 
-  it("every walk act bumps (spec §14)", async () => {
+  it("a write on a clock less than an hour old leaves the room row alone", async () => {
     const t = convexTest(schema, modules);
-    const { roomId } = await seedTeamRetro(t, false);
-    const retro = (await t.run((ctx) =>
-      ctx.db.query("retros").withIndex("by_room", (q) => q.eq("roomId", roomId)).unique()
-    ))!;
-    const me = as(t, "auth-member");
-    await me.mutation(api.retro.createCard, { roomId, clientId: "c1", text: "c1", promptId: retro.format.prompts[0].id, position: { x: 0, y: 0 } });
-    await me.mutation(api.retro.advance, { roomId, toStageId: retro.stages.find((s) => s.kind === "discuss")!.id });
-    await me.mutation(api.retro.createCard, { roomId, clientId: "c2", text: "c2", promptId: retro.format.prompts[0].id, position: { x: 0, y: 0 } });
-    const cards = await t.run((ctx) =>
-      ctx.db.query("retroCards").withIndex("by_room", (q) => q.eq("roomId", roomId)).collect()
-    );
-    const c1 = cards.find((c) => c.clientId === "c1")!._id;
-    const c2 = cards.find((c) => c.clientId === "c2")!._id;
-    const acts = [
-      () => me.mutation(api.retro.setWalkCursor, { roomId, index: 0 }),
-      () => me.mutation(api.retro.markCovered, { roomId, topicId: c1, covered: true }),
-      () => me.mutation(api.retro.raise, { roomId, topicRef: { kind: "card", id: c2 } }),
-      // A no-op raise is still a person's act.
-      () => me.mutation(api.retro.raise, { roomId, topicRef: { kind: "card", id: c2 } }),
-    ];
-    for (const act of acts) {
-      const stale = Date.now() - HOUR - 60_000;
-      await t.run((ctx) => ctx.db.patch(roomId, { lastActivityAt: stale }));
-      await act();
-      await expectBumped(t, roomId, stale);
-    }
+    const { roomId, owner } = await seedRetro(t);
+    const fresh = Date.now() - 60_000;
+    await t.run((ctx) => ctx.db.patch(roomId, { lastActivityAt: fresh }));
+
+    await stick(owner, roomId, "new");
+
+    expect(await lastActivityAt(t, roomId)).toBe(fresh);
   });
 
-  it("ratchet bumps (spec §14)", async () => {
+  it("a guest retro whose only sign of life in days is a sticky survives the sweep", async () => {
     const t = convexTest(schema, modules);
-    const { roomId, stale } = await seedTeamRetro(t, false);
+    const { roomId, owner } = await seedRetro(t);
+    expect((await t.run((ctx) => ctx.db.get(roomId)))!.retained).toBe(false);
+    const sixDaysAgo = Date.now() - 6 * 24 * 60 * 60 * 1000;
+    await t.run((ctx) => ctx.db.patch(roomId, { lastActivityAt: sixDaysAgo }));
 
-    await as(t, "auth-member").mutation(api.retro.ratchet, { roomId });
+    await stick(owner, roomId, "new");
 
-    await expectBumped(t, roomId, stale);
-  });
-
-  it("claim bumps", async () => {
-    const t = convexTest(schema, modules);
-    const { roomId, memberId, stale } = await seedTeamRetro(t, true);
-    await as(t, "auth-admin").mutation(api.users.join, { roomId, name: "A", authUserId: "auth-admin" });
-    await as(t, "auth-member").mutation(api.users.leave, { roomId, userId: memberId });
-    await t.run((ctx) => ctx.db.patch(roomId, { lastActivityAt: stale }));
-
-    await as(t, "auth-admin").mutation(api.retro.claim, { roomId });
-
-    await expectBumped(t, roomId, stale);
+    const result = await t.mutation(internal.cleanup.removeInactiveRooms, {});
+    expect(result.roomsScheduled).toBe(0);
   });
 });

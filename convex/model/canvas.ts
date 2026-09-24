@@ -9,7 +9,7 @@ import {
   TIMER_POSITION,
   type Position,
 } from "../canvasLayout";
-import type { TimerState } from "../timerState";
+import { IDLE_TIMER, type TimerState } from "../timerState";
 
 // Re-exported for compatibility — the geometry now lives in canvasLayout.ts.
 export type { Position } from "../canvasLayout";
@@ -36,7 +36,11 @@ export type CanvasNodeData =
   // session / results / story carry no persisted payload
   | { type: "session"; data: Record<string, never> }
   | { type: "results"; data: Record<string, never> }
-  | { type: "story"; data: Record<string, never> };
+  | { type: "story"; data: Record<string, never> }
+  // Retro boards: the retro node, a column's pad, the action items
+  | { type: "retro"; data: Record<string, never> }
+  | { type: "pad"; data: { columnId: string } }
+  | { type: "actions"; data: Record<string, never> };
 
 export type CanvasNode = {
   roomId: Id<"rooms">;
@@ -129,13 +133,7 @@ export async function initializeCanvasNodes(
       nodeId: "timer",
       type: "timer",
       position: { ...TIMER_POSITION },
-      data: {
-        startedAt: null,
-        pausedAt: null,
-        elapsedSeconds: 0,
-        lastUpdatedBy: null,
-        lastAction: null,
-      },
+      data: { ...IDLE_TIMER },
       lastUpdatedAt: now,
     }),
     // Create session node

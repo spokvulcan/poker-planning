@@ -1,12 +1,26 @@
 "use client";
 
-import { Check, Loader2, EyeOff } from "lucide-react";
+import { Check, Loader2, Layers } from "lucide-react";
 import { useState, useEffect, type ComponentType } from "react";
+import { columnsFromTemplate, DEFAULT_TEMPLATE_ID } from "@/convex/retroTemplates";
+import { STICKY_TONES } from "@/components/retro/sticky-colors";
 import { HOW_IT_WORKS } from "./copy";
 import { CeremonyTabs, CeremonyTabList, CeremonyTabPanel, type Ceremony } from "./ceremony-tabs";
 
 const POKER = HOW_IT_WORKS.poker.animation;
 const RETRO = HOW_IT_WORKS.retro.animation;
+
+/**
+ * The default template's columns (Went well, To improve, Ideas) in the
+ * board's own palette: each sticky's paper and ink, and the scribbles a
+ * face-down sticky shows.
+ */
+const TONES = columnsFromTemplate(DEFAULT_TEMPLATE_ID).map((column) => STICKY_TONES[column.color]);
+const PAPER = TONES.map((tone) => `${tone.paper} ${tone.ink}`);
+const SCRIBBLE = TONES.map((tone) => tone.scribble);
+
+/** The stack the vote step builds and the discussion opens on: the "To improve" sticky and the one dropped on it. */
+const STACK = [RETRO.stickies[1], RETRO.stacked];
 
 /** Types a name, presses the button, shows the created state, loops. */
 function useCreateLoop(typed: string) {
@@ -81,7 +95,7 @@ function CreateRoomAnimation() {
 }
 
 function OpenBoardAnimation() {
-  return <CreateAnimation typed={RETRO.formatName} button={RETRO.startButton} created={RETRO.created} />;
+  return <CreateAnimation typed={RETRO.retroName} button={RETRO.startButton} created={RETRO.created} />;
 }
 
 function InviteTeamAnimation() {
@@ -241,8 +255,8 @@ function AlignAnimation() {
   )
 }
 
-/** Three silhouettes appear one by one, then reveal together (ADR-0015). */
-function WriteCardsAnimation() {
+/** Stickies land face-down (scribbles) one by one, then the reveal turns them all over. */
+function WriteFaceDownAnimation() {
   const [written, setWritten] = useState(0);
   const [revealed, setRevealed] = useState(false);
 
@@ -254,7 +268,7 @@ function WriteCardsAnimation() {
         setRevealed(false);
         await new Promise(r => setTimeout(r, 800));
         if (!isMounted) break;
-        for (let i = 1; i <= RETRO.cards.length; i++) {
+        for (let i = 1; i <= RETRO.stickies.length; i++) {
           setWritten(i);
           await new Promise(r => setTimeout(r, 500));
           if (!isMounted) break;
@@ -271,49 +285,50 @@ function WriteCardsAnimation() {
 
   return (
     <div className="w-full flex flex-col items-center justify-center gap-2 h-full">
-      {RETRO.cards.map((card, i) => (
+      {RETRO.stickies.map((sticky, i) => (
         <div
-          key={card}
-          className={`w-44 sm:w-52 rounded-xl border px-4 py-2 text-sm transition-all duration-500 ${
+          key={sticky}
+          className={`relative w-44 sm:w-52 h-10 rounded-lg border-2 px-3 shadow-sm transition-all duration-500 ${PAPER[i]} ${
             i < written ? "opacity-100 translate-y-0" : "opacity-0 translate-y-3"
-          } ${
-            revealed
-              ? "bg-white dark:bg-zinc-800 border-gray-200 dark:border-zinc-700 text-gray-900 dark:text-white shadow-md"
-              : "bg-gray-100 dark:bg-zinc-800/60 border-dashed border-gray-300 dark:border-zinc-700 text-gray-400 dark:text-gray-500"
           }`}
         >
-          {revealed ? card : (
-            <span className="flex items-center gap-2">
-              <EyeOff className="w-3.5 h-3.5" /> {RETRO.hidden}
-            </span>
-          )}
+          <span
+            aria-hidden="true"
+            className={`absolute inset-x-3 inset-y-0 flex flex-col justify-center gap-1.5 transition-opacity duration-300 ${revealed ? "opacity-0" : "opacity-100"}`}
+          >
+            <span className={`h-2 w-[85%] rounded-full ${SCRIBBLE[i]}`} />
+            <span className={`h-2 w-[55%] rounded-full ${SCRIBBLE[i]}`} />
+          </span>
+          <span
+            className={`flex h-full items-center text-sm font-medium transition-all duration-700 ${
+              revealed ? "opacity-100 blur-none translate-y-0" : "opacity-0 blur-sm translate-y-1.5"
+            }`}
+          >
+            {sticky}
+          </span>
         </div>
       ))}
     </div>
   );
 }
 
-/** Two cards slide together under a group chip, then dots land on the group. */
-function GroupVoteAnimation() {
-  const [grouped, setGrouped] = useState(false);
-  const [dots, setDots] = useState(0);
+/** A sticky drops onto a similar one to make a stack, then your vote lands on the stack. */
+function StackVoteAnimation() {
+  const [stacked, setStacked] = useState(false);
+  const [voted, setVoted] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
     const play = async () => {
       while (isMounted) {
-        setGrouped(false);
-        setDots(0);
+        setStacked(false);
+        setVoted(false);
         await new Promise(r => setTimeout(r, 1000));
         if (!isMounted) break;
-        setGrouped(true);
-        await new Promise(r => setTimeout(r, 900));
+        setStacked(true);
+        await new Promise(r => setTimeout(r, 1100));
         if (!isMounted) break;
-        for (let i = 1; i <= RETRO.dots; i++) {
-          setDots(i);
-          await new Promise(r => setTimeout(r, 350));
-          if (!isMounted) break;
-        }
+        setVoted(true);
         await new Promise(r => setTimeout(r, 2500));
       }
     };
@@ -322,37 +337,49 @@ function GroupVoteAnimation() {
   }, []);
 
   return (
-    <div className="w-full flex flex-col items-center justify-center gap-4 h-full">
-      <div className={`px-3 py-1 rounded-full bg-primary/10 text-primary text-xs font-bold tracking-wide transition-all duration-500 ${grouped ? "opacity-100 scale-100" : "opacity-0 scale-90"}`}>
-        {RETRO.groupLabel}
-      </div>
+    <div className="w-full flex flex-col items-center justify-center gap-5 h-full">
       <div className="relative flex items-center justify-center h-14 w-56">
-        {[0, 1].map((i) => (
+        {STACK.map((sticky, i) => (
           <div
-            key={i}
-            className={`absolute w-24 h-12 rounded-xl bg-white dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 shadow-sm px-2.5 py-1.5 text-[11px] leading-tight overflow-hidden text-gray-700 dark:text-gray-300 transition-transform duration-700 ${
-              grouped
-                ? i === 0 ? "-translate-x-6 -rotate-3" : "translate-x-6 rotate-3"
-                : i === 0 ? "-translate-x-20" : "translate-x-20"
+            key={sticky}
+            className={`absolute w-28 h-12 rounded-lg border-2 px-2.5 py-1.5 text-[11px] font-medium leading-tight shadow-sm transition-transform duration-700 ${PAPER[1]} ${
+              i === 0 ? "z-10" : "z-0"
+            } ${
+              stacked
+                ? i === 0 ? "translate-x-0" : "translate-x-1.5 translate-y-1.5"
+                : i === 0 ? "-translate-x-15" : "translate-x-15"
             }`}
           >
-            {RETRO.cards[i]}
+            {/* A closed stack shows only its top sticky */}
+            <span className={`line-clamp-2 transition-opacity duration-300 ${stacked && i > 0 ? "opacity-0" : "opacity-100"}`}>{sticky}</span>
+            {i === 0 && (
+              <>
+                <span className={`absolute bottom-1 right-1.5 flex items-center gap-0.5 text-[10px] font-semibold text-rose-800/70 dark:text-rose-200/70 transition-opacity duration-300 ${stacked ? "opacity-100" : "opacity-0"}`}>
+                  <Layers className="w-3 h-3" /> {STACK.length}
+                </span>
+                {/* A vote is a dot sticker on the corner, as on the board */}
+                <span className={`absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-blue-500 shadow-sm ring-2 ring-white dark:ring-zinc-900 transition-all duration-300 ${voted ? "opacity-100 scale-100" : "opacity-0 scale-50"}`} />
+              </>
+            )}
           </div>
         ))}
       </div>
-      <div className="flex gap-1.5 h-3">
-        {Array.from({ length: RETRO.dots }, (_, i) => (
-          <span
-            key={i}
-            className={`w-3 h-3 rounded-full bg-primary transition-all duration-300 ${i < dots ? "opacity-100 scale-100" : "opacity-0 scale-50"}`}
-          />
-        ))}
+      <div className="flex items-center gap-2 text-xs font-medium text-gray-600 dark:text-gray-400">
+        {RETRO.yourVotes}
+        <span className="flex gap-1">
+          {Array.from({ length: RETRO.votesPerPerson }, (_, i) => (
+            <span
+              key={i}
+              className={`w-2.5 h-2.5 rounded-full transition-colors duration-300 ${i === 0 && voted ? "bg-blue-500" : "bg-blue-200 dark:bg-blue-900/60"}`}
+            />
+          ))}
+        </span>
       </div>
     </div>
   );
 }
 
-/** The walk lands on a topic and an owned action item appears under it. */
+/** The most-voted topic takes the spotlight, an owned action item appears under it and gets ticked. */
 function DiscussAnimation() {
   const [stage, setStage] = useState(0);
 
@@ -367,7 +394,10 @@ function DiscussAnimation() {
         await new Promise(r => setTimeout(r, 1200));
         if (!isMounted) break;
         setStage(2);
-        await new Promise(r => setTimeout(r, 3000));
+        await new Promise(r => setTimeout(r, 1200));
+        if (!isMounted) break;
+        setStage(3);
+        await new Promise(r => setTimeout(r, 2500));
       }
     };
     play();
@@ -375,26 +405,38 @@ function DiscussAnimation() {
   }, []);
 
   return (
-    <div className="w-full flex flex-col items-center justify-center gap-3 h-full">
-      <div className={`w-56 rounded-xl border px-4 py-3 flex items-center justify-between text-sm transition-all duration-500 ${
+    <div className="w-full flex flex-col items-center justify-center gap-4 h-full">
+      <div className={`relative w-64 rounded-lg border-2 px-4 py-3 flex items-center justify-between gap-3 text-sm font-medium transition-all duration-500 ${PAPER[1]} ${
         stage >= 1
-          ? "bg-white/10 border-white/20 text-white"
-          : "bg-white/5 border-white/10 text-gray-400"
+          ? "-translate-y-1 shadow-xl ring-2 ring-blue-500 ring-offset-2 ring-offset-gray-900 dark:ring-offset-zinc-900"
+          : "shadow-sm"
       }`}>
-        <span className="font-medium">{RETRO.topic}</span>
-        <span className="flex gap-1">
-          {Array.from({ length: RETRO.dots }, (_, i) => (
-            <span key={i} className="w-2 h-2 rounded-full bg-primary" />
-          ))}
+        <span className={`absolute -top-3 left-3 h-6 px-2 rounded-full flex items-center bg-blue-500 text-white text-[11px] font-semibold shadow-sm transition-all duration-300 ${
+          stage >= 1 ? "opacity-100 scale-100" : "opacity-0 scale-90"
+        }`}>
+          {RETRO.spotlight}
+        </span>
+        <span className="truncate">{STACK[0]}</span>
+        <span className="flex items-center gap-2 shrink-0">
+          <span className="flex items-center gap-0.5 text-[11px] font-semibold text-rose-800/70 dark:text-rose-200/70">
+            <Layers className="w-3 h-3" /> {STACK.length}
+          </span>
+          <span className="flex h-6 items-center gap-1 rounded-full bg-blue-500 px-2 font-mono text-xs font-semibold text-white tabular-nums">
+            <span className="w-1.5 h-1.5 rounded-full bg-white" />
+            {RETRO.topicVotes}
+          </span>
         </span>
       </div>
-      <div className={`w-56 rounded-xl bg-white text-gray-900 px-4 py-3 flex items-center gap-3 text-sm shadow-xl transition-all duration-500 ${
+      <div className={`w-64 rounded-xl bg-white text-gray-900 px-3 py-2.5 flex items-center gap-3 text-sm shadow-xl transition-all duration-500 ${
         stage >= 2 ? "opacity-100 translate-y-0" : "opacity-0 translate-y-3"
       }`}>
-        <span className="w-6 h-6 rounded-full bg-green-100 flex items-center justify-center shrink-0">
-          <Check className="w-3.5 h-3.5 text-green-600" />
+        <span className={`w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 transition-colors duration-300 ${
+          stage >= 3 ? "bg-emerald-500 border-emerald-500" : "border-gray-300"
+        }`}>
+          <Check className={`w-3 h-3 text-white transition-opacity duration-300 ${stage >= 3 ? "opacity-100" : "opacity-0"}`} strokeWidth={3} />
         </span>
-        <span className="font-medium">{RETRO.action}</span>
+        <span className="flex-1 min-w-0 truncate font-medium">{RETRO.action}</span>
+        <span className="shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">{RETRO.owner}</span>
       </div>
     </div>
   );
@@ -402,7 +444,7 @@ function DiscussAnimation() {
 
 const VISUALS: Record<Ceremony, [ComponentType, ComponentType, ComponentType, ComponentType]> = {
   poker: [CreateRoomAnimation, InviteTeamAnimation, EstimateAnimation, AlignAnimation],
-  retro: [OpenBoardAnimation, WriteCardsAnimation, GroupVoteAnimation, DiscussAnimation],
+  retro: [OpenBoardAnimation, WriteFaceDownAnimation, StackVoteAnimation, DiscussAnimation],
 };
 
 /** The four-step bento, one per ceremony; the layout is shared, the words and visuals are not. */

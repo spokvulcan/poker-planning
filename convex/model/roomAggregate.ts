@@ -3,16 +3,14 @@ import { Doc, Id } from "../_generated/dataModel";
 import { scheduleWebhookDeregistration } from "./integrations";
 
 /**
- * The retro's five tables (ADR-0016), room-owned like the rest — the cascade
- * empties them — but permanently retained data the daily orphan sweep must
- * never walk (model/cleanup.ts takes the explicit poker list instead).
+ * The retro's tables, room-owned like the rest — the cascade empties them —
+ * but possibly retained data the daily orphan sweep never walks (the sweep
+ * takes the explicit poker list instead).
  */
 export const RETRO_TABLES = [
-  "retros",
-  "retroCards",
-  "retroClusters",
-  "retroVotes",
-  "retroActions",
+  "retroStickies",
+  "retroStickyVotes",
+  "retroActionItems",
 ] as const;
 
 /**

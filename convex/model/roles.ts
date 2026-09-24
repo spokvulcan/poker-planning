@@ -70,8 +70,7 @@ export async function transferOwnership(
   await ctx.db.patch(actorMembership._id, { role: "participant" });
   await ctx.db.patch(target!._id, { role: "owner" });
 
-  // Update room's ownerId
-  await ctx.db.patch(args.roomId, { ownerId: args.targetUserId });
+  await Rooms.setRoomOwner(ctx, room, args.targetUserId);
   await Rooms.updateRoomActivity(ctx, args.roomId);
 }
 

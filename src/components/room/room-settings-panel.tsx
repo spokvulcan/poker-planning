@@ -1,74 +1,41 @@
 "use client";
 
-import { FC, useRef, useState, useEffect } from "react";
+import { FC, useState, useEffect } from "react";
 import Link from "next/link";
 import {
   X,
-  Sun,
-  Moon,
-  Monitor,
-  UserMinus,
   ArrowRight,
-  Crown,
-  Star,
-  ChevronUp,
-  ChevronDown,
-  ArrowRightLeft,
   AlertTriangle,
-  Info,
-  ShieldAlert,
   Zap,
-  Users,
   Settings,
 } from "lucide-react";
-import { useTheme } from "next-themes";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Badge } from "@/components/ui/badge";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/components/ui/accordion";
 import { SidePanel } from "@/components/ui/side-panel";
 import { toast } from "@/lib/toast";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
   usePokerPermissions,
   permissionProps,
   permissionInputProps,
-  rosterControls,
 } from "@/hooks/usePermissions";
 import { IntegrationSettingsSection } from "./integration-settings";
 import { useRoomSettingsActions } from "./hooks/useRoomSettingsActions";
 import type { Id } from "@/convex/_generated/dataModel";
-import { cn } from "@/lib/utils";
 import type { RoomWithRelatedData } from "@/convex/model/rooms";
 import type { PermissionLevel, PokerPermissionCategory, RoomPermissions } from "@/convex/permissions";
-import { UserAvatar } from "@/components/user-menu/user-avatar";
-import { formatLastSeen } from "./user-presence-avatars";
 
-import { usePresenceRoster } from "./room-presence";
+import { ParticipantsSection } from "./participants-section";
+import { PermissionsSection } from "./permissions-section";
+import { ThemeSection } from "./theme-section";
 import { useIsDemoMode } from "./demo/DemoSimulationProvider";
 
 interface RoomSettingsPanelProps {
@@ -78,33 +45,11 @@ interface RoomSettingsPanelProps {
   onClose: () => void;
 }
 
-const PERMISSION_CONFIG: Record<PokerPermissionCategory, { label: string; description: string; tooltip: string }> = {
-  revealCards: {
-    label: "Reveal cards",
-    description: "Reveal votes, cancel auto-reveal",
-    tooltip: "Controls who can reveal votes and cancel the auto-reveal countdown.",
-  },
-  gameFlow: {
-    label: "Game flow",
-    description: "Reset game, start voting on issues",
-    tooltip: "Controls who can reset the game, start voting on an issue, or clear the current issue.",
-  },
-  issueManagement: {
-    label: "Issue management",
-    description: "Create, edit, delete, reorder issues",
-    tooltip: "Controls who can create, edit, delete, and reorder issues in the backlog.",
-  },
-  roomSettings: {
-    label: "Room settings",
-    description: "Rename room, toggle auto-reveal",
-    tooltip: "Controls who can rename the room and toggle the auto-reveal setting.",
-  },
-};
-
-const LEVEL_LABELS: Record<PermissionLevel, string> = {
-  everyone: "Everyone",
-  facilitators: "Facilitators",
-  owner: "Owner only",
+const PERMISSION_CONFIG: Record<PokerPermissionCategory, { label: string; description: string }> = {
+  revealCards: { label: "Reveal cards", description: "Reveal votes, cancel auto-reveal" },
+  gameFlow: { label: "Game flow", description: "Reset game, start voting on issues" },
+  issueManagement: { label: "Issue management", description: "Create, edit, delete, reorder issues" },
+  roomSettings: { label: "Room settings", description: "Rename room, toggle auto-reveal" },
 };
 
 export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
@@ -114,18 +59,9 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
   onClose,
 }) => {
   const isDemoMode = useIsDemoMode();
-  const { theme, setTheme } = useTheme();
-
-  // Roster from the single presence module, ordered current-user-first, then
-  // online-first, then by join time.
-  const sortedUsers = usePresenceRoster(currentUserId);
 
   const [roomName, setRoomName] = useState(roomData.room.name);
   const [isSaving, setIsSaving] = useState(false);
-  const [removingUserId, setRemovingUserId] = useState<string | null>(null);
-  const [pendingDeleteUser, setPendingDeleteUser] = useState<{id: Id<"users">, name: string} | null>(null);
-  const [pendingTransferUser, setPendingTransferUser] = useState<{id: Id<"users">, name: string} | null>(null);
-  const openSelectCountRef = useRef(0);
 
   // Writes come from the action seam, which no-ops internally in demo mode
   // (ADR-0003) — the remaining `isDemoMode` branches below are presentation only
@@ -138,14 +74,6 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
   useEffect(() => {
     setRoomName(roomData.room.name);
   }, [roomData.room.name]);
-
-  // Reset pending state when panel closes
-  useEffect(() => {
-    if (!isOpen) {
-      setPendingDeleteUser(null);
-      setPendingTransferUser(null);
-    }
-  }, [isOpen]);
 
   const handleSaveRoomName = async () => {
     if (!roomName.trim() || roomName === roomData.room.name) return;
@@ -174,66 +102,6 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
     }
   };
 
-  const handleRemoveUser = (userId: Id<"users">, userName: string) => {
-    setPendingDeleteUser({ id: userId, name: userName });
-  };
-
-  const handleConfirmRemoveUser = async () => {
-    if (!pendingDeleteUser) return;
-    setRemovingUserId(pendingDeleteUser.id);
-    try {
-      await settingsActions.removeUser(pendingDeleteUser.id);
-      toast.success("User removed", {
-        description: `${pendingDeleteUser.name} has been removed from the room.`,
-      });
-    } catch (error) {
-      console.error("Failed to remove user:", error);
-      toast.error("Failed to remove user");
-    } finally {
-      setRemovingUserId(null);
-      setPendingDeleteUser(null);
-    }
-  };
-
-  const handlePromote = async (userId: Id<"users">, userName: string) => {
-    try {
-      await settingsActions.promoteFacilitator(userId);
-      toast.success("User promoted", {
-        description: `${userName} is now a facilitator.`,
-      });
-    } catch (error) {
-      console.error("Failed to promote user:", error);
-      toast.error("Failed to promote user");
-    }
-  };
-
-  const handleDemote = async (userId: Id<"users">, userName: string) => {
-    try {
-      await settingsActions.demoteFacilitator(userId);
-      toast.success("User demoted", {
-        description: `${userName} is now a participant.`,
-      });
-    } catch (error) {
-      console.error("Failed to demote user:", error);
-      toast.error("Failed to demote user");
-    }
-  };
-
-  const handleConfirmTransfer = async () => {
-    if (!pendingTransferUser) return;
-    try {
-      await settingsActions.transferOwnership(pendingTransferUser.id);
-      toast.success("Ownership transferred", {
-        description: `${pendingTransferUser.name} is now the room owner.`,
-      });
-    } catch (error) {
-      console.error("Failed to transfer ownership:", error);
-      toast.error("Failed to transfer ownership");
-    } finally {
-      setPendingTransferUser(null);
-    }
-  };
-
   const handlePermissionChange = async (category: PokerPermissionCategory, value: PermissionLevel) => {
     const newPermissions: RoomPermissions = {
       ...perms.permissions,
@@ -246,8 +114,6 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
       toast.error("Failed to update permissions");
     }
   };
-
-  const currentPermissions = perms.permissions;
 
   return (
     <>
@@ -354,78 +220,7 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
               />
             </div>
 
-            {/* Appearance Section (Moved out of accordion) */}
-            <div className="pt-5 mt-4 border-t border-gray-100 dark:border-border/50">
-              <div className="flex flex-col gap-3">
-                <div className="space-y-1">
-                  <Label className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                    Theme
-                  </Label>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">
-                    Customize the look of the room
-                  </p>
-                </div>
-              <div className="flex gap-1.5 p-1 bg-gray-100/80 dark:bg-surface-2 rounded-lg border border-gray-200/50 dark:border-border/50">
-                <Tooltip>
-                  <TooltipTrigger render={
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setTheme("light")}
-                      className={cn(
-                        "flex-1 h-8 px-3 gap-2 rounded-md transition-all text-xs font-medium",
-                        theme === "light" 
-                          ? "bg-white dark:bg-surface-3 shadow-sm text-gray-900 border border-gray-200/50 dark:border-transparent" 
-                          : "text-gray-500 hover:text-gray-900 dark:hover:text-gray-300"
-                      )}
-                    >
-                      <Sun className="h-3.5 w-3.5" />
-                      Light
-                    </Button>
-                  } />
-                  <TooltipContent><p>Light theme</p></TooltipContent>
-                </Tooltip>
-                <Tooltip>
-                  <TooltipTrigger render={
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setTheme("dark")}
-                      className={cn(
-                        "flex-1 h-8 px-3 gap-2 rounded-md transition-all text-xs font-medium",
-                        theme === "dark" 
-                          ? "bg-white dark:bg-surface-3 shadow-sm text-gray-900 dark:text-white border border-gray-200/50 dark:border-transparent" 
-                          : "text-gray-500 hover:text-gray-900 dark:hover:text-gray-300"
-                      )}
-                    >
-                      <Moon className="h-3.5 w-3.5" />
-                      Dark
-                    </Button>
-                  } />
-                  <TooltipContent><p>Dark theme</p></TooltipContent>
-                </Tooltip>
-                <Tooltip>
-                  <TooltipTrigger render={
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setTheme("system")}
-                      className={cn(
-                        "flex-1 h-8 px-3 gap-2 rounded-md transition-all text-xs font-medium",
-                        theme === "system" 
-                          ? "bg-white dark:bg-surface-3 shadow-sm text-gray-900 dark:text-white border border-gray-200/50 dark:border-transparent" 
-                          : "text-gray-500 hover:text-gray-900 dark:hover:text-gray-300"
-                      )}
-                    >
-                      <Monitor className="h-3.5 w-3.5" />
-                      System
-                    </Button>
-                  } />
-                  <TooltipContent><p>System theme</p></TooltipContent>
-                </Tooltip>
-              </div>
-              </div>
-            </div>
+            <ThemeSection description="Customize the look of the room" />
           </div>
 
           {/* Scrollable Bottom Section */}
@@ -434,69 +229,17 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
             <div className="space-y-4">
               <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Configuration</h3>
               <Accordion className="space-y-3">
-                <AccordionItem value="permissions" className="border border-gray-200/50 dark:border-border rounded-lg px-4 bg-white dark:bg-surface-2/30 shadow-sm">
-                  <AccordionTrigger className="text-sm font-medium py-3.5 hover:no-underline text-gray-700 dark:text-gray-300">
-                    <div className="flex items-center gap-3">
-                      <ShieldAlert className="h-4 w-4 text-gray-400" />
-                      Permissions
-                    </div>
-                  </AccordionTrigger>
-                  <AccordionContent className="pb-4 pt-1">
-                    <div className="space-y-4">
-                      <div className="flex items-center gap-1.5 p-3 rounded-lg bg-gray-50 dark:bg-surface-3 border border-gray-100 dark:border-border/50">
-                        <Info className="h-4 w-4 text-blue-500 shrink-0" />
-                        <span className="text-xs text-gray-600 dark:text-gray-300">
-                          {perms.changePermissions.allowed ? "As the owner, you can control who can perform actions in this room." : "Only the room owner can change these permissions."}
-                        </span>
-                      </div>
-                      <div className="space-y-2">
-                        {(Object.keys(PERMISSION_CONFIG) as PokerPermissionCategory[]).map((category) => {
-                          const config = PERMISSION_CONFIG[category];
-                          return (
-                            <div
-                              key={category}
-                              className="flex items-center justify-between gap-4 py-2.5 px-3 rounded-lg hover:bg-gray-50 dark:hover:bg-surface-3/50 transition-colors border border-transparent hover:border-gray-100 dark:hover:border-border/50"
-                            >
-                              <div className="flex items-center gap-2 min-w-0">
-                                <div className="min-w-0">
-                                  <span className="text-sm font-medium text-gray-800 dark:text-gray-200">
-                                    {config.label}
-                                  </span>
-                                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                                    {config.description}
-                                  </p>
-                                </div>
-                              </div>
-                              <div className="shrink-0">
-                                {perms.changePermissions.allowed ? (
-                                  <Select
-                                    value={currentPermissions[category]}
-                                    onValueChange={(value) => handlePermissionChange(category, value as PermissionLevel)}
-                                    onOpenChange={(open) => { openSelectCountRef.current += open ? 1 : -1; }}
-                                  >
-                                    <SelectTrigger size="sm" className="h-8 text-xs w-[130px] bg-white dark:bg-surface-2">
-                                      <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent align="end">
-                                      <SelectItem value="everyone">Everyone</SelectItem>
-                                      <SelectItem value="facilitators">Facilitators</SelectItem>
-                                      <SelectItem value="owner">Owner only</SelectItem>
-                                    </SelectContent>
-                                  </Select>
-                                ) : (
-                                  <span className="text-xs font-medium text-gray-600 dark:text-gray-300 px-3 py-1.5 rounded-md bg-gray-100 dark:bg-surface-3">
-                                    {LEVEL_LABELS[currentPermissions[category]]}
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  </AccordionContent>
-                </AccordionItem>
-                
+                <PermissionsSection
+                  config={PERMISSION_CONFIG}
+                  permissions={perms.permissions}
+                  canChange={perms.changePermissions.allowed}
+                  note={{
+                    owner: "As the owner, you can control who can perform actions in this room.",
+                    others: "Only the room owner can change these permissions.",
+                  }}
+                  onChange={handlePermissionChange}
+                />
+
                 {!isDemoMode && (
                 <AccordionItem value="integrations" className="border border-gray-200/50 dark:border-border rounded-lg px-4 bg-white dark:bg-surface-2/30 shadow-sm">
                   <AccordionTrigger className="text-sm font-medium py-3.5 hover:no-underline text-gray-700 dark:text-gray-300">
@@ -516,220 +259,12 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
               </Accordion>
             </div>
 
-            {/* Users Section */}
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  Participants
-                </h3>
-                <Badge variant="secondary" className="bg-white dark:bg-surface-2 text-xs font-medium px-2.5 py-0.5 rounded-full border border-gray-200 dark:border-border">
-                  {sortedUsers.length} Total
-                </Badge>
-              </div>
-              
-              <div className="space-y-2 mt-3" data-testid="participant-list">
-                {sortedUsers.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-10 px-4 rounded-xl border-2 border-dashed border-gray-200 dark:border-border bg-white/50 dark:bg-surface-2/10">
-                    <Users className="h-8 w-8 text-gray-300 dark:text-gray-600 mb-3" />
-                    <p className="text-sm font-medium text-gray-600 dark:text-gray-400 text-center">
-                      No participants yet
-                    </p>
-                    <p className="text-xs text-gray-500 dark:text-gray-500 text-center mt-1">
-                      Share the room link to invite your team
-                    </p>
-                  </div>
-                ) : (
-                  sortedUsers.map((u) => {
-                    const userRole = u.role ?? "participant";
-                    const isMe = u._id === currentUserId;
-                    // Per-action control state from the four relationship
-                    // decisions against this target — denied actions render
-                    // visible-but-disabled with the denial copy, never vanish.
-                    const roster = rosterControls({
-                      remove: perms.removeTarget(userRole),
-                      promote: perms.promoteTarget(userRole),
-                      demote: perms.demoteTarget(userRole),
-                      transfer: perms.transfer,
-                    });
-
-                    return (
-                      <div
-                        key={u._id}
-                        data-testid="participant-row"
-                        data-user-name={u.name}
-                        className={cn(
-                          "flex items-center justify-between py-3 px-4 rounded-xl border shadow-sm transition-all group",
-                          isMe 
-                            ? "bg-blue-50/50 dark:bg-blue-900/20 border-blue-100 dark:border-blue-800/50 hover:border-blue-200 dark:hover:border-blue-700/50" 
-                            : "bg-white dark:bg-surface-2 border-gray-200/50 dark:border-border hover:shadow-md hover:border-gray-300/50 dark:hover:border-border/80"
-                        )}
-                      >
-                        <div className="flex items-center gap-3.5 min-w-0">
-                          <div className="relative shrink-0">
-                            <UserAvatar name={u.name} avatarUrl={u.avatarUrl} size="sm" className="w-10 h-10 ring-2 ring-gray-50 dark:ring-surface-1" />
-                            <div
-                              className={cn(
-                                "absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-white dark:border-surface-2",
-                                u.isOnline ? "bg-green-500" : "bg-gray-400"
-                              )}
-                            />
-                          </div>
-                          <div className="flex flex-col min-w-0 justify-center">
-                            <div className="flex items-center gap-2">
-                              <span className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate flex items-center gap-1.5">
-                                {u.name}
-                                {isMe && <span className="text-[10px] text-gray-500 font-medium bg-white/60 dark:bg-surface-3/50 px-1.5 py-0.5 rounded-sm border border-gray-200/50 dark:border-border">(You)</span>}
-                              </span>
-                              {userRole === "owner" && (
-                                <Badge variant="secondary" className="h-5 text-[10px] px-2 bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400 border-amber-200/50 dark:border-amber-900/50 gap-1 shrink-0">
-                                  <Crown className="h-3 w-3" />
-                                  Owner
-                                </Badge>
-                              )}
-                              {userRole === "facilitator" && (
-                                <Badge variant="secondary" className="h-5 text-[10px] px-2 bg-blue-50 text-blue-700 dark:bg-blue-950/30 dark:text-blue-400 border-blue-200/50 dark:border-blue-900/50 gap-1 shrink-0">
-                                  <Star className="h-3 w-3" />
-                                  Facilitator
-                                </Badge>
-                              )}
-                              {u.isSpectator && (
-                                <Badge variant="secondary" className="h-5 text-[10px] px-2 bg-gray-100 dark:bg-surface-3 shrink-0">
-                                  Spectator
-                                </Badge>
-                              )}
-                            </div>
-                            {!u.isOnline && u.lastSeen && (
-                              <span className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                                {formatLastSeen(u.lastSeen)}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                        {!isDemoMode && !isMe && (
-                          <div className="flex items-center gap-1 shrink-0 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 transition-opacity">
-                            {/* Promote button */}
-                            <Tooltip>
-                              <TooltipTrigger render={
-                                <Button
-                                  variant="ghost"
-                                  size="icon-sm"
-                                  onClick={roster.promote.enabled ? () => handlePromote(u._id, u.name) : undefined}
-                                  disabled={!roster.promote.enabled}
-                                  className={cn(
-                                    roster.promote.enabled
-                                      ? "hover:bg-blue-50 hover:text-blue-600 dark:hover:bg-blue-500/10 dark:hover:text-blue-400"
-                                      : "opacity-40 cursor-not-allowed",
-                                  )}
-                                  aria-label={
-                                    roster.promote.enabled
-                                      ? `Promote ${u.name} to facilitator`
-                                      : roster.promote.denial
-                                  }
-                                >
-                                  <ChevronUp className="h-4 w-4" />
-                                </Button>
-                              } />
-                              <TooltipContent>
-                                <p>
-                                  {roster.promote.enabled ? "Promote to facilitator" : roster.promote.denial}
-                                </p>
-                              </TooltipContent>
-                            </Tooltip>
-
-                            {/* Demote button */}
-                            <Tooltip>
-                              <TooltipTrigger render={
-                                <Button
-                                  variant="ghost"
-                                  size="icon-sm"
-                                  onClick={roster.demote.enabled ? () => handleDemote(u._id, u.name) : undefined}
-                                  disabled={!roster.demote.enabled}
-                                  className={cn(
-                                    roster.demote.enabled
-                                      ? "hover:bg-amber-50 hover:text-amber-600 dark:hover:bg-amber-500/10 dark:hover:text-amber-400"
-                                      : "opacity-40 cursor-not-allowed",
-                                  )}
-                                  aria-label={
-                                    roster.demote.enabled
-                                      ? `Demote ${u.name} to participant`
-                                      : roster.demote.denial
-                                  }
-                                >
-                                  <ChevronDown className="h-4 w-4" />
-                                </Button>
-                              } />
-                              <TooltipContent>
-                                <p>
-                                  {roster.demote.enabled ? "Demote to participant" : roster.demote.denial}
-                                </p>
-                              </TooltipContent>
-                            </Tooltip>
-
-                            {/* Transfer ownership button */}
-                            <Tooltip>
-                              <TooltipTrigger render={
-                                <Button
-                                  variant="ghost"
-                                  size="icon-sm"
-                                  onClick={roster.transfer.enabled ? () => setPendingTransferUser({ id: u._id, name: u.name }) : undefined}
-                                  disabled={!roster.transfer.enabled}
-                                  className={cn(
-                                    roster.transfer.enabled
-                                      ? "hover:bg-purple-50 hover:text-purple-600 dark:hover:bg-purple-500/10 dark:hover:text-purple-400"
-                                      : "opacity-40 cursor-not-allowed",
-                                  )}
-                                  aria-label={
-                                    roster.transfer.enabled
-                                      ? `Transfer ownership to ${u.name}`
-                                      : roster.transfer.denial
-                                  }
-                                >
-                                  <ArrowRightLeft className="h-4 w-4" />
-                                </Button>
-                              } />
-                              <TooltipContent>
-                                <p>
-                                  {roster.transfer.enabled ? "Transfer ownership" : roster.transfer.denial}
-                                </p>
-                              </TooltipContent>
-                            </Tooltip>
-
-                            {/* Remove button */}
-                            <Tooltip>
-                              <TooltipTrigger render={
-                                <Button
-                                  variant="ghost"
-                                  size="icon-sm"
-                                  onClick={roster.remove.enabled ? () => handleRemoveUser(u._id, u.name) : undefined}
-                                  disabled={removingUserId === u._id || !roster.remove.enabled}
-                                  className={cn(
-                                    roster.remove.enabled
-                                      ? "hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-500/10 dark:hover:text-red-400"
-                                      : "opacity-40 cursor-not-allowed",
-                                  )}
-                                  aria-label={
-                                    roster.remove.enabled
-                                      ? `Remove ${u.name}`
-                                      : roster.remove.denial
-                                  }
-                                >
-                                  <UserMinus className="h-4 w-4" />
-                                </Button>
-                              } />
-                              <TooltipContent>
-                                <p>
-                                  {roster.remove.enabled ? "Remove user" : roster.remove.denial}
-                                </p>
-                              </TooltipContent>
-                            </Tooltip>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-            </div>
+            <ParticipantsSection
+              roomId={roomData.room._id}
+              currentUserId={currentUserId}
+              perms={perms}
+              isOpen={isOpen}
+            />
             
             {/* Demo CTA */}
             {isDemoMode && (
@@ -746,47 +281,6 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
         </div>
     </SidePanel>
 
-      {/* Remove user confirmation dialog */}
-      <AlertDialog
-        open={!!pendingDeleteUser}
-        onOpenChange={(open) => !open && setPendingDeleteUser(null)}
-      >
-        <AlertDialogContent size="sm">
-          <AlertDialogHeader>
-            <AlertDialogTitle>Remove {pendingDeleteUser?.name}?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will remove the user from the room. They can rejoin using the room link.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction variant="destructive" onClick={handleConfirmRemoveUser}>
-              Remove
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {/* Transfer ownership confirmation dialog */}
-      <AlertDialog
-        open={!!pendingTransferUser}
-        onOpenChange={(open) => !open && setPendingTransferUser(null)}
-      >
-        <AlertDialogContent size="sm">
-          <AlertDialogHeader>
-            <AlertDialogTitle>Transfer ownership to {pendingTransferUser?.name}?</AlertDialogTitle>
-            <AlertDialogDescription>
-              You will become a participant. This action cannot be undone by you.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleConfirmTransfer}>
-              Transfer
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </>
   );
 };

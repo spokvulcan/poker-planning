@@ -7,8 +7,8 @@ import { requireCan } from "./model/auth";
 import type { MemberRole, RetroPermissions } from "./permissions";
 
 // The guard's action assembly narrows on the ceremony before indexing a
-// category (ADR-0013), and reads owner absence for the new verbs. The pure
-// decision is covered in retroPermissions.test.ts; this file proves the IO
+// category (ADR-0013), and reads owner absence for an owner-level verb. The
+// pure decision is covered in permissions.test.ts; this file proves the IO
 // assembly feeds it the right inputs.
 
 const modules = import.meta.glob("./**/*.*s");
@@ -123,27 +123,25 @@ describe("permission guard — category set keyed by room type", () => {
   });
 });
 
-describe("permission guard — ratchet, delete and claim", () => {
-  it("ratchet and delete are owner-only", async () => {
+describe("permission guard — delete", () => {
+  it("is owner-only", async () => {
     const t = convexTest(schema, modules);
     const roomId = await seedRoom(t, { roomType: "retro" });
     const ownerId = await addMember(t, roomId, "auth-o", "owner");
     await t.run((ctx) => ctx.db.patch(roomId, { ownerId }));
     await addMember(t, roomId, "auth-f", "facilitator");
 
-    for (const verb of ["ratchet", "delete"] as const) {
-      await t
-        .withIdentity({ subject: "auth-o" })
-        .run((ctx) => requireCan(ctx, roomId, { kind: "relationship", verb }));
-      await expect(
-        t
-          .withIdentity({ subject: "auth-f" })
-          .run((ctx) => requireCan(ctx, roomId, { kind: "relationship", verb }))
-      ).rejects.toThrow("Only the owner can do this.");
-    }
+    await t
+      .withIdentity({ subject: "auth-o" })
+      .run((ctx) => requireCan(ctx, roomId, { kind: "relationship", verb: "delete" }));
+    await expect(
+      t
+        .withIdentity({ subject: "auth-f" })
+        .run((ctx) => requireCan(ctx, roomId, { kind: "relationship", verb: "delete" }))
+    ).rejects.toThrow("Only the owner can do this.");
   });
 
-  it("ratchet under lockdown reads owner absence and reports it", async () => {
+  it("under lockdown reads owner absence and reports it", async () => {
     const t = convexTest(schema, modules);
     const roomId = await seedRoom(t, { roomType: "retro" });
     const ownerId = await addMember(t, roomId, "auth-o", "owner");
@@ -161,138 +159,9 @@ describe("permission guard — ratchet, delete and claim", () => {
     await expect(
       t
         .withIdentity({ subject: "auth-f" })
-        .run((ctx) => requireCan(ctx, roomId, { kind: "relationship", verb: "ratchet" }))
+        .run((ctx) => requireCan(ctx, roomId, { kind: "relationship", verb: "delete" }))
     ).rejects.toThrow(
       "Room owner has left. Owner-level actions are disabled until the owner returns."
     );
-  });
-
-  it("claim is refused for every room member of a teamless room", async () => {
-    // A teamless room grants no team role, so claim is insufficient-role for
-    // everyone — including the room owner.
-    const t = convexTest(schema, modules);
-    const roomId = await seedRoom(t, { roomType: "retro" });
-    const ownerId = await addMember(t, roomId, "auth-o", "owner");
-    await t.run((ctx) => ctx.db.patch(roomId, { ownerId }));
-    await addMember(t, roomId, "auth-p");
-
-    for (const subject of ["auth-o", "auth-p"]) {
-      await expect(
-        t
-          .withIdentity({ subject })
-          .run((ctx) => requireCan(ctx, roomId, { kind: "relationship", verb: "claim" }))
-      ).rejects.toThrow("Only a team admin can claim this room.");
-    }
-  });
-});
-
-describe("permission guard — claim on a team room (ADR-0013)", () => {
-  async function seedTeam(t: TestConvex<typeof schema>) {
-    return t.run((ctx) =>
-      ctx.db.insert("teams", {
-        name: "Acme",
-        inviteToken: "tok",
-        retroDefaults: {
-          attribution: "named",
-          joinPolicy: "anyone",
-          permissions: {
-            stageFlow: "facilitators",
-            cardManagement: "facilitators",
-            actionManagement: "everyone",
-            retroSettings: "facilitators",
-          },
-        },
-        createdAt: Date.now(),
-      })
-    );
-  }
-
-  async function addTeamRole(
-    t: TestConvex<typeof schema>,
-    teamId: Id<"teams">,
-    userId: Id<"users">,
-    role: "admin" | "member"
-  ) {
-    await t.run((ctx) =>
-      ctx.db.insert("teamMemberships", { teamId, userId, role, joinedAt: Date.now() })
-    );
-  }
-
-  async function leaveRoom(t: TestConvex<typeof schema>, roomId: Id<"rooms">, userId: Id<"users">) {
-    await t.run(async (ctx) => {
-      const m = await ctx.db
-        .query("roomMemberships")
-        .withIndex("by_room_user", (q) => q.eq("roomId", roomId).eq("userId", userId))
-        .first();
-      await ctx.db.delete(m!._id);
-    });
-  }
-
-  it("a team admin claims a team room whose owner is absent", async () => {
-    const t = convexTest(schema, modules);
-    const teamId = await seedTeam(t);
-    const roomId = await seedRoom(t, { roomType: "retro" });
-    await t.run((ctx) => ctx.db.patch(roomId, { teamId }));
-    const ownerId = await addMember(t, roomId, "auth-o", "owner");
-    await t.run((ctx) => ctx.db.patch(roomId, { ownerId }));
-    await addTeamRole(t, teamId, ownerId, "member");
-    const adminId = await addMember(t, roomId, "auth-a");
-    await addTeamRole(t, teamId, adminId, "admin");
-    await leaveRoom(t, roomId, ownerId);
-
-    await t
-      .withIdentity({ subject: "auth-a" })
-      .run((ctx) => requireCan(ctx, roomId, { kind: "relationship", verb: "claim" }));
-  });
-
-  it("a team admin claims when the owner is present but no longer in the Team", async () => {
-    const t = convexTest(schema, modules);
-    const teamId = await seedTeam(t);
-    const roomId = await seedRoom(t, { roomType: "retro" });
-    await t.run((ctx) => ctx.db.patch(roomId, { teamId }));
-    const ownerId = await addMember(t, roomId, "auth-o", "owner");
-    await t.run((ctx) => ctx.db.patch(roomId, { ownerId }));
-    const adminId = await addMember(t, roomId, "auth-a");
-    await addTeamRole(t, teamId, adminId, "admin");
-
-    await t
-      .withIdentity({ subject: "auth-a" })
-      .run((ctx) => requireCan(ctx, roomId, { kind: "relationship", verb: "claim" }));
-  });
-
-  it("a team admin is refused with owner-present while the owner is here and in the Team", async () => {
-    const t = convexTest(schema, modules);
-    const teamId = await seedTeam(t);
-    const roomId = await seedRoom(t, { roomType: "retro" });
-    await t.run((ctx) => ctx.db.patch(roomId, { teamId }));
-    const ownerId = await addMember(t, roomId, "auth-o", "owner");
-    await t.run((ctx) => ctx.db.patch(roomId, { ownerId }));
-    await addTeamRole(t, teamId, ownerId, "member");
-    const adminId = await addMember(t, roomId, "auth-a");
-    await addTeamRole(t, teamId, adminId, "admin");
-
-    await expect(
-      t
-        .withIdentity({ subject: "auth-a" })
-        .run((ctx) => requireCan(ctx, roomId, { kind: "relationship", verb: "claim" }))
-    ).rejects.toThrow("The owner is still here — ask them to transfer ownership.");
-  });
-
-  it("a team member who is not an admin is refused, and so is anyone on a teamless room", async () => {
-    const t = convexTest(schema, modules);
-    const teamId = await seedTeam(t);
-    const roomId = await seedRoom(t, { roomType: "retro" });
-    await t.run((ctx) => ctx.db.patch(roomId, { teamId }));
-    const ownerId = await addMember(t, roomId, "auth-o", "owner");
-    await t.run((ctx) => ctx.db.patch(roomId, { ownerId }));
-    const memberId = await addMember(t, roomId, "auth-m");
-    await addTeamRole(t, teamId, memberId, "member");
-    await leaveRoom(t, roomId, ownerId);
-
-    await expect(
-      t
-        .withIdentity({ subject: "auth-m" })
-        .run((ctx) => requireCan(ctx, roomId, { kind: "relationship", verb: "claim" }))
-    ).rejects.toThrow("Only a team admin can claim this room.");
   });
 });

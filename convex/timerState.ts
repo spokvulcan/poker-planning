@@ -26,6 +26,15 @@ export type TimerState = {
   lastAction: TimerAction | null;
 };
 
+/** A timer that has never run: the state every canvas's timer node starts in. */
+export const IDLE_TIMER: TimerState = {
+  startedAt: null,
+  pausedAt: null,
+  elapsedSeconds: 0,
+  lastUpdatedBy: null,
+  lastAction: null,
+};
+
 /** A point-in-time reading derived from the persisted state. */
 export type CurrentTimerTime = {
   currentSeconds: number;

@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useState, type ComponentType } from "react";
-import { Zap, Shield, BarChart3, PenLine, EyeOff, History } from "lucide-react";
+import { Zap, Shield, BarChart3, PenLine, EyeOff, ListChecks } from "lucide-react";
 import { APP_PREVIEW } from "./copy";
 import { CeremonyTabs, CeremonyTabList, CeremonyTabPanel, type Ceremony } from "./ceremony-tabs";
 
@@ -17,7 +17,7 @@ const ICONS: Record<FeatureId, ComponentType<{ className?: string; strokeWidth?:
   results: BarChart3,
   parallel: PenLine,
   anonymous: EyeOff,
-  history: History,
+  carryover: ListChecks,
 };
 
 const CEREMONIES: Ceremony[] = ["poker", "retro"];

@@ -29,35 +29,6 @@ export const heartbeat = mutation({
   },
 });
 
-/**
- * The retro's presence payload (ADR-0010, ADR-0022, spec §7, §10.6):
- * readiness — "I am done with this stage" as `{ stageId, ready }`, never
- * in a table — and the editing indicator, the `clientId` of the card the
- * person is typing into. One write per state change through the client's
- * global single-flight; a reader treats a payload whose `stageId` is not
- * the current entry as not ready, so an advance clears every signal with
- * no write at all. The same guard as the heartbeat: the caller must be
- * this room member acting as themselves.
- */
-export const setRetroPresence = mutation({
-  args: {
-    roomId: v.id("rooms"),
-    userId: v.id("users"),
-    stageId: v.string(),
-    ready: v.boolean(),
-    editing: v.optional(v.string()),
-  },
-  handler: async (ctx, { roomId, userId, stageId, ready, editing }) => {
-    await requireActingUser(ctx, roomId, userId, "Cannot set presence as another user");
-    await presence.updateRoomUser(ctx, roomId, userId, {
-      stageId,
-      ready,
-      ...(editing !== undefined ? { editing } : {}),
-    });
-    return null;
-  },
-});
-
 export const list = query({
   args: { roomToken: v.string() },
   handler: async (ctx, { roomToken }) => {

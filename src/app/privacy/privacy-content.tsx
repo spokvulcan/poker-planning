@@ -22,7 +22,7 @@ const sections = [
     id: "information-collection",
     title: "2. Information We Collect",
     content:
-      "Depending on how you use the service, we may collect: (a) account and profile data, such as display name, email address, authentication identifiers, and avatar image; (b) collaboration data, such as room memberships, issues, votes, session history, and messages or feedback you send us; (c) device and usage data, such as IP address, browser information, page visits, and diagnostic events; and (d) integration data, such as connected Jira account metadata and encrypted OAuth tokens when you connect a third-party integration.",
+      "Depending on how you use the service, we may collect: (a) account and profile data, such as display name, email address, authentication identifiers, and avatar image; (b) collaboration data, such as room memberships, issues, votes, session history, the stickies (including any GIF links), votes, and action items you add to retros, and messages or feedback you send us; (c) device and usage data, such as IP address, browser information, page visits, and diagnostic events; and (d) integration data, such as connected Jira account metadata and encrypted OAuth tokens when you connect a third-party integration. In a retro we store who wrote each sticky, so its author can edit it; unless the retro's settings show authors, other participants see what was written but not who wrote it.",
   },
   {
     id: "cookies",
@@ -34,7 +34,7 @@ const sections = [
     id: "data-usage",
     title: "4. How We Use Your Information",
     content:
-      "We use personal information to provide and secure the service, authenticate users, maintain planning sessions, support collaboration features, send sign-in emails and, unless you opt out, emails about retros and action items in teams you belong to, operate integrations you request, troubleshoot and improve the product, comply with legal obligations, and, where you consent, measure product usage through analytics.",
+      "We use personal information to provide and secure the service, authenticate users, maintain planning sessions and retros, support collaboration features, send sign-in emails, operate integrations you request, troubleshoot and improve the product, comply with legal obligations, and, where you consent, measure product usage through analytics.",
   },
   {
     id: "legal-bases",
@@ -46,7 +46,7 @@ const sections = [
     id: "sharing",
     title: "6. Sharing and Service Providers",
     content:
-      "We may share personal information with service providers that help us operate the product, such as infrastructure, database, authentication, analytics, email delivery, and integration providers. Depending on the features you use, current examples may include Convex, Vercel Speed Insights, Google Analytics, Google sign-in, Resend, and Atlassian. We may also disclose information when required by law, to protect rights and safety, or in connection with a reorganization, sale, or transfer of the service.",
+      "We may share personal information with service providers that help us operate the product, such as infrastructure, database, authentication, analytics, email delivery, GIF search, and integration providers. Depending on the features you use, current examples may include Convex, Vercel Speed Insights, Google Analytics, Google sign-in, Resend, GIPHY, and Atlassian. When you search for a GIF in a retro, your search terms are sent to GIPHY through our server. GIFs, in search results and on stickies, load in each viewer's browser directly from GIPHY, Tenor, or Imgur, which receive that viewer's IP address and browser information under their own privacy policies. We may also disclose information when required by law, to protect rights and safety, or in connection with a reorganization, sale, or transfer of the service.",
   },
   {
     id: "international-transfers",
@@ -58,7 +58,7 @@ const sections = [
     id: "data-retention",
     title: "8. Data Retention",
     content:
-      "We retain personal information for as long as needed to provide the service, maintain security, comply with legal obligations, resolve disputes, and enforce our agreements. Retention periods vary by data type and feature. You may request deletion of your account data, but we may keep limited records where required for security, fraud prevention, or legal compliance.",
+      "We retain personal information for as long as needed to provide the service, maintain security, comply with legal obligations, resolve disputes, and enforce our agreements. Retention periods vary by data type and feature. Planning poker rooms, and retros started by guests, are deleted automatically after 5 days without activity. A retro started by a signed-in account, or by a guest who later signs in, is kept until its owner deletes it. If a retro's owner deletes their account, the retro passes to the member who joined it first, or is deleted if nobody else joined. Stickies and action items you added to a retro that is kept stay in it after you delete your account, without your name. You may request deletion of your account data, but we may keep limited records where required for security, fraud prevention, or legal compliance.",
   },
   {
     id: "security",
@@ -70,7 +70,7 @@ const sections = [
     id: "rights",
     title: "10. Your Rights and Choices",
     content:
-      "Depending on your location, you may have rights to request access, correction, deletion, portability, restriction, objection, or withdrawal of consent. You may also have the right to complain to your local data protection authority. We do not provide a public GitHub workflow for privacy requests because those channels can expose personal data; please use email for privacy-related requests. You can stop retro and action emails from Settings or from the unsubscribe link in any such email.",
+      "Depending on your location, you may have rights to request access, correction, deletion, portability, restriction, objection, or withdrawal of consent. You may also have the right to complain to your local data protection authority. We do not provide a public GitHub workflow for privacy requests because those channels can expose personal data; please use email for privacy-related requests. You can delete a retro you own from its settings, and a signed-in account from Settings.",
   },
   {
     id: "children",
@@ -92,26 +92,6 @@ const sections = [
   },
 ];
 
-/**
- * Privacy policy drafts (spec §20; ADR-0019, ADR-0020), keyed by section
- * title because ADR-0020's numbering differs from this file's (spec §23).
- * NOT RENDERED. Reviewer step: a person reads each draft against the live
- * section above and replaces it deliberately; nothing on the live page
- * changes until then. The `[N]` in Data Retention is the provider's backup
- * retention in days and must be checked against Convex's documentation by
- * a person before it ships.
- */
-export const PRIVACY_POLICY_DRAFTS: Record<string, string> = {
-  "Information We Collect":
-    "Depending on how you use the service, we may collect: (a) account and profile data, such as display name, email address, authentication identifiers, and avatar image; (b) collaboration data, such as room memberships, issues, votes, session history, messages or feedback you send us and, in retrospectives, the cards you write, the votes you cast, and the action items you create or own; (c) device and usage data, such as IP address, browser information, page visits, and diagnostic events; and (d) integration data, such as connected Jira account metadata and encrypted OAuth tokens when you connect a third-party integration.",
-  "How We Use Your Information":
-    "We use personal information to provide and secure the service, authenticate users, maintain planning sessions and retrospectives, support collaboration features, send sign-in emails and, unless you opt out, emails about retros and action items in teams you belong to, operate integrations you request, troubleshoot and improve the product, comply with legal obligations, and, where you consent, measure product usage through analytics.",
-  "Data Retention":
-    "We retain personal information for as long as needed to provide the service, maintain security, comply with legal obligations, resolve disputes, and enforce our agreements. Retention periods vary by data type and feature. Retrospectives kept by a team are stored until the team deletes the retrospective or the team. Their members can read them, and we tell you who those readers are before you write. Retrospectives with no team, and planning-poker rooms, are deleted automatically after 5 days without activity. In an anonymous retrospective we do not store who wrote a card; we do store who voted, and we never show it. Deleted data leaves our live database within minutes and our provider's backups within [N] days. You may request deletion of your account data, but we may keep limited records where required for security, fraud prevention, or legal compliance.",
-  "Your Rights and Choices":
-    "Depending on your location, you may have rights to request access, correction, deletion, portability, restriction, objection, or withdrawal of consent. You may also have the right to complain to your local data protection authority. You can export any retrospective you can read, and your team's full history, from inside the app. You can delete your account from Settings; cards and action items you wrote in team retrospectives remain with those teams, without your name. You can stop retro and action emails from Settings or from the unsubscribe link in any such email. We do not provide a public GitHub workflow for privacy requests because those channels can expose personal data; for any other request, email us.",
-};
-
 export function PrivacyContent() {
   return (
     <div className="bg-white dark:bg-black min-h-screen selection:bg-primary/10 selection:text-primary">
@@ -126,7 +106,7 @@ export function PrivacyContent() {
             <div className="mx-auto max-w-4xl text-center">
               <div className="inline-flex items-center gap-2 mb-8 rounded-full bg-gray-50 dark:bg-zinc-900 border border-gray-200/50 dark:border-zinc-800/50 px-4 py-1.5 text-sm font-medium text-gray-600 dark:text-gray-400">
                 <Calendar className="h-4 w-4" />
-                <span>Last updated: February 27, 2026</span>
+                <span>Last updated: September 24, 2026</span>
               </div>
               
               <h1 className="text-6xl sm:text-7xl lg:text-8xl font-bold tracking-tighter text-gray-900 dark:text-white leading-[0.95]">

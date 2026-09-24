@@ -1,6 +1,8 @@
 # An anonymous retro card has no stored author
 
-**Status:** accepted — decided on [map #253](https://github.com/spokvulcan/poker-planning/issues/253) via [#262](https://github.com/spokvulcan/poker-planning/issues/262). Specified, not yet built.
+**Status:** superseded by [ADR-0026](0026-the-retro-is-a-whiteboard-like-the-poker-room.md): every sticky stores its author, and the retro's show-authors setting (off by default) decides whether names are shown once stickies are revealed. No attribution modes, edit keys or ratchet.
+
+Originally: accepted — decided on [map #253](https://github.com/spokvulcan/poker-planning/issues/253) via [#262](https://github.com/spokvulcan/poker-planning/issues/262). Specified, not yet built.
 
 Whether a retro card carries its author's name is the decision most responsible for whether people write the truth, and the folklore about it is wrong in a specific way. `docs/research/retrospective-effectiveness.md` §1.5 finds that anonymity reliably raises the volume and criticality of contributions and reliably does *not* improve idea or decision quality; that the status-levelling everyone credits it with is real (participation equality d = 0.80 across 48 experiments) but is delivered by the written, parallel, independent medium and not by hiding names (Rains 2005: "anonymity is not a significant moderator for any of the four influence variables"); and that it costs satisfaction and leaks — participants attempt attribution on 9–100% of anonymous items and are rarely accurate, which delivers suspicion rather than safety. The candour benefit belongs to private-until-submitted generation, which is the reveal policy's decision ([#270](https://github.com/spokvulcan/poker-planning/issues/270)), and accountability belongs to execution rather than generation (Häusser et al. 2017). The one honest case for anonymity is the one the laboratory cannot see: a power differential in the room.
 

@@ -1,6 +1,8 @@
 # Retention follows the Team, and export never widens access
 
-**Status:** accepted — decided on [map #253](https://github.com/spokvulcan/poker-planning/issues/253) via [#267](https://github.com/spokvulcan/poker-planning/issues/267). Specified, not yet built.
+**Status:** superseded by [ADR-0026](0026-the-retro-is-a-whiteboard-like-the-poker-room.md): retention follows a permanent-account owner, not a Team, though the `rooms.retained` flag and the `by_retention_activity` sweep index survive, and `delete` stays an owner-level verb. Deleting an account hands each retro it owns to the member who joined first, or deletes the retro when nobody else joined; the person's stickies, votes and action items stay, named "Former member" wherever a name is shown. Sharing is a Markdown summary built in the browser; there is no JSON export.
+
+Originally: accepted — decided on [map #253](https://github.com/spokvulcan/poker-planning/issues/253) via [#267](https://github.com/spokvulcan/poker-planning/issues/267). Specified, not yet built.
 
 Permanent retention was locked at charting, and the research puts one condition on it: `docs/research/retrospective-effectiveness.md` §5.3 — retention, visibility and candour are three things, Dingsøyr et al. saw critique "toned down or removed completely" once minutes were public, so retain everything and scope *visibility* to the team that produced it. [ADR-0008](0008-a-team-is-the-permanent-visibility-boundary.md) built the **Team** to be that scope and made the write-time disclosure ("kept by Acme Squad") the thing that makes permanence safe. This ADR finishes the other three sides of the same object: which rows the sweep leaves alone, how data leaves, and what the privacy policy may say.
 

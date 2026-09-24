@@ -1,9 +1,9 @@
 /**
- * The /features page's copy (spec §18.1, §18.2, ADR-0014): one page, two
- * anchored sections, `#planning-poker` and `#retro`; the title drops
- * "Planning Poker". Poker copy is kept under its anchor; retro copy says only
- * what the claims register allows (§18.3). Read by `features-content.tsx`
- * and checked by `lib/claims-register.test.ts`.
+ * The /features page's copy (ADR-0014): one page, two anchored sections,
+ * `#planning-poker` and `#retro`; the title drops "Planning Poker". Poker
+ * copy is kept under its anchor; retro copy says only what the retro
+ * whiteboard does (the claims register). Read by `features-content.tsx` and
+ * checked by `lib/claims-register.test.ts`.
  */
 
 import { START_ESTIMATING, START_RETRO } from "@/lib/site-copy";
@@ -11,11 +11,11 @@ import { START_ESTIMATING, START_RETRO } from "@/lib/site-copy";
 export const META = {
   title: "Features",
   description:
-    "Explore AgileKit's features: real-time planning poker with results analytics and Jira sync. Retro boards with cards written in parallel, dot voting, action items and team history.",
+    "Explore AgileKit's features: real-time planning poker with results analytics and Jira sync. Retros on the same whiteboard, with face-down sticky notes, GIFs, voting and action items.",
   openGraph: {
     title: "Features | AgileKit",
     description:
-      "Real-time planning poker with results analytics and Jira sync. Retro boards with team history. Everything a distributed Scrum team needs, free.",
+      "Real-time planning poker with results analytics and Jira sync. Retros with sticky notes, GIFs, voting and action items. Everything a distributed Scrum team needs, free.",
   },
 };
 
@@ -75,7 +75,7 @@ export const POKER = {
     {
       id: "jira",
       name: "Jira Cloud Integration",
-      description: "Two-way sync — import sprints, push estimates back automatically",
+      description: "Two-way sync: import sprints, push estimates back automatically",
     },
     {
       id: "consensus",
@@ -114,58 +114,58 @@ export const POKER = {
 export const RETRO = {
   anchor: "retro",
   eyebrow: "Retro",
-  heading: "Reflect in writing.",
-  headingMuted: "Everyone at once.",
+  heading: "Stickies face-down,",
+  headingMuted: "revealed together.",
   description:
-    "A retro is one board. Everyone writes cards in parallel, in the meeting or before it, then the team groups them, votes with dots and walks the topics. What was decided stays with the team.",
+    "A retro runs on the planning poker whiteboard: a Retro node that steps everyone through Write, Vote and Discuss, a timer, a sticky pad per column and a list of action items. Roles work as in a poker room, and by default facilitators move the retro along.",
   items: [
     {
-      id: "formats",
-      name: "Six formats",
+      id: "templates",
+      name: "Five templates",
       description:
-        "Went well / Do differently / Ideas, Start / Stop / Continue, Glad / Sad / Mad, 4Ls, Sailboat and Lean Coffee. Edit the prompts on the create form and the edited copy is your team's own format next time.",
+        "Went well / To improve / Ideas by default, or Start / Stop / Continue, Mad / Sad / Glad, Liked / Learned / Lacked / Longed for and Sailboat. Rename, recolor, add or remove columns on the board, up to six.",
     },
     {
-      id: "parallel",
-      name: "Written in parallel",
+      id: "facedown",
+      name: "Face-down until the reveal",
       description:
-        "Everyone writes at once. Cards stay hidden while people write and are revealed together.",
+        "Click a pad, or double-click anywhere, and write. Other people's stickies stay scribbles until the facilitator reveals them, like cards in planning poker.",
     },
     {
-      id: "async",
-      name: "Written before the meeting",
+      id: "gifs",
+      name: "GIFs welcome",
       description:
-        "Open the board days ahead and the team writes when it suits them. In a team retro, one click emails the team that the board is open.",
+        "Search GIPHY from a sticky, or paste a GIPHY, Tenor or Imgur link. A retro can be fun.",
     },
     {
-      id: "anonymous",
-      name: "Anonymous or named",
+      id: "votes",
+      name: "Stack, then vote",
       description:
-        "Chosen per team. In an anonymous retro no author is stored with a card, not even for the facilitator, and nobody is shown how you voted.",
+        "Drop a sticky on a similar one to stack them. Everyone gets three votes, one per topic (set 1 to 10 in the settings), and the totals stay hidden until the discussion.",
     },
     {
-      id: "dots",
-      name: "Dots and the discussion walk",
+      id: "discuss",
+      name: "Discussion in vote order",
       description:
-        "Spend a dot budget on the groups that matter, then walk the topics in vote order. Nothing that was voted for is skipped, and anyone can raise the rest.",
+        "The most-voted topics come first, and everyone's view follows the one in the spotlight. A facilitator can pull any sticky into the discussion.",
     },
     {
       id: "actions",
       name: "Action items that carry over",
       description:
-        "An action item has one owner, or none yet. In a team retro, open ones come back at the next retro's review until someone marks them done or dropped.",
+        "Each has an optional owner and a checkbox. Start the next retro and it opens with the same columns and every open action item. Copy the retro as Markdown, or download it.",
     },
     {
-      id: "history",
-      name: "History kept by the team",
+      id: "anonymous",
+      name: "Anonymous by default",
       description:
-        "Every retro a team runs stays readable to its members, free, until the team deletes it. Export one retro as Markdown or the whole history as JSON.",
+        "Teammates see what was written, not by whom. Turning on authors shows them on every sticky, including earlier ones.",
     },
     {
       id: "link",
-      name: "Join by link, no cameras",
+      name: "Join by link",
       description:
-        "A retro without a team is one link away and needs no account. It disappears after five quiet days.",
+        "No sign-up needed. A guest's retro is removed after 5 days without activity; sign in and the retros you start are kept until you delete them.",
     },
   ] as const,
 };
@@ -214,7 +214,7 @@ export const ROADMAP = {
       id: "retros",
       name: "Retros",
       description:
-        "Retro boards with six formats, cards written in parallel, dots, a discussion walk, action items and history kept by the team",
+        "Retros on the planning poker whiteboard: face-down stickies, GIFs, stacks, votes, a discussion in vote order and action items that carry over",
     },
     {
       id: "predictability",

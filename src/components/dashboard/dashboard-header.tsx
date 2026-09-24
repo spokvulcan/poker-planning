@@ -7,7 +7,7 @@ import { useDateRange } from "./date-range-context";
 
 interface DashboardHeaderProps {
   title: string;
-  /** The analytics pages filter by date; retro surfaces show no time (spec §23). */
+  /** The analytics pages filter by date; the retro list shows every retro, so it has no range. */
   showDateRange?: boolean;
 }
 

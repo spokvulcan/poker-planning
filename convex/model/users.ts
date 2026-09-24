@@ -1,14 +1,11 @@
 import { MutationCtx, QueryCtx } from "../_generated/server";
 import { Id, Doc } from "../_generated/dataModel";
+import { internal } from "../_generated/api";
 import * as Analytics from "./analytics";
 import * as Canvas from "./canvas";
 import * as Rooms from "./rooms";
 import * as VotingRound from "./votingRound";
-import * as Teams from "./teams";
-import { accountTypeOf, evaluateJoin, type MemberRole } from "../permissions";
-import { refusal } from "./refusal";
-import { JOIN_DENIED_PERMANENT, joinDeniedTeam } from "../retroCopy";
-import { requireUnsubscribeSecret, verifyUnsubscribeToken } from "./unsubscribe";
+import { type MemberRole } from "../permissions";
 
 export interface JoinRoomArgs {
   roomId: Id<"rooms">;
@@ -156,14 +153,8 @@ export async function joinRoom(
   const room = await ctx.db.get(args.roomId);
   const role = room?.ownerId === userId ? ("owner" as const) : undefined;
 
-  // The join decision (spec §4.4) runs before the membership insert; a Team
-  // member satisfies every policy, and a room without one admits anyone.
-  if (room) {
-    await requireJoinAllowed(ctx, room, userId);
-  }
-
-  // No spectator in retro (spec §4.2): the bit stays on the row, always
-  // false, whatever the client sent.
+  // No spectator in a retro: everyone at the board writes. The bit stays on
+  // the row, always false, whatever the client sent.
   const isSpectator = room?.roomType === "retro" ? false : (args.isSpectator ?? false);
 
   // Create membership
@@ -181,33 +172,6 @@ export async function joinRoom(
   }
 
   return userId;
-}
-
-/**
- * Throws the `forbidden` refusal (spec §4.5) when the room's join policy
- * denies this account. The user row is the one source of the account type.
- */
-async function requireJoinAllowed(
-  ctx: MutationCtx,
-  room: Doc<"rooms">,
-  userId: Id<"users">
-): Promise<void> {
-  const user = await ctx.db.get(userId);
-  if (!user) throw new Error("User not found");
-  const teamMembership = room.teamId
-    ? await Teams.getTeamMembership(ctx, room.teamId, userId)
-    : null;
-  const decision = evaluateJoin(
-    room.joinPolicy ?? "anyone",
-    accountTypeOf(user),
-    teamMembership !== null
-  );
-  if (decision.allowed) return;
-  if (decision.reason === "permanent-account-required") {
-    throw refusal("forbidden", JOIN_DENIED_PERMANENT);
-  }
-  const team = room.teamId ? await ctx.db.get(room.teamId) : null;
-  throw refusal("forbidden", joinDeniedTeam(team?.name ?? "its team"));
 }
 
 /**
@@ -346,36 +310,6 @@ export async function updateGlobalUserName(
 }
 
 /**
- * The Settings toggle (spec §16.4): one flag covering every nudge and
- * reminder. Written explicitly either way, so "opted in" is a stored
- * `false` after a toggle and `undefined` before one; both read as in.
- */
-export async function setEmailOptOut(
-  ctx: MutationCtx,
-  userId: Id<"users">,
-  optOut: boolean
-): Promise<void> {
-  await ctx.db.patch(userId, { emailOptOut: optOut });
-}
-
-/**
- * One-click unsubscribe (spec §16.4): re-derives the token's MAC under the
- * deployment's secret, flips the flag on a match and nothing otherwise.
- * Returns whether a flag was flipped. No auth guard by design — the link
- * must work signed out — so the MAC is the whole authorization. A token
- * for an account that is gone flips nothing.
- */
-export async function unsubscribeByToken(ctx: MutationCtx, token: string): Promise<boolean> {
-  const userId = await verifyUnsubscribeToken(token, requireUnsubscribeSecret());
-  if (userId === null) return false;
-  const id = ctx.db.normalizeId("users", userId);
-  const user = id ? await ctx.db.get(id) : null;
-  if (!user) return false;
-  await ctx.db.patch(user._id, { emailOptOut: true });
-  return true;
-}
-
-/**
  * Creates or updates a global user record from auth provider data.
  * Called from databaseHooks when a permanent (non-anonymous) user is created in BetterAuth.
  * Unlike findOrCreateGlobalUser (used at room-join time), this sets
@@ -450,9 +384,9 @@ export async function deleteUserByAuthUserId(
 
   if (!user) return;
 
-  // Team memberships first: this can refuse the whole deletion (the
-  // last-admin rule), and a refusal must leave every row untouched.
-  await Teams.releaseMembershipsOfDeletedUser(ctx, user._id);
+  // A retro outlives its owner's account: it goes to whoever joined it
+  // first, or, with nobody else in it, it goes with the account.
+  await handOffOwnedRetros(ctx, user._id);
 
   // Find all memberships for this user
   const memberships = await ctx.db
@@ -483,14 +417,55 @@ export async function deleteUserByAuthUserId(
   await ctx.db.delete(user._id);
 }
 
+/** The retro rooms an account owns. */
+async function ownedRetros(ctx: MutationCtx, ownerId: Id<"users">): Promise<Doc<"rooms">[]> {
+  const owned = await ctx.db
+    .query("rooms")
+    .withIndex("by_owner", (q) => q.eq("ownerId", ownerId))
+    .collect();
+  return owned.filter((room) => room.roomType === "retro");
+}
+
+async function handOffOwnedRetros(ctx: MutationCtx, ownerId: Id<"users">): Promise<void> {
+  for (const room of await ownedRetros(ctx, ownerId)) {
+    const members = await ctx.db
+      .query("roomMemberships")
+      .withIndex("by_room", (q) => q.eq("roomId", room._id))
+      .collect();
+    const heir = members
+      .filter((m) => m.userId !== ownerId)
+      .sort((a, b) => a.joinedAt - b.joinedAt)[0];
+    if (heir) {
+      await ctx.db.patch(heir._id, { role: "owner" });
+      await Rooms.setRoomOwner(ctx, room, heir.userId);
+    } else {
+      await ctx.scheduler.runAfter(0, internal.maintenance.deleteRoomAggregateChunk, { roomId: room._id });
+    }
+  }
+}
+
+/** How many retro rows of one kind an account linking re-points; an anonymous account never writes more. */
+const MAX_LINKED_RETRO_ROWS = 5000;
+
+/**
+ * Keeps a permanent account's retros: every retro room it owns becomes
+ * retained, so the inactivity sweep leaves it alone. Called once an
+ * anonymous account turns permanent.
+ */
+async function retainOwnedRetros(ctx: MutationCtx, ownerId: Id<"users">): Promise<void> {
+  const owner = await ctx.db.get(ownerId);
+  const retros = await ownedRetros(ctx, ownerId);
+  await Promise.all(
+    retros
+      .filter((room) => !room.retained && Rooms.isRetainedUnder(room, owner))
+      .map((room) => ctx.db.patch(room._id, { retained: true }))
+  );
+}
+
 /**
  * Links an anonymous user account to a new permanent account.
  * Transfers all memberships, votes, and canvas node ownerships.
  */
-/** How many dots one account linking re-points; an anonymous account never casts more. */
-const MAX_LINKED_VOTES = 5000;
-/** How many action items of one room a linking walks; a retro never approaches it. */
-const MAX_LINKED_ACTIONS = 500;
 
 export async function linkAnonymousToPermanent(
   ctx: MutationCtx,
@@ -673,50 +648,34 @@ export async function linkAnonymousToPermanent(
       await ctx.db.patch(node._id, { lastUpdatedBy: existingPermanent._id });
     }
 
-    // Retro cards keep their author by reference (ADR-0012): re-point the
-    // anonymous account's cards in every room it attended. The index is
-    // (room, author), so the walk is per membership.
-    for (const membership of memberships) {
-      const cards = await ctx.db
-        .query("retroCards")
-        .withIndex("by_room_author", (q) =>
-          q.eq("roomId", membership.roomId).eq("authorId", user._id)
-        )
-        .collect();
-      for (const card of cards) {
-        await ctx.db.patch(card._id, { authorId: existingPermanent._id });
-      }
+    // Retro stickies, votes and action items name people by reference:
+    // re-point the anonymous account's rows to the permanent one.
+    const [stickies, retroVotes, ownedItems] = await Promise.all([
+      ctx.db.query("retroStickies").withIndex("by_author", (q) => q.eq("authorId", user._id)).take(MAX_LINKED_RETRO_ROWS),
+      ctx.db.query("retroStickyVotes").withIndex("by_voter", (q) => q.eq("voterId", user._id)).take(MAX_LINKED_RETRO_ROWS),
+      ctx.db.query("retroActionItems").withIndex("by_owner", (q) => q.eq("ownerId", user._id)).take(MAX_LINKED_RETRO_ROWS),
+    ]);
+    // One person, one set of votes per retro: where the permanent account
+    // has already voted, the guest's votes there are dropped rather than
+    // doubled up (and over budget).
+    const votedAlready = new Set<string>();
+    for (const roomId of new Set(retroVotes.map((vote) => vote.roomId))) {
+      const vote = await ctx.db
+        .query("retroStickyVotes")
+        .withIndex("by_room_voter", (q) => q.eq("roomId", roomId).eq("voterId", existingPermanent._id))
+        .first();
+      if (vote) votedAlready.add(roomId);
     }
-
-    // Action items name their creator and owner by reference (ADR-0017):
-    // re-point both in every room the account attended, by room like the
-    // cards. An anonymous account's rows are a handful per room. The same
-    // person keeps owning, so no reminder is rescheduled (spec §16.3): the
-    // due-date job re-reads the row when it fires and reaches the merged
-    // account, and an anonymous account had no address to have emailed.
-    for (const membership of memberships) {
-      const actions = await ctx.db
-        .query("retroActions")
-        .withIndex("by_room", (q) => q.eq("roomId", membership.roomId))
-        .take(MAX_LINKED_ACTIONS);
-      for (const action of actions) {
-        const patch = {
-          ...(action.ownerId === user._id ? { ownerId: existingPermanent._id } : {}),
-          ...(action.createdBy === user._id ? { createdBy: existingPermanent._id } : {}),
-        };
-        if (Object.keys(patch).length > 0) await ctx.db.patch(action._id, patch);
-      }
-    }
-
-    // Dots always store their voter (spec §8.2): re-point the anonymous
-    // account's rows, read by voter and bounded like the cards above.
-    const dots = await ctx.db
-      .query("retroVotes")
-      .withIndex("by_voter", (q) => q.eq("voterId", user._id))
-      .take(MAX_LINKED_VOTES);
-    for (const dot of dots) {
-      await ctx.db.patch(dot._id, { voterId: existingPermanent._id });
-    }
+    await Promise.all([
+      ...stickies.map((sticky) => ctx.db.patch(sticky._id, { authorId: existingPermanent._id })),
+      ...retroVotes.map((vote) =>
+        votedAlready.has(vote.roomId)
+          ? ctx.db.delete(vote._id)
+          : ctx.db.patch(vote._id, { voterId: existingPermanent._id })
+      ),
+      ...ownedItems.map((item) => ctx.db.patch(item._id, { ownerId: existingPermanent._id })),
+    ]);
+    await retainOwnedRetros(ctx, existingPermanent._id);
 
     // Delete the old anonymous user record
     await ctx.db.delete(user._id);
@@ -734,4 +693,5 @@ export async function linkAnonymousToPermanent(
     // if the user record somehow has an empty name.
     ...(args.name && !user.name ? { name: args.name } : {}),
   });
+  await retainOwnedRetros(ctx, user._id);
 }

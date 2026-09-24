@@ -5,15 +5,18 @@ import { internal } from "./_generated/api";
 import schema from "./schema";
 import type { Id } from "./_generated/dataModel";
 import * as Rooms from "./model/rooms";
-import { seedRoom } from "./analytics.seeds";
+import * as Retro from "./model/retro";
+import { seedRoom, seedUser } from "./analytics.seeds";
 
 const modules = import.meta.glob("./**/*.*s");
 
 type T = TestConvex<typeof schema>;
 
 /**
- * Retention (ADR-0019): `retained` is the sweep's only discriminator. Every
- * writer stamps it on new rows, and the sweep deletes a non-retained room
+ * Retention: `retained` is the sweep's only discriminator. Every writer
+ * stamps it on new rows (a poker room never; a retro when its owner has a
+ * permanent account), account linking retains the retros a guest owns once
+ * the account turns permanent, and the sweep deletes a non-retained room
  * after five quiet days while leaving a retained one alone regardless of
  * age or room type.
  */
@@ -22,7 +25,7 @@ const TEN_DAYS_AGO = Date.now() - 10 * 24 * 60 * 60 * 1000;
 
 async function seedStaleRoom(
   t: T,
-  opts: { retained: boolean; roomType?: "canvas" }
+  opts: { retained: boolean; roomType?: "canvas" | "retro" }
 ): Promise<Id<"rooms">> {
   return t.run((ctx) =>
     ctx.db.insert("rooms", {
@@ -64,6 +67,69 @@ describe("retained: writers", () => {
     const room = await t.run((ctx) => ctx.db.get(roomId));
     expect(room?.retained).toBe(false);
   });
+
+  it("createRetro stamps retained by the owner's account: true for a permanent account, false for a guest", async () => {
+    const t = convexTest(schema, modules);
+    const guestId = await seedUser(t, "auth-guest", "G");
+    const permanentId = await seedUser(t, "auth-perm", "P", "permanent");
+
+    const retainedFor = async (ownerId: Id<"users">) => {
+      const roomId = await t.run(async (ctx) =>
+        Retro.createRetro(ctx, { name: "Retro", owner: (await ctx.db.get(ownerId))! })
+      );
+      return (await t.run((ctx) => ctx.db.get(roomId)))?.retained;
+    };
+
+    expect(await retainedFor(guestId)).toBe(false);
+    expect(await retainedFor(permanentId)).toBe(true);
+  });
+});
+
+describe("retained: account linking", () => {
+  /** A guest who owns a retro and a poker room, both unretained. */
+  async function seedGuestRooms(t: T) {
+    const guestId = await seedUser(t, "auth-guest", "G");
+    const retroId = await t.run(async (ctx) =>
+      Retro.createRetro(ctx, { name: "Retro", owner: (await ctx.db.get(guestId))! })
+    );
+    const pokerId = await t.run((ctx) => Rooms.createRoom(ctx, { name: "Poker", ownerId: guestId }));
+    return { retroId, pokerId };
+  }
+
+  const retainedOf = async (t: T, roomId: Id<"rooms">) =>
+    (await t.run((ctx) => ctx.db.get(roomId)))?.retained;
+
+  it("a guest who signs in keeps the retros they own, and only the retros", async () => {
+    const t = convexTest(schema, modules);
+    const { retroId, pokerId } = await seedGuestRooms(t);
+    expect(await retainedOf(t, retroId)).toBe(false);
+
+    await t.mutation(internal.users.linkAnonymousAccount, {
+      oldAuthUserId: "auth-guest",
+      newAuthUserId: "auth-new",
+      email: "guest@example.com",
+    });
+
+    expect(await retainedOf(t, retroId)).toBe(true);
+    expect(await retainedOf(t, pokerId)).toBe(false);
+  });
+
+  it("a guest merged into an existing permanent account hands it their retros, retained", async () => {
+    const t = convexTest(schema, modules);
+    const { retroId } = await seedGuestRooms(t);
+    const permanentId = await seedUser(t, "auth-perm", "P", "permanent");
+
+    await t.mutation(internal.users.linkAnonymousAccount, {
+      oldAuthUserId: "auth-guest",
+      newAuthUserId: "auth-perm",
+      email: "perm@example.com",
+    });
+
+    expect(await t.run((ctx) => ctx.db.get(retroId))).toMatchObject({
+      ownerId: permanentId,
+      retained: true,
+    });
+  });
 });
 
 describe("removeInactiveRooms: retention", () => {
@@ -94,14 +160,16 @@ describe("removeInactiveRooms: retention", () => {
     const t = convexTest(schema, modules);
     const staleCanvas = await seedStaleRoom(t, { retained: false, roomType: "canvas" });
     const staleUntyped = await seedStaleRoom(t, { retained: false });
+    const staleGuestRetro = await seedStaleRoom(t, { retained: false, roomType: "retro" });
     await seedStaleRoom(t, { retained: true, roomType: "canvas" });
     await seedStaleRoom(t, { retained: true });
+    await seedStaleRoom(t, { retained: true, roomType: "retro" });
 
     const result = await t.mutation(internal.cleanup.removeInactiveRooms, {});
 
-    expect(result.roomsScheduled).toBe(2);
+    expect(result.roomsScheduled).toBe(3);
     expect(await scheduledCascadeRoomIds(t)).toEqual(
-      new Set([staleCanvas, staleUntyped])
+      new Set([staleCanvas, staleUntyped, staleGuestRetro])
     );
   });
 });

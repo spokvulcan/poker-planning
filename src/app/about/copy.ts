@@ -9,11 +9,11 @@ import { START_ESTIMATING, START_RETRO } from "@/lib/site-copy";
 export const META = {
   title: "About AgileKit - Free Open Source Planning Poker and Retros",
   description:
-    "Learn about AgileKit, the free, open-source way for distributed Scrum teams to estimate and reflect in writing. Built with privacy, simplicity, and real-time collaboration in mind.",
+    "Learn about AgileKit, the free, open-source way for distributed Scrum teams to run planning poker and retrospectives on one real-time whiteboard. Built with privacy, simplicity, and real-time collaboration in mind.",
   openGraph: {
     title: "About AgileKit - Free Open Source Planning Poker and Retros",
     description:
-      "The free, open-source way for distributed Scrum teams to estimate and reflect in writing, everyone at once.",
+      "The free, open-source way for distributed Scrum teams to estimate and reflect, everyone at once, on one real-time whiteboard.",
   },
 };
 
@@ -21,7 +21,7 @@ export const HERO = {
   headline: "Estimate and reflect,",
   headlineMuted: "simplified.",
   position:
-    "AgileKit is the free, open-source way for distributed Scrum teams to estimate and reflect in writing, everyone at once, with nothing forgotten between sprints.",
+    "AgileKit is the free, open-source way for distributed Scrum teams to estimate and reflect, everyone at once, on one real-time whiteboard.",
   star: "Star on GitHub",
 };
 
@@ -40,7 +40,7 @@ export const PRINCIPLES = {
       id: "privacy",
       title: "Privacy First",
       description:
-        "No accounts required to join. Optional analytics stay off unless you opt in. Your estimates and retro cards stay with your team, and an anonymous retro stores no author at all.",
+        "No accounts required to join. Optional analytics stay off unless you opt in. Retros hide who wrote what by default, and a guest's retro is removed after 5 days without activity.",
     },
     {
       id: "realtime",

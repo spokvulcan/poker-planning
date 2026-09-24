@@ -1,6 +1,8 @@
 # The retro board is one canvas with semantic zoom
 
-**Status:** accepted — decided on [map #253](https://github.com/spokvulcan/poker-planning/issues/253) via [#261](https://github.com/spokvulcan/poker-planning/issues/261). Specified, not yet built.
+**Status:** superseded by [ADR-0026](0026-the-retro-is-a-whiteboard-like-the-poker-room.md): the retro runs on the poker room's canvas code, chrome and node vocabulary. No semantic zoom, clusters, proximity hulls, tidy or separate mobile chrome.
+
+Originally: accepted — decided on [map #253](https://github.com/spokvulcan/poker-planning/issues/253) via [#261](https://github.com/spokvulcan/poker-planning/issues/261). Specified, not yet built.
 
 Three board directions were prototyped in parallel and compared side by side ([#258](https://github.com/spokvulcan/poker-planning/issues/258) structured columns, [#259](https://github.com/spokvulcan/poker-planning/issues/259) guided single-focus, [#260](https://github.com/spokvulcan/poker-planning/issues/260) spatial affinity canvas). The canvas won. A retro's most valuable output is *"these five cards are the same complaint"*, and free 2D placement is the only one of the three that states that as a fact you read in half a second rather than as a list you assemble in your head. It is also the direction that shares a visual language with the existing planning-poker room, so a team moving between the two ceremonies perceives no mode change.
 
