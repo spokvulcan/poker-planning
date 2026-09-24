@@ -1,5 +1,20 @@
 # Changelog
 
+## [2.10.1](https://github.com/spokvulcan/poker-planning/compare/agilekit-v2.10.0...agilekit-v2.10.1) (2026-09-24)
+
+
+### Bug Fixes
+
+* **retro:** say names are hidden, not that stickies are anonymous ([#337](https://github.com/spokvulcan/poker-planning/issues/337)) ([9747823](https://github.com/spokvulcan/poker-planning/commit/97478239fdf6ecef1de068942d317894fa02ac77))
+* **retro:** stop a revealed sticky covering the one written under it ([#339](https://github.com/spokvulcan/poker-planning/issues/339)) ([cf462b9](https://github.com/spokvulcan/poker-planning/commit/cf462b9d22e1d12dec72eabf7aa9ce54385b9e06))
+* **room:** mark the active theme button only after mount ([#338](https://github.com/spokvulcan/poker-planning/issues/338)) ([892df15](https://github.com/spokvulcan/poker-planning/commit/892df159bb52eaf7f91d2fbad2299066423ef221))
+* stop notes overwriting typing, clear presence on delete, name tables in db calls ([#340](https://github.com/spokvulcan/poker-planning/issues/340)) ([0a709a5](https://github.com/spokvulcan/poker-planning/commit/0a709a56417933cef98ef600f12c5826ecd9d5f3))
+
+
+### Blog
+
+* announce retros on the homepage and in a launch post ([#335](https://github.com/spokvulcan/poker-planning/issues/335)) ([4f5beb6](https://github.com/spokvulcan/poker-planning/commit/4f5beb64c29d670b1760513bbab1173bfadbf7ec))
+
 ## [2.10.0](https://github.com/spokvulcan/poker-planning/compare/agilekit-v2.9.7...agilekit-v2.10.0) (2026-09-24)
 
 
