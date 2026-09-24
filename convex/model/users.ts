@@ -3,6 +3,7 @@ import { Id, Doc } from "../_generated/dataModel";
 import { internal } from "../_generated/api";
 import * as Analytics from "./analytics";
 import * as Canvas from "./canvas";
+import * as Presence from "./presence";
 import * as Rooms from "./rooms";
 import * as VotingRound from "./votingRound";
 import { type MemberRole } from "../permissions";
@@ -394,10 +395,14 @@ export async function deleteUserByAuthUserId(
     .withIndex("by_user", (q) => q.eq("userId", user._id))
     .collect();
 
-  // Leave each room (cleans up votes, canvas nodes, presence)
+  // Leave each room (cleans up votes and canvas nodes)
   await Promise.all(
     memberships.map((membership) => leaveRoom(ctx, user._id, membership.roomId))
   );
+
+  // Presence outlives membership, so clear it for every room the user was
+  // ever seen in, not just the ones they are still in.
+  await Presence.removeUserPresence(ctx, user._id);
 
   // Delete individual vote snapshots for this user — across every room they
   // ever voted in, including ones they already left. Their history changes
@@ -677,7 +682,9 @@ export async function linkAnonymousToPermanent(
     ]);
     await retainOwnedRetros(ctx, existingPermanent._id);
 
-    // Delete the old anonymous user record
+    // Delete the old anonymous user record and its presence; the client
+    // heartbeats as the permanent user from here on.
+    await Presence.removeUserPresence(ctx, user._id);
     await ctx.db.delete("users", user._id);
     return;
   }

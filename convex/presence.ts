@@ -1,11 +1,8 @@
 import { mutation, query } from "./_generated/server";
-import { components } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
 import { v } from "convex/values";
-import { Presence } from "@convex-dev/presence";
 import { requireActingUser } from "./model/auth";
-
-export const presence = new Presence(components.presence);
+import { presence } from "./model/presence";
 
 export const heartbeat = mutation({
   args: {

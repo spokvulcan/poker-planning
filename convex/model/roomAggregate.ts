@@ -1,6 +1,7 @@
 import { MutationCtx } from "../_generated/server";
 import { Doc, Id } from "../_generated/dataModel";
 import { scheduleWebhookDeregistration } from "./integrations";
+import * as Presence from "./presence";
 
 /**
  * The retro's tables, room-owned like the rest — the cascade empties them —
@@ -39,8 +40,10 @@ export const ORPHAN_SWEPT_TABLES = [
  *
  * Deliberately NOT room-owned: `integrationConnections` belongs to users,
  * `webhookEvents` is a global dedup table, and `users` is global identity.
- * There is no per-room presence/timer table — presence is connection-local
- * and canvas timers are `canvasNodes` rows.
+ * Canvas timers are `canvasNodes` rows. Presence is room-owned too, but it
+ * lives in the presence component's tables rather than the app schema, so it
+ * can't be listed here: the cascade removes it through the component's API
+ * just before the room row.
  */
 export const ROOM_OWNED_TABLES = [...ORPHAN_SWEPT_TABLES, ...RETRO_TABLES] as const;
 
@@ -73,7 +76,9 @@ export interface RoomAggregateDeleteStep {
  *    issue batch must go before its rows vanish (a deleted issue's links can
  *    no longer be found by index).
  * 2. the remaining by_room tables, one batch per table per step.
- * 3. the room row itself, only once every owned table reads empty.
+ * 3. the room's presence, then the room row itself, only once every owned
+ *    table reads empty. Memberships are gone by then, so no heartbeat can
+ *    write presence for the room again.
  *
  * integrationMappings rows schedule webhook deregistration BEFORE deletion:
  * deleting the mapping alone would orphan the remote Jira webhook (it keeps
@@ -140,7 +145,8 @@ export async function deleteRoomAggregateChunk(
     return { done: false, deleted };
   }
 
-  // Phase 3: the room itself, last.
+  // Phase 3: the room's presence, then the room itself, last.
+  await Presence.removeRoomPresence(ctx, roomId);
   await ctx.db.delete("rooms", roomId);
   return { done: true, deleted: deleted + 1 };
 }

@@ -3,6 +3,7 @@ import { convexTest, type TestConvex } from "convex-test";
 import { describe, it, expect } from "vitest";
 import { internal } from "./_generated/api";
 import schema from "./schema";
+import { withComponents } from "./components.setup";
 import type { Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 import * as RoomAggregate from "./model/roomAggregate";
@@ -10,6 +11,7 @@ import { ROOM_OWNED_TABLES, RETRO_TABLES, type RoomOwnedTable } from "./model/ro
 import * as Cleanup from "./model/cleanup";
 import * as Timer from "./model/timer";
 import * as Canvas from "./model/canvas";
+import { presence } from "./model/presence";
 
 const modules = import.meta.glob("./**/*.*s");
 
@@ -286,7 +288,7 @@ async function seedRetroRows(
 
 describe("deleteRoomAggregateChunk (registered continuation)", () => {
   it("deletes the room and one row in every room-owned table through the continuation loop", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const { roomId } = await seedFullRoom(t);
 
     // Phase 1 deletes the issue batch first and asks for a continuation…
@@ -307,7 +309,7 @@ describe("deleteRoomAggregateChunk (registered continuation)", () => {
   });
 
   it("schedules webhook deregistration before deleting a mapped integration row", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const roomId = await seedRoom(t);
     const userId = await t.run((ctx) =>
       ctx.db.insert("users", {
@@ -344,9 +346,30 @@ describe("deleteRoomAggregateChunk (registered continuation)", () => {
   });
 });
 
+describe("deleteRoomAggregateChunk (presence)", () => {
+  it("clears the room's presence, which lives in the component, along with the room row", async () => {
+    const t = withComponents(convexTest(schema, modules));
+    const roomId = await seedRoom(t);
+    const otherRoomId = await seedRoom(t);
+    await t.run(async (ctx) => {
+      await presence.heartbeat(ctx, roomId, "u1", "s1", 10_000);
+      await presence.heartbeat(ctx, roomId, "u2", "s2", 10_000);
+      await presence.heartbeat(ctx, otherRoomId, "u1", "s3", 10_000);
+    });
+
+    const step = await t.run((ctx) => RoomAggregate.deleteRoomAggregateChunk(ctx, roomId));
+
+    expect(step.done).toBe(true);
+    expect(await t.run((ctx) => presence.listRoom(ctx, roomId))).toEqual([]);
+    expect(await t.run((ctx) => presence.listRoom(ctx, otherRoomId))).toEqual([
+      expect.objectContaining({ userId: "u1" }),
+    ]);
+  });
+});
+
 describe("deleteRoomAggregateChunk (batching)", () => {
   it("deletes issues and their links in batches, the room row only once every table reads empty", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const roomId = await seedRoom(t);
     for (const sequentialId of [1, 2, 3]) {
       const issueId = await seedIssue(t, roomId, sequentialId);
@@ -375,7 +398,7 @@ describe("deleteRoomAggregateChunk (batching)", () => {
 
 describe("removeInactiveRooms", () => {
   it("schedules one cascade per inactive room and leaves active rooms alone", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const inactiveId = await t.run((ctx) =>
       ctx.db.insert("rooms", {
         name: "Stale",
@@ -407,7 +430,7 @@ describe("removeInactiveRooms", () => {
   });
 
   it("leaves a room with recent timer-only activity alone", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const roomId = await t.run((ctx) =>
       ctx.db.insert("rooms", {
         name: "Timer-only",
@@ -455,7 +478,7 @@ describe("removeInactiveRooms", () => {
   });
 
   it("leaves a room with recent canvas-only activity alone", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const roomId = await t.run((ctx) =>
       ctx.db.insert("rooms", {
         name: "Canvas-only",
@@ -503,7 +526,7 @@ describe("removeInactiveRooms", () => {
 
 describe("cleanupOrphanedData", () => {
   it("never scans the retro tables: an orphaned retro row survives the sweep", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const { roomId } = await seedFullRoom(t);
     // Delete the room directly, bypassing the cascade, so every owned row is
     // orphaned. The poker tables are swept; the retro tables may hold
@@ -520,7 +543,7 @@ describe("cleanupOrphanedData", () => {
   });
 
   it("sweeps an issue whose room was deleted out from under it", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const roomId = await seedRoom(t);
     const issueId = await seedIssue(t, roomId);
     await seedIssueLink(t, issueId);
@@ -539,7 +562,7 @@ describe("cleanupOrphanedData", () => {
   });
 
   it("sweeps an issueLink whose issue is gone while its room lives", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const roomId = await seedRoom(t);
     const keptIssueId = await seedIssue(t, roomId, 1);
     const goneIssueId = await seedIssue(t, roomId, 2);
@@ -561,7 +584,7 @@ describe("cleanupOrphanedData", () => {
 
 describe("dangerouslyDeleteAllData", () => {
   it("still clears user-scoped tables and now clears every room-owned table", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     await seedFullRoom(t);
     await t.run((ctx) =>
       ctx.db.insert("webhookEvents", {

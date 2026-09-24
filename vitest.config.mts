@@ -51,7 +51,9 @@ export default defineConfig({
           name: "convex",
           environment: "edge-runtime",
           include: ["convex/**/*.test.ts"],
-          server: { deps: { inline: ["convex-test"] } },
+          // The component test helpers ship as TypeScript using import.meta.glob,
+          // so Vite has to transform them rather than hand them to Node.
+          server: { deps: { inline: ["convex-test", "@convex-dev/presence", "@convex-dev/batch-worker"] } },
         },
       },
     ],

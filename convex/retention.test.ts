@@ -3,6 +3,7 @@ import { convexTest, type TestConvex } from "convex-test";
 import { describe, it, expect } from "vitest";
 import { internal } from "./_generated/api";
 import schema from "./schema";
+import { withComponents } from "./components.setup";
 import type { Id } from "./_generated/dataModel";
 import * as Rooms from "./model/rooms";
 import * as Retro from "./model/retro";
@@ -53,7 +54,7 @@ async function scheduledCascadeRoomIds(t: T): Promise<Set<string>> {
 
 describe("retained: writers", () => {
   it("createRoom stamps a new room retained: false", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const roomId = await t.run((ctx) =>
       Rooms.createRoom(ctx, { name: "New", votingScale: { type: "fibonacci" } })
     );
@@ -62,14 +63,14 @@ describe("retained: writers", () => {
   });
 
   it("the analytics seed helper stamps retained: false", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const roomId = await seedRoom(t);
     const room = await t.run((ctx) => ctx.db.get("rooms", roomId));
     expect(room?.retained).toBe(false);
   });
 
   it("createRetro stamps retained by the owner's account: true for a permanent account, false for a guest", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const guestId = await seedUser(t, "auth-guest", "G");
     const permanentId = await seedUser(t, "auth-perm", "P", "permanent");
 
@@ -100,7 +101,7 @@ describe("retained: account linking", () => {
     (await t.run((ctx) => ctx.db.get("rooms", roomId)))?.retained;
 
   it("a guest who signs in keeps the retros they own, and only the retros", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const { retroId, pokerId } = await seedGuestRooms(t);
     expect(await retainedOf(t, retroId)).toBe(false);
 
@@ -115,7 +116,7 @@ describe("retained: account linking", () => {
   });
 
   it("a guest merged into an existing permanent account hands it their retros, retained", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const { retroId } = await seedGuestRooms(t);
     const permanentId = await seedUser(t, "auth-perm", "P", "permanent");
 
@@ -134,7 +135,7 @@ describe("retained: account linking", () => {
 
 describe("removeInactiveRooms: retention", () => {
   it("a retained room outlives five quiet days", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const keptId = await seedStaleRoom(t, { retained: true });
 
     const result = await t.mutation(internal.cleanup.removeInactiveRooms, {});
@@ -145,7 +146,7 @@ describe("removeInactiveRooms: retention", () => {
   });
 
   it("a non-retained room is scheduled for deletion after five quiet days", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const staleId = await seedStaleRoom(t, { retained: false });
     const activeId = await seedRoom(t, "active");
 
@@ -157,7 +158,7 @@ describe("removeInactiveRooms: retention", () => {
   });
 
   it("retention is the only discriminator: roomType does not matter", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const staleCanvas = await seedStaleRoom(t, { retained: false, roomType: "canvas" });
     const staleUntyped = await seedStaleRoom(t, { retained: false });
     const staleGuestRetro = await seedStaleRoom(t, { retained: false, roomType: "retro" });

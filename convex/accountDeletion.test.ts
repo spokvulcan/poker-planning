@@ -2,8 +2,10 @@
 import { convexTest } from "convex-test";
 import { describe, it, expect } from "vitest";
 import schema from "./schema";
-import { api } from "./_generated/api";
+import { withComponents } from "./components.setup";
+import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
+import { presence } from "./model/presence";
 import { type T, seedUser as seedNamedUser } from "./analytics.seeds";
 
 // Account deletion: the user row and their memberships go; what they wrote
@@ -45,12 +47,12 @@ async function seedLeaverRetro(t: T) {
   await leaver.mutation(api.retro.setStep, { roomId, step: "vote" });
   await leaver.mutation(api.retro.toggleVote, { stickyId });
   const itemId = await leaver.mutation(api.retro.addActionItem, { roomId, text: "Do it", ownerId: leaverId });
-  return { roomId, leaverId, stickyId, itemId };
+  return { roomId, leaverId, stayerId, stickyId, itemId };
 }
 
 describe("deleting an account", () => {
   it("removes the user row and their memberships, and leaves stickies, votes and action items in place with dangling references", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const { roomId, leaverId, stickyId, itemId } = await seedLeaverRetro(t);
 
     await as(t, "leaver").mutation(api.users.deleteUser, {});
@@ -71,7 +73,7 @@ describe("deleting an account", () => {
   });
 
   it("the reads render the dangling references as Former member, and the vote still counts", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const { roomId, leaverId, stickyId } = await seedLeaverRetro(t);
     await as(t, "leaver").mutation(api.users.deleteUser, {});
 
@@ -86,7 +88,7 @@ describe("deleting an account", () => {
   });
 
   it("hands a retro the account owned to whoever joined it first, who can then run and delete it", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const { roomId } = await seedLeaverRetro(t);
     const stayerId = await t.run(async (ctx) =>
       (await ctx.db.query("users").withIndex("by_auth_user", (q) => q.eq("authUserId", "stayer")).first())!._id
@@ -102,7 +104,7 @@ describe("deleting an account", () => {
   });
 
   it("keeps a guest's retro once it passes to a permanent account", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     await seedUser(t, "guest", "anonymous");
     const roomId = await as(t, "guest").mutation(api.retro.create, { name: "Guest retro" });
     await joinRoom(t, roomId, "guest");
@@ -116,7 +118,7 @@ describe("deleting an account", () => {
   });
 
   it("deletes a retro nobody else joined along with the account", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     await seedUser(t, "solo", "permanent");
     const roomId = await as(t, "solo").mutation(api.retro.create, { name: "Alone" });
     await joinRoom(t, roomId, "solo");
@@ -132,3 +134,45 @@ describe("deleting an account", () => {
   });
 });
 
+describe("presence on account deletion", () => {
+  const listUser = (t: T, userId: Id<"users">) => t.run((ctx) => presence.listUser(ctx, userId));
+
+  it("clears the user's presence in every room they were seen in, including rooms they left", async () => {
+    const t = withComponents(convexTest(schema, modules));
+    const { roomId, leaverId, stayerId } = await seedLeaverRetro(t);
+    const leftRoomId = await as(t, "leaver").mutation(api.retro.create, { name: "Left" });
+    await joinRoom(t, leftRoomId, "leaver");
+    await t.run(async (ctx) => {
+      await presence.heartbeat(ctx, roomId, leaverId, "leaver-1", 10_000);
+      await presence.heartbeat(ctx, leftRoomId, leaverId, "leaver-2", 10_000);
+      await presence.heartbeat(ctx, roomId, stayerId, "stayer-1", 10_000);
+    });
+    await as(t, "leaver").mutation(api.users.leave, { roomId: leftRoomId, userId: leaverId });
+    expect(await listUser(t, leaverId)).toHaveLength(2);
+
+    await as(t, "leaver").mutation(api.users.deleteUser, {});
+
+    expect(await listUser(t, leaverId)).toEqual([]);
+    expect(await t.run((ctx) => presence.listRoom(ctx, roomId))).toEqual([
+      expect.objectContaining({ userId: stayerId }),
+    ]);
+  });
+
+  it("clears a guest's presence when it merges into an existing permanent account", async () => {
+    const t = withComponents(convexTest(schema, modules));
+    await seedUser(t, "guest", "anonymous");
+    const roomId = await as(t, "guest").mutation(api.retro.create, { name: "R" });
+    const guestId = await joinRoom(t, roomId, "guest");
+    await seedUser(t, "guest-permanent", "permanent");
+    await t.run((ctx) => presence.heartbeat(ctx, roomId, guestId, "guest-1", 10_000));
+
+    await t.mutation(internal.users.linkAnonymousAccount, {
+      oldAuthUserId: "guest",
+      newAuthUserId: "guest-permanent",
+      email: "guest@example.com",
+    });
+
+    expect(await t.run((ctx) => ctx.db.get("users", guestId))).toBeNull();
+    expect(await listUser(t, guestId)).toEqual([]);
+  });
+});
