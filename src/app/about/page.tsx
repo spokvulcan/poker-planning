@@ -1,19 +1,15 @@
 import { Metadata } from "next";
+import { pageMetadata } from "@/lib/page-metadata";
 import { AboutContent } from "./about-content";
 import { META } from "./copy";
 
-export const metadata: Metadata = {
-  title: META.title,
+export const metadata: Metadata = pageMetadata({
+  // The title already names AgileKit; the template would repeat it.
+  title: { absolute: META.title },
   description: META.description,
-  openGraph: {
-    title: META.openGraph.title,
-    description: META.openGraph.description,
-    url: "https://agilekit.app/about",
-  },
-  alternates: {
-    canonical: "https://agilekit.app/about",
-  },
-};
+  path: "/about",
+  social: META.openGraph,
+});
 
 export default function AboutPage() {
   return <AboutContent />;

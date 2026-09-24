@@ -2,7 +2,7 @@ import { Metadata } from "next";
 import { SessionsContent } from "./sessions-content";
 
 export const metadata: Metadata = {
-  title: "Sessions | AgileKit Analytics",
+  title: "Sessions",
   description: "View your planning poker session history and details",
   robots: {
     index: false,

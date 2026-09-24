@@ -2,7 +2,7 @@ import { Metadata } from "next";
 import { SettingsContent } from "@/components/dashboard/settings-content";
 
 export const metadata: Metadata = {
-  title: "Settings | AgileKit",
+  title: "Settings",
   description: "Manage your integrations and preferences",
   robots: {
     index: false,

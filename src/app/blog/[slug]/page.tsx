@@ -20,6 +20,7 @@ import { RelatedPosts } from "../components/related-posts";
 import { Navbar } from "@/components/navbar";
 import { Footer } from "@/components/footer";
 import { siteConfig } from "@/lib/site-config";
+import { pageMetadata } from "@/lib/page-metadata";
 import {
   BlogPostingSchema,
   BreadcrumbSchema,
@@ -44,31 +45,21 @@ export async function generateMetadata({
 
   if (!post) {
     return {
-      title: "Post Not Found - AgileKit Blog",
+      title: "Post Not Found",
     };
   }
 
-  return {
-    title: `${post.title} - ${siteConfig.blog.title}`,
+  return pageMetadata({
+    title: post.title,
     description: post.spoiler,
-    openGraph: {
-      title: post.title,
-      description: post.spoiler,
-      url: `${siteConfig.url}/blog/${slug}`,
-      type: "article",
+    path: `/blog/${slug}`,
+    social: { title: post.title },
+    article: {
       publishedTime: post.date,
       modifiedTime: post.modifiedDate || post.date,
       authors: [siteConfig.author.name],
     },
-    twitter: {
-      card: "summary",
-      title: post.title,
-      description: post.spoiler,
-    },
-    alternates: {
-      canonical: `${siteConfig.url}/blog/${slug}`,
-    },
-  };
+  });
 }
 
 export default async function BlogPostPage({ params }: PageProps) {

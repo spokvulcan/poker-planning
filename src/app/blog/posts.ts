@@ -33,7 +33,9 @@ export interface TocItem {
   level: number;
 }
 
-const BLOG_DIR = path.join(process.cwd(), "public", "blog");
+// Outside `public/`: a post's folder there is also a static path, and Vercel
+// answered `/blog/<slug>` with the raw `index.md` instead of the page.
+const BLOG_DIR = path.join(process.cwd(), "content", "blog");
 
 /**
  * Get all blog posts with metadata (without content)

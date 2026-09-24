@@ -4,22 +4,29 @@ import { PostCard } from "./components/post-card";
 import { Navbar } from "@/components/navbar";
 import { Footer } from "@/components/footer";
 import { siteConfig } from "@/lib/site-config";
+import { pageMetadata } from "@/lib/page-metadata";
 import { BreadcrumbSchema } from "@/components/seo/structured-data";
 import Link from "next/link";
 import { Rss } from "lucide-react";
 
-export const metadata: Metadata = {
-  title: `Blog - ${siteConfig.name} | Planning Poker Tips & Agile Estimation Guides`,
+const TITLE = "Planning Poker Tips & Agile Estimation Guides | AgileKit Blog";
+
+const base = pageMetadata({
+  title: { absolute: TITLE },
   description:
     "Learn about planning poker, Scrum estimation techniques, and agile best practices. Free guides and tutorials from the AgileKit team.",
-  openGraph: {
-    title: `Blog - ${siteConfig.name} | Planning Poker Tips & Agile Estimation Guides`,
+  path: "/blog",
+  social: {
+    title: TITLE,
     description:
       "Learn about planning poker, Scrum estimation techniques, and agile best practices.",
-    url: `${siteConfig.url}/blog`,
   },
+});
+
+export const metadata: Metadata = {
+  ...base,
   alternates: {
-    canonical: `${siteConfig.url}/blog`,
+    ...base.alternates,
     types: {
       "application/rss+xml": "/blog/rss.xml",
       "application/atom+xml": "/blog/atom.xml",

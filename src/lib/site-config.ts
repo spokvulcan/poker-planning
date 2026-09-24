@@ -1,5 +1,13 @@
 import { BLOG_DESCRIPTION, SITE_SHORT_DESCRIPTION } from "./site-copy";
 
+/**
+ * The production origin. Canonical and Open Graph URLs, the sitemap, robots,
+ * feeds and structured data name it on every deployment: a canonical that
+ * follows the deployment URL sent search engines to a preview build. Auth
+ * callbacks and emails need the deployment's own URL, from `getSiteUrl()`.
+ */
+export const SITE_ORIGIN = "https://agilekit.app";
+
 export function getSiteUrl(): string {
   // Convex backend uses SITE_URL (set via `npx convex env set`)
   if (process.env.SITE_URL) {
@@ -19,7 +27,7 @@ export function getSiteUrl(): string {
 
 export const siteConfig = {
   name: "AgileKit",
-  url: getSiteUrl(),
+  url: SITE_ORIGIN,
   description: SITE_SHORT_DESCRIPTION,
   author: {
     name: "AgileKit Team",

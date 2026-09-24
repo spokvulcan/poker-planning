@@ -395,7 +395,7 @@ export const FAQ = {
     {
       question: "What voting scale does AgileKit use?",
       answer:
-        "AgileKit uses the Fibonacci sequence (0, 1, 2, 3, 5, 8, 13, 21, ?) which is the industry standard for story point estimation. We're working on adding T-shirt sizes and custom scales in a future update.",
+        "AgileKit uses the Fibonacci sequence (0, 1, 2, 3, 5, 8, 13, 21 and up) by default, the industry standard for story point estimation. When you create a game you can pick a Standard scale (0, 0.5, 1, 2, 3, 5, 8, 13, 20, 40, 100), T-shirt sizes (XS to XXL) or your own custom cards instead.",
     },
     {
       question: "Can I use this tool offline or self-host it?",
