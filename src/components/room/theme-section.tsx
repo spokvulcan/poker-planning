@@ -1,5 +1,6 @@
 "use client";
 
+import { useSyncExternalStore } from "react";
 import { Monitor, Moon, Sun } from "lucide-react";
 import { useTheme } from "next-themes";
 import { Button } from "@/components/ui/button";
@@ -13,9 +14,19 @@ const THEMES = [
   { value: "system", label: "System", icon: Monitor },
 ] as const;
 
+// next-themes keeps the choice in localStorage, so `theme` is undefined on the
+// server and set from the browser's first render. Marking the active button
+// only once mounted keeps the hydrating render equal to the server HTML (none
+// active); the buttons are the same size either way, so nothing shifts.
+const subscribe = () => () => {};
+const getSnapshot = () => true;
+const getServerSnapshot = () => false;
+
 /** The Light, Dark and System switch at the foot of a settings panel's top section. */
 export function ThemeSection({ description }: { description?: string }) {
   const { theme, setTheme } = useTheme();
+  const mounted = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+  const activeTheme = mounted ? theme : undefined;
   return (
     <div className="mt-4 border-t border-gray-100 pt-5 dark:border-border/50">
       <div className="flex flex-col gap-3">
@@ -32,9 +43,10 @@ export function ThemeSection({ description }: { description?: string }) {
                     variant="ghost"
                     size="sm"
                     onClick={() => setTheme(value)}
+                    aria-pressed={activeTheme === value}
                     className={cn(
                       "h-8 flex-1 gap-2 rounded-md px-3 text-xs font-medium transition-all",
-                      theme === value
+                      activeTheme === value
                         ? "border border-gray-200/50 bg-white text-gray-900 shadow-sm dark:border-transparent dark:bg-surface-3 dark:text-white"
                         : "text-gray-500 hover:text-gray-900 dark:hover:text-gray-300"
                     )}
