@@ -65,25 +65,6 @@ describe("requireRoomReader — the room access guard", () => {
     ).rejects.toThrow("You don't have access to this room");
   });
 
-  it("a room still carrying a legacy teamId admits its members and nobody else", async () => {
-    const t = convexTest(schema, modules);
-    const roomId = await seedRoom(t);
-    // The retired team retro stamped its Team on the room row. Nothing reads
-    // the field any more, so it grants no access.
-    await t.run((ctx) => ctx.db.patch(roomId, { teamId: "legacy-team" }));
-    await addMember(t, roomId, "auth-m");
-    await addUser(t, "auth-x");
-
-    await expect(
-      t.withIdentity({ subject: "auth-x" }).run((ctx) => requireRoomReader(ctx, roomId))
-    ).rejects.toThrow("You don't have access to this room");
-
-    const result = await t
-      .withIdentity({ subject: "auth-m" })
-      .run((ctx) => requireRoomReader(ctx, roomId));
-    expect(result.room._id).toBe(roomId);
-  });
-
   it("rejects an unauthenticated caller", async () => {
     const t = convexTest(schema, modules);
     const roomId = await seedRoom(t);

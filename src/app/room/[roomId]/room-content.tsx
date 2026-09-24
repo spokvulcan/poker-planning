@@ -50,16 +50,6 @@ export function RoomContent() {
     );
   }
 
-  // A retro from before the whiteboard has no state to draw.
-  if (roomData.room.roomType === "retro" && !roomData.room.retro) {
-    return (
-      <CenteredMessage
-        title="Retro Unavailable"
-        body="This retro was made with an older version of AgileKit and can no longer be opened"
-      />
-    );
-  }
-
   return (
     <JoinGate
       roomId={roomId}

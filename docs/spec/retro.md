@@ -44,7 +44,7 @@ The fixed nodes are `canvasNodes` rows, positioned and saved like poker's: `retr
 | Liked, Learned, Lacked, Longed for | Liked, Learned, Lacked, Longed for |
 | Sailboat | Wind, Anchors, Rocks ahead, Island |
 
-A line under the form says whether the retro will be kept: "Kept on your account until you delete it." for a permanent account, otherwise that guest retros are removed after 5 quiet days, with a link to sign in. "Start Retro" signs a visitor in as a guest when they have no session (with a generated name), calls `retro.create`, copies the retro's link and opens it. The room starts at `write`, retained when the creator's account is permanent, with the retro node on top, the timer to its left, the pads in a row beneath and the action items at the end of the row. The creator joins through the room page's join gate like anyone else (automatically, since they have a name) and is owner because `ownerId` is theirs. A retro has no spectators: the join dialog hides the toggle and `joinRoom` stores `isSpectator: false`. A retro room left over from the team retro opens to "Retro Unavailable" (§12).
+A line under the form says whether the retro will be kept: "Kept on your account until you delete it." for a permanent account, otherwise that guest retros are removed after 5 quiet days, with a link to sign in. "Start Retro" signs a visitor in as a guest when they have no session (with a generated name), calls `retro.create`, copies the retro's link and opens it. The room starts at `write`, retained when the creator's account is permanent, with the retro node on top, the timer to its left, the pads in a row beneath and the action items at the end of the row. The creator joins through the room page's join gate like anyone else (automatically, since they have a name) and is owner because `ownerId` is theirs. A retro has no spectators: the join dialog hides the toggle and `joinRoom` stores `isSpectator: false`.
 
 ## 4. Steps
 
@@ -107,7 +107,7 @@ The relationship verbs are the poker room's (`promote`, `demote`, `remove`, `tra
 
 ## 12. Legacy data
 
-`npx convex run migrations:purgeLegacyRetros` (add `--prod` for production) runs once per deployment after this version ships. It empties the team retro's tables (`teams`, `teamMemberships`, `retros`, `retroCards`, `retroClusters`, `retroVotes`, `retroActions`), cancelling any reminder still scheduled; schedules the room cascade for every retro room without `rooms.retro`; and strips `teamId` and `joinPolicy` from the other rooms. It reschedules itself in batches, walking the rooms a page at a time, and is safe to re-run; each run returns what it did and whether the walk is `done`. Afterwards `rooms.teamId` and `rooms.joinPolicy` can be dropped from `convex/schema.ts`. `users.emailOptOut` is unused too, but the purge does not clear it.
+The team retro this replaces never shipped in a release. The two deployments that ran it were cleared with a one-off migration (every team-retro room deleted through the room cascade, its tables emptied, and the `teamId`, `joinPolicy` and `emailOptOut` fields stripped), after which the migration and those fields were removed. The emptied tables are no longer in the schema.
 
 ## 13. What copy may say
 
@@ -119,7 +119,7 @@ Wording may be polished; no claim may go beyond what the code does.
 
 ## 14. Tests
 
-- **convex-test:** `convex/retro.test.ts` (creation and nodes, the face-down projection and show authors, sticky validation and the GIF allowlist, stacks, votes, the discussion and the spotlight, permissions at the defaults, action items, the next retro, columns, the listing, deletion, account linking, transfer), `convex/retroRules.test.ts`, `convex/retention.test.ts`, `convex/accountDeletion.test.ts`, `convex/roomActivity.test.ts`, `convex/requireRoomReader.test.ts`, `convex/migrations.test.ts`.
+- **convex-test:** `convex/retro.test.ts` (creation and nodes, the face-down projection and show authors, sticky validation and the GIF allowlist, stacks, votes, the discussion and the spotlight, permissions at the defaults, action items, the next retro, columns, the listing, deletion, account linking, transfer), `convex/retroRules.test.ts`, `convex/retention.test.ts`, `convex/accountDeletion.test.ts`, `convex/roomActivity.test.ts`, `convex/requireRoomReader.test.ts`.
 - **Node:** `src/components/retro/build-retro-nodes.test.ts`, `src/components/retro/retro-summary.test.ts`.
 - **Playwright:** `tests/retro/retro-board.spec.ts`, two cross-browser facts: stickies face-down until the reveal, votes hidden until the discussion, the spotlight and action items shared; and the next retro carrying open action items over.
 - **Manual:** [`tests/retro/MANUAL.md`](../../tests/retro/MANUAL.md): touch, drag-to-stack and GIF flows.

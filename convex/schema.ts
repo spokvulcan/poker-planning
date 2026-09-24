@@ -35,17 +35,6 @@ export const retroPermissionsValidator = v.object({
   retroSettings: permissionLevelValidator,
 });
 
-/**
- * Who may join a room. Legacy: written only by the retired team retro and
- * read by nothing; kept until `migrations:purgeLegacyRetros` has run on every
- * deployment, then dropped.
- */
-const legacyJoinPolicyValidator = v.union(
-  v.literal("anyone"),
-  v.literal("permanentAccounts"),
-  v.literal("teamMembers")
-);
-
 /** A retro's step (see retroTemplates.ts). */
 export const retroStepValidator = v.union(
   v.literal("write"),
@@ -136,10 +125,6 @@ export default defineSchema({
     ),
     // The retro's state; set on every retro room, never on a poker room.
     retro: v.optional(retroStateValidator),
-    // Legacy: the retired team retro's join policy and Team. Read by nothing;
-    // dropped once `migrations:purgeLegacyRetros` has run everywhere.
-    joinPolicy: v.optional(legacyJoinPolicyValidator),
-    teamId: v.optional(v.string()),
   })
     .index("by_retention_activity", ["retained", "lastActivityAt"]) // The sweep: non-retained rooms by staleness
     .index("by_created", ["createdAt"]) // For querying recent rooms
@@ -179,7 +164,6 @@ export default defineSchema({
     email: v.optional(v.string()),
     avatarUrl: v.optional(v.string()),
     accountType: v.optional(v.union(v.literal("anonymous"), v.literal("permanent"))),
-    emailOptOut: v.optional(v.boolean()), // Legacy: the retired retro emails' opt-out; read by nothing
     createdAt: v.number(),
   })
     .index("by_auth_user", ["authUserId"])

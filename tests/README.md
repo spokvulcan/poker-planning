@@ -64,7 +64,7 @@ The retro's rules are proven below the browser; Playwright keeps only what needs
 
 | Layer | Where | What it proves |
 |-------|-------|----------------|
-| Convex (`convex-test`) | `convex/retro.test.ts`, `convex/retroRules.test.ts`, `convex/retention.test.ts`, `convex/accountDeletion.test.ts`, `convex/roomActivity.test.ts`, `convex/requireRoomReader.test.ts`, `convex/migrations.test.ts` | The face-down projection, stacks, votes, the discussion order, permissions, action items, the next retro, retention, account linking and deletion, the activity clock, the legacy purge |
+| Convex (`convex-test`) | `convex/retro.test.ts`, `convex/retroRules.test.ts`, `convex/retention.test.ts`, `convex/accountDeletion.test.ts`, `convex/roomActivity.test.ts`, `convex/requireRoomReader.test.ts` | The face-down projection, stacks, votes, the discussion order, permissions, action items, the next retro, retention, account linking and deletion, the activity clock |
 | Node | `src/components/retro/build-retro-nodes.test.ts`, `src/components/retro/retro-summary.test.ts` | What the board draws in each step; the Markdown summary |
 | Playwright | `tests/retro/retro-board.spec.ts` | Two browsers: stickies face-down until the reveal, votes hidden until the discussion, the spotlight and action items shared; the next retro carrying open action items over |
 | Manual | `tests/retro/MANUAL.md` | Touch, drag-to-stack and GIF flows a headless browser cannot fake |
