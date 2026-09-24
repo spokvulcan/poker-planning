@@ -96,11 +96,13 @@ describe("two ceremonies, one toolkit (spec §18.2)", () => {
     expect(homepage.HOW_IT_WORKS.poker.animation.startButton).toBe("Start Session");
   });
 
-  it("gives app-preview a retro slot, with the poker image in it until the manual capture", () => {
+  it("gives app-preview a retro slot with its own board, light and dark", () => {
     expect(homepage.APP_PREVIEW.poker.features).toHaveLength(3);
     expect(homepage.APP_PREVIEW.retro.features).toHaveLength(3);
     expect(homepage.APP_PREVIEW.retro.image.light).toMatch(/\.png$/);
     expect(homepage.APP_PREVIEW.retro.image.dark).toMatch(/\.png$/);
+    expect(homepage.APP_PREVIEW.retro.image.light).not.toBe(homepage.APP_PREVIEW.poker.image.light);
+    expect(homepage.APP_PREVIEW.retro.image.dark).not.toBe(homepage.APP_PREVIEW.poker.image.dark);
   });
 
   it("gives use-cases, the capabilities list and the closing CTA retro lines", () => {
