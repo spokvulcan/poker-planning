@@ -428,7 +428,9 @@ describe("buildCanvasNodes — note node", () => {
           canvasNodes: [noteCanvasNode(ISSUE_ID, "note-current", content)],
           currentIssue: { _id: ISSUE_ID, title: "Checkout flow" },
           callbacks: {
-            onUpdateNoteContent: (nodeId, next) => updates.push([nodeId, next]),
+            onUpdateNoteContent: (nodeId, next) => {
+              updates.push([nodeId, next]);
+            },
             onDeleteNote: (nodeId, hasContent) => deletions.push([nodeId, hasContent]),
           },
         }),

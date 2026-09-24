@@ -19,7 +19,8 @@ export interface CanvasActions {
   cancelAutoReveal: () => void;
   /** Sets the local highlight, writes the vote, rolls the highlight back on failure. */
   selectCard: (cardValue: string) => void;
-  updateNoteContent: (nodeId: string, content: string) => void;
+  /** Resolves once the write has landed (or failed), so a note knows when its text is saved. */
+  updateNoteContent: (nodeId: string, content: string) => Promise<void>;
   createNote: (issueId: Id<"issues">) => void;
   deleteNote: (nodeId: string) => void;
   /** Persists a node position. Debouncing stays at the call site. */
