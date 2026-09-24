@@ -1,5 +1,6 @@
-import { NextResponse, type NextRequest } from "next/server";
-import { isAuthenticated } from "@/lib/auth-server";
+import { after, NextResponse, type NextRequest } from "next/server";
+import { api } from "@/convex/_generated/api";
+import { fetchAuthMutation, isAuthenticated } from "@/lib/auth-server";
 
 /**
  * GIF search for retro stickies: a thin proxy over GIPHY so the API key
@@ -8,6 +9,10 @@ import { isAuthenticated } from "@/lib/auth-server";
  *
  * Without GIPHY_API_KEY the route answers `{ configured: false }` and the
  * picker falls back to pasting a link.
+ *
+ * GIPHY's beta keys allow 100 calls an hour. Every search is counted, by
+ * the hour, in Convex's `gifSearchUsage` (`npx convex run gifUsage:recent`),
+ * including the ones GIPHY refused for that limit.
  */
 
 export interface GifResult {
@@ -28,6 +33,19 @@ export interface GifSearchResponse {
 }
 
 const PAGE_SIZE = 24;
+
+const RATE_LIMITED = "GIF search has hit its hourly limit. Paste a GIPHY, Tenor or Imgur link instead, or try again later.";
+
+/** Counts the search once the answer is sent, so counting never slows the picker or breaks it. */
+function countSearch(rateLimited: boolean): void {
+  after(async () => {
+    try {
+      await fetchAuthMutation(api.gifUsage.record, { rateLimited });
+    } catch (error) {
+      console.warn("[gifs] couldn't count a search", error);
+    }
+  });
+}
 
 interface GiphyRendition {
   url?: string;
@@ -85,6 +103,13 @@ export async function GET(request: NextRequest) {
     const response = await fetch(`https://api.giphy.com/v1/gifs/${endpoint}?${params}`, {
       next: { revalidate: query ? 3600 : 600 },
     });
+    // Only a 200 is cached, so a refusal reaches here every time.
+    const rateLimited = response.status === 429;
+    countSearch(rateLimited);
+    if (rateLimited) {
+      console.warn("[gifs] GIPHY refused a search: the key's hourly rate limit is used up");
+      return NextResponse.json({ error: RATE_LIMITED, rateLimited: true }, { status: 429 });
+    }
     if (!response.ok) {
       return NextResponse.json({ error: "GIF search is unavailable right now" }, { status: 502 });
     }

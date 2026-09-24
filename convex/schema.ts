@@ -229,6 +229,16 @@ export default defineSchema({
     .index("by_room", ["roomId"])
     .index("by_owner", ["ownerId"]),
 
+  // GIF search traffic, one row per hour, for watching GIPHY's hourly rate
+  // limit: how many searches the app served (answers from Next's cache
+  // included, so an upper bound on calls to GIPHY) and how many GIPHY
+  // refused. Counts only: no search terms, no people.
+  gifSearchUsage: defineTable({
+    hour: v.number(), // the hour's start, in ms since the epoch (UTC)
+    requests: v.number(),
+    rateLimited: v.number(),
+  }).index("by_hour", ["hour"]),
+
   // Room memberships (user <-> room relationship)
   roomMemberships: defineTable({
     roomId: v.id("rooms"),

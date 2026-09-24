@@ -17,3 +17,16 @@ export function trackConversion(conversion: Conversion): void {
   if (typeof window === "undefined" || !("dataLayer" in window)) return;
   sendGAEvent("event", conversion);
 }
+
+/**
+ * How the retro's GIFs get used: a typed search, a GIF picked from search
+ * or a pasted link, and a search GIPHY refused for its hourly rate limit.
+ * Never the search terms. Like a conversion, sent only while Google
+ * Analytics is running.
+ */
+export type GifEvent = "gif_search" | "gif_pick" | "gif_search_limited";
+
+export function trackGifEvent(event: GifEvent, params?: { source: "search" | "link" }): void {
+  if (typeof window === "undefined" || !("dataLayer" in window)) return;
+  sendGAEvent("event", event, params ?? {});
+}
