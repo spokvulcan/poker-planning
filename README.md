@@ -149,17 +149,6 @@ npm run build
 npx convex deploy --prod
 ```
 
-### Upgrading from the team retro
-
-The whiteboard retro replaces the earlier team retro (Teams, stages, clusters and retro emails). After deploying this version, run once against each deployment that ran the team retro:
-
-```bash
-npx convex run migrations:purgeLegacyRetros --prod
-npx convex run migrations:clearLegacyEmailOptOut --prod
-```
-
-It deletes every team-retro room through the room cascade, empties the team retro's tables (cancelling any reminder email still scheduled) and strips the legacy `teamId` and `joinPolicy` fields from the remaining rooms. It works in batches, rescheduling itself until it has walked every room, and is safe to re-run. Until it has run, an old retro opens to "Retro Unavailable". The second clears the retired retro emails' `users.emailOptOut` flag the same way. Afterwards the legacy `rooms.teamId`, `rooms.joinPolicy` and `users.emailOptOut` fields can be dropped from `convex/schema.ts` and the emptied tables deleted. `UNSUBSCRIBE_SECRET` is no longer read and can be removed with `npx convex env remove UNSUBSCRIBE_SECRET --prod`.
-
 ## Use Cases
 
 - **Sprint Planning** - Estimate user stories with your Scrum team
