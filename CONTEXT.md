@@ -101,11 +101,11 @@ One contribution to a retro: words, a GIF or both, filed under a **column** and 
 _Avoid_: card (the poker ballot, and the team retro's word), note (the poker canvas's note node), post-it, item
 
 **Face-down**:
-How someone else's **sticky** reaches a viewer while the retro is in `write`: its place and colour, and none of its words, GIF or author. Decided on the server from the retro's **step**, never the viewer's, so the content never reaches another person's browser, whatever their role. Its author sees it face-up.
+How someone else's **sticky** reaches a viewer while the retro is in `write`: its place and colour, and none of its words, GIF, author or size. Decided on the server from the retro's **step**, never the viewer's, so the content never reaches another person's browser, whatever their role. Its author sees it face-up.
 _Avoid_: hidden (fine in code), blurred, private, silhouette (the team retro's word)
 
 **Reveal** (retro):
-Moving a retro out of `write`, which turns every **sticky** face-up for everyone at once. Going back to `write` turns other people's stickies face-down again.
+Moving a retro out of `write`, which turns every **sticky** face-up for everyone at once and moves down any sticky that one turning out taller would cover. Going back to `write` turns other people's stickies face-down again.
 _Avoid_: reveal cards (the poker **permission category**), unblur, show
 
 **Show authors**:

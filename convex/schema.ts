@@ -180,6 +180,9 @@ export default defineSchema({
     gif: v.optional(gifValidator),
     authorId: v.id("users"),
     position: v.object({ x: v.number(), y: v.number() }),
+    // How tall its author's browser draws it face-up. Never sent to anyone;
+    // only the reveal reads it, to move stickies clear of it (ADR-0027).
+    height: v.optional(v.number()),
     // The sticky this one is stacked under; stacks are one level deep.
     stackId: v.optional(v.id("retroStickies")),
     createdAt: v.number(),

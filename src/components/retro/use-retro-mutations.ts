@@ -225,5 +225,7 @@ export function useRetroMutations(roomId: Id<"rooms">) {
     deleteActionItem,
     startNext: useMutation(api.retro.startNext),
     updateColumn: useMutation(api.retro.updateColumn),
+    // Nothing on the board changes: the heights are for the reveal.
+    measureStickies: useMutation(api.retro.measureStickies),
   };
 }

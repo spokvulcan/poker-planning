@@ -7,7 +7,7 @@ import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { DEFAULT_RETRO_PERMISSIONS } from "./permissions";
 import { columnsFromTemplate } from "./retroTemplates";
-import { nextPadPosition } from "./retroLayout";
+import { FACE_DOWN_HEIGHT, nextPadPosition, nextStickyPosition, padPositions } from "./retroLayout";
 import { type T, seedUser as seedNamedUser } from "./analytics.seeds";
 
 // The whiteboard retro through its API (convex/retro.ts): what a new retro
@@ -241,6 +241,79 @@ describe("the board — who sees what", () => {
     await setStep(t, roomId, "write");
     expect(await seen(t, "bob", roomId, stickyId)).not.toHaveProperty("authorName");
     expect(await seen(t, "ann", roomId, stickyId)).not.toHaveProperty("authorName");
+  });
+
+  it("a sticky's height is kept from its author's browser only, and sent to nobody", async () => {
+    const t = convexTest(schema, modules);
+    const { roomId } = await seedRetro(t);
+    const stickyId = await stick(t, "ann", roomId);
+    const measure = (who: string, height: number) =>
+      as(t, who).mutation(api.retro.measureStickies, { roomId, heights: [{ stickyId, height }] });
+
+    await measure("bob", 300);
+    expect((await stickyRow(t, stickyId)).height).toBeUndefined();
+    await measure("ann", 243.6);
+    expect((await stickyRow(t, stickyId)).height).toBe(244);
+
+    expect(await seen(t, "bob", roomId, stickyId)).not.toHaveProperty("height");
+    expect(await seen(t, "ann", roomId, stickyId)).not.toHaveProperty("height");
+    await setStep(t, roomId, "vote");
+    expect(await seen(t, "bob", roomId, stickyId)).not.toHaveProperty("height");
+  });
+});
+
+describe("the reveal", () => {
+  /**
+   * Ann's GIF sticky under the first pad, which her browser draws 244 px
+   * tall, and Bob's, which his pad put under its face-down size.
+   */
+  async function bobUnderAnnsGif(t: T, roomId: Id<"rooms">) {
+    const [pad] = padPositions(3);
+    const annAt = nextStickyPosition(pad, []);
+    const annId = await stick(t, "ann", roomId, { gif: { url: GIPHY_MEDIA, width: 480, height: 270 }, position: annAt });
+    await as(t, "ann").mutation(api.retro.measureStickies, { roomId, heights: [{ stickyId: annId, height: 244 }] });
+    const bobAt = nextStickyPosition(pad, [{ position: annAt, height: FACE_DOWN_HEIGHT }]);
+    const bobId = await stick(t, "bob", roomId, { position: bobAt });
+    return { annAt, annId, bobAt, bobId };
+  }
+
+  it("moves a sticky put under a face-down one clear of it, by the height its author's browser measured", async () => {
+    const t = convexTest(schema, modules);
+    const { roomId } = await seedRetro(t);
+    const { annAt, annId, bobAt, bobId } = await bobUnderAnnsGif(t, roomId);
+
+    await setStep(t, roomId, "vote");
+
+    expect((await seen(t, "bob", roomId, bobId)).position).toEqual({ x: bobAt.x, y: annAt.y + 244 + 16 });
+    expect((await seen(t, "bob", roomId, annId)).position).toEqual(annAt);
+  });
+
+  it("is the only step that moves stickies", async () => {
+    const t = convexTest(schema, modules);
+    const { roomId } = await seedRetro(t);
+    const { bobAt, bobId } = await bobUnderAnnsGif(t, roomId);
+    await setStep(t, roomId, "vote");
+
+    // Face-up, anyone can see the overlap: moved back on purpose, it stays.
+    await as(t, "owner").mutation(api.retro.moveStickies, { roomId, moves: [{ stickyId: bobId, position: bobAt }] });
+    await setStep(t, roomId, "discuss");
+    await setStep(t, roomId, "done");
+
+    expect((await stickyRow(t, bobId)).position).toEqual(bobAt);
+  });
+
+  it("goes by face-down size when nobody measured a sticky", async () => {
+    const t = convexTest(schema, modules);
+    const { roomId } = await seedRetro(t);
+    const [pad] = padPositions(3);
+    const annAt = nextStickyPosition(pad, []);
+    await stick(t, "ann", roomId, { position: annAt });
+    const bobAt = nextStickyPosition(pad, [{ position: annAt, height: FACE_DOWN_HEIGHT }]);
+    const bobId = await stick(t, "bob", roomId, { position: bobAt });
+
+    await setStep(t, roomId, "vote");
+
+    expect((await stickyRow(t, bobId)).position).toEqual(bobAt);
   });
 });
 
@@ -894,6 +967,20 @@ describe("guards", () => {
     expect(await refusalOf(set(Number.NaN))).toBe("forbidden");
     await set(99);
     expect((await retroState(t, roomId)).votesPerPerson).toBe(10);
+  });
+
+  it("refuses a sticky height that is not a number, and keeps a made-up one within bounds", async () => {
+    const t = convexTest(schema, modules);
+    const { roomId } = await seedRetro(t);
+    const stickyId = await stick(t, "ann", roomId);
+    const measure = (height: number) =>
+      as(t, "ann").mutation(api.retro.measureStickies, { roomId, heights: [{ stickyId, height }] });
+
+    expect(await refusalOf(measure(Number.NaN))).toBe("forbidden");
+    await measure(1e9);
+    expect((await stickyRow(t, stickyId)).height).toBe(20_000);
+    await measure(3);
+    expect((await stickyRow(t, stickyId)).height).toBe(FACE_DOWN_HEIGHT);
   });
 });
 

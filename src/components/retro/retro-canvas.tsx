@@ -344,6 +344,10 @@ function RetroCanvasInner({ roomData, currentUserId }: RetroCanvasProps): ReactE
       const current = summary();
       if (current) downloadFile(current.markdown, `${current.slug}.md`, "text/markdown");
     },
+    measureStickies: (heights: { stickyId: Id<"retroStickies">; height: number }[]) =>
+      void m
+        .measureStickies({ roomId, heights })
+        .catch((error) => console.error("Failed to record sticky heights:", error)),
   });
 
   const derivedNodes = useMemo(
@@ -375,6 +379,28 @@ function RetroCanvasInner({ roomData, currentUserId }: RetroCanvasProps): ReactE
   useEffect(() => {
     setNodes((previous) => mergeNodes(previous, derivedNodes));
   }, [derivedNodes, setNodes]);
+
+  // While writing, a sticky is face-up only in its author's browser, so that
+  // browser records how tall each of its own is drawn, for the reveal to move
+  // stickies clear of the ones that turn out taller (ADR-0027). Only a fresh
+  // measurement counts: right after an edit or an open stack closes, the one
+  // React Flow holds is still the editor's or the stack's.
+  const heightsSeen = useRef(new Map<string, number>());
+  const heightsSent = useRef(new Map<string, number>());
+  useEffect(() => {
+    const heights: { stickyId: Id<"retroStickies">; height: number }[] = [];
+    for (const node of nodes) {
+      if (node.type !== "sticky" || !node.data.sticky?.mine) continue;
+      const stickyId = node.data.sticky._id;
+      const height = Math.round(node.measured?.height ?? 0);
+      if (!height || isOptimistic(stickyId) || heightsSeen.current.get(stickyId) === height) continue;
+      heightsSeen.current.set(stickyId, height);
+      if (node.data.editing || node.data.expanded || heightsSent.current.get(stickyId) === height) continue;
+      heightsSent.current.set(stickyId, height);
+      heights.push({ stickyId, height });
+    }
+    if (heights.length > 0) handlers.measureStickies(heights);
+  }, [nodes, handlers]);
 
   // Fit the board once, when it first has its nodes measured.
   const initialized = useNodesInitialized();

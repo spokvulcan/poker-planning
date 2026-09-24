@@ -1,14 +1,16 @@
 /**
- * The sticky as each viewer sees it: face-down it shows scribbles and never
- * words; the author's own reads "Only you, until the reveal"; in Vote a dot
- * button spends and takes back a vote, and turns itself off when the votes
- * run out; from Discuss on it carries its total and its place in the walk.
+ * The sticky as each viewer sees it: face-down it shows scribbles at one
+ * size and never words; the author's own reads "Only you, until the
+ * reveal"; in Vote a dot button spends and takes back a vote, and turns
+ * itself off when the votes run out; from Discuss on it carries its total
+ * and its place in the walk.
  */
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import type { NodeProps } from "@xyflow/react";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { StickyView } from "@/convex/model/retro";
+import { FACE_DOWN_HEIGHT, STICKY_MIN_HEIGHT } from "@/convex/retroLayout";
 import type { RetroBoardActions, StickyFlowNode, StickyNodeData } from "../types";
 import { StickyNode } from "./sticky-node";
 
@@ -66,6 +68,16 @@ describe("StickyNode", () => {
     expect(node.getAttribute("data-hidden")).toBe("true");
     expect(node.getAttribute("aria-label")).toBe("A sticky, face-down until the reveal");
     expect(screen.queryByText("Standups run long")).toBeNull();
+  });
+
+  it("face-down, one size whatever it holds; face-up, as tall as it needs", () => {
+    const face = () => screen.getByTestId("retro-sticky").lastElementChild as HTMLElement;
+    renderSticky({ sticky: sticky({ hidden: true, text: undefined }) });
+    expect(face().style.height).toBe(`${FACE_DOWN_HEIGHT}px`);
+    cleanup();
+    renderSticky({ sticky: sticky({ mine: true }) });
+    expect(face().style.height).toBe("");
+    expect(face().style.minHeight).toBe(`${STICKY_MIN_HEIGHT}px`);
   });
 
   it("the author's own reads as theirs until the reveal", () => {
