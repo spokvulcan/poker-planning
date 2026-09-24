@@ -403,7 +403,7 @@ describe("removeInactiveRooms", () => {
     expect(await countRows(t, "rooms")).toBe(2);
     await drainScheduled(t);
     expect(await countRows(t, "rooms")).toBe(1);
-    expect(await t.run((ctx) => ctx.db.get(activeId))).not.toBeNull();
+    expect(await t.run((ctx) => ctx.db.get("rooms", activeId))).not.toBeNull();
   });
 
   it("leaves a room with recent timer-only activity alone", async () => {
@@ -451,7 +451,7 @@ describe("removeInactiveRooms", () => {
     const result = await t.mutation(internal.cleanup.removeInactiveRooms, {});
     expect(result.roomsScheduled).toBe(0);
     await drainScheduled(t);
-    expect(await t.run((ctx) => ctx.db.get(roomId))).not.toBeNull();
+    expect(await t.run((ctx) => ctx.db.get("rooms", roomId))).not.toBeNull();
   });
 
   it("leaves a room with recent canvas-only activity alone", async () => {
@@ -497,7 +497,7 @@ describe("removeInactiveRooms", () => {
     const result = await t.mutation(internal.cleanup.removeInactiveRooms, {});
     expect(result.roomsScheduled).toBe(0);
     await drainScheduled(t);
-    expect(await t.run((ctx) => ctx.db.get(roomId))).not.toBeNull();
+    expect(await t.run((ctx) => ctx.db.get("rooms", roomId))).not.toBeNull();
   });
 });
 
@@ -508,7 +508,7 @@ describe("cleanupOrphanedData", () => {
     // Delete the room directly, bypassing the cascade, so every owned row is
     // orphaned. The poker tables are swept; the retro tables may hold
     // retained data, and the daily sweep never walks them.
-    await t.run((ctx) => ctx.db.delete(roomId));
+    await t.run((ctx) => ctx.db.delete("rooms", roomId));
 
     await t.run((ctx) => Cleanup.cleanupOrphanedData(ctx));
 
@@ -527,7 +527,7 @@ describe("cleanupOrphanedData", () => {
 
     // Delete the room directly, bypassing the cascade — this is exactly how
     // the old cleanupRoom used to leave issues behind.
-    await t.run((ctx) => ctx.db.delete(roomId));
+    await t.run((ctx) => ctx.db.delete("rooms", roomId));
 
     const result = await t.mutation(internal.maintenance.cleanupOrphanedData, {});
 
@@ -546,7 +546,7 @@ describe("cleanupOrphanedData", () => {
     await seedIssueLink(t, keptIssueId);
     await seedIssueLink(t, goneIssueId);
 
-    await t.run((ctx) => ctx.db.delete(goneIssueId));
+    await t.run((ctx) => ctx.db.delete("issues", goneIssueId));
 
     const result = await t.mutation(internal.maintenance.cleanupOrphanedData, {});
 

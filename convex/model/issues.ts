@@ -73,9 +73,9 @@ export async function getCurrentIssue(
   ctx: QueryCtx,
   roomId: Id<"rooms">
 ): Promise<Doc<"issues"> | null> {
-  const room = await ctx.db.get(roomId);
+  const room = await ctx.db.get("rooms", roomId);
   if (!room?.currentIssueId) return null;
-  return await ctx.db.get(room.currentIssueId);
+  return await ctx.db.get("issues", room.currentIssueId);
 }
 
 /**
@@ -87,7 +87,7 @@ export async function createIssueInRoom(
   ctx: MutationCtx,
   args: { roomId: Id<"rooms">; title: string }
 ): Promise<Id<"issues">> {
-  const room = await ctx.db.get(args.roomId);
+  const room = await ctx.db.get("rooms", args.roomId);
   if (!room) throw new Error("Room not found");
 
   // Get next sequential ID
@@ -104,7 +104,7 @@ export async function createIssueInRoom(
   const maxOrder = issues.length > 0 ? Math.max(...issues.map((i) => i.order)) : 0;
 
   // Update room's next issue number
-  await ctx.db.patch(args.roomId, {
+  await ctx.db.patch("rooms", args.roomId, {
     nextIssueNumber: nextNumber,
   });
   await Rooms.updateRoomActivity(ctx, args.roomId);
@@ -137,10 +137,10 @@ export async function updateIssueTitle(
   ctx: MutationCtx,
   args: { issueId: Id<"issues">; title: string }
 ): Promise<void> {
-  const issue = await ctx.db.get(args.issueId);
+  const issue = await ctx.db.get("issues", args.issueId);
   if (!issue) throw new Error("Issue not found");
 
-  await ctx.db.patch(args.issueId, { title: validateIssueTitle(args.title) });
+  await ctx.db.patch("issues", args.issueId, { title: validateIssueTitle(args.title) });
 
   // Update room activity
   await Rooms.updateRoomActivity(ctx, issue.roomId);
@@ -153,10 +153,10 @@ export async function updateIssueEstimate(
   ctx: MutationCtx,
   args: { issueId: Id<"issues">; finalEstimate: string }
 ): Promise<void> {
-  const issue = await ctx.db.get(args.issueId);
+  const issue = await ctx.db.get("issues", args.issueId);
   if (!issue) throw new Error("Issue not found");
 
-  await ctx.db.patch(args.issueId, { finalEstimate: args.finalEstimate });
+  await ctx.db.patch("issues", args.issueId, { finalEstimate: args.finalEstimate });
 
   // Update room activity
   await Rooms.updateRoomActivity(ctx, issue.roomId);
@@ -169,14 +169,14 @@ export async function removeIssue(
   ctx: MutationCtx,
   issueId: Id<"issues">
 ): Promise<void> {
-  const issue = await ctx.db.get(issueId);
+  const issue = await ctx.db.get("issues", issueId);
   if (!issue) throw new Error("Issue not found");
 
   // Deleting the issue being voted on ends the round cleanly: delegate to the
   // round's abandon (drops the target to a Quick Vote, cancels the countdown,
   // clears votes — and bumps room activity itself) before the issue and its
   // records are removed below.
-  const room = await ctx.db.get(issue.roomId);
+  const room = await ctx.db.get("rooms", issue.roomId);
   if (room?.currentIssueId === issueId) {
     await VotingRound.abandon(ctx, issue.roomId);
   } else {
@@ -188,16 +188,16 @@ export async function removeIssue(
     .query("votingTimestamps")
     .withIndex("by_issue", (q) => q.eq("issueId", issueId))
     .collect();
-  await Promise.all(timestamps.map((ts) => ctx.db.delete(ts._id)));
+  await Promise.all(timestamps.map((ts) => ctx.db.delete("votingTimestamps", ts._id)));
 
   // Delete associated individual vote snapshots
   const individualVotes = await ctx.db
     .query("individualVotes")
     .withIndex("by_issue", (q) => q.eq("issueId", issueId))
     .collect();
-  await Promise.all(individualVotes.map((iv) => ctx.db.delete(iv._id)));
+  await Promise.all(individualVotes.map((iv) => ctx.db.delete("individualVotes", iv._id)));
 
-  await ctx.db.delete(issueId);
+  await ctx.db.delete("issues", issueId);
 }
 
 /**
@@ -244,7 +244,7 @@ export async function reorderIssues(
   // must belong to that room — otherwise issue IDs from another room could be
   // smuggled into the array to scramble its ordering.
   const issues = await Promise.all(
-    args.issueIds.map((issueId) => ctx.db.get(issueId))
+    args.issueIds.map((issueId) => ctx.db.get("issues", issueId))
   );
   for (const issue of issues) {
     if (!issue) throw new Error("Issue not found");
@@ -256,7 +256,7 @@ export async function reorderIssues(
   // Update order for each issue
   await Promise.all(
     args.issueIds.map((issueId, index) =>
-      ctx.db.patch(issueId, { order: index + 1 })
+      ctx.db.patch("issues", issueId, { order: index + 1 })
     )
   );
 
@@ -348,7 +348,7 @@ export async function getEnhancedIssuesForExport(
     uniqueUserIds.add(iv.userId);
   }
   const userDocs = await Promise.all(
-    [...uniqueUserIds].map((uid) => ctx.db.get(uid))
+    [...uniqueUserIds].map((uid) => ctx.db.get("users", uid))
   );
   const userNames = new Map<string, string>();
   for (const doc of userDocs) {

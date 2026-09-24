@@ -128,7 +128,7 @@ describe("permission guard — delete", () => {
     const t = convexTest(schema, modules);
     const roomId = await seedRoom(t, { roomType: "retro" });
     const ownerId = await addMember(t, roomId, "auth-o", "owner");
-    await t.run((ctx) => ctx.db.patch(roomId, { ownerId }));
+    await t.run((ctx) => ctx.db.patch("rooms", roomId, { ownerId }));
     await addMember(t, roomId, "auth-f", "facilitator");
 
     await t
@@ -145,7 +145,7 @@ describe("permission guard — delete", () => {
     const t = convexTest(schema, modules);
     const roomId = await seedRoom(t, { roomType: "retro" });
     const ownerId = await addMember(t, roomId, "auth-o", "owner");
-    await t.run((ctx) => ctx.db.patch(roomId, { ownerId }));
+    await t.run((ctx) => ctx.db.patch("rooms", roomId, { ownerId }));
     await addMember(t, roomId, "auth-f", "facilitator");
     // The owner leaves: their membership is deleted.
     await t.run(async (ctx) => {
@@ -153,7 +153,7 @@ describe("permission guard — delete", () => {
         .query("roomMemberships")
         .withIndex("by_room_user", (q) => q.eq("roomId", roomId).eq("userId", ownerId))
         .first();
-      await ctx.db.delete(m!._id);
+      await ctx.db.delete("roomMemberships", m!._id);
     });
 
     await expect(

@@ -125,7 +125,7 @@ async function cleanupOrphanedRecords<Table extends OrphanSweptTable | "issueLin
   const deletePromises: Promise<void>[] = [];
   for (const doc of docs) {
     if (isOrphan(doc)) {
-      deletePromises.push(ctx.db.delete(doc._id));
+      deletePromises.push(ctx.db.delete(tableName, doc._id));
     }
   }
 

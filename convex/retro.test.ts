@@ -86,11 +86,11 @@ async function seen(t: T, who: string, roomId: Id<"rooms">, stickyId: Id<"retroS
 }
 
 async function retroState(t: T, roomId: Id<"rooms">) {
-  return (await t.run((ctx) => ctx.db.get(roomId)))!.retro!;
+  return (await t.run((ctx) => ctx.db.get("rooms", roomId)))!.retro!;
 }
 
 async function stickyRow(t: T, stickyId: Id<"retroStickies">) {
-  return (await t.run((ctx) => ctx.db.get(stickyId)))!;
+  return (await t.run((ctx) => ctx.db.get("retroStickies", stickyId)))!;
 }
 
 async function stickiesIn(t: T, roomId: Id<"rooms">) {
@@ -146,7 +146,7 @@ describe("retro.create", () => {
     const t = convexTest(schema, modules);
     const { roomId, ownerId } = await seedRetro(t, "4ls");
 
-    const room = (await t.run((ctx) => ctx.db.get(roomId)))!;
+    const room = (await t.run((ctx) => ctx.db.get("rooms", roomId)))!;
     expect(room).toMatchObject({ name: "Sprint 41 retro", roomType: "retro", ownerId, retained: true });
     expect(room.retro).toEqual({
       step: "write",
@@ -183,7 +183,7 @@ describe("retro.create", () => {
 
     const roomId = await as(t, "guest").mutation(api.retro.create, { name: "R" });
 
-    expect((await t.run((ctx) => ctx.db.get(roomId)))?.retained).toBe(false);
+    expect((await t.run((ctx) => ctx.db.get("rooms", roomId)))?.retained).toBe(false);
   });
 });
 
@@ -765,8 +765,8 @@ describe("retro.startNext", () => {
 
     const nextId = await owner.mutation(api.retro.startNext, { roomId });
 
-    const previous = (await t.run((ctx) => ctx.db.get(roomId)))!;
-    const next = (await t.run((ctx) => ctx.db.get(nextId)))!;
+    const previous = (await t.run((ctx) => ctx.db.get("rooms", roomId)))!;
+    const next = (await t.run((ctx) => ctx.db.get("rooms", nextId)))!;
     expect(next).toMatchObject({ name: "Sprint 42 retro", roomType: "retro", ownerId, retained: true });
     expect(next.retro).toEqual({
       step: "write",
@@ -884,7 +884,7 @@ describe("retro.remove", () => {
     await as(t, "owner").mutation(api.retro.remove, { roomId });
     await drainScheduled(t);
 
-    expect(await t.run((ctx) => ctx.db.get(roomId))).toBeNull();
+    expect(await t.run((ctx) => ctx.db.get("rooms", roomId))).toBeNull();
     for (const table of ["retroStickies", "retroStickyVotes", "retroActionItems", "canvasNodes", "roomMemberships"] as const) {
       expect(await t.run((ctx) => ctx.db.query(table).collect()), table).toEqual([]);
     }
@@ -907,10 +907,10 @@ describe("account linking", () => {
       email: "ann@example.com",
     });
 
-    expect(await t.run((ctx) => ctx.db.get(annId))).toBeNull();
+    expect(await t.run((ctx) => ctx.db.get("users", annId))).toBeNull();
     expect((await stickyRow(t, stickyId)).authorId).toBe(permanentId);
     expect((await votesIn(t, roomId)).map((v) => v.voterId)).toEqual([permanentId]);
-    expect(await t.run((ctx) => ctx.db.get(itemId))).toMatchObject({ ownerId: permanentId });
+    expect(await t.run((ctx) => ctx.db.get("retroActionItems", itemId))).toMatchObject({ ownerId: permanentId });
     // The account now reads the sticky, and the vote, as its own.
     expect(await seen(t, "ann-permanent", roomId, stickyId)).toMatchObject({ mine: true, myVote: true });
   });
@@ -992,10 +992,10 @@ describe("transferring a retro", () => {
     await join(t, roomId, "guest");
     const keeperId = await seedUser(t, "keeper", "permanent");
     await join(t, roomId, "keeper");
-    expect((await t.run((ctx) => ctx.db.get(roomId)))!.retained).toBe(false);
+    expect((await t.run((ctx) => ctx.db.get("rooms", roomId)))!.retained).toBe(false);
 
     await as(t, "guest").mutation(api.roles.transferOwnership, { roomId, targetUserId: keeperId });
 
-    expect((await t.run((ctx) => ctx.db.get(roomId)))!).toMatchObject({ ownerId: keeperId, retained: true });
+    expect((await t.run((ctx) => ctx.db.get("rooms", roomId)))!).toMatchObject({ ownerId: keeperId, retained: true });
   });
 });

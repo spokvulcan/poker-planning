@@ -137,7 +137,7 @@ export async function startNextRetro(
   owner: Doc<"users">
 ): Promise<Id<"rooms">> {
   const retro = retroOf(room);
-  if (retro.nextRoomId && (await ctx.db.get(retro.nextRoomId))) {
+  if (retro.nextRoomId && (await ctx.db.get("rooms", retro.nextRoomId))) {
     return retro.nextRoomId;
   }
   const nextRoomId = await createRetro(ctx, {
@@ -161,7 +161,7 @@ export async function startNextRetro(
       })
     )
   );
-  await ctx.db.patch(room._id, { retro: { ...retro, nextRoomId } });
+  await ctx.db.patch("rooms", room._id, { retro: { ...retro, nextRoomId } });
   await updateRoomActivity(ctx, room);
   return nextRoomId;
 }
@@ -259,7 +259,7 @@ export async function getBoard(
   const authorNames = new Map<string, string>();
   if (retro.showAuthors && !hideOthers) {
     const authorIds = [...new Set(stickies.map((s) => s.authorId))];
-    const authors = await Promise.all(authorIds.map((id) => ctx.db.get(id)));
+    const authors = await Promise.all(authorIds.map((id) => ctx.db.get("users", id)));
     authors.forEach((author, i) => authorNames.set(authorIds[i], author?.name ?? "Former member"));
   }
 
@@ -314,7 +314,7 @@ export interface ActionItemView {
 export async function getActionItems(ctx: QueryCtx, roomId: Id<"rooms">): Promise<ActionItemView[]> {
   const items = await actionItemsOf(ctx, roomId);
   const ownerIds = [...new Set(items.flatMap((i) => (i.ownerId ? [i.ownerId] : [])))];
-  const owners = await Promise.all(ownerIds.map((id) => ctx.db.get(id)));
+  const owners = await Promise.all(ownerIds.map((id) => ctx.db.get("users", id)));
   const names = new Map(ownerIds.map((id, i) => [id as string, owners[i]?.name ?? "Former member"]));
   return items
     .map((item) => ({
@@ -351,7 +351,7 @@ export async function listRetrosOf(ctx: QueryCtx, userId: Id<"users">): Promise<
     .withIndex("by_user", (q) => q.eq("userId", userId))
     .order("desc")
     .take(LISTED_MEMBERSHIPS);
-  const rooms = await Promise.all(memberships.map((m) => ctx.db.get(m.roomId)));
+  const rooms = await Promise.all(memberships.map((m) => ctx.db.get("rooms", m.roomId)));
   const retros = rooms
     .filter((room): room is Doc<"rooms"> & { retro: RetroState } => room?.roomType === "retro" && !!room.retro)
     .sort((a, b) => b.createdAt - a.createdAt)
@@ -393,7 +393,7 @@ export async function setStep(ctx: MutationCtx, room: Doc<"rooms">, step: RetroS
     const order = await orderOf(ctx, room._id, retro.columns);
     focusStickyId = order[0];
   }
-  await ctx.db.patch(room._id, { retro: withFocus({ ...retro, step }, focusStickyId) });
+  await ctx.db.patch("rooms", room._id, { retro: withFocus({ ...retro, step }, focusStickyId) });
   if (retro.step === "write") await settleRevealed(ctx, room._id);
   await updateRoomActivity(ctx, room);
 }
@@ -408,7 +408,7 @@ async function settleRevealed(ctx: MutationCtx, roomId: Id<"rooms">): Promise<vo
   const moves = settleOnReveal(
     topics.map((s) => ({ id: s._id, position: s.position, height: s.height ?? FACE_DOWN_HEIGHT }))
   );
-  await Promise.all([...moves].map(([id, position]) => ctx.db.patch(id, { position })));
+  await Promise.all([...moves].map(([id, position]) => ctx.db.patch("retroStickies", id, { position })));
 }
 
 /** Moves the walk one topic on or back. */
@@ -421,7 +421,7 @@ export async function stepDiscussion(
   if (retro.step !== "discuss") throw refusal("stage", "The topics are walked in Discuss.");
   const order = await orderOf(ctx, room._id, retro.columns);
   const focus = stepFocus(order, retro.focusStickyId, direction) as Id<"retroStickies"> | undefined;
-  await ctx.db.patch(room._id, { retro: withFocus(retro, focus) });
+  await ctx.db.patch("rooms", room._id, { retro: withFocus(retro, focus) });
   await updateRoomActivity(ctx, room);
 }
 
@@ -434,7 +434,7 @@ export async function focusTopic(
   const retro = retroOf(room);
   if (retro.step === "write") throw refusal("stage", "Reveal the stickies first.");
   const sticky = await stickyInRoom(ctx, room._id, stickyId);
-  await ctx.db.patch(room._id, {
+  await ctx.db.patch("rooms", room._id, {
     retro: withFocus({ ...retro, step: stepOnFocus(retro.step) }, rootOf(sticky) as Id<"retroStickies">),
   });
   await updateRoomActivity(ctx, room);
@@ -470,7 +470,7 @@ export async function updateSettings(
     patch.votesPerPerson === undefined
       ? retro.votesPerPerson
       : Math.min(Math.max(Math.round(patch.votesPerPerson), MIN_VOTES_PER_PERSON), MAX_VOTES_PER_PERSON);
-  await ctx.db.patch(room._id, {
+  await ctx.db.patch("rooms", room._id, {
     retro: { ...retro, votesPerPerson, showAuthors: patch.showAuthors ?? retro.showAuthors },
   });
   await updateRoomActivity(ctx, room);
@@ -511,7 +511,7 @@ export async function updateColumn(
         }
       : column
   );
-  await ctx.db.patch(room._id, { retro: { ...retro, columns } });
+  await ctx.db.patch("rooms", room._id, { retro: { ...retro, columns } });
   await updateRoomActivity(ctx, room);
 }
 
@@ -529,7 +529,7 @@ export async function addColumn(
     .query("canvasNodes")
     .withIndex("by_room_type", (q) => q.eq("roomId", room._id).eq("type", "pad"))
     .take(MAX_COLUMNS * 2);
-  await ctx.db.patch(room._id, {
+  await ctx.db.patch("rooms", room._id, {
     retro: {
       ...retro,
       columns: [...retro.columns, { id, title: validateColumnTitle(column.title), emoji: validateEmoji(column.emoji), color: column.color }],
@@ -549,12 +549,12 @@ export async function removeColumn(ctx: MutationCtx, room: Doc<"rooms">, columnI
   if (stickies.some((s) => s.columnId === columnId)) {
     throw refusal("forbidden", "Move or delete this column's stickies first.");
   }
-  await ctx.db.patch(room._id, { retro: { ...retro, columns: retro.columns.filter((c) => c.id !== columnId) } });
+  await ctx.db.patch("rooms", room._id, { retro: { ...retro, columns: retro.columns.filter((c) => c.id !== columnId) } });
   const pad = await ctx.db
     .query("canvasNodes")
     .withIndex("by_room_node", (q) => q.eq("roomId", room._id).eq("nodeId", padNodeId(columnId)))
     .unique();
-  if (pad) await ctx.db.delete(pad._id);
+  if (pad) await ctx.db.delete("canvasNodes", pad._id);
   await updateRoomActivity(ctx, room);
 }
 
@@ -601,7 +601,7 @@ async function stickyInRoom(
   roomId: Id<"rooms">,
   stickyId: Id<"retroStickies">
 ): Promise<Doc<"retroStickies">> {
-  const sticky = await ctx.db.get(stickyId);
+  const sticky = await ctx.db.get("retroStickies", stickyId);
   if (!sticky || sticky.roomId !== roomId) throw refusal("missing", "That sticky is gone.");
   return sticky;
 }
@@ -687,7 +687,7 @@ export async function updateSticky(
     throw refusal("missing", "That column is gone.");
   }
   const { gif: _old, ...rest } = sticky;
-  await ctx.db.replace(sticky._id, {
+  await ctx.db.replace("retroStickies", sticky._id, {
     ...rest,
     text,
     ...(gif ? { gif } : {}),
@@ -706,10 +706,10 @@ export async function moveStickies(
   if (moves.length > 200) throw refusal("forbidden", "Too many stickies at once.");
   await Promise.all(
     moves.map(async (move) => {
-      const sticky = await ctx.db.get(move.stickyId);
+      const sticky = await ctx.db.get("retroStickies", move.stickyId);
       // A sticky deleted mid-drag is simply skipped.
       if (!sticky || sticky.roomId !== room._id) return;
-      await ctx.db.patch(sticky._id, { position: validatePosition(move.position) });
+      await ctx.db.patch("retroStickies", sticky._id, { position: validatePosition(move.position) });
     })
   );
   await updateRoomActivity(ctx, room);
@@ -732,11 +732,11 @@ export async function measureStickies(
   if (heights.length > MAX_STICKIES_PER_ROOM) throw refusal("forbidden", "Too many stickies at once.");
   const changed = await Promise.all(
     heights.map(async ({ stickyId, height }) => {
-      const sticky = await ctx.db.get(stickyId);
+      const sticky = await ctx.db.get("retroStickies", stickyId);
       if (!sticky || sticky.roomId !== room._id || sticky.authorId !== author._id) return false;
       const measured = validateHeight(height);
       if (sticky.height === measured) return false;
-      await ctx.db.patch(sticky._id, { height: measured });
+      await ctx.db.patch("retroStickies", sticky._id, { height: measured });
       return true;
     })
   );
@@ -765,9 +765,9 @@ export async function deleteSticky(
   const heir = top?._id;
   if (top) {
     const { stackId: _root, ...topRest } = top;
-    await ctx.db.replace(top._id, { ...topRest, position: sticky.position });
+    await ctx.db.replace("retroStickies", top._id, { ...topRest, position: sticky.position });
     await Promise.all(
-      children.filter((child) => child._id !== top._id).map((child) => ctx.db.patch(child._id, { stackId: top._id }))
+      children.filter((child) => child._id !== top._id).map((child) => ctx.db.patch("retroStickies", child._id, { stackId: top._id }))
     );
   }
 
@@ -776,12 +776,12 @@ export async function deleteSticky(
     .withIndex("by_sticky", (q) => q.eq("stickyId", sticky._id))
     .take(MAX_STICKIES_PER_ROOM * MAX_VOTES_PER_PERSON);
   await Promise.all(
-    votes.map((vote) => (heir ? ctx.db.patch(vote._id, { stickyId: heir }) : ctx.db.delete(vote._id)))
+    votes.map((vote) => (heir ? ctx.db.patch("retroStickyVotes", vote._id, { stickyId: heir }) : ctx.db.delete("retroStickyVotes", vote._id)))
   );
-  await ctx.db.delete(sticky._id);
+  await ctx.db.delete("retroStickies", sticky._id);
 
   if (retro.focusStickyId === sticky._id) {
-    await ctx.db.patch(room._id, { retro: withFocus(retro, heir) });
+    await ctx.db.patch("rooms", room._id, { retro: withFocus(retro, heir) });
   }
   await updateRoomActivity(ctx, room);
 }
@@ -810,11 +810,11 @@ export async function stackSticky(
     .withIndex("by_stack", (q) => q.eq("stackId", sticky._id))
     .take(MAX_STICKIES_PER_ROOM);
   await Promise.all([
-    ctx.db.patch(sticky._id, { stackId: target }),
-    ...children.map((child) => ctx.db.patch(child._id, { stackId: target })),
+    ctx.db.patch("retroStickies", sticky._id, { stackId: target }),
+    ...children.map((child) => ctx.db.patch("retroStickies", child._id, { stackId: target })),
   ]);
   if (retro.focusStickyId === sticky._id) {
-    await ctx.db.patch(room._id, { retro: withFocus(retro, target) });
+    await ctx.db.patch("rooms", room._id, { retro: withFocus(retro, target) });
   }
   await updateRoomActivity(ctx, room);
 }
@@ -829,7 +829,7 @@ export async function unstackSticky(
   retroOf(room);
   if (sticky.stackId === undefined) return;
   const { stackId: _root, ...rest } = sticky;
-  await ctx.db.replace(sticky._id, { ...rest, position: validatePosition(position) });
+  await ctx.db.replace("retroStickies", sticky._id, { ...rest, position: validatePosition(position) });
   await updateRoomActivity(ctx, room);
 }
 
@@ -858,7 +858,7 @@ export async function toggleVote(
   const mine = await myVotesOf(ctx, room._id, voter._id);
   const existing = mine.find((vote) => topicIds.has(vote.stickyId));
   if (existing) {
-    await ctx.db.delete(existing._id);
+    await ctx.db.delete("retroStickyVotes", existing._id);
   } else {
     if (mine.length >= retro.votesPerPerson) {
       throw refusal("budget", "You're out of votes. Take one back to vote again.");
@@ -917,7 +917,7 @@ export async function updateActionItem(
   if (patch.ownerId) await requireOwnerInRoom(ctx, room._id, patch.ownerId);
   const { ownerId: currentOwner, ...rest } = item;
   const ownerId = patch.ownerId === undefined ? currentOwner : (patch.ownerId ?? undefined);
-  await ctx.db.replace(item._id, {
+  await ctx.db.replace("retroActionItems", item._id, {
     ...rest,
     ...(patch.text !== undefined ? { text: validateActionText(patch.text) } : {}),
     ...(patch.done !== undefined ? { done: patch.done } : {}),
@@ -931,7 +931,7 @@ export async function deleteActionItem(
   room: Doc<"rooms">,
   item: Doc<"retroActionItems">
 ): Promise<void> {
-  await ctx.db.delete(item._id);
+  await ctx.db.delete("retroActionItems", item._id);
   await updateRoomActivity(ctx, room);
 }
 

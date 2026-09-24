@@ -71,7 +71,7 @@ export const updateTitle = mutation({
     title: v.string(),
   },
   handler: async (ctx, args) => {
-    const issue = await ctx.db.get(args.issueId);
+    const issue = await ctx.db.get("issues", args.issueId);
     if (!issue) throw new Error("Issue not found");
     await requireCan(ctx, issue.roomId, { kind: "category", category: "issueManagement" });
     await Issues.updateIssueTitle(ctx, args);
@@ -87,7 +87,7 @@ export const updateEstimate = mutation({
     finalEstimate: v.string(),
   },
   handler: async (ctx, args) => {
-    const issue = await ctx.db.get(args.issueId);
+    const issue = await ctx.db.get("issues", args.issueId);
     if (!issue) throw new Error("Issue not found");
     await requireCan(ctx, issue.roomId, { kind: "category", category: "issueManagement" });
     await Issues.updateIssueEstimate(ctx, args);
@@ -100,7 +100,7 @@ export const updateEstimate = mutation({
 export const remove = mutation({
   args: { issueId: v.id("issues") },
   handler: async (ctx, args) => {
-    const issue = await ctx.db.get(args.issueId);
+    const issue = await ctx.db.get("issues", args.issueId);
     if (!issue) throw new Error("Issue not found");
     await requireCan(ctx, issue.roomId, { kind: "category", category: "issueManagement" });
     await Issues.removeIssue(ctx, args.issueId);

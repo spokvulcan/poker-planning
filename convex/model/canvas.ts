@@ -93,7 +93,7 @@ export async function relayoutNodes(
   // Execute all updates in parallel
   await Promise.all(
     updateOperations.map((op) =>
-      ctx.db.patch(op.node._id, {
+      ctx.db.patch("canvasNodes", op.node._id, {
         position: op.position,
         lastUpdatedAt: now,
       })
@@ -108,7 +108,7 @@ export async function initializeCanvasNodes(
   ctx: MutationCtx,
   args: { roomId: Id<"rooms"> }
 ): Promise<void> {
-  const room = await ctx.db.get(args.roomId);
+  const room = await ctx.db.get("rooms", args.roomId);
   if (!room || room.roomType !== "canvas") {
     throw new Error("Invalid canvas room");
   }
@@ -190,7 +190,7 @@ export async function updateNodePosition(
     throw new Error("Node is locked");
   }
 
-  await ctx.db.patch(node._id, {
+  await ctx.db.patch("canvasNodes", node._id, {
     position: args.position,
     lastUpdatedBy: args.userId,
     lastUpdatedAt: Date.now(),
@@ -290,7 +290,7 @@ export async function removePlayerNode(
     .unique();
 
   if (node) {
-    await ctx.db.delete(node._id);
+    await ctx.db.delete("canvasNodes", node._id);
   }
 
   // Trigger relayout to rebalance remaining nodes
@@ -323,13 +323,13 @@ export async function createNoteNode(
   }
 
   // Get issue title for display
-  const issue = await ctx.db.get(args.issueId);
+  const issue = await ctx.db.get("issues", args.issueId);
   if (!issue) {
     throw new Error("Issue not found");
   }
 
   // Get user name for lastUpdatedBy display
-  const user = await ctx.db.get(args.userId);
+  const user = await ctx.db.get("users", args.userId);
 
   const id = await ctx.db.insert("canvasNodes", {
     roomId: args.roomId,
@@ -383,9 +383,9 @@ export async function updateNoteContent(
   }
 
   // Get user name for display
-  const user = await ctx.db.get(args.userId);
+  const user = await ctx.db.get("users", args.userId);
 
-  await ctx.db.patch(node._id, {
+  await ctx.db.patch("canvasNodes", node._id, {
     data: {
       ...node.data,
       content: args.content,
@@ -421,7 +421,7 @@ export async function deleteNoteNode(
     throw new Error("Node is not a note");
   }
 
-  await ctx.db.delete(node._id);
+  await ctx.db.delete("canvasNodes", node._id);
 
   await Rooms.updateRoomActivity(ctx, args.roomId);
 }

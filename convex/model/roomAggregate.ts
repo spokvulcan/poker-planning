@@ -104,8 +104,8 @@ export async function deleteRoomAggregateChunk(
       )
     ).flat();
     await Promise.all([
-      ...links.map((link) => ctx.db.delete(link._id)),
-      ...issueBatch.map((issue) => ctx.db.delete(issue._id)),
+      ...links.map((link) => ctx.db.delete("issueLinks", link._id)),
+      ...issueBatch.map((issue) => ctx.db.delete("issues", issue._id)),
     ]);
     return { done: false, deleted: issueBatch.length + links.length };
   }
@@ -132,7 +132,7 @@ export async function deleteRoomAggregateChunk(
       }
     }
 
-    await Promise.all(rows.map((row) => ctx.db.delete(row._id)));
+    await Promise.all(rows.map((row) => ctx.db.delete(table, row._id)));
     deleted += rows.length;
     if (rows.length === batchSize) anyFullBatch = true;
   }
@@ -141,6 +141,6 @@ export async function deleteRoomAggregateChunk(
   }
 
   // Phase 3: the room itself, last.
-  await ctx.db.delete(roomId);
+  await ctx.db.delete("rooms", roomId);
   return { done: true, deleted: deleted + 1 };
 }

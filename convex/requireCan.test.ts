@@ -77,7 +77,7 @@ async function removeMembership(
         q.eq("roomId", roomId).eq("userId", userId)
       )
       .first();
-    if (membership) await ctx.db.delete(membership._id);
+    if (membership) await ctx.db.delete("roomMemberships", membership._id);
   });
 }
 
@@ -88,7 +88,7 @@ describe("permission guard (requireCan) — category actions through rooms.renam
     await addMember(t, roomId, "auth-p");
     const asP = t.withIdentity({ subject: "auth-p" });
     await asP.mutation(api.rooms.rename, { roomId, name: "New name" });
-    const room = await t.run((ctx) => ctx.db.get(roomId));
+    const room = await t.run((ctx) => ctx.db.get("rooms", roomId));
     expect(room!.name).toBe("New name");
   });
 
@@ -112,7 +112,7 @@ describe("permission guard (requireCan) — category actions through rooms.renam
     await addMember(t, roomId, "auth-f", "facilitator");
     const asF = t.withIdentity({ subject: "auth-f" });
     await asF.mutation(api.rooms.rename, { roomId, name: "New name" });
-    const room = await t.run((ctx) => ctx.db.get(roomId));
+    const room = await t.run((ctx) => ctx.db.get("rooms", roomId));
     expect(room!.name).toBe("New name");
   });
 
@@ -134,10 +134,10 @@ describe("permission guard (requireCan) — category actions through rooms.renam
       permissions: permissions({ roomSettings: "owner" }),
     });
     const ownerId = await addMember(t, roomId, "auth-o", "owner");
-    await t.run((ctx) => ctx.db.patch(roomId, { ownerId }));
+    await t.run((ctx) => ctx.db.patch("rooms", roomId, { ownerId }));
     const asO = t.withIdentity({ subject: "auth-o" });
     await asO.mutation(api.rooms.rename, { roomId, name: "New name" });
-    const room = await t.run((ctx) => ctx.db.get(roomId));
+    const room = await t.run((ctx) => ctx.db.get("rooms", roomId));
     expect(room!.name).toBe("New name");
   });
 });
@@ -149,7 +149,7 @@ describe("permission guard — lockdown (ADR-0001)", () => {
       permissions: permissions({ roomSettings: "owner" }),
     });
     const ownerId = await addMember(t, roomId, "auth-o", "owner");
-    await t.run((ctx) => ctx.db.patch(roomId, { ownerId }));
+    await t.run((ctx) => ctx.db.patch("rooms", roomId, { ownerId }));
     await addMember(t, roomId, "auth-f", "facilitator");
     // The owner explicitly leaves → lockdown.
     await removeMembership(t, roomId, ownerId);
@@ -173,13 +173,13 @@ describe("permission guard — lockdown (ADR-0001)", () => {
       permissions: permissions({ roomSettings: "facilitators" }),
     });
     const ownerId = await addMember(t, roomId, "auth-o", "owner");
-    await t.run((ctx) => ctx.db.patch(roomId, { ownerId }));
+    await t.run((ctx) => ctx.db.patch("rooms", roomId, { ownerId }));
     await addMember(t, roomId, "auth-f", "facilitator");
     await removeMembership(t, roomId, ownerId);
 
     const asF = t.withIdentity({ subject: "auth-f" });
     await asF.mutation(api.rooms.rename, { roomId, name: "New name" });
-    const room = await t.run((ctx) => ctx.db.get(roomId));
+    const room = await t.run((ctx) => ctx.db.get("rooms", roomId));
     expect(room!.name).toBe("New name");
   });
 });
@@ -200,7 +200,7 @@ describe("permission guard — relationship actions through users.remove", () =>
     const t = convexTest(schema, modules);
     const roomId = await seedRoom(t);
     const ownerId = await addMember(t, roomId, "auth-o", "owner");
-    await t.run((ctx) => ctx.db.patch(roomId, { ownerId }));
+    await t.run((ctx) => ctx.db.patch("rooms", roomId, { ownerId }));
     await addMember(t, roomId, "auth-f", "facilitator");
     const asF = t.withIdentity({ subject: "auth-f" });
     await expect(
@@ -241,7 +241,7 @@ describe("explicit-user guard variant (requireCanForUser)", () => {
       .withIdentity({ subject: "auth-f" })
       .run((ctx) => requireCan(ctx, roomId, spec));
     const viaVariant = await t.run(async (ctx) => {
-      const user = await ctx.db.get(userId);
+      const user = await ctx.db.get("users", userId);
       return requireCanForUser(ctx, user!, roomId, spec);
     });
 
@@ -262,7 +262,7 @@ describe("explicit-user guard variant (requireCanForUser)", () => {
     ).rejects.toThrow("Only facilitators and the owner can do this.");
     await expect(
       t.run(async (ctx) => {
-        const user = await ctx.db.get(userId);
+        const user = await ctx.db.get("users", userId);
         return requireCanForUser(ctx, user!, roomId, spec);
       })
     ).rejects.toThrow("Only facilitators and the owner can do this.");
@@ -280,7 +280,7 @@ describe("explicit-user guard variant (requireCanForUser)", () => {
     );
     await expect(
       t.run(async (ctx) => {
-        const user = await ctx.db.get(userId);
+        const user = await ctx.db.get("users", userId);
         return requireCanForUser(ctx, user!, roomId, spec);
       })
     ).rejects.toThrow("Not a member of this room");

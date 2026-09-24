@@ -125,9 +125,9 @@ export async function applyJiraWebhookEvent(
 
   if (event.eventType === "jira:issue_updated" && event.issueSummary) {
     // Update issue title
-    const issue = await ctx.db.get(link.issueId);
+    const issue = await ctx.db.get("issues", link.issueId);
     if (issue) {
-      await ctx.db.patch(link.issueId, {
+      await ctx.db.patch("issues", link.issueId, {
         title: `${event.issueKey} - ${event.issueSummary}`,
       });
       // The title change feeds the room's analytics history — bump activity
@@ -135,11 +135,11 @@ export async function applyJiraWebhookEvent(
       // stale title.
       await Rooms.updateRoomActivity(ctx, issue.roomId);
     }
-    await ctx.db.patch(link._id, { lastSyncedAt: Date.now() });
+    await ctx.db.patch("issueLinks", link._id, { lastSyncedAt: Date.now() });
   }
 
   if (event.eventType === "jira:issue_deleted") {
     // Remove the link (keep the AgileKit issue)
-    await ctx.db.delete(link._id);
+    await ctx.db.delete("issueLinks", link._id);
   }
 }

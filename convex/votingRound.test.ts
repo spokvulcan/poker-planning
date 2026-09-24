@@ -34,7 +34,7 @@ async function seedRoom(
 }
 
 async function readRoom(t: T, roomId: Id<"rooms">) {
-  return t.run((ctx) => ctx.db.get(roomId));
+  return t.run((ctx) => ctx.db.get("rooms", roomId));
 }
 
 async function scheduledFns(t: T) {
@@ -102,7 +102,7 @@ async function clearVotes(t: T, roomId: Id<"rooms">): Promise<void> {
       .query("votes")
       .withIndex("by_room", (q) => q.eq("roomId", roomId))
       .collect();
-    await Promise.all(votes.map((v) => ctx.db.delete(v._id)));
+    await Promise.all(votes.map((v) => ctx.db.delete("votes", v._id)));
   });
 }
 
@@ -172,7 +172,7 @@ describe("VotingRound.autoReveal", () => {
   it("no-ops when the room is gone", async () => {
     const t = convexTest(schema, modules);
     const roomId = await seedRoom(t);
-    await t.run((ctx) => ctx.db.delete(roomId));
+    await t.run((ctx) => ctx.db.delete("rooms", roomId));
     // Should not throw.
     await t.run((ctx) => VotingRound.autoReveal(ctx, { roomId, token: 123 }));
     expect(await readRoom(t, roomId)).toBeNull();
@@ -189,7 +189,7 @@ describe("dropVoter — a roster exit reconciles the round", () => {
         .withIndex("by_room", (q) => q.eq("roomId", roomId))
         .collect();
       const m = members.find((x) => x.userId === userId);
-      if (m) await ctx.db.delete(m._id);
+      if (m) await ctx.db.delete("roomMemberships", m._id);
     });
   }
 
@@ -351,7 +351,7 @@ describe("early-reveal regression (issue #199)", () => {
       status: "pending",
       order: 1,
     });
-    await t.run((ctx) => ctx.db.patch(roomId, { currentIssueId: issueId }));
+    await t.run((ctx) => ctx.db.patch("rooms", roomId, { currentIssueId: issueId }));
     const a = await addMember(t, roomId);
     const b = await addMember(t, roomId);
     await rawVote(t, roomId, a);
@@ -438,12 +438,12 @@ describe("VotingRound.abandon", () => {
     const t = convexTest(schema, modules);
     const roomId = await seedRoom(t);
     const issueId = await seedIssue(t, roomId, { status: "voting" });
-    await t.run((ctx) => ctx.db.patch(roomId, { currentIssueId: issueId }));
+    await t.run((ctx) => ctx.db.patch("rooms", roomId, { currentIssueId: issueId }));
 
     await t.run((ctx) => VotingRound.abandon(ctx, roomId));
 
     const room = await readRoom(t, roomId);
-    const issue = await t.run((ctx) => ctx.db.get(issueId));
+    const issue = await t.run((ctx) => ctx.db.get("issues", issueId));
     expect(room?.currentIssueId).toBeUndefined(); // Quick Vote
     expect(room?.isGameOver).toBe(false); // still in `voting`
     expect(issue?.status).toBe("pending");
@@ -453,7 +453,7 @@ describe("VotingRound.abandon", () => {
     const t = convexTest(schema, modules);
     const roomId = await seedRoom(t);
     const issueId = await seedIssue(t, roomId, { status: "voting" });
-    await t.run((ctx) => ctx.db.patch(roomId, { currentIssueId: issueId }));
+    await t.run((ctx) => ctx.db.patch("rooms", roomId, { currentIssueId: issueId }));
     const a = await addMember(t, roomId);
     await rawVote(t, roomId, a);
 
@@ -472,7 +472,7 @@ describe("VotingRound.abandon", () => {
     const t = convexTest(schema, modules);
     const roomId = await seedRoom(t);
     const issueId = await seedIssue(t, roomId, { status: "voting" });
-    await t.run((ctx) => ctx.db.patch(roomId, { currentIssueId: issueId }));
+    await t.run((ctx) => ctx.db.patch("rooms", roomId, { currentIssueId: issueId }));
     await t.run((ctx) =>
       ctx.db.insert("votingTimestamps", {
         roomId,
@@ -498,7 +498,7 @@ describe("VotingRound.abandon", () => {
     const t = convexTest(schema, modules);
     const roomId = await seedRoom(t, { autoCompleteVoting: true });
     const issueId = await seedIssue(t, roomId, { status: "voting" });
-    await t.run((ctx) => ctx.db.patch(roomId, { currentIssueId: issueId }));
+    await t.run((ctx) => ctx.db.patch("rooms", roomId, { currentIssueId: issueId }));
     const memberId = await addMember(t, roomId);
     await armCountdown(t, roomId, [memberId]);
     const scheduledId = (await readRoom(t, roomId))!.autoRevealScheduledId!;
@@ -531,14 +531,14 @@ describe("removeIssue of the current issue (delegates to abandon)", () => {
     const t = convexTest(schema, modules);
     const roomId = await seedRoom(t);
     const issueId = await seedIssue(t, roomId, { status: "voting" });
-    await t.run((ctx) => ctx.db.patch(roomId, { currentIssueId: issueId }));
+    await t.run((ctx) => ctx.db.patch("rooms", roomId, { currentIssueId: issueId }));
     const a = await addMember(t, roomId);
     await rawVote(t, roomId, a);
 
     await t.run((ctx) => Issues.removeIssue(ctx, issueId));
 
     const room = await readRoom(t, roomId);
-    const issue = await t.run((ctx) => ctx.db.get(issueId));
+    const issue = await t.run((ctx) => ctx.db.get("issues", issueId));
     const votes = await t.run((ctx) =>
       ctx.db
         .query("votes")
@@ -581,7 +581,7 @@ describe("VotingRound.start", () => {
     await t.run((ctx) => VotingRound.start(ctx, { roomId, issueId }));
 
     const room = await readRoom(t, roomId);
-    const issue = await t.run((ctx) => ctx.db.get(issueId));
+    const issue = await t.run((ctx) => ctx.db.get("issues", issueId));
     const timestamps = await timingFor(t, issueId);
     expect(room?.currentIssueId).toBe(issueId);
     expect(room?.isGameOver).toBe(false);
@@ -618,14 +618,14 @@ describe("VotingRound.start", () => {
     const roomId = await seedRoom(t);
     const first = await seedIssue(t, roomId, { status: "voting", order: 0 });
     const second = await seedIssue(t, roomId, { status: "pending", order: 1 });
-    await t.run((ctx) => ctx.db.patch(roomId, { currentIssueId: first }));
+    await t.run((ctx) => ctx.db.patch("rooms", roomId, { currentIssueId: first }));
 
     await t.run((ctx) => VotingRound.start(ctx, { roomId, issueId: second }));
 
     const room = await readRoom(t, roomId);
     expect(room?.currentIssueId).toBe(second);
-    expect((await t.run((ctx) => ctx.db.get(first)))?.status).toBe("pending");
-    expect((await t.run((ctx) => ctx.db.get(second)))?.status).toBe("voting");
+    expect((await t.run((ctx) => ctx.db.get("issues", first)))?.status).toBe("pending");
+    expect((await t.run((ctx) => ctx.db.get("issues", second)))?.status).toBe("voting");
   });
 });
 
@@ -635,7 +635,7 @@ describe("VotingRound.reset", () => {
     const roomId = await seedRoom(t);
     const issueId = await seedIssue(t, roomId, { status: "completed" });
     await t.run((ctx) =>
-      ctx.db.patch(roomId, { currentIssueId: issueId, isGameOver: true })
+      ctx.db.patch("rooms", roomId, { currentIssueId: issueId, isGameOver: true })
     );
     await t.run((ctx) =>
       ctx.db.insert("votingTimestamps", {
@@ -653,7 +653,7 @@ describe("VotingRound.reset", () => {
     await t.run((ctx) => VotingRound.reset(ctx, roomId));
 
     const room = await readRoom(t, roomId);
-    const issue = await t.run((ctx) => ctx.db.get(issueId));
+    const issue = await t.run((ctx) => ctx.db.get("issues", issueId));
     const ts = await timingFor(t, issueId);
     expect(room?.isGameOver).toBe(false);
     expect(room?.currentIssueId).toBe(issueId); // same target
@@ -669,7 +669,7 @@ describe("VotingRound.reveal", () => {
     const t = convexTest(schema, modules);
     const roomId = await seedRoom(t);
     const issueId = await seedIssue(t, roomId, { status: "voting" });
-    await t.run((ctx) => ctx.db.patch(roomId, { currentIssueId: issueId }));
+    await t.run((ctx) => ctx.db.patch("rooms", roomId, { currentIssueId: issueId }));
     const a = await addMember(t, roomId);
     const b = await addMember(t, roomId);
     const c = await addMember(t, roomId);
@@ -680,7 +680,7 @@ describe("VotingRound.reveal", () => {
     await t.run((ctx) => VotingRound.reveal(ctx, roomId));
 
     const room = await readRoom(t, roomId);
-    const issue = await t.run((ctx) => ctx.db.get(issueId));
+    const issue = await t.run((ctx) => ctx.db.get("issues", issueId));
     expect(room?.isGameOver).toBe(true);
     expect(issue?.status).toBe("completed");
     expect(issue?.finalEstimate).toBe("5"); // mode
@@ -695,7 +695,7 @@ describe("VotingRound.reveal", () => {
     const t = convexTest(schema, modules);
     const roomId = await seedRoom(t); // seedRoom sets no votingScale
     const issueId = await seedIssue(t, roomId, { status: "voting" });
-    await t.run((ctx) => ctx.db.patch(roomId, { currentIssueId: issueId }));
+    await t.run((ctx) => ctx.db.patch("rooms", roomId, { currentIssueId: issueId }));
     const a = await addMember(t, roomId);
     const b = await addMember(t, roomId);
     const c = await addMember(t, roomId);
@@ -705,7 +705,7 @@ describe("VotingRound.reveal", () => {
 
     await t.run((ctx) => VotingRound.reveal(ctx, roomId));
 
-    const issue = await t.run((ctx) => ctx.db.get(issueId));
+    const issue = await t.run((ctx) => ctx.db.get("issues", issueId));
     expect(issue?.voteStats?.average).toBe(4);
     expect(issue?.voteStats?.median).toBe(4);
   });
@@ -714,7 +714,7 @@ describe("VotingRound.reveal", () => {
     const t = convexTest(schema, modules);
     const roomId = await seedRoom(t);
     const issueId = await seedIssue(t, roomId, { status: "voting" });
-    await t.run((ctx) => ctx.db.patch(roomId, { currentIssueId: issueId }));
+    await t.run((ctx) => ctx.db.patch("rooms", roomId, { currentIssueId: issueId }));
     const a = await addMember(t, roomId);
     const b = await addMember(t, roomId);
     await rawVote(t, roomId, a, "5");
@@ -736,7 +736,7 @@ describe("VotingRound.reveal", () => {
     const t = convexTest(schema, modules);
     const roomId = await seedRoom(t);
     const issueId = await seedIssue(t, roomId, { status: "voting" });
-    await t.run((ctx) => ctx.db.patch(roomId, { currentIssueId: issueId }));
+    await t.run((ctx) => ctx.db.patch("rooms", roomId, { currentIssueId: issueId }));
     const a = await addMember(t, roomId);
     const b = await addMember(t, roomId);
     const c = await addMember(t, roomId);
@@ -746,7 +746,7 @@ describe("VotingRound.reveal", () => {
 
     await t.run((ctx) => VotingRound.reveal(ctx, roomId));
 
-    const issue = await t.run((ctx) => ctx.db.get(issueId));
+    const issue = await t.run((ctx) => ctx.db.get("issues", issueId));
     expect(issue?.voteStats?.voteCount).toBe(2); // "?" excluded
     expect(issue?.voteStats?.agreement).toBe(100); // 2 of 2 on "5"
     expect(issue?.finalEstimate).toBe("5");
@@ -1165,7 +1165,7 @@ describe("VotingRound.setAutoComplete", () => {
         isSpectator: false,
         joinedAt: Date.now(),
       });
-      await ctx.db.patch(roomId, {
+      await ctx.db.patch("rooms", roomId, {
         permissions: {
           revealCards: "everyone",
           gameFlow: "everyone",

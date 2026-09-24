@@ -95,7 +95,7 @@ export async function getUserMemberships(
   // Fetch room details for each membership
   const results = await Promise.all(
     memberships.map(async (membership) => {
-      const room = await ctx.db.get(membership.roomId);
+      const room = await ctx.db.get("rooms", membership.roomId);
       if (!room || room.roomType === "retro") return null;
       return { membership, room };
     })
@@ -273,7 +273,7 @@ export async function refreshRoomAnalyticsSnapshot(
   ]);
   const computedAt = Date.now();
   if (existing) {
-    await ctx.db.patch(existing._id, { history, computedAt });
+    await ctx.db.patch("roomAnalyticsSnapshots", existing._id, { history, computedAt });
   } else {
     await ctx.db.insert("roomAnalyticsSnapshots", {
       roomId,
@@ -302,7 +302,7 @@ export async function invalidateRoomAnalyticsSnapshots(
         .query("roomAnalyticsSnapshots")
         .withIndex("by_room", (q) => q.eq("roomId", roomId))
         .first();
-      if (snapshot) await ctx.db.delete(snapshot._id);
+      if (snapshot) await ctx.db.delete("roomAnalyticsSnapshots", snapshot._id);
     })
   );
 }
@@ -485,7 +485,7 @@ export async function getVoterAlignment(
 
   // Batch-resolve user names
   const userIds = [...new Set(votes.map((v) => v.userId))];
-  const resolvedUsers = await Promise.all(userIds.map((id) => ctx.db.get(id)));
+  const resolvedUsers = await Promise.all(userIds.map((id) => ctx.db.get("users", id)));
   const userNames: Record<string, string> = {};
   userIds.forEach((id, i) => {
     userNames[id] = resolvedUsers[i]?.name ?? "Unknown";

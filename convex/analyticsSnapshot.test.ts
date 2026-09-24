@@ -103,7 +103,7 @@ describe("snapshot write path — round completion", () => {
 
     // The snapshot is fresh against the room's own activity clock, so the
     // read path serves it (see the freshness rule in model/analytics.ts).
-    const room = await t.run((ctx) => ctx.db.get(roomId));
+    const room = await t.run((ctx) => ctx.db.get("rooms", roomId));
     expect(snapshot!.computedAt).toBeGreaterThanOrEqual(room!.lastActivityAt);
   });
 
@@ -220,7 +220,7 @@ describe("snapshot read path — fallback vs snapshot equivalence", () => {
         .query("issues")
         .withIndex("by_room", (q) => q.eq("roomId", roomId))
         .collect();
-      await Promise.all(issues.map((i) => ctx.db.delete(i._id)));
+      await Promise.all(issues.map((i) => ctx.db.delete("issues", i._id)));
     });
 
     const asA = t.withIdentity({ subject: "auth-a" });

@@ -80,7 +80,7 @@ async function seedRoomMidRound(t: T): Promise<{
       createdAt: Date.now(),
       order: 0,
     });
-    await ctx.db.patch(roomId, { currentIssueId: issueId });
+    await ctx.db.patch("rooms", roomId, { currentIssueId: issueId });
     for (const auth of ["auth-v1", "auth-v2"]) {
       const voterId = await ctx.db.insert("users", {
         authUserId: auth,

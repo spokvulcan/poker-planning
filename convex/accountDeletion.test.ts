@@ -55,19 +55,19 @@ describe("deleting an account", () => {
 
     await as(t, "leaver").mutation(api.users.deleteUser, {});
 
-    expect(await t.run((ctx) => ctx.db.get(leaverId))).toBeNull();
+    expect(await t.run((ctx) => ctx.db.get("users", leaverId))).toBeNull();
     expect(
       await t.run((ctx) =>
         ctx.db.query("roomMemberships").withIndex("by_user", (q) => q.eq("userId", leaverId)).collect()
       )
     ).toEqual([]);
-    expect(await t.run((ctx) => ctx.db.get(stickyId))).toMatchObject({ text: "Mine", authorId: leaverId });
+    expect(await t.run((ctx) => ctx.db.get("retroStickies", stickyId))).toMatchObject({ text: "Mine", authorId: leaverId });
     const votes = await t.run((ctx) =>
       ctx.db.query("retroStickyVotes").withIndex("by_voter", (q) => q.eq("voterId", leaverId)).collect()
     );
     expect(votes).toHaveLength(1);
-    expect(await t.run((ctx) => ctx.db.get(itemId))).toMatchObject({ ownerId: leaverId });
-    expect(await t.run((ctx) => ctx.db.get(roomId))).not.toBeNull();
+    expect(await t.run((ctx) => ctx.db.get("retroActionItems", itemId))).toMatchObject({ ownerId: leaverId });
+    expect(await t.run((ctx) => ctx.db.get("rooms", roomId))).not.toBeNull();
   });
 
   it("the reads render the dangling references as Former member, and the vote still counts", async () => {
@@ -108,11 +108,11 @@ describe("deleting an account", () => {
     await joinRoom(t, roomId, "guest");
     await seedUser(t, "keeper", "permanent");
     await joinRoom(t, roomId, "keeper");
-    expect((await t.run((ctx) => ctx.db.get(roomId)))!.retained).toBe(false);
+    expect((await t.run((ctx) => ctx.db.get("rooms", roomId)))!.retained).toBe(false);
 
     await as(t, "guest").mutation(api.users.deleteUser, {});
 
-    expect((await t.run((ctx) => ctx.db.get(roomId)))!.retained).toBe(true);
+    expect((await t.run((ctx) => ctx.db.get("rooms", roomId)))!.retained).toBe(true);
   });
 
   it("deletes a retro nobody else joined along with the account", async () => {
@@ -123,12 +123,12 @@ describe("deleting an account", () => {
 
     await as(t, "solo").mutation(api.users.deleteUser, {});
     // The room cascade runs on real timers and reschedules itself until done.
-    for (let i = 0; i < 50 && (await t.run((ctx) => ctx.db.get(roomId))); i++) {
+    for (let i = 0; i < 50 && (await t.run((ctx) => ctx.db.get("rooms", roomId))); i++) {
       await new Promise((resolve) => setTimeout(resolve, 5));
       await t.finishInProgressScheduledFunctions();
     }
 
-    expect(await t.run((ctx) => ctx.db.get(roomId))).toBeNull();
+    expect(await t.run((ctx) => ctx.db.get("rooms", roomId))).toBeNull();
   });
 });
 

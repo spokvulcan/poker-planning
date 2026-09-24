@@ -112,7 +112,7 @@ export async function requireRoomReader(
 }> {
   const { identity, user } = await requireAuthUser(ctx);
   const [room, membership] = await Promise.all([
-    ctx.db.get(roomId),
+    ctx.db.get("rooms", roomId),
     getMembership(ctx, roomId, user._id),
   ]);
   if (!room) {
@@ -246,7 +246,7 @@ async function guardRoomAction(
   spec: RequireCanSpec,
   targetUserId?: Id<"users">
 ): Promise<GuardBundle> {
-  const room = await ctx.db.get(roomId);
+  const room = await ctx.db.get("rooms", roomId);
   if (!room) {
     throw new Error("Room not found");
   }

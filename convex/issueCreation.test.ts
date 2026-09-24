@@ -56,7 +56,7 @@ async function listRoomIssues(t: T, roomId: Id<"rooms">) {
 }
 
 async function readRoom(t: T, roomId: Id<"rooms">) {
-  return t.run((ctx) => ctx.db.get(roomId));
+  return t.run((ctx) => ctx.db.get("rooms", roomId));
 }
 
 describe("issue creation (createIssueInRoom)", () => {
@@ -99,7 +99,7 @@ describe("issue creation (createIssueInRoom)", () => {
       });
     }
     await t.run((ctx) =>
-      ctx.db.patch(roomId, { nextIssueNumber: MAX_ISSUES_PER_ROOM })
+      ctx.db.patch("rooms", roomId, { nextIssueNumber: MAX_ISSUES_PER_ROOM })
     );
 
     await expect(createLocal(t, roomId, "One too many")).rejects.toThrow(
@@ -128,10 +128,10 @@ describe("issue creation (createIssueInRoom)", () => {
         order: 7,
       })
     );
-    await t.run((ctx) => ctx.db.patch(roomId, { nextIssueNumber: 1 }));
+    await t.run((ctx) => ctx.db.patch("rooms", roomId, { nextIssueNumber: 1 }));
 
     const importedId = await importJira(t, roomId, "PROJ-2");
-    const imported = await t.run((ctx) => ctx.db.get(importedId!));
+    const imported = await t.run((ctx) => ctx.db.get("issues", importedId!));
     expect(imported?.order).toBe(8);
     expect(imported?.sequentialId).toBe(2);
   });

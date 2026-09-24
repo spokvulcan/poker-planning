@@ -57,14 +57,14 @@ describe("retained: writers", () => {
     const roomId = await t.run((ctx) =>
       Rooms.createRoom(ctx, { name: "New", votingScale: { type: "fibonacci" } })
     );
-    const room = await t.run((ctx) => ctx.db.get(roomId));
+    const room = await t.run((ctx) => ctx.db.get("rooms", roomId));
     expect(room?.retained).toBe(false);
   });
 
   it("the analytics seed helper stamps retained: false", async () => {
     const t = convexTest(schema, modules);
     const roomId = await seedRoom(t);
-    const room = await t.run((ctx) => ctx.db.get(roomId));
+    const room = await t.run((ctx) => ctx.db.get("rooms", roomId));
     expect(room?.retained).toBe(false);
   });
 
@@ -75,9 +75,9 @@ describe("retained: writers", () => {
 
     const retainedFor = async (ownerId: Id<"users">) => {
       const roomId = await t.run(async (ctx) =>
-        Retro.createRetro(ctx, { name: "Retro", owner: (await ctx.db.get(ownerId))! })
+        Retro.createRetro(ctx, { name: "Retro", owner: (await ctx.db.get("users", ownerId))! })
       );
-      return (await t.run((ctx) => ctx.db.get(roomId)))?.retained;
+      return (await t.run((ctx) => ctx.db.get("rooms", roomId)))?.retained;
     };
 
     expect(await retainedFor(guestId)).toBe(false);
@@ -90,14 +90,14 @@ describe("retained: account linking", () => {
   async function seedGuestRooms(t: T) {
     const guestId = await seedUser(t, "auth-guest", "G");
     const retroId = await t.run(async (ctx) =>
-      Retro.createRetro(ctx, { name: "Retro", owner: (await ctx.db.get(guestId))! })
+      Retro.createRetro(ctx, { name: "Retro", owner: (await ctx.db.get("users", guestId))! })
     );
     const pokerId = await t.run((ctx) => Rooms.createRoom(ctx, { name: "Poker", ownerId: guestId }));
     return { retroId, pokerId };
   }
 
   const retainedOf = async (t: T, roomId: Id<"rooms">) =>
-    (await t.run((ctx) => ctx.db.get(roomId)))?.retained;
+    (await t.run((ctx) => ctx.db.get("rooms", roomId)))?.retained;
 
   it("a guest who signs in keeps the retros they own, and only the retros", async () => {
     const t = convexTest(schema, modules);
@@ -125,7 +125,7 @@ describe("retained: account linking", () => {
       email: "perm@example.com",
     });
 
-    expect(await t.run((ctx) => ctx.db.get(retroId))).toMatchObject({
+    expect(await t.run((ctx) => ctx.db.get("rooms", retroId))).toMatchObject({
       ownerId: permanentId,
       retained: true,
     });
@@ -141,7 +141,7 @@ describe("removeInactiveRooms: retention", () => {
 
     expect(result.roomsScheduled).toBe(0);
     expect(await scheduledCascadeRoomIds(t)).toEqual(new Set());
-    expect(await t.run((ctx) => ctx.db.get(keptId))).not.toBeNull();
+    expect(await t.run((ctx) => ctx.db.get("rooms", keptId))).not.toBeNull();
   });
 
   it("a non-retained room is scheduled for deletion after five quiet days", async () => {
@@ -153,7 +153,7 @@ describe("removeInactiveRooms: retention", () => {
 
     expect(result.roomsScheduled).toBe(1);
     expect(await scheduledCascadeRoomIds(t)).toEqual(new Set([staleId]));
-    expect(await t.run((ctx) => ctx.db.get(activeId))).not.toBeNull();
+    expect(await t.run((ctx) => ctx.db.get("rooms", activeId))).not.toBeNull();
   });
 
   it("retention is the only discriminator: roomType does not matter", async () => {

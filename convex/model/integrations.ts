@@ -60,7 +60,7 @@ export async function saveConnection(
   const now = Date.now();
 
   if (existing) {
-    await ctx.db.patch(existing._id, {
+    await ctx.db.patch("integrationConnections", existing._id, {
       encryptedAccessToken: args.encryptedAccessToken,
       accessTokenIv: args.accessTokenIv,
       accessTokenAuthTag: args.accessTokenAuthTag,
@@ -113,7 +113,7 @@ export async function updateConnectionTokens(
   args: TokenUpdateArgs
 ): Promise<void> {
   assertEncryptedTokenFields(args);
-  await ctx.db.patch(args.connectionId, {
+  await ctx.db.patch("integrationConnections", args.connectionId, {
     encryptedAccessToken: args.encryptedAccessToken,
     accessTokenIv: args.accessTokenIv,
     accessTokenAuthTag: args.accessTokenAuthTag,
@@ -158,9 +158,9 @@ export async function deleteConnection(
   ctx: MutationCtx,
   connectionId: Id<"integrationConnections">
 ): Promise<void> {
-  const connection = await ctx.db.get(connectionId);
+  const connection = await ctx.db.get("integrationConnections", connectionId);
   if (connection) {
-    await ctx.db.delete(connectionId);
+    await ctx.db.delete("integrationConnections", connectionId);
   }
 }
 
@@ -217,7 +217,7 @@ export async function saveRoomMapping(
 
   let mappingId: Id<"integrationMappings">;
   if (existing) {
-    await ctx.db.patch(existing._id, fields);
+    await ctx.db.patch("integrationMappings", existing._id, fields);
     mappingId = existing._id;
   } else {
     mappingId = await ctx.db.insert("integrationMappings", {
@@ -257,7 +257,7 @@ export async function setMappingWebhook(
   mappingId: Id<"integrationMappings">,
   webhookId?: string
 ): Promise<void> {
-  await ctx.db.patch(mappingId, {
+  await ctx.db.patch("integrationMappings", mappingId, {
     jiraWebhookId: webhookId,
     jiraWebhookRegisteredAt: webhookId ? Date.now() : undefined,
   });
@@ -278,7 +278,7 @@ export async function removeRoomMapping(
     .first();
 
   if (mapping) {
-    await ctx.db.delete(mapping._id);
+    await ctx.db.delete("integrationMappings", mapping._id);
     await scheduleWebhookDeregistration(ctx, mapping);
     // Removing the room's integration mapping is user-initiated room
     // activity — route it through the single chokepoint.
@@ -303,9 +303,9 @@ export async function disconnectConnection(
     .query("integrationMappings")
     .withIndex("by_connection", (q) => q.eq("connectionId", connectionId))
     .collect();
-  await Promise.all(mappings.map((m) => ctx.db.delete(m._id)));
+  await Promise.all(mappings.map((m) => ctx.db.delete("integrationMappings", m._id)));
 
-  const connection = await ctx.db.get(connectionId);
+  const connection = await ctx.db.get("integrationConnections", connectionId);
   if (!connection) return;
 
   // Every mapping of a connection shares the connection's provider, so the
@@ -321,7 +321,7 @@ export async function disconnectConnection(
       webhookIds: liveWebhookIds,
     });
   } else {
-    await ctx.db.delete(connectionId);
+    await ctx.db.delete("integrationConnections", connectionId);
   }
 }
 
@@ -385,7 +385,7 @@ export async function cleanupOldWebhookEvents(
     .withIndex("by_processed", (q) => q.lt("processedAt", sevenDaysAgo))
     .collect();
 
-  await Promise.all(oldEvents.map((e) => ctx.db.delete(e._id)));
+  await Promise.all(oldEvents.map((e) => ctx.db.delete("webhookEvents", e._id)));
   if (oldEvents.length > 0) {
     console.log(`Cleaned up ${oldEvents.length} old webhook events`);
   }

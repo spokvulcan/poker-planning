@@ -13,7 +13,7 @@ export async function recordGifSearch(ctx: MutationCtx, rateLimited: boolean): P
     .withIndex("by_hour", (q) => q.eq("hour", hour))
     .unique();
   if (row) {
-    await ctx.db.patch(row._id, {
+    await ctx.db.patch("gifSearchUsage", row._id, {
       requests: row.requests + 1,
       rateLimited: row.rateLimited + (rateLimited ? 1 : 0),
     });
