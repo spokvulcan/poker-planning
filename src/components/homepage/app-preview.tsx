@@ -22,7 +22,7 @@ const ICONS: Record<FeatureId, ComponentType<{ className?: string; strokeWidth?:
 
 const CEREMONIES: Ceremony[] = ["poker", "retro"];
 
-/** Both boards (spec §18.2): the retro slot ships with the poker image until the manual capture. */
+/** Both boards (spec §18.2), each captured in light and dark. */
 export function AppPreview() {
   const [ceremony, setCeremony] = useState<Ceremony>("poker");
   const slot = APP_PREVIEW[ceremony];

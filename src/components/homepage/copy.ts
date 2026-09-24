@@ -20,8 +20,8 @@ export interface Cta {
 // --- Hero ---
 
 export const HERO = {
-  badge: "Jira Cloud integration is here",
-  badgeHref: "/blog/jira-integration",
+  badge: "Retros are here",
+  badgeHref: "/blog/sprint-retrospectives",
   headline: "Estimate and reflect,",
   headlineMuted: "without the noise.",
   description:
@@ -189,15 +189,10 @@ export const APP_PREVIEW = {
     ] as const,
   },
   retro: {
-    /**
-     * Ships with the poker image until the retro board is captured by hand
-     * (light and dark), a manual step named in the PR. Swap both paths and
-     * the alt text when the captures land under public/.
-     */
     image: {
-      light: "/agilekit_light.png",
-      dark: "/agilekit_dark.png",
-      alt: "AgileKit board preview",
+      light: "/retro_light.png",
+      dark: "/retro_dark.png",
+      alt: "A finished retro: stickies in three columns, topics ranked by their votes, and action items with owners",
     },
     features: [
       {
