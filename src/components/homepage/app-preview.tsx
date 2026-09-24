@@ -16,7 +16,7 @@ const ICONS: Record<FeatureId, ComponentType<{ className?: string; strokeWidth?:
   unbiased: Shield,
   results: BarChart3,
   parallel: PenLine,
-  anonymous: EyeOff,
+  names: EyeOff,
   carryover: ListChecks,
 };
 

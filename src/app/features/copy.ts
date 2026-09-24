@@ -156,8 +156,8 @@ export const RETRO = {
         "Each has an optional owner and a checkbox. Start the next retro and it opens with the same columns and every open action item. Copy the retro as Markdown, or download it.",
     },
     {
-      id: "anonymous",
-      name: "Anonymous by default",
+      id: "names",
+      name: "Names hidden by default",
       description:
         "Teammates see what was written, not by whom. Turning on authors shows them on every sticky, including earlier ones.",
     },

@@ -86,7 +86,7 @@ const ICONS: Record<Id, Icon> = {
   votes: Layers,
   discuss: MessagesSquare,
   actions: ListChecks,
-  anonymous: VenetianMask,
+  names: VenetianMask,
   link: Link2,
   // stack and roadmap
   next: Code2,
