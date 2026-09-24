@@ -70,8 +70,11 @@ export async function transferOwnership(
   await ctx.db.patch(actorMembership._id, { role: "participant" });
   await ctx.db.patch(target!._id, { role: "owner" });
 
-  // Update room's ownerId
-  await ctx.db.patch(args.roomId, { ownerId: args.targetUserId });
+  // Update room's ownerId. A retro handed to a permanent account is kept,
+  // like one that account had opened itself.
+  const newOwner = await ctx.db.get(args.targetUserId);
+  const keep = room.roomType === "retro" && newOwner?.accountType === "permanent";
+  await ctx.db.patch(args.roomId, { ownerId: args.targetUserId, ...(keep ? { retained: true } : {}) });
   await Rooms.updateRoomActivity(ctx, args.roomId);
 }
 

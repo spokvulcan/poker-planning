@@ -1,6 +1,8 @@
 # A hidden retro card is a silhouette, projected server-side by the shared stage
 
-**Status:** accepted — decided on [map #253](https://github.com/spokvulcan/poker-planning/issues/253) via [#270](https://github.com/spokvulcan/poker-planning/issues/270). Specified, not yet built.
+**Status:** superseded by [ADR-0026](0026-the-retro-is-a-whiteboard-like-the-poker-room.md), which keeps this ADR's core: while the retro is in its write step, another person's sticky reaches a viewer face-down (its place and colour, never its words, GIF or author), projected server-side from the room's step and never the viewer's, and the reveal is global. Gone: per-entry reveal policies, the in-place toggle and tally visibility as a per-entry setting.
+
+Originally: accepted — decided on [map #253](https://github.com/spokvulcan/poker-planning/issues/253) via [#270](https://github.com/spokvulcan/poker-planning/issues/270). Specified, not yet built.
 
 Whether other people can read a card while it is being written is a different decision from whether it carries a name ([ADR-0012](0012-an-anonymous-retro-card-has-no-stored-author.md)), and it is the one the evidence speaks to most directly. `docs/research/retrospective-effectiveness.md` grades "independent generation before discussion beats open brainstorming" and "anchoring on what is seen first narrows the space that follows" both **A**, and its design guidance (§5.4) is blunt: do not reveal others' cards during generation, because exposure shrinks the range of things considered while leaving the *count* intact, so the damage is invisible in any metric a tool would naturally track; anchoring is immune to warnings, incentives and expertise, so sequence is the only lever; and if cards must be shown before everyone is done, "show few and group them" (Hofstetter et al. 2020). The candour that folklore credits to anonymity is delivered here, by private-until-submitted generation.
 

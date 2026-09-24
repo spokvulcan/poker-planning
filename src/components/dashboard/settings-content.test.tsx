@@ -1,6 +1,6 @@
 /**
- * Settings tabs: Account (the email toggle, spec §16.4) and Integrations;
- * `?tab=` picks one, Account is the first and the default.
+ * Settings tabs: Account and Integrations; `?tab=` picks one, Account is the
+ * first and the default.
  */
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";

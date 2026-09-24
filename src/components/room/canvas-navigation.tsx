@@ -16,6 +16,7 @@ import {
   ListTodo,
 } from "lucide-react";
 import { FC, useState, useRef, useSyncExternalStore } from "react";
+import type { LucideIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -61,20 +62,27 @@ interface CanvasNavigationProps {
   roomData: RoomWithRelatedData;
   onToggleFullscreen?: () => void;
   isFullscreen?: boolean;
-  isIssuesPanelOpen: boolean;
-  onIssuesPanelChange: (open: boolean) => void;
+  /** The poker room's issues panel; a retro has none, so the button hides. */
+  isIssuesPanelOpen?: boolean;
+  onIssuesPanelChange?: (open: boolean) => void;
   isSettingsOpen: boolean;
   onSettingsPanelChange: (open: boolean) => void;
+  /** Extra entries for the share menu (the retro's summary). */
+  shareActions?: { label: string; icon: LucideIcon; onSelect: () => void }[];
+  /** The noun in the copy-link toast: "Room" or "Retro". */
+  linkNoun?: string;
 }
 
 export const CanvasNavigation: FC<CanvasNavigationProps> = ({
   roomData,
   onToggleFullscreen,
   isFullscreen = false,
-  isIssuesPanelOpen,
+  isIssuesPanelOpen = false,
   onIssuesPanelChange,
   isSettingsOpen,
   onSettingsPanelChange,
+  shareActions = [],
+  linkNoun = "Room",
 }) => {
   const isDemoMode = useIsDemoMode();
   const { zoomIn, zoomOut, fitView } = useReactFlow();
@@ -97,10 +105,10 @@ export const CanvasNavigation: FC<CanvasNavigationProps> = ({
         : `${window.location.origin}/room/${roomData.room._id}`;
       const success = await copyTextToClipboard(url);
       if (success) {
-        toast.success(isDemoMode ? "Demo URL copied" : "Room URL copied", {
+        toast.success(isDemoMode ? "Demo URL copied" : `${linkNoun} URL copied`, {
           description: isDemoMode
             ? "Share this link to show others the demo."
-            : "Share this link with others to join the room.",
+            : `Share this link with others to join the ${linkNoun.toLowerCase()}.`,
         });
       } else {
         toast.error("Failed to copy URL", {
@@ -259,17 +267,35 @@ export const CanvasNavigation: FC<CanvasNavigationProps> = ({
                 )}
 
                 {/* Issues Panel */}
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setIsMobileMenuOpen(false);
-                    onIssuesPanelChange(true);
-                  }}
-                  className="w-full h-11 justify-start gap-3"
-                >
-                  <ListTodo className="h-4 w-4" />
-                  Issues
-                </Button>
+                {onIssuesPanelChange && (
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setIsMobileMenuOpen(false);
+                      onIssuesPanelChange(true);
+                    }}
+                    className="w-full h-11 justify-start gap-3"
+                  >
+                    <ListTodo className="h-4 w-4" />
+                    Issues
+                  </Button>
+                )}
+
+                {/* Ceremony-specific share rows (the retro's summary) */}
+                {shareActions.map(({ label, icon: Icon, onSelect }) => (
+                  <Button
+                    key={label}
+                    variant="outline"
+                    onClick={() => {
+                      setIsMobileMenuOpen(false);
+                      onSelect();
+                    }}
+                    className="w-full h-11 justify-start gap-3"
+                  >
+                    <Icon className="h-4 w-4" />
+                    {label}
+                  </Button>
+                ))}
 
                 {/* Room Settings */}
                 <Button
@@ -281,7 +307,7 @@ export const CanvasNavigation: FC<CanvasNavigationProps> = ({
                   className="w-full h-11 justify-start gap-3"
                 >
                   <Settings className="h-4 w-4" />
-                  Room Settings
+                  {linkNoun} Settings
                 </Button>
 
                 {/* User Menu / Demo CTA */}
@@ -365,14 +391,14 @@ export const CanvasNavigation: FC<CanvasNavigationProps> = ({
                     size="sm"
                     onClick={handleCopyRoomUrl}
                     className={buttonClass}
-                    aria-label="Copy room URL"
+                    aria-label={`Copy ${linkNoun.toLowerCase()} URL`}
                   >
                     <Copy className="h-4 w-4" />
                   </Button>
                 }
               />
               <TooltipContent>
-                <p>Copy room link</p>
+                <p>Copy {linkNoun.toLowerCase()} link</p>
               </TooltipContent>
             </Tooltip>
           </div>
@@ -488,6 +514,7 @@ export const CanvasNavigation: FC<CanvasNavigationProps> = ({
               </Tooltip>
             )}
 
+            {onIssuesPanelChange && (
             <Tooltip>
               <TooltipTrigger
                 render={
@@ -510,6 +537,7 @@ export const CanvasNavigation: FC<CanvasNavigationProps> = ({
                 <p>Issues</p>
               </TooltipContent>
             </Tooltip>
+            )}
 
             <Tooltip>
               <DropdownMenu>
@@ -529,11 +557,17 @@ export const CanvasNavigation: FC<CanvasNavigationProps> = ({
                     />
                   }
                 />
-                <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuContent align="end" className="w-52">
                   <DropdownMenuItem onClick={handleCopyRoomUrl}>
                     <Copy className="h-4 w-4 mr-2" />
-                    Copy room link
+                    Copy {linkNoun.toLowerCase()} link
                   </DropdownMenuItem>
+                  {shareActions.map(({ label, icon: Icon, onSelect }) => (
+                    <DropdownMenuItem key={label} onClick={onSelect}>
+                      <Icon className="h-4 w-4 mr-2" />
+                      {label}
+                    </DropdownMenuItem>
+                  ))}
                 </DropdownMenuContent>
               </DropdownMenu>
               <TooltipContent>
@@ -553,7 +587,7 @@ export const CanvasNavigation: FC<CanvasNavigationProps> = ({
                       buttonClass,
                       isSettingsOpen && "bg-gray-100 dark:bg-surface-3",
                     )}
-                    aria-label="Room settings"
+                    aria-label={`${linkNoun} settings`}
                     aria-expanded={isSettingsOpen}
                   >
                     <Settings className="h-4 w-4" />

@@ -1,6 +1,8 @@
 # Room access and room attendance are separate guards
 
-**Status:** accepted — decided on [map #253](https://github.com/spokvulcan/poker-planning/issues/253) via [#257](https://github.com/spokvulcan/poker-planning/issues/257). Specified, not yet built.
+**Status:** superseded in part by [ADR-0026](0026-the-retro-is-a-whiteboard-like-the-poker-room.md): with no Teams, `requireRoomReader` passes a room member and nobody else, so room access and room attendance now admit the same people. Still holds: they stay two guards. Every mutation on a room keeps `requireRoomMember` (directly or through `requireCan` or `requireActingUser`); read-only queries on room contents take `requireRoomReader` (canvas nodes, the issue exports, the retro board and its action items), which returns the room and never a membership; `rooms.get` stays unguarded; and every new read picks one of the two deliberately.
+
+Originally: accepted — decided on [map #253](https://github.com/spokvulcan/poker-planning/issues/253) via [#257](https://github.com/spokvulcan/poker-planning/issues/257). Specified, not yet built.
 
 Once a **Team** owns retro history ([ADR-0008](0008-a-team-is-the-permanent-visibility-boundary.md)), a team member can legitimately need to read a retro that happened before they joined and that they never attended. They have no `roomMemberships` row, so `requireRoomMember` throws. The tempting fixes both break something: the guard is the base of `requireActingUser` and `requireCan`, and its return type promises a `Doc<"roomMemberships">` that a pure reader does not have.
 

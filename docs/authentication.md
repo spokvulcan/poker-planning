@@ -41,8 +41,8 @@ The authentication system consists of three layers:
 | `convex/schema.ts` | Database schema with `users` and `roomMemberships` tables |
 | `convex/users.ts` | User/membership API (join, leave, edit, queries, linkAccount) |
 | `convex/model/users.ts` | User/membership business logic & account linking logic |
-| `convex/model/auth.ts` | Auth guard helpers (`requireAuth`, `requireAuthUser`, `requireRoomMember`, `requireRoomReader`, `requireTeamRole`, `getOptionalAuthUser`) |
-| `convex/email.ts` | Internal actions to send Magic Link emails via Resend |
+| `convex/model/auth.ts` | Auth guard helpers (`requireAuth`, `requireAuthUser`, `requireRoomMember`, `requireRoomReader`, `requireActingUser`, `requireCan`, `getOptionalAuthUser`) |
+| `convex/email.ts` | Internal action that sends the Magic Link email via Resend (the only email AgileKit sends) |
 
 ### Frontend (Next.js)
 
@@ -99,8 +99,7 @@ All Convex mutations must enforce authorization using helpers from `convex/model
 | `requireAuth(ctx)` | `{ subject }` (auth identity) | You only need to confirm the user is logged in |
 | `requireAuthUser(ctx)` | `{ identity, user }` | You need the app-level `users` record |
 | `requireRoomMember(ctx, roomId)` | `{ identity, user, membership }` | The mutation is scoped to a room (room *attendance*) |
-| `requireRoomReader(ctx, roomId)` | `{ identity, user, room }` | A read-only query on room-owned data (room *access*, ADR-0009). Passes a room member or a member of the room's Team (ADR-0008); denies when the Team row is gone; never returns a membership |
-| `requireTeamRole(ctx, teamId, "admin" \| "member")` | `{ identity, user, team, membership }` | Every team mutation and the members-only team reads (ADR-0008). Team role grants no room power; `claim` is decided by the room guard from the Team inputs it reads |
+| `requireRoomReader(ctx, roomId)` | `{ identity, user, room }` | A read-only query on room-owned data (room *access*, ADR-0009). Passes a room member and nobody else (there are no Teams since ADR-0026); never returns a membership |
 | `getOptionalAuthUser(ctx)` | `user \| null` | Queries that should degrade gracefully for unauthenticated users |
 
 ### Which guard to use
@@ -109,7 +108,7 @@ All Convex mutations must enforce authorization using helpers from `convex/model
 - **Room-scoped mutations without `userId`** (issues, room settings): Use `requireRoomMember`.
 - **Global mutations acting on own data** (editGlobalUser, deleteUser): Use `requireAuth` or `requireAuthUser`.
 - **Admin-style mutations** (users.remove — kick another user): Use `requireRoomMember` to verify the caller is at least in the room.
-- **Read-only queries on room-owned data** (canvas nodes, issue exports, retro contents): Use `requireRoomReader`. It answers "may you read this room?", not "are you in it?", and its return type carries no membership — a reader need not be an attendee (ADR-0009). Every new query on room contents picks `requireRoomReader` or `requireRoomMember` deliberately; one that takes neither is a bug.
+- **Read-only queries on room-owned data** (canvas nodes, issue exports, the retro board and its action items): Use `requireRoomReader`. It answers "may you read this room?" rather than "are you in it?"; today both admit exactly the room's members, but the reader guard's return type carries no membership, so a read never leans on attendance (ADR-0009). Every new query on room contents picks `requireRoomReader` or `requireRoomMember` deliberately; one that takes neither is a bug.
 - **Queries**: Use `getOptionalAuthUser` for graceful degradation, or derive `currentUserId` from `ctx.auth.getUserIdentity()` server-side (see `rooms.get` for the pattern).
 
 ### Example: room-scoped mutation with userId
@@ -234,6 +233,9 @@ Use this for pages that require authentication (e.g., dashboard). Client-side re
 5. Backend hook internal.users.linkAnonymousAccount executes:
    - Finds existing "anonymous" user via old authUserId
    - Transfers all roomMemberships, votes, and canvas node ownership
+   - Re-points retro stickies, retro votes and action items; where the permanent
+     account already voted in a retro, the guest's votes there are dropped
+   - Marks every retro the account now owns as retained (kept past the 5-day sweep)
    - Updates accountType to "permanent", assigns email & avatarUrl
    - Safely deletes old anonymous record
 6. Redirected back to /room/abc123
@@ -277,7 +279,6 @@ npx convex env set GOOGLE_CLIENT_ID "your-google-client-id"
 npx convex env set GOOGLE_CLIENT_SECRET "your-google-client-secret"
 npx convex env set RESEND_API_KEY "re_..."
 npx convex env set EMAIL_FROM_ADDRESS "AgileKit <noreply@agilekit.app>"
-npx convex env set UNSUBSCRIBE_SECRET "$(openssl rand -base64 32)"
 
 # Production
 npx convex env set SITE_URL https://your-domain.com
@@ -286,7 +287,6 @@ npx convex env set GOOGLE_CLIENT_ID "your-production-client-id"
 npx convex env set GOOGLE_CLIENT_SECRET "your-production-client-secret"
 npx convex env set RESEND_API_KEY "re_production_..."
 npx convex env set EMAIL_FROM_ADDRESS "AgileKit <noreply@agilekit.app>"
-npx convex env set UNSUBSCRIBE_SECRET "<your-production-secret>"
 ```
 
 | Variable | Purpose |
@@ -295,9 +295,8 @@ npx convex env set UNSUBSCRIBE_SECRET "<your-production-secret>"
 | `BETTER_AUTH_SECRET` | Secret key for signing sessions (min 32 chars) |
 | `GOOGLE_CLIENT_ID` | OAuth Client ID from Google Cloud Console |
 | `GOOGLE_CLIENT_SECRET` | OAuth Client Secret from Google Cloud Console |
-| `RESEND_API_KEY` | Resend key used for every email: the magic link, retro nudges and action-item reminders (`convex/email.ts`) |
-| `EMAIL_FROM_ADDRESS` | From address for every email |
-| `UNSUBSCRIBE_SECRET` | HMAC secret signing the one-click unsubscribe token in retro and action-item emails; the magic link carries none |
+| `RESEND_API_KEY` | Resend key for the magic-link email, the only email AgileKit sends (`convex/email.ts`) |
+| `EMAIL_FROM_ADDRESS` | From address for the magic-link email (defaults to `AgileKit <noreply@agilekit.app>`) |
 
 ## Session Configuration
 

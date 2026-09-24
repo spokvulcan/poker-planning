@@ -3,8 +3,6 @@ import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import * as Cleanup from "./model/cleanup";
 import * as RoomAggregate from "./model/roomAggregate";
-import * as Retro from "./model/retro";
-import * as Teams from "./model/teams";
 
 /**
  * One bounded step of a room's cascade delete; reschedules itself until the
@@ -40,43 +38,5 @@ export const cleanupOrphanedData = internalMutation({
     const result = await Cleanup.cleanupOrphanedData(ctx);
     console.log("Orphaned data cleanup complete:", result);
     return result;
-  },
-});
-
-/**
- * One bounded step of a team's cascade (memberships, then the team row);
- * reschedules itself until the step reports done. The team's rooms were
- * handed to deleteRoomAggregateChunk by the mutation that started this.
- */
-export const deleteTeamChunk = internalMutation({
-  args: {
-    teamId: v.id("teams"),
-  },
-  handler: async (ctx, args) => {
-    const step = await Teams.deleteTeamChunk(ctx, args.teamId);
-    if (!step.done) {
-      await ctx.scheduler.runAfter(0, internal.maintenance.deleteTeamChunk, {
-        teamId: args.teamId,
-      });
-    }
-    return step;
-  },
-});
-
-/**
- * One bounded step of the ratchet's author strip (ADR-0012, spec §4.3);
- * reschedules itself until the step reports done. The flag was flipped and
- * the first batch stripped by the pressing mutation, which also bumped the
- * activity clock; this continuation never does (spec §14).
- */
-export const stripCardAuthorsChunk = internalMutation({
-  args: {
-    roomId: v.id("rooms"),
-    after: v.optional(v.number()),
-  },
-  handler: async (ctx, args) => {
-    const step = await Retro.stripCardAuthorsChunk(ctx, args.roomId, args.after);
-    await Retro.continueStrip(ctx, args.roomId, step);
-    return step;
   },
 });

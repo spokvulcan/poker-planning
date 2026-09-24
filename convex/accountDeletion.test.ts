@@ -4,116 +4,132 @@ import { describe, it, expect } from "vitest";
 import schema from "./schema";
 import { api } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
-import { DEFAULT_RETRO_FORMAT } from "./model/retroFormats";
 import { type T, seedUser as seedNamedUser } from "./analytics.seeds";
-import { FORMER_MEMBER } from "./retroCopy";
 
-// Account deletion (spec §15.2, ADR-0019): the user row goes and the
-// content stays. `authorId`, `voterId`, `ownerId` and `createdBy` dangle
-// and render "Former member"; a team retro whose owner deletes their
-// account enters lockdown and is recovered by `claim`. The auth provider's
+// Account deletion: the user row and their memberships go; what they wrote
+// stays. A sticky's `authorId`, a vote's `voterId` and an action item's
+// `ownerId` and `createdBy` dangle, and the reads render them as "Former
+// member". A retro the account owned goes to whoever joined it first, or,
+// with nobody else in it, is deleted with the account. The auth provider's
 // record is not this module's to touch.
 
 const modules = import.meta.glob("./**/*.*s");
+
+const FORMER_MEMBER = "Former member";
 
 const seedUser = (t: T, authUserId: string, accountType?: "anonymous" | "permanent") =>
   seedNamedUser(t, authUserId, authUserId, accountType);
 const as = (t: T, subject: string) => t.withIdentity({ subject });
 
-async function retroRow(t: T, roomId: Id<"rooms">) {
-  return (await t.run((ctx) =>
-    ctx.db
-      .query("retros")
-      .withIndex("by_room", (q) => q.eq("roomId", roomId))
-      .unique()
-  ))!;
-}
-
 const joinRoom = (t: T, roomId: Id<"rooms">, subject: string) =>
   as(t, subject).mutation(api.users.join, { roomId, name: subject, authUserId: subject });
 
 /**
- * A Team with two admins ("admin" and "leaver", so the leaver's deletion
- * is not refused by the last-admin rule) and a team retro the leaver owns,
- * with a card, a dot and an action item of theirs in it; the admin attends.
+ * A retro the leaver owns, showing authors, with a sticky, a vote and an
+ * action item of theirs in it. The stayer attends as a facilitator.
  */
 async function seedLeaverRetro(t: T) {
-  await seedUser(t, "admin", "permanent");
   const leaverId = await seedUser(t, "leaver", "permanent");
-  const teamId = await as(t, "leaver").mutation(api.teams.create, { name: "Acme" });
-  const team = (await t.run((ctx) => ctx.db.get(teamId)))!;
-  await as(t, "admin").mutation(api.teams.joinByInvite, { inviteToken: team.inviteToken });
-  await as(t, "leaver").mutation(api.teams.promote, { teamId, targetUserId: (await t.run((ctx) => ctx.db.query("users").withIndex("by_auth_user", (q) => q.eq("authUserId", "admin")).unique()))!._id });
-  const roomId = await as(t, "leaver").mutation(api.retro.create, { name: "R", formatName: DEFAULT_RETRO_FORMAT.name, teamId });
-  await joinRoom(t, roomId, "admin");
-  const retro = await retroRow(t, roomId);
-  const byKind = (kind: string) => retro.stages.find((s) => s.kind === kind)!;
-  const { cardId } = await as(t, "leaver").mutation(api.retro.createCard, {
+  const leaver = as(t, "leaver");
+  const roomId = await leaver.mutation(api.retro.create, { name: "R" });
+  await joinRoom(t, roomId, "leaver");
+  const stayerId = await joinRoom(t, roomId, "stayer");
+  await leaver.mutation(api.roles.promoteFacilitator, { roomId, targetUserId: stayerId });
+  await leaver.mutation(api.retro.updateSettings, { roomId, showAuthors: true });
+  const stickyId = await leaver.mutation(api.retro.addSticky, {
     roomId,
-    clientId: "c1",
+    clientId: "s1",
+    columnId: "c1",
     text: "Mine",
-    promptId: retro.format.prompts[0].id,
     position: { x: 0, y: 0 },
   });
-  await as(t, "leaver").mutation(api.retro.advance, { roomId, toStageId: byKind("vote").id });
-  await as(t, "leaver").mutation(api.retro.placeDot, { roomId, target: { kind: "card", id: cardId } });
-  await as(t, "leaver").mutation(api.retro.advance, { roomId, toStageId: byKind("close").id });
-  const actionId = await as(t, "leaver").mutation(api.retro.createAction, { roomId, text: "Do it", ownerId: leaverId });
-  return { teamId, roomId, leaverId, cardId, actionId };
+  await leaver.mutation(api.retro.setStep, { roomId, step: "vote" });
+  await leaver.mutation(api.retro.toggleVote, { stickyId });
+  const itemId = await leaver.mutation(api.retro.addActionItem, { roomId, text: "Do it", ownerId: leaverId });
+  return { roomId, leaverId, stickyId, itemId };
 }
 
-describe("deleting a permanent account (spec §15.2)", () => {
-  it("removes the user row and their memberships, and leaves cards, dots and action items in place with dangling references", async () => {
+describe("deleting an account", () => {
+  it("removes the user row and their memberships, and leaves stickies, votes and action items in place with dangling references", async () => {
     const t = convexTest(schema, modules);
-    const { teamId, roomId, leaverId, cardId, actionId } = await seedLeaverRetro(t);
+    const { roomId, leaverId, stickyId, itemId } = await seedLeaverRetro(t);
 
     await as(t, "leaver").mutation(api.users.deleteUser, {});
 
     expect(await t.run((ctx) => ctx.db.get(leaverId))).toBeNull();
-    const card = (await t.run((ctx) => ctx.db.get(cardId)))!;
-    expect(card.text).toBe("Mine");
-    expect(card.authorId).toBe(leaverId);
-    const dots = await t.run((ctx) => ctx.db.query("retroVotes").withIndex("by_voter", (q) => q.eq("voterId", leaverId)).collect());
-    expect(dots).toHaveLength(1);
-    const action = (await t.run((ctx) => ctx.db.get(actionId)))!;
-    expect(action.ownerId).toBe(leaverId);
-    expect(action.createdBy).toBe(leaverId);
-    const room = (await t.run((ctx) => ctx.db.get(roomId)))!;
-    expect(room.ownerId).toBe(leaverId);
-    expect(room.teamId).toBe(teamId);
     expect(
-      await t.run((ctx) => ctx.db.query("roomMemberships").withIndex("by_user", (q) => q.eq("userId", leaverId)).collect())
+      await t.run((ctx) =>
+        ctx.db.query("roomMemberships").withIndex("by_user", (q) => q.eq("userId", leaverId)).collect()
+      )
     ).toEqual([]);
-    expect(
-      await t.run((ctx) => ctx.db.query("teamMemberships").withIndex("by_user", (q) => q.eq("userId", leaverId)).collect())
-    ).toEqual([]);
+    expect(await t.run((ctx) => ctx.db.get(stickyId))).toMatchObject({ text: "Mine", authorId: leaverId });
+    const votes = await t.run((ctx) =>
+      ctx.db.query("retroStickyVotes").withIndex("by_voter", (q) => q.eq("voterId", leaverId)).collect()
+    );
+    expect(votes).toHaveLength(1);
+    expect(await t.run((ctx) => ctx.db.get(itemId))).toMatchObject({ ownerId: leaverId, createdBy: leaverId });
+    expect(await t.run((ctx) => ctx.db.get(roomId))).not.toBeNull();
   });
 
-  it("the reads render the dangling references as Former member: the action's owner and creator, the export's author", async () => {
+  it("the reads render the dangling references as Former member, and the vote still counts", async () => {
     const t = convexTest(schema, modules);
-    const { roomId, leaverId } = await seedLeaverRetro(t);
+    const { roomId, leaverId, stickyId } = await seedLeaverRetro(t);
     await as(t, "leaver").mutation(api.users.deleteUser, {});
 
-    const actions = await as(t, "admin").query(api.retro.actions, { roomId });
-    expect(actions.items[0]).toMatchObject({ ownerId: leaverId, ownerName: FORMER_MEMBER, creatorName: FORMER_MEMBER });
-    const board = await as(t, "admin").query(api.retro.board, { roomId });
-    expect(board.cards[0]).toMatchObject({ text: "Mine", authorId: leaverId });
-    const exported = await as(t, "admin").query(api.retro.exportMarkdown, { roomId });
-    expect(exported.content).toContain(`- Mine — ${FORMER_MEMBER}`);
-    expect(exported.content).toContain(`Owner: ${FORMER_MEMBER}`);
+    const board = await as(t, "stayer").query(api.retro.board, { roomId });
+    expect(board.stickies.find((s) => s._id === stickyId)).toMatchObject({
+      text: "Mine",
+      authorName: FORMER_MEMBER,
+    });
+    expect(board.votesCast).toBe(1);
+    const items = await as(t, "stayer").query(api.retro.actionItems, { roomId });
+    expect(items).toEqual([expect.objectContaining({ text: "Do it", ownerId: leaverId, ownerName: FORMER_MEMBER })]);
   });
 
-  it("a team retro whose owner deleted their account is in lockdown and a team admin recovers it by claim", async () => {
+  it("hands a retro the account owned to whoever joined it first, who can then run and delete it", async () => {
     const t = convexTest(schema, modules);
     const { roomId } = await seedLeaverRetro(t);
+    const stayerId = await t.run(async (ctx) =>
+      (await ctx.db.query("users").withIndex("by_auth_user", (q) => q.eq("authUserId", "stayer")).first())!._id
+    );
     await as(t, "leaver").mutation(api.users.deleteUser, {});
 
-    const shell = await t.query(api.rooms.get, { roomId });
-    expect(shell?.isOwnerAbsent).toBe(true);
+    const room = await t.query(api.rooms.get, { roomId });
+    expect(room?.room.ownerId).toBe(stayerId);
+    expect(room?.isOwnerAbsent).toBe(false);
+    expect(room?.users.find((u) => u._id === stayerId)?.role).toBe("owner");
+    await as(t, "stayer").mutation(api.retro.setStep, { roomId, step: "discuss" });
+    await as(t, "stayer").mutation(api.retro.remove, { roomId });
+  });
 
-    await as(t, "admin").mutation(api.retro.claim, { roomId });
-    const adminId = (await t.run((ctx) => ctx.db.query("users").withIndex("by_auth_user", (q) => q.eq("authUserId", "admin")).unique()))!._id;
-    expect((await t.run((ctx) => ctx.db.get(roomId)))!.ownerId).toBe(adminId);
-    expect((await t.query(api.rooms.get, { roomId }))?.isOwnerAbsent).toBe(false);
+  it("keeps a guest's retro once it passes to a permanent account", async () => {
+    const t = convexTest(schema, modules);
+    await seedUser(t, "guest", "anonymous");
+    const roomId = await as(t, "guest").mutation(api.retro.create, { name: "Guest retro" });
+    await joinRoom(t, roomId, "guest");
+    await seedUser(t, "keeper", "permanent");
+    await joinRoom(t, roomId, "keeper");
+    expect((await t.run((ctx) => ctx.db.get(roomId)))!.retained).toBe(false);
+
+    await as(t, "guest").mutation(api.users.deleteUser, {});
+
+    expect((await t.run((ctx) => ctx.db.get(roomId)))!.retained).toBe(true);
+  });
+
+  it("deletes a retro nobody else joined along with the account", async () => {
+    const t = convexTest(schema, modules);
+    await seedUser(t, "solo", "permanent");
+    const roomId = await as(t, "solo").mutation(api.retro.create, { name: "Alone" });
+    await joinRoom(t, roomId, "solo");
+
+    await as(t, "solo").mutation(api.users.deleteUser, {});
+    // The room cascade runs on real timers and reschedules itself until done.
+    for (let i = 0; i < 50 && (await t.run((ctx) => ctx.db.get(roomId))); i++) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      await t.finishInProgressScheduledFunctions();
+    }
+
+    expect(await t.run((ctx) => ctx.db.get(roomId))).toBeNull();
   });
 });
+

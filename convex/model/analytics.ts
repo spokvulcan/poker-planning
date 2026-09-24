@@ -71,7 +71,8 @@ export interface RoomHistory {
 }
 
 /**
- * Gets all room memberships for a user with room details
+ * Gets all planning poker room memberships for a user with room details.
+ * Retros are a different ceremony and never count towards poker analytics.
  */
 export async function getUserMemberships(
   ctx: QueryCtx,
@@ -95,7 +96,7 @@ export async function getUserMemberships(
   const results = await Promise.all(
     memberships.map(async (membership) => {
       const room = await ctx.db.get(membership.roomId);
-      if (!room) return null;
+      if (!room || room.roomType === "retro") return null;
       return { membership, room };
     })
   );

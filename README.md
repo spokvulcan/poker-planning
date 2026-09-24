@@ -27,8 +27,22 @@
 - **Built-in Timer** - Session timer for timeboxed estimation rounds
 - **Spectator Mode** - Join sessions as an observer without voting
 - **Dark/Light Theme** - Toggle themes or follow system preference
-- **Auto-cleanup** - Rooms automatically cleaned up after 5 days of inactivity
+- **Auto-cleanup** - Poker rooms and guest retros are cleaned up after 5 days of inactivity
 - **Open Source** - Fully transparent codebase, self-host if you prefer
+
+### Retro
+
+A retro runs on the same whiteboard canvas as the poker room, timer included. Start one at `/retro/new` and share the link; no account is needed to join.
+
+- **Face-down writing** - Everyone writes stickies at once; other people's stickies stay face-down until the facilitator reveals them
+- **Templates and columns** - Went well / To improve / Ideas, Start / Stop / Continue, Mad / Sad / Glad, the 4Ls or Sailboat; rename, add or remove columns on the board
+- **GIFs** - Search GIPHY, or paste a GIPHY, Tenor or Imgur link
+- **Stacks and votes** - Drop a sticky on another to stack them; each person has 3 votes by default, one per topic, and totals stay hidden until the discussion
+- **Discussion** - Walk the most-voted topics in order, with everyone's view following the one in the spotlight
+- **Action items** - Give each one an owner; "Start the next retro" carries the open ones over
+- **Names hidden by default** - Teammates see what was written, not by whom, unless the retro is set to show authors
+- **Markdown summary** - Copy or download the action items, topics and stickies
+- **Kept when signed in** - A retro started while signed in, or by a guest who signs in later, is kept; a guest retro is deleted after 5 days of inactivity
 
 ## Quick Start
 
@@ -75,6 +89,7 @@ Copy `.env.example` to `.env.local` and configure the variables below.
 | `NEXT_PUBLIC_SITE_URL` | No | Your site URL (defaults to `https://agilekit.app`) |
 | `CONVEX_DEPLOY_KEY` | Prod | Deploy key for production (from Convex dashboard) |
 | `NEXT_PUBLIC_GA_ID` | No | Google Analytics 4 Measurement ID |
+| `GIPHY_API_KEY` | No | GIPHY key for GIF search on retro stickies, read only on the server by the `/api/gifs` route. Set it in `.env.local`, or in your host's environment (e.g. Vercel) in production. Without it the GIF picker only takes pasted GIPHY, Tenor or Imgur links |
 
 #### Convex Server (via `npx convex env set`)
 
@@ -84,14 +99,12 @@ These variables run on Convex servers and **cannot** be set in `.env.local`.
 |----------|----------|-------------|
 | `SITE_URL` | Yes | Base URL for auth callbacks |
 | `BETTER_AUTH_SECRET` | Yes | Secret for signing sessions (min 32 chars) |
-| `RESEND_API_KEY` | Email | Resend key for sign-in, retro and action-item emails |
-| `UNSUBSCRIBE_SECRET` | Email | HMAC secret behind the one-click unsubscribe link in retro and action-item emails |
+| `RESEND_API_KEY` | Email | Resend key for sign-in (magic link) emails, the only email AgileKit sends |
 
 ```bash
 # Development setup
 npx convex env set SITE_URL http://localhost:3000
 npx convex env set BETTER_AUTH_SECRET $(openssl rand -base64 32)
-npx convex env set UNSUBSCRIBE_SECRET $(openssl rand -base64 32)
 ```
 
 ## Technology Stack
@@ -107,6 +120,9 @@ npx convex env set UNSUBSCRIBE_SECRET $(openssl rand -base64 32)
 ## Running Tests
 
 ```bash
+# Run unit and Convex tests (Vitest)
+npm run test
+
 # Run all E2E tests
 npm run test:e2e
 
@@ -133,11 +149,23 @@ npm run build
 npx convex deploy --prod
 ```
 
+### Upgrading from the team retro
+
+The whiteboard retro replaces the earlier team retro (Teams, stages, clusters and retro emails). After deploying this version, run once against each deployment that ran the team retro:
+
+```bash
+npx convex run migrations:purgeLegacyRetros --prod
+npx convex run migrations:clearLegacyEmailOptOut --prod
+```
+
+It deletes every team-retro room through the room cascade, empties the team retro's tables (cancelling any reminder email still scheduled) and strips the legacy `teamId` and `joinPolicy` fields from the remaining rooms. It works in batches, rescheduling itself, and is safe to re-run: a run with nothing left returns `{ deleted: 0, roomsScheduled: 0, done: true }`. Until it has run, an old retro opens to "Retro Unavailable". The second clears the retired retro emails' `users.emailOptOut` flag the same way. Afterwards the legacy `rooms.teamId`, `rooms.joinPolicy` and `users.emailOptOut` fields can be dropped from `convex/schema.ts` and the emptied tables deleted. `UNSUBSCRIBE_SECRET` is no longer read and can be removed with `npx convex env remove UNSUBSCRIBE_SECRET --prod`.
+
 ## Use Cases
 
 - **Sprint Planning** - Estimate user stories with your Scrum team
 - **Backlog Refinement** - Collaboratively size your product backlog
 - **Remote Estimation** - Perfect for distributed and hybrid teams
+- **Sprint Retrospectives** - Write, vote and discuss on a shared whiteboard, and carry open action items into the next retro
 - **Agile Training** - Teach planning poker techniques interactively
 
 ## Roadmap

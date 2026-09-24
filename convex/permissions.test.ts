@@ -2,12 +2,18 @@ import { describe, it, expect } from "vitest";
 import {
   evaluate,
   denialMessage,
+  readsOwnerAbsence,
+  getEffectivePermissions,
+  categoryLevel,
+  DEFAULT_PERMISSIONS,
+  DEFAULT_RETRO_PERMISSIONS,
   type Action,
   type Decision,
   type DecisionContext,
   type MemberRole,
   type PermissionCategory,
   type PermissionLevel,
+  type RetroPermissionCategory,
   type RoomPermissions,
 } from "./permissions";
 
@@ -23,7 +29,6 @@ function ctx(over: Partial<DecisionContext> = {}): DecisionContext {
     actorRole: "participant",
     permissions: allEveryone,
     ownerAbsent: false,
-    ownerInTeam: false,
     ...over,
   };
 }
@@ -177,23 +182,36 @@ describe("evaluate — demote", () => {
   });
 });
 
-describe("evaluate — transfer / changePerms (owner-only, no target)", () => {
+describe("evaluate — transfer / changePerms / delete (owner-only, no target)", () => {
   const transfer: Action = { kind: "relationship", verb: "transfer" };
   const changePerms: Action = { kind: "relationship", verb: "changePerms" };
+  const del: Action = { kind: "relationship", verb: "delete" };
 
   it("allows the owner", () => {
     expect(evaluate(transfer, ctx({ actorRole: "owner" }))).toEqual({ allowed: true });
     expect(evaluate(changePerms, ctx({ actorRole: "owner" }))).toEqual({ allowed: true });
+    expect(evaluate(del, ctx({ actorRole: "owner" }))).toEqual({ allowed: true });
   });
 
   it("denies non-owners with insufficient-role", () => {
     expect(evaluate(transfer, ctx({ actorRole: "facilitator" }))).toEqual({ allowed: false, reason: "insufficient-role" });
     expect(evaluate(changePerms, ctx({ actorRole: "participant" }))).toEqual({ allowed: false, reason: "insufficient-role" });
+    expect(evaluate(del, ctx({ actorRole: "facilitator" }))).toEqual({ allowed: false, reason: "insufficient-role" });
   });
 
   it("refines to owner-absent under lockdown", () => {
     expect(evaluate(transfer, ctx({ actorRole: "facilitator", ownerAbsent: true }))).toEqual({ allowed: false, reason: "owner-absent" });
     expect(evaluate(changePerms, ctx({ actorRole: "facilitator", ownerAbsent: true }))).toEqual({ allowed: false, reason: "owner-absent" });
+    expect(evaluate(del, ctx({ actorRole: "facilitator", ownerAbsent: true }))).toEqual({ allowed: false, reason: "owner-absent" });
+  });
+});
+
+describe("readsOwnerAbsence", () => {
+  it("is true for owner-level actions only", () => {
+    expect(readsOwnerAbsence({ kind: "category", category: "retroSettings", level: "owner" })).toBe(true);
+    expect(readsOwnerAbsence({ kind: "relationship", verb: "delete" })).toBe(true);
+    expect(readsOwnerAbsence({ kind: "category", category: "stageFlow", level: "facilitators" })).toBe(false);
+    expect(readsOwnerAbsence({ kind: "relationship", verb: "promote", targetRole: "participant" })).toBe(false);
   });
 });
 
@@ -220,6 +238,7 @@ describe("denialMessage", () => {
     expect(denialMessage(category("owner"), "insufficient-role")).toBe(ONLY_OWNER);
     expect(denialMessage({ kind: "relationship", verb: "transfer" }, "insufficient-role")).toBe(ONLY_OWNER);
     expect(denialMessage({ kind: "relationship", verb: "changePerms" }, "insufficient-role")).toBe(ONLY_OWNER);
+    expect(denialMessage({ kind: "relationship", verb: "delete" }, "insufficient-role")).toBe(ONLY_OWNER);
     expect(denialMessage({ kind: "relationship", verb: "demote", targetRole: "facilitator" }, "insufficient-role")).toBe(ONLY_OWNER);
     // facilitator-level requirements
     expect(denialMessage(category("facilitators"), "insufficient-role")).toBe(ONLY_FACILITATORS);
@@ -231,5 +250,72 @@ describe("denialMessage", () => {
     expect(denialMessage({ kind: "relationship", verb: "remove", targetRole: "facilitator" }, "target-rank")).toBe("Facilitators can only remove participants.");
     expect(denialMessage({ kind: "relationship", verb: "promote", targetRole: "facilitator" }, "target-rank")).toBe("Only participants can be promoted to facilitator.");
     expect(denialMessage({ kind: "relationship", verb: "demote", targetRole: "participant" }, "target-rank")).toBe("Only facilitators can be demoted.");
+  });
+});
+
+// --- The retro's category set (ADR-0013) ---
+
+/** A retro category action at the retro defaults. */
+function retro(category: RetroPermissionCategory): Action {
+  return { kind: "category", category, level: DEFAULT_RETRO_PERMISSIONS[category] };
+}
+
+describe("evaluate — retro categories at the retro defaults", () => {
+  const retroCtx = (actorRole: MemberRole) =>
+    ctx({ actorRole, permissions: DEFAULT_RETRO_PERMISSIONS });
+
+  it("a participant manages action items, but not the steps, other people's stickies or the settings", () => {
+    expect(evaluate(retro("actionManagement"), retroCtx("participant"))).toEqual({ allowed: true });
+    for (const category of ["stageFlow", "cardManagement", "retroSettings"] as const) {
+      expect(evaluate(retro(category), retroCtx("participant"))).toEqual({
+        allowed: false,
+        reason: "insufficient-role",
+      });
+    }
+  });
+
+  it.each<MemberRole>(["facilitator", "owner"])("a %s passes every retro category", (role) => {
+    for (const category of Object.keys(DEFAULT_RETRO_PERMISSIONS) as RetroPermissionCategory[]) {
+      expect(evaluate(retro(category), retroCtx(role))).toEqual({ allowed: true });
+    }
+  });
+});
+
+describe("getEffectivePermissions — keyed by room type", () => {
+  it("a poker room (roomType canvas, or none on a legacy row) gets the poker set", () => {
+    expect(getEffectivePermissions({})).toEqual({ ceremony: "poker", permissions: DEFAULT_PERMISSIONS });
+    expect(getEffectivePermissions({ roomType: "canvas" })).toEqual({
+      ceremony: "poker",
+      permissions: DEFAULT_PERMISSIONS,
+    });
+  });
+
+  it("a retro room gets the retro set: what it stores, else the retro defaults", () => {
+    expect(getEffectivePermissions({ roomType: "retro" })).toEqual({
+      ceremony: "retro",
+      permissions: DEFAULT_RETRO_PERMISSIONS,
+    });
+    const stored = { ...DEFAULT_RETRO_PERMISSIONS, stageFlow: "everyone" as const };
+    expect(getEffectivePermissions({ roomType: "retro", permissions: stored })).toEqual({
+      ceremony: "retro",
+      permissions: stored,
+    });
+  });
+
+  it("falls back to the room type's defaults when the stored shape belongs to the other type", () => {
+    expect(getEffectivePermissions({ roomType: "retro", permissions: DEFAULT_PERMISSIONS })).toEqual({
+      ceremony: "retro",
+      permissions: DEFAULT_RETRO_PERMISSIONS,
+    });
+    expect(getEffectivePermissions({ roomType: "canvas", permissions: DEFAULT_RETRO_PERMISSIONS })).toEqual({
+      ceremony: "poker",
+      permissions: DEFAULT_PERMISSIONS,
+    });
+  });
+
+  it("categoryLevel has no level for a category from the other room type", () => {
+    expect(categoryLevel(getEffectivePermissions({ roomType: "retro" }), "stageFlow")).toBe("facilitators");
+    expect(categoryLevel(getEffectivePermissions({ roomType: "retro" }), "revealCards")).toBeUndefined();
+    expect(categoryLevel(getEffectivePermissions({}), "stageFlow")).toBeUndefined();
   });
 });

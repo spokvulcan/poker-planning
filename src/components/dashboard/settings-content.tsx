@@ -5,7 +5,7 @@ import { useState, Suspense } from "react";
 import { Puzzle, UserRound } from "lucide-react";
 import { IntegrationsSettings } from "./integrations-settings";
 import { AccountSettings } from "./account-settings";
-import { ACCOUNT_TAB_LABEL, SETTINGS_PAGE_DESCRIPTION } from "@/convex/retroCopy";
+import { ACCOUNT_TAB_LABEL, SETTINGS_PAGE_DESCRIPTION } from "@/convex/accountCopy";
 
 function SettingsTabs() {
   const searchParams = useSearchParams();

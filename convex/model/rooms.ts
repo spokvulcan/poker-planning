@@ -39,8 +39,6 @@ export interface RoomWithRelatedData {
   users: Users.RoomUserData[];
   votes: SanitizedVote[];
   isOwnerAbsent: boolean;
-  /** The owning Team's name (ADR-0008); undefined for a teamless room. */
-  teamName?: string;
 }
 
 /**
@@ -98,7 +96,7 @@ export async function createRoom(
     votingScale,
     createdAt: Date.now(),
     lastActivityAt: Date.now(),
-    // Always false until rooms can belong to a Team (ADR-0019).
+    // Poker rooms are never retained: five quiet days and they go.
     retained: false,
     ...(args.ownerId ? { ownerId: args.ownerId } : {}),
   });
@@ -121,14 +119,13 @@ export async function getRoomWithRelatedData(
   if (!room) return null;
 
   // Get users (via memberships), votes, and owner-absent status in parallel
-  const [users, votes, ownerAbsent, team] = await Promise.all([
+  const [users, votes, ownerAbsent] = await Promise.all([
     Users.getRoomUsers(ctx, roomId),
     ctx.db
       .query("votes")
       .withIndex("by_room", (q) => q.eq("roomId", roomId))
       .collect(),
     room.ownerId ? isRoomOwnerAbsent(ctx, room) : Promise.resolve(false),
-    room.teamId ? ctx.db.get(room.teamId) : Promise.resolve(null),
   ]);
 
   // Sanitize votes based on game state
@@ -139,10 +136,6 @@ export async function getRoomWithRelatedData(
     users,
     votes: sanitizedVotes,
     isOwnerAbsent: ownerAbsent,
-    // The owning Team's name is readable by anyone with the link, on
-    // purpose (ADR-0008): the write-time disclosure needs it before the
-    // first card is typed. The Team's roster and history stay guarded.
-    ...(team ? { teamName: team.name } : {}),
   };
 }
 

@@ -1,11 +1,11 @@
 import { ConvexError } from "convex/values";
 
 /**
- * The four refusal codes (spec §4.5, ADR-0022). Every rule-based refusal in
- * the retro model layer is a ConvexError carrying one, never a plain Error,
- * so the client can tell a refusal (roll back, toast) from a transient
- * failure (retry). Its own module so any model file can throw one without
- * an import cycle.
+ * The four refusal codes. Every rule-based refusal in the retro model layer
+ * (out of votes, not yours, wrong step, gone) is a ConvexError carrying one,
+ * never a plain Error, so the client shows its message as written; a plain
+ * Error's message is redacted in production. Its own module so any model
+ * file can throw one without an import cycle.
  */
 export type RefusalCode = "forbidden" | "budget" | "missing" | "stage";
 

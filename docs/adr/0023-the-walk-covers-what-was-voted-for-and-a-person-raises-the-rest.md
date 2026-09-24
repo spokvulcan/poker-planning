@@ -1,6 +1,8 @@
 # The walk covers what was voted for, and a person raises the rest
 
-**Status:** accepted — decided on [map #253](https://github.com/spokvulcan/poker-planning/issues/253) via [#277](https://github.com/spokvulcan/poker-planning/issues/277). Amends [ADR-0010](0010-a-retro-stage-projects-and-defaults-but-never-forbids.md). Specified, not yet built.
+**Status:** superseded by [ADR-0026](0026-the-retro-is-a-whiteboard-like-the-poker-room.md): the discussion takes the topics with votes, most first, computed from the current votes rather than snapshotted, and a person who runs the retro can put any revealed topic in the spotlight. No raise, late-card marker or coverage readout.
+
+Originally: accepted — decided on [map #253](https://github.com/spokvulcan/poker-planning/issues/253) via [#277](https://github.com/spokvulcan/poker-planning/issues/277). Amends [ADR-0010](0010-a-retro-stage-projects-and-defaults-but-never-forbids.md). Specified, not yet built.
 
 [ADR-0010](0010-a-retro-stage-projects-and-defaults-but-never-forbids.md) made the **discussion walk** an ordered cursor over topics, snapshotted on entering `discuss` so later votes never reshuffle it, tracking coverage rather than position on Lu et al.'s finding that information coverage predicts decision quality at r = .56 against discussion focus at r = .25. It also said that a late card during `discuss` "is a feature, not an edge case" and "frequently the best card in the retro". All three board prototypes ([#258](https://github.com/spokvulcan/poker-planning/issues/258), [#259](https://github.com/spokvulcan/poker-planning/issues/259), [#260](https://github.com/spokvulcan/poker-planning/issues/260)) then showed the two places where that decision, built out, defeats itself.
 

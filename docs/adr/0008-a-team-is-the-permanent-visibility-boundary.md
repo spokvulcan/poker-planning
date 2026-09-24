@@ -1,6 +1,8 @@
 # A Team is the permanent visibility boundary
 
-**Status:** accepted — decided on [map #253](https://github.com/spokvulcan/poker-planning/issues/253) via [#257](https://github.com/spokvulcan/poker-planning/issues/257). Specified, not yet built.
+**Status:** superseded by [ADR-0026](0026-the-retro-is-a-whiteboard-like-the-poker-room.md): there are no Teams. A room's readers are its members, and retention follows a permanent-account owner instead of a Team (`rooms.retained`).
+
+Originally: accepted — decided on [map #253](https://github.com/spokvulcan/poker-planning/issues/253) via [#257](https://github.com/spokvulcan/poker-planning/issues/257). Specified, not yet built.
 
 Retros are permanently retained, which raises a question planning poker never had to answer: who may read a room's contents later? The research behind this map is unambiguous that retention and visibility are different features — Dingsøyr et al. observed teams toning down or removing critique once retro minutes became public, and `docs/research/retrospective-effectiveness.md` §5.3 resolves it as "retain everything; scope **visibility** to the team that produced it". The **Team** exists to be that scope. It is not a workspace-lite and it is not a billing unit: it owns retro history, and it names the set of people who may read it.
 

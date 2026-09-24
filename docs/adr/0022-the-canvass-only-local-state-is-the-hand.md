@@ -1,6 +1,8 @@
 # The canvas's only local state is the hand
 
-**Status:** accepted — decided on [map #253](https://github.com/spokvulcan/poker-planning/issues/253) via [#276](https://github.com/spokvulcan/poker-planning/issues/276). Specified, not yet built.
+**Status:** superseded by [ADR-0026](0026-the-retro-is-a-whiteboard-like-the-poker-room.md): the retro canvas keeps a React Flow node buffer, like the poker room's, holding a node's position locally only while it is dragged, and its writes are Convex optimistic updates with no single-flight or retry. Still used, and restated there: the client-minted `clientId` as node key and create dedupe key, one batched move per drop, and the `ConvexError` refusal codes `forbidden`, `budget`, `missing` and `stage`.
+
+Originally: accepted — decided on [map #253](https://github.com/spokvulcan/poker-planning/issues/253) via [#276](https://github.com/spokvulcan/poker-planning/issues/276). Specified, not yet built.
 
 [ADR-0011](0011-the-retro-board-is-one-canvas-with-semantic-zoom.md) chose the most write-heavy of the three board directions, ruled that every drag is a write and that writes are settle-only, and refused to inherit `useNodeDragBuffer`, whose copy-in effect replaces the whole local buffer on every subscription tick with no exemption for the node under the cursor. It left "how does this feel instant" to its own ticket, and the facts to design against come from `docs/research/convex-realtime-board.md`.
 

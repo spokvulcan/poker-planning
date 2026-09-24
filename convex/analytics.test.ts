@@ -236,3 +236,22 @@ describe("getUserSessions keeps membership-tenure semantics", () => {
     expect(unranged.map((s) => s.roomName).sort()).toEqual(["A", "B"]);
   });
 });
+
+describe("retros never count towards poker analytics", () => {
+  it("a retro the user joined adds no session", async () => {
+    const t = convexTest(schema, modules);
+    const userId = await seedUser(t, "auth-a");
+    const pokerId = await seedRoom(t, "Poker");
+    const retroId = await seedRoom(t, "Retro");
+    await t.run((ctx) => ctx.db.patch(retroId, { roomType: "retro" }));
+    await addMembership(t, pokerId, userId, IN);
+    await addMembership(t, retroId, userId, IN);
+    await seedIssue(t, pokerId, { sequentialId: 1, votedAt: IN, finalEstimate: "5" });
+    const asA = t.withIdentity({ subject: "auth-a" });
+
+    const sessions = await asA.query(api.analytics.getSessions, {});
+    expect(sessions.map((s) => s.roomName)).toEqual(["Poker"]);
+    expect((await asA.query(api.analytics.getSummary, {})).totalSessions).toBe(1);
+    expect((await asA.query(api.analytics.getParticipationStats, {})).totalSessions).toBe(1);
+  });
+});

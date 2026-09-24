@@ -1,7 +1,7 @@
 import { Background, BackgroundVariant } from "@xyflow/react";
 
 /**
- * The dots background both boards share (spec §10.1): the one place the
+ * The dots background both boards share (poker and retro): the one place the
  * light and dark stroke tokens are paired.
  */
 export function CanvasDotsBackground() {

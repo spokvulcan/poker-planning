@@ -1,6 +1,8 @@
 # A retro is one room, with its ceremony state in a row beside it
 
-**Status:** accepted — decided on [map #253](https://github.com/spokvulcan/poker-planning/issues/253) via [#264](https://github.com/spokvulcan/poker-planning/issues/264). Specified, not yet built. This is the schema the implementation spec is made of; it extends `convex/schema.ts` on paper only.
+**Status:** superseded by [ADR-0026](0026-the-retro-is-a-whiteboard-like-the-poker-room.md): the retro's state lives on the room row (`rooms.retro`), and stickies, votes and action items have their own tables (`retroStickies`, `retroStickyVotes`, `retroActionItems`). There is no `retros`, cluster, team or team-membership table.
+
+Originally: accepted — decided on [map #253](https://github.com/spokvulcan/poker-planning/issues/253) via [#264](https://github.com/spokvulcan/poker-planning/issues/264). Specified, not yet built. This is the schema the implementation spec is made of; it extends `convex/schema.ts` on paper only.
 
 Every earlier retro decision handed this ticket a field, and the job here was to give them a home that survives two facts about the codebase. First, the `rooms` row is the most widely read document in the system: every authorization guard reads it and every member subscribes to `api.rooms.get`, so anything that lives on it invalidates everyone whenever it changes (`docs/research/convex-realtime-board.md` §3.2, §5). Second, the chosen board is a **canvas** ([ADR-0011](0011-the-retro-board-is-one-canvas-with-semantic-zoom.md)), which quietly retires the research's central ordering recommendation — fractional index keys were the answer for a column board, and a card on a canvas has a position, not a rank.
 

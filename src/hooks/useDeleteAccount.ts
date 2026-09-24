@@ -3,15 +3,15 @@ import { useRouter } from "next/navigation";
 import { api } from "@/convex/_generated/api";
 import { useSignOut } from "@/hooks/useSignOut";
 import { toast } from "@/lib/toast";
-import { ACCOUNT_DELETED, DELETE_ACCOUNT_FAILED } from "@/convex/retroCopy";
+import { ACCOUNT_DELETED, DELETE_ACCOUNT_FAILED } from "@/convex/accountCopy";
 
 /**
- * Delete account for a permanent account (spec §15.2, ADR-0019): the same
- * user-deletion mutation sign-out already runs for an anonymous account,
- * then the session is cleared the way the sign-out hook does. Content
- * stays behind unnamed; the auth provider's own record is untouched. A
- * refusal (the last-admin rule) shows the server's copy and signs nothing
- * out, so the person can fix the Team and try again. Returns whether the
+ * Delete account for a permanent account: the same user-deletion mutation
+ * sign-out already runs for an anonymous account, then the session is
+ * cleared the way the sign-out hook does. Content stays behind unnamed, and
+ * a retro the account owned passes to whoever joined it first; the auth
+ * provider's own record is untouched. A failure shows the server's copy and
+ * signs nothing out, so the person can try again. Returns whether the
  * account is gone.
  */
 export function useDeleteAccount(): () => Promise<boolean> {

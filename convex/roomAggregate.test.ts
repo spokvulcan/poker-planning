@@ -257,8 +257,8 @@ async function seedFullRoom(
 }
 
 /**
- * One row in each of the five retro tables (ADR-0016), so the cascade test
- * proves it empties them and the orphan test proves it never scans them.
+ * One row in each of the retro tables, so the cascade test proves it empties
+ * them and the orphan test proves it never scans them.
  */
 async function seedRetroRows(
   ctx: MutationCtx,
@@ -266,42 +266,23 @@ async function seedRetroRows(
   userId: Id<"users">
 ): Promise<void> {
   const now = Date.now();
-  await ctx.db.insert("retros", {
-    roomId,
-    attribution: "named",
-    format: { name: "F", prompts: [] },
-    stages: [
-      { id: "collect", kind: "collect", cardsVisible: "hidden", tallyVisible: "visible" },
-    ],
-    currentStageId: "collect",
-    currentStageEnteredAt: now,
-  });
-  const clusterId = await ctx.db.insert("retroClusters", { roomId, name: "Group 1", createdAt: now });
-  const cardId = await ctx.db.insert("retroCards", {
+  const stickyId = await ctx.db.insert("retroStickies", {
     roomId,
     clientId: crypto.randomUUID(),
-    text: "card",
-    promptId: "p",
-    position: { x: 0, y: 0 },
+    columnId: "c1",
+    text: "sticky",
     authorId: userId,
-    clusterId,
+    position: { x: 0, y: 0 },
     createdAt: now,
     updatedAt: now,
-    committedAt: now,
   });
-  await ctx.db.insert("retroVotes", {
-    roomId,
-    stageEntryId: "vote",
-    voterId: userId,
-    target: { kind: "card", id: cardId },
-  });
-  await ctx.db.insert("retroActions", {
+  await ctx.db.insert("retroStickyVotes", { roomId, stickyId, voterId: userId });
+  await ctx.db.insert("retroActionItems", {
     roomId,
     text: "do it",
-    status: "open",
+    done: false,
     createdBy: userId,
     createdAt: now,
-    updatedAt: now,
   });
 }
 
@@ -527,8 +508,8 @@ describe("cleanupOrphanedData", () => {
     const t = convexTest(schema, modules);
     const { roomId } = await seedFullRoom(t);
     // Delete the room directly, bypassing the cascade, so every owned row is
-    // orphaned. The poker tables are swept; the five retro tables are
-    // permanently retained data the daily sweep must not walk (ADR-0016).
+    // orphaned. The poker tables are swept; the retro tables may hold
+    // retained data, and the daily sweep never walks them.
     await t.run((ctx) => ctx.db.delete(roomId));
 
     await t.run((ctx) => Cleanup.cleanupOrphanedData(ctx));

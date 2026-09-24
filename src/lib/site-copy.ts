@@ -15,7 +15,7 @@ export const SITE = {
   title: TITLE,
   titleTemplate: "%s | AgileKit",
   description:
-    "Run free online planning poker and retrospectives with your Scrum team. No signup required. Estimate in real time and reflect in writing, everyone at once, with AgileKit's open-source toolkit.",
+    "Run free online planning poker and retrospectives with your Scrum team, on one real-time whiteboard. No signup required. Open source.",
   keywords: [
     "planning poker",
     "scrum poker",
@@ -31,7 +31,7 @@ export const SITE = {
   openGraph: {
     title: TITLE,
     description:
-      "Run free online planning poker and retrospectives with your Scrum team. No signup required. Estimate in real time, reflect in writing.",
+      "Run free online planning poker and retrospectives with your Scrum team. No signup required. Estimate and reflect on one real-time whiteboard.",
     imageAlt: "AgileKit - Free Planning Poker and Retros for Scrum Teams",
   },
   twitter: {

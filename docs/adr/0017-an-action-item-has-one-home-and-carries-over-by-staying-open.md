@@ -1,6 +1,8 @@
 # An action item has one home and carries over by staying open
 
-**Status:** accepted — decided on [map #253](https://github.com/spokvulcan/poker-planning/issues/253) via [#265](https://github.com/spokvulcan/poker-planning/issues/265). Specified, not yet built.
+**Status:** superseded by [ADR-0026](0026-the-retro-is-a-whiteboard-like-the-poker-room.md): an action item is a text, an optional owner who is in the retro, and done or not. It lives in its retro and is copied into the next one, marked carried over, when someone starts it. No due date, dropped state, note, source topic or review stage.
+
+Originally: accepted — decided on [map #253](https://github.com/spokvulcan/poker-planning/issues/253) via [#265](https://github.com/spokvulcan/poker-planning/issues/265). Specified, not yet built.
 
 Carryover is why the **Team** exists ([ADR-0008](0008-a-team-is-the-permanent-visibility-boundary.md)), and the teardown is unambiguous about what goes wrong with it: "action items go nowhere" is the most consistent complaint in the category (`docs/research/retro-tool-teardown.md`, "Where they annoy users"). Retrium's items "just sit there", EasyRetro converts a card and then loses it, Parabol made action review a default phase in August 2026 and did not migrate existing teams. The one product that solved it, TeamRetro, did so by giving carryover *a place in the agenda* — `Open Actions` at the start and `Review` at the end — rather than a better form. [ADR-0010](0010-a-retro-stage-projects-and-defaults-but-never-forbids.md) already adopted that shape as the `review` stage, and [ADR-0016](0016-a-retro-is-one-room-with-its-ceremony-state-beside-it.md) made carryover a query over the team's open actions rather than a pointer between retros. This ADR fixes what an action item is, so that query has something worth returning.
 

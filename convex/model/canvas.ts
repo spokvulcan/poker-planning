@@ -36,7 +36,11 @@ export type CanvasNodeData =
   // session / results / story carry no persisted payload
   | { type: "session"; data: Record<string, never> }
   | { type: "results"; data: Record<string, never> }
-  | { type: "story"; data: Record<string, never> };
+  | { type: "story"; data: Record<string, never> }
+  // Retro boards: the retro node, a column's pad, the action items
+  | { type: "retro"; data: Record<string, never> }
+  | { type: "pad"; data: { columnId: string } }
+  | { type: "actions"; data: Record<string, never> };
 
 export type CanvasNode = {
   roomId: Id<"rooms">;

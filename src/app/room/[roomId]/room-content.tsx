@@ -11,14 +11,16 @@ import { useAuth } from "@/components/auth/auth-provider";
 import { Id } from "@/convex/_generated/dataModel";
 import { toast } from "@/lib/toast";
 import type { RoomWithRelatedData } from "@/convex/model/rooms";
-import { RetroRoomContent, type MyMembership } from "./retro-room-content";
+import { RetroCanvas } from "@/components/retro/retro-canvas";
+
+/** What `api.users.getMyMembership` returns for a member. */
+type MyMembership = { _id: Id<"users"> };
 
 /**
- * `/room/[roomId]` serves both ceremonies (spec §18.1). The three
- * subscriptions every visitor needs (the room shell, their membership, their
- * user row) open here in one render, then the page branches on `roomType`:
- * the poker branch keeps its automatic join; the retro branch never
- * auto-joins.
+ * `/room/[roomId]` serves both ceremonies. The three subscriptions every
+ * visitor needs (the room shell, their membership, their user row) open
+ * here in one render; both ceremonies join the same way, and only the
+ * canvas differs: the poker room or the retro whiteboard.
  */
 export function RoomContent() {
   const params = useParams();
@@ -48,14 +50,18 @@ export function RoomContent() {
     );
   }
 
-  if (roomData.room.roomType === "retro") {
+  // A retro from before the whiteboard has no state to draw.
+  if (roomData.room.roomType === "retro" && !roomData.room.retro) {
     return (
-      <RetroRoomContent roomId={roomId} roomData={roomData} membership={existingMembership} />
+      <CenteredMessage
+        title="Retro Unavailable"
+        body="This retro was made with an older version of AgileKit and can no longer be opened"
+      />
     );
   }
 
   return (
-    <PokerRoomContent
+    <JoinGate
       roomId={roomId}
       roomData={roomData}
       existingMembership={existingMembership}
@@ -64,7 +70,11 @@ export function RoomContent() {
   );
 }
 
-function PokerRoomContent({
+/**
+ * Joins the visitor (automatically when they already have a name, else
+ * through the join dialog), then shows the room's canvas.
+ */
+function JoinGate({
   roomId,
   roomData,
   existingMembership,
@@ -141,9 +151,12 @@ function PokerRoomContent({
     return <CenteredMessage title="Loading..." body="Checking session" />;
   }
 
+  const isRetro = roomData.room.roomType === "retro";
+  const noun = isRetro ? "Retro" : "Room";
+
   // If not authenticated, show JoinRoomDialog (session will be created on join)
   if (!isAuthenticated) {
-    return <JoinRoomDialog roomId={roomId} roomName={roomData.room.name} />;
+    return <JoinRoomDialog roomId={roomId} roomName={roomData.room.name} noun={noun} />;
   }
 
   // If authenticated, wait for queries to load
@@ -155,9 +168,13 @@ function PokerRoomContent({
 
   // If user has membership, show the room canvas
   if (isInRoom) {
-    return <RoomCanvas roomData={roomData} currentUserId={existingMembership._id} />;
+    return isRetro ? (
+      <RetroCanvas roomData={roomData} currentUserId={existingMembership._id} />
+    ) : (
+      <RoomCanvas roomData={roomData} currentUserId={existingMembership._id} />
+    );
   }
 
   // No membership - show join dialog (auto-join may be in progress if globalUser exists)
-  return <JoinRoomDialog roomId={roomId} roomName={roomData.room.name} />;
+  return <JoinRoomDialog roomId={roomId} roomName={roomData.room.name} noun={noun} />;
 }

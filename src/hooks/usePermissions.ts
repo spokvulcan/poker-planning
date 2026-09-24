@@ -154,7 +154,6 @@ const OPTIMISTIC_CTX: DecisionContext = {
   actorRole: "participant",
   permissions: DEFAULT_PERMISSIONS,
   ownerAbsent: false,
-  ownerInTeam: false,
 };
 
 /** The relationship decisions every arm carries, resolved against one context. */
@@ -213,7 +212,6 @@ export function computePermissions(
     actorRole: role,
     permissions: effective.permissions,
     ownerAbsent,
-    ownerInTeam: false,
   };
 
   const shared: SharedPermissions = {

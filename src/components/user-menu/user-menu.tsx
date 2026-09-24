@@ -25,7 +25,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowDown01Icon } from "@hugeicons/core-free-icons";
-import { Moon, Sun, LogOut, UserPen, Monitor, Eye, LayoutDashboard, LogIn, History, MessagesSquare, Users } from "lucide-react";
+import { Moon, Sun, LogOut, UserPen, Monitor, Eye, LayoutDashboard, LogIn, History, MessagesSquare } from "lucide-react";
 import Link from "next/link";
 import type { Id } from "@/convex/_generated/dataModel";
 import { toast } from "@/lib/toast";
@@ -53,8 +53,10 @@ export function UserMenu() {
       : "skip"
   );
 
-  // The person's Teams (ADR-0008): the menu links to each team page.
-  const teams = useQuery(api.teams.listMine, isAuthenticated ? {} : "skip");
+  // A retro has no spectators; the room page already holds this
+  // subscription, so reading the room type here costs nothing.
+  const roomData = useQuery(api.rooms.get, roomId ? { roomId } : "skip");
+  const isRetro = roomData?.room?.roomType === "retro";
 
   const editGlobalUser = useMutation(api.users.editGlobalUser);
   const editUser = useMutation(api.users.edit);
@@ -135,19 +137,6 @@ export function UserMenu() {
             Retros
           </DropdownMenuItem>
 
-          {/* The person's team pages */}
-          {teams && teams.length > 0 && (
-            <>
-              <DropdownMenuSeparator />
-              {teams.map((team) => (
-                <DropdownMenuItem key={team._id} render={<Link href={`/team/${team._id}`} />}>
-                  <Users className="mr-2 size-4" />
-                  <span className="truncate">{team.name}</span>
-                </DropdownMenuItem>
-              ))}
-            </>
-          )}
-
           <DropdownMenuSeparator />
 
           {/* Sign in link - only for anonymous users, shown first */}
@@ -167,8 +156,8 @@ export function UserMenu() {
             Edit name
           </DropdownMenuItem>
 
-          {/* Spectator toggle - only show when in a room */}
-          {isInRoom && (
+          {/* Spectator toggle - only show when in a poker room */}
+          {isInRoom && !isRetro && (
             <div
               data-testid="spectator-toggle-row"
               className="flex items-center justify-between px-1.5 py-1 cursor-pointer rounded-md hover:bg-gray-100 dark:hover:bg-white/10"

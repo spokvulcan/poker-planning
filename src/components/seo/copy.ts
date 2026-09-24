@@ -18,8 +18,10 @@ export const WEB_APPLICATION = {
     "Results analytics with average, median, and consensus",
     "Synchronized timer",
     "Whiteboard canvas interface",
-    "Retro boards with cards written in parallel",
-    "Retro history kept for the team",
+    "Retros on the same whiteboard, with sticky notes face-down until revealed",
+    "Five retro column templates",
+    "Retro voting, discussion in vote order and action items",
+    "GIFs on retro sticky notes",
   ],
 };
 

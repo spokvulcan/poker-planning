@@ -1,4 +1,4 @@
-import { Globe, Zap, BarChart3, Users, Clock, History } from "lucide-react";
+import { Globe, Zap, BarChart3, Users, EyeOff, ListChecks } from "lucide-react";
 import type { ComponentType } from "react";
 import { USE_CASES } from "./copy";
 
@@ -9,9 +9,9 @@ const ICONS: Record<UseCaseId, ComponentType<{ className?: string; strokeWidth?:
   remote: Globe,
   instant: Zap,
   data: BarChart3,
-  async: Clock,
+  facedown: EyeOff,
   access: Users,
-  history: History,
+  carryover: ListChecks,
 };
 
 export function UseCases() {

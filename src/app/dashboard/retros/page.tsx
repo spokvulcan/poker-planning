@@ -3,7 +3,7 @@ import { RetrosContent } from "./retros-content";
 
 export const metadata: Metadata = {
   title: "Retros",
-  description: "Your teams and retrospectives",
+  description: "Your retrospectives",
   robots: {
     index: false,
     follow: false,
