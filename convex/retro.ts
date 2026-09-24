@@ -224,6 +224,18 @@ export const moveStickies = mutation({
   },
 });
 
+/** The author's browser says how tall it draws their stickies; kept for the reveal, never sent back. */
+export const measureStickies = mutation({
+  args: {
+    roomId: v.id("rooms"),
+    heights: v.array(v.object({ stickyId: v.id("retroStickies"), height: v.number() })),
+  },
+  handler: async (ctx, args) => {
+    const { user, room } = await memberRoom(ctx, args.roomId);
+    await Retro.measureStickies(ctx, room, user, args.heights);
+  },
+});
+
 export const deleteSticky = mutation({
   args: { stickyId: v.id("retroStickies") },
   handler: async (ctx, args) => {

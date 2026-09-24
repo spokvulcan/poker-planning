@@ -25,11 +25,14 @@ import {
 import { discussionOrder, heirOf, normalizeGifUrl, rootOf, stepFocus, stepOnFocus, voteTotals } from "../retroRules";
 import {
   actionsPosition,
+  FACE_DOWN_HEIGHT,
   nextPadPosition,
   padNodeId,
   padPositions,
   RETRO_NODE_POSITION,
   RETRO_TIMER_POSITION,
+  settleOnReveal,
+  STICKY_MIN_HEIGHT,
 } from "../retroLayout";
 import { IDLE_TIMER } from "../timerState";
 import type { Position } from "../canvasLayout";
@@ -376,7 +379,9 @@ export async function listRetrosOf(ctx: QueryCtx, userId: Id<"users">): Promise<
 /**
  * Moves the retro to a step. Entering `discuss` from an earlier step starts
  * the walk at the most-voted topic; going back before it drops the walk.
- * Nothing else changes: no sticky is locked, no vote is lost.
+ * Leaving `write` is the reveal, which moves stickies clear of the ones that
+ * turn out taller than face-down. Nothing else changes: no sticky is locked,
+ * no vote is lost.
  */
 export async function setStep(ctx: MutationCtx, room: Doc<"rooms">, step: RetroStep): Promise<void> {
   const retro = retroOf(room);
@@ -389,7 +394,21 @@ export async function setStep(ctx: MutationCtx, room: Doc<"rooms">, step: RetroS
     focusStickyId = order[0];
   }
   await ctx.db.patch(room._id, { retro: withFocus({ ...retro, step }, focusStickyId) });
+  if (retro.step === "write") await settleRevealed(ctx, room._id);
   await updateRoomActivity(ctx, room);
+}
+
+/**
+ * Keeps the reveal from leaving a sticky on top of another (ADR-0027): each
+ * topic at the height its author's browser measured, or face-down size when
+ * none did.
+ */
+async function settleRevealed(ctx: MutationCtx, roomId: Id<"rooms">): Promise<void> {
+  const topics = (await stickiesOf(ctx, roomId)).filter((s) => s.stackId === undefined);
+  const moves = settleOnReveal(
+    topics.map((s) => ({ id: s._id, position: s.position, height: s.height ?? FACE_DOWN_HEIGHT }))
+  );
+  await Promise.all([...moves].map(([id, position]) => ctx.db.patch(id, { position })));
 }
 
 /** Moves the walk one topic on or back. */
@@ -569,6 +588,14 @@ function validatePosition(position: Position): Position {
   return { x: clamp(position.x), y: clamp(position.y) };
 }
 
+/** Taller than 500 lines of text under a GIF, so only a made-up height is cut. */
+const MAX_STICKY_HEIGHT = 20_000;
+
+function validateHeight(height: number): number {
+  if (!Number.isFinite(height)) throw refusal("forbidden", "That sticky's size is malformed.");
+  return Math.min(Math.max(Math.round(height), STICKY_MIN_HEIGHT), MAX_STICKY_HEIGHT);
+}
+
 async function stickyInRoom(
   ctx: QueryCtx,
   roomId: Id<"rooms">,
@@ -686,6 +713,34 @@ export async function moveStickies(
     })
   );
   await updateRoomActivity(ctx, room);
+}
+
+/**
+ * Records how tall the author's browser draws their stickies face-up. While
+ * writing, no other browser draws them face-up, so the author's is the only
+ * one that can tell; nobody is ever sent it, and the reveal alone reads it
+ * (ADR-0027). Anyone else's sticky is skipped, and so is a height that hasn't
+ * changed, which writes nothing.
+ */
+export async function measureStickies(
+  ctx: MutationCtx,
+  room: Doc<"rooms">,
+  author: Doc<"users">,
+  heights: readonly { stickyId: Id<"retroStickies">; height: number }[]
+): Promise<void> {
+  retroOf(room);
+  if (heights.length > MAX_STICKIES_PER_ROOM) throw refusal("forbidden", "Too many stickies at once.");
+  const changed = await Promise.all(
+    heights.map(async ({ stickyId, height }) => {
+      const sticky = await ctx.db.get(stickyId);
+      if (!sticky || sticky.roomId !== room._id || sticky.authorId !== author._id) return false;
+      const measured = validateHeight(height);
+      if (sticky.height === measured) return false;
+      await ctx.db.patch(sticky._id, { height: measured });
+      return true;
+    })
+  );
+  if (changed.includes(true)) await updateRoomActivity(ctx, room);
 }
 
 /**

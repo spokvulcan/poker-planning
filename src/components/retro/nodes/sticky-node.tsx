@@ -9,7 +9,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { MAX_STICKY_TEXT_LENGTH } from "@/convex/retroTemplates";
 import type { Gif, StickyView } from "@/convex/model/retro";
 import type { StickyColor } from "@/convex/retroTemplates";
-import { STICKY_WIDTH, STICKY_MIN_HEIGHT } from "@/convex/retroLayout";
+import { FACE_DOWN_HEIGHT, STICKY_WIDTH, STICKY_MIN_HEIGHT } from "@/convex/retroLayout";
 import { GifPicker } from "../gif-picker";
 import { STICKY_TONES, type StickyTone } from "../sticky-colors";
 import type { StickyFlowNode } from "../types";
@@ -177,11 +177,14 @@ function StickyEditor({
   );
 }
 
-/** The face of a sticky nobody but its author may read yet. */
+/**
+ * The face of a sticky nobody but its author may read yet. The sticky is
+ * drawn at FACE_DOWN_HEIGHT, so the scribbles fit it and never stretch it.
+ */
 function FaceDown({ seed, tone }: { seed: string; tone: StickyTone }) {
   const lines = SCRIBBLES[hash(seed) % SCRIBBLES.length];
   return (
-    <div className="flex flex-col gap-2 pt-1" aria-hidden="true">
+    <div className="flex min-h-0 flex-col gap-2 overflow-hidden" aria-hidden="true">
       {lines.map((width, i) => (
         <span key={i} className={cn("h-2.5 rounded-full", tone.scribble)} style={{ width }} />
       ))}
@@ -319,6 +322,11 @@ export const StickyNode = memo(({ data, selected, dragging }: NodeProps<StickyFl
   const showFocus = canFocus && !!sticky && !hidden && !focused && step !== "write";
   const stackDepth = Math.min(members.length, 2);
   const inEditor = editing || !!draft;
+  // Face-down, it is one size whatever it holds, or its size would tell.
+  const faceSize =
+    hidden && !inEditor
+      ? { width: STICKY_WIDTH, height: FACE_DOWN_HEIGHT }
+      : { width: STICKY_WIDTH, minHeight: STICKY_MIN_HEIGHT };
 
   const face = (
     <div
@@ -333,7 +341,7 @@ export const StickyNode = memo(({ data, selected, dragging }: NodeProps<StickyFl
         dropTarget && "outline-2 outline-offset-4 outline-blue-500 outline-dashed",
         revealing && "animate-sticky-reveal"
       )}
-      style={{ width: STICKY_WIDTH, minHeight: STICKY_MIN_HEIGHT }}
+      style={faceSize}
     >
       {inEditor ? (
         <StickyEditor
