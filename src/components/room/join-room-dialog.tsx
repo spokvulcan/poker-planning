@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { Id } from "@/convex/_generated/dataModel";
+import { Doc, Id } from "@/convex/_generated/dataModel";
 import { useAuth } from "@/components/auth/auth-provider";
 import { authClient } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
@@ -16,12 +16,14 @@ import { toast } from "@/lib/toast";
 interface JoinRoomDialogProps {
   roomId: Id<"rooms">;
   roomName: string;
-  /** "Room" for planning poker, "Retro" for a retro (which has no spectators). */
-  noun?: "Room" | "Retro";
+  roomType?: Doc<"rooms">["roomType"];
 }
 
-export function JoinRoomDialog({ roomId, roomName, noun = "Room" }: JoinRoomDialogProps) {
-  const allowSpectator = noun === "Room";
+export function JoinRoomDialog({ roomId, roomName, roomType }: JoinRoomDialogProps) {
+  // A retro has no spectators: everyone at the board writes.
+  const isRetro = roomType === "retro";
+  const noun = isRetro ? "Retro" : "Room";
+  const allowSpectator = !isRetro;
   const { authUserId } = useAuth();
   const joinRoom = useMutation(api.users.join);
 

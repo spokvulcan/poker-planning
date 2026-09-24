@@ -274,14 +274,12 @@ async function seedRetroRows(
     authorId: userId,
     position: { x: 0, y: 0 },
     createdAt: now,
-    updatedAt: now,
   });
   await ctx.db.insert("retroStickyVotes", { roomId, stickyId, voterId: userId });
   await ctx.db.insert("retroActionItems", {
     roomId,
     text: "do it",
     done: false,
-    createdBy: userId,
     createdAt: now,
   });
 }

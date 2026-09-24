@@ -31,6 +31,7 @@ const PAGE_SIZE = 24;
 
 interface GiphyRendition {
   url?: string;
+  webp?: string;
   width?: string;
   height?: string;
 }
@@ -50,7 +51,9 @@ function toResult(gif: GiphyGif): GifResult | null {
     url: main.url,
     width: Number(main.width) || 200,
     height: Number(main.height) || 200,
-    previewUrl: gif.images?.fixed_width_small?.url ?? main.url,
+    // The picker's grid loads a page of these at a time: WebP, where GIPHY
+    // has it, is the same animation in far fewer bytes.
+    previewUrl: gif.images?.fixed_width_small?.webp ?? gif.images?.fixed_width_small?.url ?? main.url,
   };
 }
 

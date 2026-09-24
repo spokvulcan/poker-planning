@@ -218,15 +218,6 @@ export function requiresOwnerLevel(action: Action): boolean {
 }
 
 /**
- * Whether the decision reads `ownerAbsent` at all: only an owner-level action
- * (it refines the denial reason). The guard skips the owner-absence DB read
- * for everything else.
- */
-export function readsOwnerAbsence(action: Action): boolean {
-  return requiresOwnerLevel(action);
-}
-
-/**
  * The single source of denial copy, derived from the action and reason and
  * shared by the backend guard's throw and the frontend tooltip. Copy is never
  * embedded in the Decision — it is reconstructed here.

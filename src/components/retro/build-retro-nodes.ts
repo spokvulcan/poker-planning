@@ -5,17 +5,20 @@
  */
 import type { Edge } from "@xyflow/react";
 import type { Id } from "@/convex/_generated/dataModel";
-import type { ActionItemView, BoardView, Gif, StickyView } from "@/convex/model/retro";
+import type { ActionItemView, BoardView, RetroState, StickyView } from "@/convex/model/retro";
 import type { CanvasNode } from "@/convex/model/canvas";
-import type { ResolvedDecision } from "@/convex/permissions";
-import type { RetroColumn, RetroStep } from "@/convex/retroTemplates";
+import type { ResolvedDecision, RetroPermissionCategory } from "@/convex/permissions";
+import type { RetroColumn } from "@/convex/retroTemplates";
 import { discussionOrder } from "@/convex/retroRules";
 import {
   actionsPosition,
+  padNodeId,
   padPositions,
   RETRO_NODE_POSITION,
-  RETRO_TIMER_POSITION,
+  STICKY_MIN_HEIGHT,
+  STICKY_WIDTH,
 } from "@/convex/retroLayout";
+import { buildTimerNode } from "@/components/room/hooks/buildCanvasNodes";
 import type { RetroBoardActions, RetroFlowNode, RetroMember } from "./types";
 import { isOptimistic } from "./optimistic";
 
@@ -23,25 +26,27 @@ export interface RetroNodesInput {
   roomId: Id<"rooms">;
   viewerId: Id<"users">;
   name: string;
-  step: RetroStep;
-  columns: readonly RetroColumn[];
-  votesPerPerson: number;
-  focusStickyId?: Id<"retroStickies">;
-  nextRoomId?: Id<"rooms">;
+  retro: RetroState;
+  /** The viewer's decision for each of the retro's permission categories. */
+  perms: Record<RetroPermissionCategory, ResolvedDecision>;
   board: BoardView | undefined;
+  /** Everyone's votes (counted while the retro is in Vote). */
+  votesCast: number;
   items: ActionItemView[] | undefined;
   canvasNodes: CanvasNode[] | undefined;
   members: RetroMember[];
-  draft: { clientId: string; columnId: string; position: { x: number; y: number }; text?: string; gif?: Gif } | null;
+  draft: { clientId: string; columnId: string; position: { x: number; y: number } } | null;
   editingId: Id<"retroStickies"> | null;
   expandedIds: ReadonlySet<string>;
   dropTargetId: string | null;
-  canFlow: ResolvedDecision;
-  canManageCards: ResolvedDecision;
-  canManageActions: ResolvedDecision;
-  canSettings: ResolvedDecision;
   actions: RetroBoardActions;
 }
+
+/**
+ * A sticky's size until React Flow has measured it: without one, React Flow
+ * keeps a new node hidden, and a draft's editor couldn't take focus.
+ */
+const STICKY_SIZE = { initialWidth: STICKY_WIDTH, initialHeight: STICKY_MIN_HEIGHT };
 
 /** The discussion's order of topics, from the totals the board carries in Discuss. */
 export function topicOrder(board: BoardView | undefined, columns: readonly RetroColumn[]): string[] {
@@ -59,7 +64,8 @@ export function topicLabel(sticky: StickyView | undefined): string | undefined {
 }
 
 export function buildRetroNodes(input: RetroNodesInput): RetroFlowNode[] {
-  const { board, columns, step, actions } = input;
+  const { board, retro, perms, actions } = input;
+  const { columns, step } = retro;
   const stickies = board?.stickies ?? [];
   const positionOf = (nodeId: string) => input.canvasNodes?.find((n) => n.nodeId === nodeId)?.position;
   const defaultPads = padPositions(columns.length);
@@ -68,8 +74,8 @@ export function buildRetroNodes(input: RetroNodesInput): RetroFlowNode[] {
   // The walk: in Discuss and after, the topics in order and where it is.
   const discussing = step === "discuss" || step === "done";
   const order = discussing ? topicOrder(board, columns) : [];
-  const focusIndex = input.focusStickyId ? order.indexOf(input.focusStickyId) : -1;
-  const focused = stickies.find((s) => s._id === input.focusStickyId);
+  const focusIndex = retro.focusStickyId ? order.indexOf(retro.focusStickyId) : -1;
+  const focused = stickies.find((s) => s._id === retro.focusStickyId);
   const openActions = (input.items ?? []).filter((i) => !i.done).length;
 
   nodes.push({
@@ -82,45 +88,32 @@ export function buildRetroNodes(input: RetroNodesInput): RetroFlowNode[] {
       stickyCount: stickies.length,
       writers: board?.writers ?? 0,
       participants: input.members.length,
-      votesCast: board?.votesCast ?? 0,
-      votesPerPerson: input.votesPerPerson,
+      votesCast: input.votesCast,
+      votesPerPerson: retro.votesPerPerson,
       myVotes: board?.myVotes ?? 0,
       topicIndex: focusIndex,
       topicCount: order.length,
-      ...(input.focusStickyId && step === "discuss" ? { focusedId: input.focusStickyId } : {}),
+      ...(retro.focusStickyId && step === "discuss" ? { focusedId: retro.focusStickyId } : {}),
       ...(step === "discuss" ? { focusedLabel: topicLabel(focused) } : {}),
-      ...(input.nextRoomId ? { nextRoomId: input.nextRoomId } : {}),
+      ...(retro.nextRoomId ? { nextRoomId: retro.nextRoomId } : {}),
       openActions,
       totalActions: input.items?.length ?? 0,
-      canFlow: input.canFlow,
+      canFlow: perms.stageFlow,
       actions,
     },
   });
 
-  const timer = input.canvasNodes?.find((n) => n.nodeId === "timer" && n.type === "timer");
-  if (timer && timer.type === "timer") {
-    nodes.push({
-      id: "timer",
-      type: "timer",
-      position: timer.position ?? RETRO_TIMER_POSITION,
-      data: {
-        ...timer.data,
-        isRunning: timer.data.isRunning ?? false,
-        roomId: input.roomId,
-        userId: input.viewerId,
-        nodeId: "timer",
-      },
-    });
-  }
+  const timer = input.canvasNodes?.find((n): n is CanvasNode & { type: "timer" } => n.type === "timer");
+  if (timer) nodes.push(buildTimerNode(timer, input));
 
   const counts = new Map<string, number>();
   for (const s of stickies) counts.set(s.columnId, (counts.get(s.columnId) ?? 0) + 1);
   columns.forEach((column, i) => {
     nodes.push({
-      id: `pad-${column.id}`,
+      id: padNodeId(column.id),
       type: "pad",
-      position: positionOf(`pad-${column.id}`) ?? defaultPads[i],
-      data: { column, count: counts.get(column.id) ?? 0, canRename: input.canSettings.allowed, actions },
+      position: positionOf(padNodeId(column.id)) ?? defaultPads[i],
+      data: { column, count: counts.get(column.id) ?? 0, canRename: perms.retroSettings.allowed, actions },
     });
   });
 
@@ -131,7 +124,7 @@ export function buildRetroNodes(input: RetroNodesInput): RetroFlowNode[] {
     data: {
       items: input.items,
       members: input.members,
-      canManage: input.canManageActions,
+      canManage: perms.actionManagement,
       actions,
     },
   });
@@ -144,19 +137,20 @@ export function buildRetroNodes(input: RetroNodesInput): RetroFlowNode[] {
   for (const s of stickies) {
     if (s.stackId) membersOf.set(s.stackId, [...(membersOf.get(s.stackId) ?? []), s]);
   }
-  const votesLeft = input.votesPerPerson - (board?.myVotes ?? 0);
+  const votesLeft = retro.votesPerPerson - (board?.myVotes ?? 0);
   for (const sticky of stickies) {
     if (sticky.stackId) continue;
     const pending = isOptimistic(sticky._id);
     // Nobody but the author touches a sticky before the reveal.
-    const canEdit = !pending && (sticky.mine || (input.canManageCards.allowed && !sticky.hidden));
+    const canEdit = !pending && (sticky.mine || (perms.cardManagement.allowed && !sticky.hidden));
     const editing = input.editingId === sticky._id;
     const rank = order.indexOf(sticky._id);
-    const isFocused = step === "discuss" && sticky._id === input.focusStickyId;
+    const isFocused = step === "discuss" && sticky._id === retro.focusStickyId;
     nodes.push({
       id: sticky.clientId,
       type: "sticky",
       position: sticky.position,
+      ...STICKY_SIZE,
       draggable: !editing && !pending,
       zIndex: isFocused ? 10 : undefined,
       data: {
@@ -172,9 +166,9 @@ export function buildRetroNodes(input: RetroNodesInput): RetroFlowNode[] {
         ...(rank >= 0 ? { rank: rank + 1 } : {}),
         focused: isFocused,
         discussed: discussing && rank >= 0 && (step === "done" || (focusIndex >= 0 && rank < focusIndex)),
-        dimmed: step === "discuss" && !!input.focusStickyId && !isFocused,
+        dimmed: step === "discuss" && !!retro.focusStickyId && !isFocused,
         dropTarget: input.dropTargetId === sticky.clientId,
-        canFocus: input.canFlow.allowed && !pending,
+        canFocus: perms.stageFlow.allowed && !pending,
         actions,
       },
     });
@@ -185,10 +179,11 @@ export function buildRetroNodes(input: RetroNodesInput): RetroFlowNode[] {
       id: input.draft.clientId,
       type: "sticky",
       position: input.draft.position,
+      ...STICKY_SIZE,
       draggable: false,
       zIndex: 20,
       data: {
-        draft: { clientId: input.draft.clientId, text: input.draft.text ?? "", gif: input.draft.gif },
+        draft: { clientId: input.draft.clientId },
         color: colorOf.get(input.draft.columnId) ?? "yellow",
         step,
         editing: true,
@@ -219,7 +214,7 @@ export function buildRetroEdges(columns: readonly RetroColumn[], hasTimer: boole
     id: `retro-to-pad-${column.id}`,
     source: "retro",
     sourceHandle: "bottom",
-    target: `pad-${column.id}`,
+    target: padNodeId(column.id),
     targetHandle: "top",
     type: "default",
     selectable: false,

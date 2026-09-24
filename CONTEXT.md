@@ -153,7 +153,7 @@ A retro as Markdown (action items, then the discussed topics in order, then ever
 _Avoid_: export, report, minutes
 
 **Retained**:
-A room the five-day inactivity sweep leaves alone: a retro created by a permanent account, or later owned by one because its guest owner signed in or ownership was transferred to a permanent account. Never un-set. Poker rooms are never retained.
+A room the five-day inactivity sweep leaves alone: a retro created by a permanent account, or later owned by one because its guest owner signed in, or ownership was transferred or handed on to a permanent account. Never un-set. Poker rooms are never retained.
 _Avoid_: archived, saved, permanent (that is the account type)
 
 **Guest retro**:

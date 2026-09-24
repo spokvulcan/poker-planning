@@ -21,7 +21,7 @@ import type { ResolvedDecision } from "@/convex/permissions";
 import type { Phase } from "@/convex/phase";
 import { computeVotingCardRow } from "@/convex/canvasLayout";
 import { DEFAULT_SCALE } from "@/convex/scales";
-import { DEMO_VIEWER_ID, type CustomNodeType } from "../types";
+import { DEMO_VIEWER_ID, type CustomNodeType, type TimerNodeType } from "../types";
 
 /** The room fields the nodes builder reads — a view, not the whole document. */
 export interface CanvasRoomView {
@@ -171,10 +171,11 @@ function buildPlayerNode(
   };
 }
 
-function buildTimerNode(
+/** The timer node, shared with the retro board. */
+export function buildTimerNode(
   node: CanvasNode & { type: "timer" },
-  input: CanvasNodesInput,
-): CustomNodeType {
+  input: Pick<CanvasNodesInput, "roomId" | "viewerId">,
+): TimerNodeType {
   return {
     id: node.nodeId,
     type: "timer",

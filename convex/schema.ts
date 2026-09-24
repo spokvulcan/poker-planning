@@ -199,7 +199,6 @@ export default defineSchema({
     // The sticky this one is stacked under; stacks are one level deep.
     stackId: v.optional(v.id("retroStickies")),
     createdAt: v.number(),
-    updatedAt: v.number(),
   })
     .index("by_room", ["roomId"])
     .index("by_room_client", ["roomId", "clientId"])
@@ -223,14 +222,12 @@ export default defineSchema({
     text: v.string(),
     done: v.boolean(),
     ownerId: v.optional(v.id("users")),
-    createdBy: v.id("users"),
     // Copied from the previous retro by "Start next retro".
     carriedOver: v.optional(v.boolean()),
     createdAt: v.number(),
   })
     .index("by_room", ["roomId"])
-    .index("by_owner", ["ownerId"])
-    .index("by_created_by", ["createdBy"]),
+    .index("by_owner", ["ownerId"]),
 
   // Room memberships (user <-> room relationship)
   roomMemberships: defineTable({

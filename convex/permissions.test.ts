@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   evaluate,
   denialMessage,
-  readsOwnerAbsence,
+  requiresOwnerLevel,
   getEffectivePermissions,
   categoryLevel,
   DEFAULT_PERMISSIONS,
@@ -206,12 +206,12 @@ describe("evaluate — transfer / changePerms / delete (owner-only, no target)",
   });
 });
 
-describe("readsOwnerAbsence", () => {
+describe("requiresOwnerLevel", () => {
   it("is true for owner-level actions only", () => {
-    expect(readsOwnerAbsence({ kind: "category", category: "retroSettings", level: "owner" })).toBe(true);
-    expect(readsOwnerAbsence({ kind: "relationship", verb: "delete" })).toBe(true);
-    expect(readsOwnerAbsence({ kind: "category", category: "stageFlow", level: "facilitators" })).toBe(false);
-    expect(readsOwnerAbsence({ kind: "relationship", verb: "promote", targetRole: "participant" })).toBe(false);
+    expect(requiresOwnerLevel({ kind: "category", category: "retroSettings", level: "owner" })).toBe(true);
+    expect(requiresOwnerLevel({ kind: "relationship", verb: "delete" })).toBe(true);
+    expect(requiresOwnerLevel({ kind: "category", category: "stageFlow", level: "facilitators" })).toBe(false);
+    expect(requiresOwnerLevel({ kind: "relationship", verb: "promote", targetRole: "participant" })).toBe(false);
   });
 });
 

@@ -455,7 +455,8 @@ describe("votes", () => {
     await vote(t, "bob", top);
 
     const whileVoting = await as(t, "ann").query(api.retro.board, { roomId });
-    expect(whileVoting).toMatchObject({ votesCast: 2, myVotes: 1 });
+    expect(whileVoting.myVotes).toBe(1);
+    expect(await as(t, "ann").query(api.retro.votesCast, { roomId })).toBe(2);
     const topWhileVoting = whileVoting.stickies.find((s) => s._id === top)!;
     expect(topWhileVoting.myVote).toBe(true);
     expect(topWhileVoting).not.toHaveProperty("votes");
@@ -836,7 +837,7 @@ describe("account linking", () => {
     expect(await t.run((ctx) => ctx.db.get(annId))).toBeNull();
     expect((await stickyRow(t, stickyId)).authorId).toBe(permanentId);
     expect((await votesIn(t, roomId)).map((v) => v.voterId)).toEqual([permanentId]);
-    expect(await t.run((ctx) => ctx.db.get(itemId))).toMatchObject({ ownerId: permanentId, createdBy: permanentId });
+    expect(await t.run((ctx) => ctx.db.get(itemId))).toMatchObject({ ownerId: permanentId });
     // The account now reads the sticky, and the vote, as its own.
     expect(await seen(t, "ann-permanent", roomId, stickyId)).toMatchObject({ mine: true, myVote: true });
   });

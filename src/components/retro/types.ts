@@ -3,7 +3,7 @@ import type { Id } from "@/convex/_generated/dataModel";
 import type { ActionItemView, Gif, StickyView } from "@/convex/model/retro";
 import type { ResolvedDecision } from "@/convex/permissions";
 import type { RetroColumn, RetroStep, StickyColor } from "@/convex/retroTemplates";
-import type { TimerNodeData } from "@/components/room/types";
+import type { TimerNodeType } from "@/components/room/types";
 
 /**
  * Every write the board can trigger, behind one frozen-identity object that
@@ -16,7 +16,6 @@ export interface RetroBoardActions {
   startEdit: (stickyId: Id<"retroStickies">) => void;
   commitEdit: (stickyId: Id<"retroStickies">, text: string, gif: Gif | null) => void;
   cancelEdit: () => void;
-  setGif: (stickyId: Id<"retroStickies">, gif: Gif | null) => void;
   deleteSticky: (stickyId: Id<"retroStickies">) => void;
   toggleVote: (stickyId: Id<"retroStickies">) => void;
   unstack: (stickyId: Id<"retroStickies">) => void;
@@ -72,9 +71,9 @@ export type PadNodeData = {
 };
 
 export type StickyNodeData = {
-  /** The sticky as the viewer may see it; a draft has only the local fields. */
+  /** The sticky as the viewer may see it; a draft, not yet written, has neither. */
   sticky?: StickyView;
-  draft?: { clientId: string; text: string; gif?: Gif };
+  draft?: { clientId: string };
   color: StickyColor;
   step: RetroStep;
   editing: boolean;
@@ -108,6 +107,6 @@ export type RetroFlowNode =
   | Node<PadNodeData, "pad">
   | Node<StickyNodeData, "sticky">
   | Node<ActionsNodeData, "actions">
-  | Node<TimerNodeData, "timer">;
+  | TimerNodeType;
 
 export type StickyFlowNode = Node<StickyNodeData, "sticky">;

@@ -6,7 +6,7 @@
  */
 import { describe, it, expect } from "vitest";
 import type { Id } from "@/convex/_generated/dataModel";
-import type { BoardView, StickyView } from "@/convex/model/retro";
+import type { BoardView, RetroState, StickyView } from "@/convex/model/retro";
 import { RESOLVED_ALLOWED, type ResolvedDecision } from "@/convex/permissions";
 import { columnsFromTemplate, type RetroStep } from "@/convex/retroTemplates";
 import { padPositions, RETRO_NODE_POSITION } from "@/convex/retroLayout";
@@ -34,18 +34,29 @@ function sticky(id: string, overrides: Partial<StickyView> = {}): StickyView {
 }
 
 function board(stickies: StickyView[], overrides: Partial<BoardView> = {}): BoardView {
-  return { stickies, writers: 1, votesCast: 0, myVotes: 0, ...overrides };
+  return { stickies, writers: 1, myVotes: 0, ...overrides };
 }
 
-function input(overrides: Partial<RetroNodesInput> = {}): RetroNodesInput {
+type InputOverrides = Omit<Partial<RetroNodesInput>, "retro" | "perms"> & {
+  retro?: Partial<RetroState>;
+  perms?: Partial<RetroNodesInput["perms"]>;
+};
+
+function input({ retro, perms, ...overrides }: InputOverrides = {}): RetroNodesInput {
   return {
     roomId: "room-1" as Id<"rooms">,
     viewerId: "me" as Id<"users">,
     name: "Sprint 42 retro",
-    step: "write",
-    columns,
-    votesPerPerson: 3,
+    retro: { step: "write", columns, votesPerPerson: 3, showAuthors: false, ...retro },
+    perms: {
+      stageFlow: RESOLVED_ALLOWED,
+      cardManagement: DENIED,
+      actionManagement: RESOLVED_ALLOWED,
+      retroSettings: RESOLVED_ALLOWED,
+      ...perms,
+    },
     board: board([]),
+    votesCast: 0,
     items: [],
     canvasNodes: [],
     members: [{ _id: "me" as Id<"users">, name: "Me" }],
@@ -53,10 +64,6 @@ function input(overrides: Partial<RetroNodesInput> = {}): RetroNodesInput {
     editingId: null,
     expandedIds: new Set(),
     dropTargetId: null,
-    canFlow: RESOLVED_ALLOWED,
-    canManageCards: DENIED,
-    canManageActions: RESOLVED_ALLOWED,
-    canSettings: RESOLVED_ALLOWED,
     actions,
     ...overrides,
   };
@@ -79,7 +86,7 @@ describe("buildRetroNodes", () => {
     const nodes = stickyNodes(
       buildRetroNodes(
         input({
-          step: "vote",
+          retro: { step: "vote" },
           board: board([sticky("s1"), sticky("s2", { stackId: "s1" as Id<"retroStickies"> }), sticky("s3")]),
         })
       )
@@ -100,7 +107,7 @@ describe("buildRetroNodes", () => {
     const stickies = [sticky("s1", { mine: true }), sticky("s2")];
     const asParticipant = stickyNodes(buildRetroNodes(input({ board: board(stickies) })));
     expect(asParticipant.map((n) => n.data.canEdit)).toEqual([true, false]);
-    const asFacilitator = stickyNodes(buildRetroNodes(input({ board: board(stickies), canManageCards: RESOLVED_ALLOWED })));
+    const asFacilitator = stickyNodes(buildRetroNodes(input({ board: board(stickies), perms: { cardManagement: RESOLVED_ALLOWED } })));
     expect(asFacilitator.map((n) => n.data.canEdit)).toEqual([true, true]);
   });
 
@@ -116,7 +123,7 @@ describe("buildRetroNodes", () => {
   it("ranks topics only from Discuss on, spotlights the focus and dims the rest", () => {
     const stickies = [sticky("s1", { votes: 1 }), sticky("s2", { votes: 3 }), sticky("s3", { votes: 0 })];
     const at = (step: RetroStep) =>
-      stickyNodes(buildRetroNodes(input({ step, board: board(stickies), focusStickyId: "s1" as Id<"retroStickies"> })));
+      stickyNodes(buildRetroNodes(input({ retro: { step, focusStickyId: "s1" as Id<"retroStickies"> }, board: board(stickies) })));
 
     expect(at("vote").map((n) => n.data.rank)).toEqual([undefined, undefined, undefined]);
 
@@ -135,7 +142,7 @@ describe("buildRetroNodes", () => {
   it("tells the retro node where the walk is", () => {
     const stickies = [sticky("s1", { votes: 1 }), sticky("s2", { votes: 3 })];
     const retro = buildRetroNodes(
-      input({ step: "discuss", board: board(stickies), focusStickyId: "s1" as Id<"retroStickies"> })
+      input({ retro: { step: "discuss", focusStickyId: "s1" as Id<"retroStickies"> }, board: board(stickies) })
     ).find((n) => n.id === "retro")!;
     expect(retro.data).toMatchObject({ topicIndex: 1, topicCount: 2, focusedId: "s1", focusedLabel: "Sticky s1" });
   });
@@ -155,7 +162,7 @@ describe("buildRetroNodes", () => {
 
   it("marks the sticky under a dragged one as the drop target", () => {
     const nodes = stickyNodes(
-      buildRetroNodes(input({ step: "vote", board: board([sticky("s1"), sticky("s2")]), dropTargetId: "client-s2" }))
+      buildRetroNodes(input({ retro: { step: "vote" }, board: board([sticky("s1"), sticky("s2")]), dropTargetId: "client-s2" }))
     );
     expect(nodes.map((n) => n.data.dropTarget)).toEqual([false, true]);
   });

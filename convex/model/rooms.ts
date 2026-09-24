@@ -30,6 +30,23 @@ export function validateRoomName(name: string): string {
   return trimmed;
 }
 
+/**
+ * Whether a room is kept past the inactivity sweep with `owner` owning it:
+ * a retro is once a permanent account owns it, and a kept room stays kept.
+ */
+export function isRetainedUnder(
+  room: Pick<Doc<"rooms">, "roomType" | "retained">,
+  owner: Pick<Doc<"users">, "accountType"> | null
+): boolean {
+  return room.retained || (room.roomType === "retro" && owner?.accountType === "permanent");
+}
+
+/** Hands a room to a new owner, keeping it when that owner keeps retros. */
+export async function setRoomOwner(ctx: MutationCtx, room: Doc<"rooms">, ownerId: Id<"users">): Promise<void> {
+  const owner = await ctx.db.get(ownerId);
+  await ctx.db.patch(room._id, { ownerId, retained: isRetainedUnder(room, owner) });
+}
+
 export interface SanitizedVote extends Doc<"votes"> {
   hasVoted: boolean;
 }

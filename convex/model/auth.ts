@@ -4,7 +4,7 @@ import {
   PermissionCategory,
   Action,
   resolve,
-  readsOwnerAbsence,
+  requiresOwnerLevel,
   getEffectivePermissions,
   categoryLevel,
   getEffectiveRole,
@@ -329,7 +329,7 @@ export async function resolveRoomAction(
 
   // Owner absence refines an owner-level denial (see evaluate); for any
   // other action it can't change the result, so skip the DB read.
-  const ownerAbsent = readsOwnerAbsence(action)
+  const ownerAbsent = requiresOwnerLevel(action)
     ? await isRoomOwnerAbsent(ctx, room)
     : false;
 

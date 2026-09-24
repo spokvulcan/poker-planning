@@ -12,26 +12,28 @@ import {
 import { gifValidator, retroPermissionsValidator, retroStepValidator, stickyColorValidator } from "./schema";
 import { refusal } from "./model/refusal";
 import type { Doc, Id } from "./_generated/dataModel";
-import type { QueryCtx, MutationCtx } from "./_generated/server";
+import type { MutationCtx } from "./_generated/server";
 
 const positionValidator = v.object({ x: v.number(), y: v.number() });
 
+type MemberRoom = { user: Doc<"users">; membership: Doc<"roomMemberships">; room: Doc<"rooms"> };
+
 /** The room a retro write lands in, loaded after the attendance guard. */
-async function memberRoom(
-  ctx: MutationCtx,
-  roomId: Id<"rooms">
-): Promise<{ user: Doc<"users">; room: Doc<"rooms"> }> {
-  const { user } = await requireRoomMember(ctx, roomId);
+async function memberRoom(ctx: MutationCtx, roomId: Id<"rooms">): Promise<MemberRoom> {
+  const { user, membership } = await requireRoomMember(ctx, roomId);
   const room = await ctx.db.get(roomId);
   if (!room) throw refusal("missing", "This retro is gone.");
-  return { user, room };
+  return { user, membership, room };
 }
 
-/** The room a sticky lives in, for writes addressed by sticky. */
-async function stickyRoom(ctx: QueryCtx, stickyId: Id<"retroStickies">): Promise<Id<"rooms">> {
+/** A sticky and the room it lives in, for writes addressed by sticky. */
+async function memberSticky(
+  ctx: MutationCtx,
+  stickyId: Id<"retroStickies">
+): Promise<MemberRoom & { sticky: Doc<"retroStickies"> }> {
   const sticky = await ctx.db.get(stickyId);
   if (!sticky) throw refusal("missing", "That sticky is gone.");
-  return sticky.roomId;
+  return { ...(await memberRoom(ctx, sticky.roomId)), sticky };
 }
 
 // --- Retros -------------------------------------------------------------------
@@ -165,12 +167,21 @@ export const removeColumn = mutation({
 
 // --- The board ------------------------------------------------------------------
 
-/** Every sticky as the viewer may see it, plus the vote and writer counts. */
+/** Every sticky as the viewer may see it, plus the writer and the viewer's vote counts. */
 export const board = query({
   args: { roomId: v.id("rooms") },
   handler: async (ctx, args) => {
     const { user, room } = await requireRoomReader(ctx, args.roomId);
     return await Retro.getBoard(ctx, room, user._id);
+  },
+});
+
+/** How many votes everyone has cast: its own query, so a vote doesn't re-send every board. */
+export const votesCast = query({
+  args: { roomId: v.id("rooms") },
+  handler: async (ctx, args) => {
+    await requireRoomReader(ctx, args.roomId);
+    return await Retro.countVotes(ctx, args.roomId);
   },
 });
 
@@ -197,8 +208,8 @@ export const updateSticky = mutation({
     columnId: v.optional(v.string()),
   },
   handler: async (ctx, { stickyId, ...patch }) => {
-    const { user, room } = await memberRoom(ctx, await stickyRoom(ctx, stickyId));
-    await Retro.updateSticky(ctx, room, user, stickyId, patch);
+    const { membership, room, sticky } = await memberSticky(ctx, stickyId);
+    await Retro.updateSticky(ctx, room, membership, sticky, patch);
   },
 });
 
@@ -216,32 +227,32 @@ export const moveStickies = mutation({
 export const deleteSticky = mutation({
   args: { stickyId: v.id("retroStickies") },
   handler: async (ctx, args) => {
-    const { user, room } = await memberRoom(ctx, await stickyRoom(ctx, args.stickyId));
-    await Retro.deleteSticky(ctx, room, user, args.stickyId);
+    const { membership, room, sticky } = await memberSticky(ctx, args.stickyId);
+    await Retro.deleteSticky(ctx, room, membership, sticky);
   },
 });
 
 export const stackSticky = mutation({
   args: { stickyId: v.id("retroStickies"), ontoId: v.id("retroStickies") },
   handler: async (ctx, args) => {
-    const { user, room } = await memberRoom(ctx, await stickyRoom(ctx, args.stickyId));
-    await Retro.stackSticky(ctx, room, user, args.stickyId, args.ontoId);
+    const { user, room, sticky } = await memberSticky(ctx, args.stickyId);
+    await Retro.stackSticky(ctx, room, user, sticky, args.ontoId);
   },
 });
 
 export const unstackSticky = mutation({
   args: { stickyId: v.id("retroStickies"), position: positionValidator },
   handler: async (ctx, args) => {
-    const { room } = await memberRoom(ctx, await stickyRoom(ctx, args.stickyId));
-    await Retro.unstackSticky(ctx, room, args.stickyId, args.position);
+    const { room, sticky } = await memberSticky(ctx, args.stickyId);
+    await Retro.unstackSticky(ctx, room, sticky, args.position);
   },
 });
 
 export const toggleVote = mutation({
   args: { stickyId: v.id("retroStickies") },
   handler: async (ctx, args) => {
-    const { user, room } = await memberRoom(ctx, await stickyRoom(ctx, args.stickyId));
-    await Retro.toggleVote(ctx, room, user, args.stickyId);
+    const { user, room, sticky } = await memberSticky(ctx, args.stickyId);
+    await Retro.toggleVote(ctx, room, user, sticky);
   },
 });
 
@@ -258,8 +269,8 @@ export const actionItems = query({
 export const addActionItem = mutation({
   args: { roomId: v.id("rooms"), text: v.string(), ownerId: v.optional(v.id("users")) },
   handler: async (ctx, { roomId, ...args }) => {
-    const { room, user } = await requireCan(ctx, roomId, { kind: "category", category: "actionManagement" });
-    return await Retro.addActionItem(ctx, room, user, args);
+    const { room } = await requireCan(ctx, roomId, { kind: "category", category: "actionManagement" });
+    return await Retro.addActionItem(ctx, room, args);
   },
 });
 
@@ -274,7 +285,7 @@ export const updateActionItem = mutation({
     const item = await ctx.db.get(itemId);
     if (!item) throw refusal("missing", "That action item is gone.");
     const { room } = await requireCan(ctx, item.roomId, { kind: "category", category: "actionManagement" });
-    await Retro.updateActionItem(ctx, room, itemId, patch);
+    await Retro.updateActionItem(ctx, room, item, patch);
   },
 });
 
@@ -284,6 +295,6 @@ export const deleteActionItem = mutation({
     const item = await ctx.db.get(args.itemId);
     if (!item) return;
     const { room } = await requireCan(ctx, item.roomId, { kind: "category", category: "actionManagement" });
-    await Retro.deleteActionItem(ctx, room, args.itemId);
+    await Retro.deleteActionItem(ctx, room, item);
   },
 });

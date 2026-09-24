@@ -8,8 +8,7 @@ import { type T, seedUser as seedNamedUser } from "./analytics.seeds";
 
 // Account deletion: the user row and their memberships go; what they wrote
 // stays. A sticky's `authorId`, a vote's `voterId` and an action item's
-// `ownerId` and `createdBy` dangle, and the reads render them as "Former
-// member". A retro the account owned goes to whoever joined it first, or,
+// `ownerId` dangle, and the reads render them as "Former member". A retro the account owned goes to whoever joined it first, or,
 // with nobody else in it, is deleted with the account. The auth provider's
 // record is not this module's to touch.
 
@@ -67,7 +66,7 @@ describe("deleting an account", () => {
       ctx.db.query("retroStickyVotes").withIndex("by_voter", (q) => q.eq("voterId", leaverId)).collect()
     );
     expect(votes).toHaveLength(1);
-    expect(await t.run((ctx) => ctx.db.get(itemId))).toMatchObject({ ownerId: leaverId, createdBy: leaverId });
+    expect(await t.run((ctx) => ctx.db.get(itemId))).toMatchObject({ ownerId: leaverId });
     expect(await t.run((ctx) => ctx.db.get(roomId))).not.toBeNull();
   });
 
@@ -81,7 +80,7 @@ describe("deleting an account", () => {
       text: "Mine",
       authorName: FORMER_MEMBER,
     });
-    expect(board.votesCast).toBe(1);
+    expect(await as(t, "stayer").query(api.retro.votesCast, { roomId })).toBe(1);
     const items = await as(t, "stayer").query(api.retro.actionItems, { roomId });
     expect(items).toEqual([expect.objectContaining({ text: "Do it", ownerId: leaverId, ownerName: FORMER_MEMBER })]);
   });

@@ -417,13 +417,17 @@ export async function deleteUserByAuthUserId(
   await ctx.db.delete(user._id);
 }
 
-async function handOffOwnedRetros(ctx: MutationCtx, ownerId: Id<"users">): Promise<void> {
+/** The retro rooms an account owns. */
+async function ownedRetros(ctx: MutationCtx, ownerId: Id<"users">): Promise<Doc<"rooms">[]> {
   const owned = await ctx.db
     .query("rooms")
     .withIndex("by_owner", (q) => q.eq("ownerId", ownerId))
     .collect();
-  for (const room of owned) {
-    if (room.roomType !== "retro") continue;
+  return owned.filter((room) => room.roomType === "retro");
+}
+
+async function handOffOwnedRetros(ctx: MutationCtx, ownerId: Id<"users">): Promise<void> {
+  for (const room of await ownedRetros(ctx, ownerId)) {
     const members = await ctx.db
       .query("roomMemberships")
       .withIndex("by_room", (q) => q.eq("roomId", room._id))
@@ -432,11 +436,8 @@ async function handOffOwnedRetros(ctx: MutationCtx, ownerId: Id<"users">): Promi
       .filter((m) => m.userId !== ownerId)
       .sort((a, b) => a.joinedAt - b.joinedAt)[0];
     if (heir) {
-      // Handed to a permanent account, a guest's retro is kept, as on a transfer.
-      const heirUser = await ctx.db.get(heir.userId);
-      const retained = room.retained || heirUser?.accountType === "permanent";
       await ctx.db.patch(heir._id, { role: "owner" });
-      await ctx.db.patch(room._id, { ownerId: heir.userId, retained });
+      await Rooms.setRoomOwner(ctx, room, heir.userId);
     } else {
       await ctx.scheduler.runAfter(0, internal.maintenance.deleteRoomAggregateChunk, { roomId: room._id });
     }
@@ -452,13 +453,11 @@ const MAX_LINKED_RETRO_ROWS = 5000;
  * anonymous account turns permanent.
  */
 async function retainOwnedRetros(ctx: MutationCtx, ownerId: Id<"users">): Promise<void> {
-  const owned = await ctx.db
-    .query("rooms")
-    .withIndex("by_owner", (q) => q.eq("ownerId", ownerId))
-    .collect();
+  const owner = await ctx.db.get(ownerId);
+  const retros = await ownedRetros(ctx, ownerId);
   await Promise.all(
-    owned
-      .filter((room) => room.roomType === "retro" && !room.retained)
+    retros
+      .filter((room) => !room.retained && Rooms.isRetainedUnder(room, owner))
       .map((room) => ctx.db.patch(room._id, { retained: true }))
   );
 }
@@ -651,11 +650,10 @@ export async function linkAnonymousToPermanent(
 
     // Retro stickies, votes and action items name people by reference:
     // re-point the anonymous account's rows to the permanent one.
-    const [stickies, retroVotes, ownedItems, createdItems] = await Promise.all([
+    const [stickies, retroVotes, ownedItems] = await Promise.all([
       ctx.db.query("retroStickies").withIndex("by_author", (q) => q.eq("authorId", user._id)).take(MAX_LINKED_RETRO_ROWS),
       ctx.db.query("retroStickyVotes").withIndex("by_voter", (q) => q.eq("voterId", user._id)).take(MAX_LINKED_RETRO_ROWS),
       ctx.db.query("retroActionItems").withIndex("by_owner", (q) => q.eq("ownerId", user._id)).take(MAX_LINKED_RETRO_ROWS),
-      ctx.db.query("retroActionItems").withIndex("by_created_by", (q) => q.eq("createdBy", user._id)).take(MAX_LINKED_RETRO_ROWS),
     ]);
     // One person, one set of votes per retro: where the permanent account
     // has already voted, the guest's votes there are dropped rather than
@@ -677,7 +675,6 @@ export async function linkAnonymousToPermanent(
       ),
       ...ownedItems.map((item) => ctx.db.patch(item._id, { ownerId: existingPermanent._id })),
     ]);
-    await Promise.all(createdItems.map((item) => ctx.db.patch(item._id, { createdBy: existingPermanent._id })));
     await retainOwnedRetros(ctx, existingPermanent._id);
 
     // Delete the old anonymous user record

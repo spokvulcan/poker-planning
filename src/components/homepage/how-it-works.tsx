@@ -2,6 +2,8 @@
 
 import { Check, Loader2, Layers } from "lucide-react";
 import { useState, useEffect, type ComponentType } from "react";
+import { columnsFromTemplate, DEFAULT_TEMPLATE_ID } from "@/convex/retroTemplates";
+import { STICKY_TONES } from "@/components/retro/sticky-colors";
 import { HOW_IT_WORKS } from "./copy";
 import { CeremonyTabs, CeremonyTabList, CeremonyTabPanel, type Ceremony } from "./ceremony-tabs";
 
@@ -9,20 +11,13 @@ const POKER = HOW_IT_WORKS.poker.animation;
 const RETRO = HOW_IT_WORKS.retro.animation;
 
 /**
- * Sticky paper for the default template's columns (Went well, To improve,
- * Ideas) in the board's palette: pastel in light mode, a deep tint in dark,
- * with the scribbles a face-down sticky shows.
+ * The default template's columns (Went well, To improve, Ideas) in the
+ * board's own palette: each sticky's paper and ink, and the scribbles a
+ * face-down sticky shows.
  */
-const PAPER = [
-  "bg-emerald-100 border-emerald-300 text-emerald-950 dark:bg-emerald-900/40 dark:border-emerald-700 dark:text-emerald-50",
-  "bg-rose-100 border-rose-300 text-rose-950 dark:bg-rose-900/40 dark:border-rose-700 dark:text-rose-50",
-  "bg-amber-100 border-amber-300 text-amber-950 dark:bg-amber-900/40 dark:border-amber-700 dark:text-amber-50",
-];
-const SCRIBBLE = [
-  "bg-emerald-300/80 dark:bg-emerald-700/70",
-  "bg-rose-300/80 dark:bg-rose-700/70",
-  "bg-amber-300/80 dark:bg-amber-700/70",
-];
+const TONES = columnsFromTemplate(DEFAULT_TEMPLATE_ID).map((column) => STICKY_TONES[column.color]);
+const PAPER = TONES.map((tone) => `${tone.paper} ${tone.ink}`);
+const SCRIBBLE = TONES.map((tone) => tone.scribble);
 
 /** The stack the vote step builds and the discussion opens on: the "To improve" sticky and the one dropped on it. */
 const STACK = [RETRO.stickies[1], RETRO.stacked];

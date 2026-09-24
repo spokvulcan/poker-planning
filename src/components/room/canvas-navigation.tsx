@@ -15,7 +15,7 @@ import {
   Menu,
   ListTodo,
 } from "lucide-react";
-import { FC, useState, useRef, useSyncExternalStore } from "react";
+import { memo, useState, useRef, useSyncExternalStore } from "react";
 import type { LucideIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -69,11 +69,10 @@ interface CanvasNavigationProps {
   onSettingsPanelChange: (open: boolean) => void;
   /** Extra entries for the share menu (the retro's summary). */
   shareActions?: { label: string; icon: LucideIcon; onSelect: () => void }[];
-  /** The noun in the copy-link toast: "Room" or "Retro". */
-  linkNoun?: string;
 }
 
-export const CanvasNavigation: FC<CanvasNavigationProps> = ({
+/** The canvas's top bar. Memoized: a canvas re-renders on every drag frame. */
+export const CanvasNavigation = memo(function CanvasNavigation({
   roomData,
   onToggleFullscreen,
   isFullscreen = false,
@@ -82,9 +81,10 @@ export const CanvasNavigation: FC<CanvasNavigationProps> = ({
   isSettingsOpen,
   onSettingsPanelChange,
   shareActions = [],
-  linkNoun = "Room",
-}) => {
+}: CanvasNavigationProps) {
   const isDemoMode = useIsDemoMode();
+  // What the link and the settings are called: a room, or a retro.
+  const linkNoun = roomData.room.roomType === "retro" ? "Retro" : "Room";
   const { zoomIn, zoomOut, fitView } = useReactFlow();
   const router = useRouter();
 
@@ -618,4 +618,4 @@ export const CanvasNavigation: FC<CanvasNavigationProps> = ({
       </div>
     </>
   );
-};
+});

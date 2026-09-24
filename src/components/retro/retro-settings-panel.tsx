@@ -1,23 +1,9 @@
 "use client";
 
-import { useState, type ReactElement } from "react";
+import { memo, useState, type ReactElement } from "react";
 import { useRouter } from "next/navigation";
 import { useMutation, useQuery } from "convex/react";
-import { useTheme } from "next-themes";
-import {
-  AlertTriangle,
-  ClipboardCopy,
-  Info,
-  Minus,
-  Monitor,
-  Moon,
-  Plus,
-  Settings,
-  ShieldAlert,
-  Sun,
-  Trash2,
-  X,
-} from "lucide-react";
+import { AlertTriangle, ClipboardCopy, Minus, Plus, Settings, Trash2, X } from "lucide-react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { RoomWithRelatedData } from "@/convex/model/rooms";
@@ -31,7 +17,7 @@ import {
   type RetroColumn,
   type StickyColor,
 } from "@/convex/retroTemplates";
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { Accordion } from "@/components/ui/accordion";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -45,14 +31,16 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { SidePanel } from "@/components/ui/side-panel";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ParticipantsSection } from "@/components/room/participants-section";
+import { PermissionsSection } from "@/components/room/permissions-section";
+import { ThemeSection } from "@/components/room/theme-section";
 import { permissionInputProps, permissionProps, useRetroPermissions } from "@/hooks/usePermissions";
 import { runAct } from "@/lib/run-act";
 import { cn } from "@/lib/utils";
+import { stickiesLabel } from "./retro-summary";
 import { STICKY_TONES } from "./sticky-colors";
 
 const PERMISSION_CONFIG: Record<RetroPermissionCategory, { label: string; description: string }> = {
@@ -60,12 +48,6 @@ const PERMISSION_CONFIG: Record<RetroPermissionCategory, { label: string; descri
   cardManagement: { label: "Other people's stickies", description: "Edit or delete stickies someone else wrote" },
   actionManagement: { label: "Action items", description: "Add, assign, tick off and delete" },
   retroSettings: { label: "Retro settings", description: "Name, columns, votes, authors" },
-};
-
-const LEVEL_LABELS: Record<PermissionLevel, string> = {
-  everyone: "Everyone",
-  facilitators: "Facilitators",
-  owner: "Owner only",
 };
 
 const FAILED = "That didn't save. Try again.";
@@ -163,7 +145,7 @@ function ColumnRow({
           />
         ))}
         <span className="ml-auto text-xs text-gray-500 tabular-nums dark:text-gray-400">
-          {count === 1 ? "1 sticky" : `${count} stickies`}
+          {stickiesLabel(count)}
         </span>
       </div>
     </div>
@@ -181,9 +163,10 @@ interface RetroSettingsPanelProps {
 /**
  * The retro's settings, docked like the poker room's: name, columns, votes,
  * whether stickies show their author, theme, permissions, the roster, and
- * deleting the retro.
+ * deleting the retro. Memoized: the board re-renders on every drag frame,
+ * and the panel stays mounted while closed.
  */
-export function RetroSettingsPanel({
+export const RetroSettingsPanel = memo(function RetroSettingsPanel({
   roomData,
   currentUserId,
   isOpen,
@@ -191,7 +174,6 @@ export function RetroSettingsPanel({
   onCopySummary,
 }: RetroSettingsPanelProps): ReactElement {
   const router = useRouter();
-  const { theme, setTheme } = useTheme();
   const { room } = roomData;
   const retro = room.retro!;
   const perms = useRetroPermissions(roomData, currentUserId);
@@ -325,37 +307,7 @@ export function RetroSettingsPanel({
               />
             </div>
 
-            {/* Theme */}
-            <div className="mt-4 border-t border-gray-100 pt-5 dark:border-border/50">
-              <div className="flex flex-col gap-3">
-                <Label className="text-sm font-medium text-gray-700 dark:text-gray-300">Theme</Label>
-                <div className="flex gap-1.5 rounded-lg border border-gray-200/50 bg-gray-100/80 p-1 dark:border-border/50 dark:bg-surface-2">
-                  {(
-                    [
-                      { value: "light", label: "Light", icon: Sun },
-                      { value: "dark", label: "Dark", icon: Moon },
-                      { value: "system", label: "System", icon: Monitor },
-                    ] as const
-                  ).map(({ value, label, icon: Icon }) => (
-                    <Button
-                      key={value}
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setTheme(value)}
-                      className={cn(
-                        "h-8 flex-1 gap-2 rounded-md px-3 text-xs font-medium transition-all",
-                        theme === value
-                          ? "border border-gray-200/50 bg-white text-gray-900 shadow-sm dark:border-transparent dark:bg-surface-3 dark:text-white"
-                          : "text-gray-500 hover:text-gray-900 dark:hover:text-gray-300"
-                      )}
-                    >
-                      <Icon className="size-3.5" />
-                      {label}
-                    </Button>
-                  ))}
-                </div>
-              </div>
-            </div>
+            <ThemeSection />
           </div>
 
           <div className="flex-1 space-y-8 p-6">
@@ -388,62 +340,17 @@ export function RetroSettingsPanel({
               ))}
             </div>
 
-            {/* Permissions */}
             <Accordion className="space-y-3">
-              <AccordionItem
-                value="permissions"
-                className="rounded-lg border border-gray-200/50 bg-white px-4 shadow-sm dark:border-border dark:bg-surface-2/30"
-              >
-                <AccordionTrigger className="py-3.5 text-sm font-medium text-gray-700 hover:no-underline dark:text-gray-300">
-                  <div className="flex items-center gap-3">
-                    <ShieldAlert className="size-4 text-gray-400" />
-                    Permissions
-                  </div>
-                </AccordionTrigger>
-                <AccordionContent className="pt-1 pb-4">
-                  <div className="space-y-4">
-                    <div className="flex items-center gap-1.5 rounded-lg border border-gray-100 bg-gray-50 p-3 dark:border-border/50 dark:bg-surface-3">
-                      <Info className="size-4 shrink-0 text-blue-500" />
-                      <span className="text-xs text-gray-600 dark:text-gray-300">
-                        {perms.changePermissions.allowed
-                          ? "As the owner, you decide who can do what in this retro."
-                          : "Only the owner can change these permissions."}
-                      </span>
-                    </div>
-                    {(Object.keys(PERMISSION_CONFIG) as RetroPermissionCategory[]).map((category) => (
-                      <div key={category} className="flex items-center justify-between gap-4 px-3 py-2">
-                        <div className="min-w-0">
-                          <span className="text-sm font-medium text-gray-800 dark:text-gray-200">
-                            {PERMISSION_CONFIG[category].label}
-                          </span>
-                          <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-                            {PERMISSION_CONFIG[category].description}
-                          </p>
-                        </div>
-                        {perms.changePermissions.allowed ? (
-                          <Select
-                            value={perms.permissions[category]}
-                            onValueChange={(value) => handlePermissionChange(category, value as PermissionLevel)}
-                          >
-                            <SelectTrigger size="sm" className="h-8 w-[130px] bg-white text-xs dark:bg-surface-2">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent align="end">
-                              <SelectItem value="everyone">Everyone</SelectItem>
-                              <SelectItem value="facilitators">Facilitators</SelectItem>
-                              <SelectItem value="owner">Owner only</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        ) : (
-                          <span className="rounded-md bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-600 dark:bg-surface-3 dark:text-gray-300">
-                            {LEVEL_LABELS[perms.permissions[category]]}
-                          </span>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </AccordionContent>
-              </AccordionItem>
+              <PermissionsSection
+                config={PERMISSION_CONFIG}
+                permissions={perms.permissions}
+                canChange={perms.changePermissions.allowed}
+                note={{
+                  owner: "As the owner, you decide who can do what in this retro.",
+                  others: "Only the owner can change these permissions.",
+                }}
+                onChange={handlePermissionChange}
+              />
             </Accordion>
 
             <ParticipantsSection roomId={room._id} currentUserId={currentUserId} perms={perms} isOpen={isOpen} />
@@ -498,4 +405,4 @@ export function RetroSettingsPanel({
       </AlertDialog>
     </>
   );
-}
+});

@@ -5,7 +5,7 @@
  * the board derive the same answer from the same rows.
  */
 
-import type { RetroColumn } from "./retroTemplates";
+import type { RetroColumn, RetroStep } from "./retroTemplates";
 
 /** The fields of a sticky the rules read. */
 export interface StickyRef {
@@ -22,6 +22,13 @@ export interface StickyRef {
  */
 export function rootOf(sticky: Pick<StickyRef, "_id" | "stackId">): string {
   return sticky.stackId ?? sticky._id;
+}
+
+/**
+ * Who tops a stack once its top is gone: the oldest sticky left in it.
+ */
+export function heirOf<T extends Pick<StickyRef, "createdAt">>(members: readonly T[]): T | undefined {
+  return [...members].sort((a, b) => a.createdAt - b.createdAt)[0];
 }
 
 /**
@@ -81,6 +88,11 @@ export function stepFocus(
   if (index === -1) return order[0];
   const next = direction === "next" ? index + 1 : index - 1;
   return order[Math.min(Math.max(next, 0), order.length - 1)];
+}
+
+/** Where the retro goes when a topic is put in the spotlight: to the discussion, unless it's done. */
+export function stepOnFocus(step: RetroStep): RetroStep {
+  return step === "done" ? "done" : "discuss";
 }
 
 // --- GIFs ---------------------------------------------------------------------

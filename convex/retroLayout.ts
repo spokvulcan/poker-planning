@@ -12,7 +12,7 @@ import type { Position } from "./canvasLayout";
 
 export const STICKY_WIDTH = 220;
 export const STICKY_MIN_HEIGHT = 124;
-export const STICKY_GAP = 16;
+const STICKY_GAP = 16;
 
 export const PAD_WIDTH = 240;
 export const PAD_HEIGHT = 88;
@@ -24,6 +24,11 @@ export const RETRO_TIMER_POSITION: Position = { x: -RETRO_NODE_WIDTH / 2 - 260, 
 
 export const ACTIONS_WIDTH = 300;
 const ACTIONS_GAP = 96;
+
+/** The canvas node id of a column's pad. */
+export function padNodeId(columnId: string): string {
+  return `pad-${columnId}`;
+}
 
 /** The pads' row, centred under the retro node. */
 export function padPositions(count: number): Position[] {

@@ -151,12 +151,11 @@ function JoinGate({
     return <CenteredMessage title="Loading..." body="Checking session" />;
   }
 
-  const isRetro = roomData.room.roomType === "retro";
-  const noun = isRetro ? "Retro" : "Room";
+  const { roomType } = roomData.room;
 
   // If not authenticated, show JoinRoomDialog (session will be created on join)
   if (!isAuthenticated) {
-    return <JoinRoomDialog roomId={roomId} roomName={roomData.room.name} noun={noun} />;
+    return <JoinRoomDialog roomId={roomId} roomName={roomData.room.name} roomType={roomType} />;
   }
 
   // If authenticated, wait for queries to load
@@ -168,7 +167,7 @@ function JoinGate({
 
   // If user has membership, show the room canvas
   if (isInRoom) {
-    return isRetro ? (
+    return roomType === "retro" ? (
       <RetroCanvas roomData={roomData} currentUserId={existingMembership._id} />
     ) : (
       <RoomCanvas roomData={roomData} currentUserId={existingMembership._id} />
@@ -176,5 +175,5 @@ function JoinGate({
   }
 
   // No membership - show join dialog (auto-join may be in progress if globalUser exists)
-  return <JoinRoomDialog roomId={roomId} roomName={roomData.room.name} noun={noun} />;
+  return <JoinRoomDialog roomId={roomId} roomName={roomData.room.name} roomType={roomType} />;
 }

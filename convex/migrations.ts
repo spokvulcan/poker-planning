@@ -61,49 +61,56 @@ const PURGE_BATCH = 200;
 
 /**
  * Clears out the retired team retro (the old boards, Teams and their email
- * reminders) so the whiteboard retro starts clean. Deletes every legacy retro
- * room through the room cascade, empties the legacy tables batch by batch
- * (cancelling any reminder still scheduled), and clears the legacy
- * `teamId` / `joinPolicy` room fields. Reschedules itself until nothing is
- * left; safe to re-run. Once it has run on a deployment, those fields and
- * tables can be dropped from the schema.
+ * reminders) so the whiteboard retro starts clean. Empties the legacy tables
+ * batch by batch (cancelling any reminder still scheduled), then walks the
+ * rooms a page at a time, deleting every legacy retro room through the room
+ * cascade and clearing the legacy `teamId` / `joinPolicy` fields. Reschedules
+ * itself until the walk is done; safe to re-run. Once it has run on a
+ * deployment, those fields and tables can be dropped from the schema.
  *
  *   npx convex run migrations:purgeLegacyRetros        (add --prod for production)
  */
 export const purgeLegacyRetros = internalMutation({
-  args: {},
-  handler: async (ctx) => {
+  args: { cursor: v.optional(v.union(v.string(), v.null())) },
+  handler: async (ctx, args) => {
     const db = ctx.db as unknown as LegacyDb;
     let deleted = 0;
     for (const table of LEGACY_RETRO_TABLES) {
       const rows = await db.query(table).take(PURGE_BATCH);
-      for (const row of rows) {
-        if (row.reminderJobId) {
-          const job = await ctx.db.system.get(row.reminderJobId);
-          if (job?.state.kind === "pending") await ctx.scheduler.cancel(row.reminderJobId);
-        }
-        await db.delete(row._id);
-      }
+      await Promise.all(
+        rows.map(async (row) => {
+          if (row.reminderJobId) {
+            const job = await ctx.db.system.get(row.reminderJobId);
+            if (job?.state.kind === "pending") await ctx.scheduler.cancel(row.reminderJobId);
+          }
+          await db.delete(row._id);
+        })
+      );
       deleted += rows.length;
       if (rows.length === PURGE_BATCH) {
         await ctx.scheduler.runAfter(0, internal.migrations.purgeLegacyRetros, {});
-        return { deleted, done: false };
+        return { deleted, roomsScheduled: 0, done: false };
       }
     }
 
     // A retro room without the new state belongs to the old board.
-    const rooms = await ctx.db.query("rooms").collect();
+    const page = await ctx.db.query("rooms").paginate({ numItems: PURGE_BATCH, cursor: args.cursor ?? null });
     let roomsScheduled = 0;
-    for (const room of rooms) {
-      if (room.roomType === "retro" && !room.retro) {
-        await ctx.scheduler.runAfter(0, internal.maintenance.deleteRoomAggregateChunk, { roomId: room._id });
-        roomsScheduled++;
-      } else if (room.teamId !== undefined || room.joinPolicy !== undefined) {
-        const { teamId: _team, joinPolicy: _policy, ...rest } = room;
-        await ctx.db.replace(room._id, rest);
-      }
+    await Promise.all(
+      page.page.map(async (room) => {
+        if (room.roomType === "retro" && !room.retro) {
+          roomsScheduled++;
+          await ctx.scheduler.runAfter(0, internal.maintenance.deleteRoomAggregateChunk, { roomId: room._id });
+        } else if (room.teamId !== undefined || room.joinPolicy !== undefined) {
+          const { teamId: _team, joinPolicy: _policy, ...rest } = room;
+          await ctx.db.replace(room._id, rest);
+        }
+      })
+    );
+    if (!page.isDone) {
+      await ctx.scheduler.runAfter(0, internal.migrations.purgeLegacyRetros, { cursor: page.continueCursor });
     }
-    return { deleted, roomsScheduled, done: true };
+    return { deleted, roomsScheduled, done: page.isDone };
   },
 });
 

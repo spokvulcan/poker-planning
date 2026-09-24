@@ -4,36 +4,10 @@ import { useMutation } from "convex/react";
 import type { OptimisticLocalStore } from "convex/browser";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import type { ActionItemView, BoardView, StickyView } from "@/convex/model/retro";
-import type { RoomWithRelatedData } from "@/convex/model/rooms";
-import { discussionOrder, rootOf, stepFocus } from "@/convex/retroRules";
+import type { ActionItemView, BoardView, RetroState, StickyView } from "@/convex/model/retro";
+import { heirOf, rootOf, stepFocus, stepOnFocus } from "@/convex/retroRules";
+import { topicOrder } from "./build-retro-nodes";
 import { OPTIMISTIC_PREFIX } from "./optimistic";
-
-function patchBoard(
-  store: OptimisticLocalStore,
-  roomId: Id<"rooms">,
-  patch: (board: BoardView) => BoardView
-): void {
-  const board = store.getQuery(api.retro.board, { roomId });
-  if (board) store.setQuery(api.retro.board, { roomId }, patch(board));
-}
-
-function patchRoom(
-  store: OptimisticLocalStore,
-  roomId: Id<"rooms">,
-  patch: (data: RoomWithRelatedData) => RoomWithRelatedData
-): void {
-  const data = store.getQuery(api.rooms.get, { roomId });
-  if (data) store.setQuery(api.rooms.get, { roomId }, patch(data));
-}
-
-/** Finds the room a sticky belongs to among the boards this client holds. */
-function boardOfSticky(store: OptimisticLocalStore, stickyId: string) {
-  for (const { args, value } of store.getAllQueries(api.retro.board)) {
-    if (value?.stickies.some((s) => s._id === stickyId)) return { roomId: args.roomId, board: value };
-  }
-  return null;
-}
 
 function mapStickies(board: BoardView, fn: (s: StickyView) => StickyView | null): BoardView {
   return { ...board, stickies: board.stickies.map(fn).filter((s): s is StickyView => s !== null) };
@@ -47,8 +21,25 @@ function mapStickies(board: BoardView, fn: (s: StickyView) => StickyView | null)
  * one back by itself if the server refuses.
  */
 export function useRetroMutations(roomId: Id<"rooms">) {
+  // This retro's cached queries, rewritten in place when they're loaded; a
+  // patch that returns its input leaves the query alone.
+  const patchBoard = (store: OptimisticLocalStore, patch: (board: BoardView) => BoardView) => {
+    const board = store.getQuery(api.retro.board, { roomId });
+    const next = board && patch(board);
+    if (next && next !== board) store.setQuery(api.retro.board, { roomId }, next);
+  };
+  const patchRetro = (store: OptimisticLocalStore, patch: (retro: RetroState) => RetroState) => {
+    const data = store.getQuery(api.rooms.get, { roomId });
+    if (!data?.room.retro) return;
+    store.setQuery(api.rooms.get, { roomId }, { ...data, room: { ...data.room, retro: patch(data.room.retro) } });
+  };
+  const patchItems = (store: OptimisticLocalStore, patch: (items: ActionItemView[]) => ActionItemView[]) => {
+    const items = store.getQuery(api.retro.actionItems, { roomId });
+    if (items) store.setQuery(api.retro.actionItems, { roomId }, patch(items));
+  };
+
   const addSticky = useMutation(api.retro.addSticky).withOptimisticUpdate((store, args) => {
-    patchBoard(store, args.roomId, (board) => ({
+    patchBoard(store, (board) => ({
       ...board,
       stickies: [
         ...board.stickies,
@@ -69,12 +60,8 @@ export function useRetroMutations(roomId: Id<"rooms">) {
   });
 
   const updateSticky = useMutation(api.retro.updateSticky).withOptimisticUpdate((store, args) => {
-    const found = boardOfSticky(store, args.stickyId);
-    if (!found) return;
-    store.setQuery(
-      api.retro.board,
-      { roomId: found.roomId },
-      mapStickies(found.board, (s) => {
+    patchBoard(store, (board) =>
+      mapStickies(board, (s) => {
         if (s._id !== args.stickyId) return s;
         const next: StickyView = { ...s };
         if (args.text !== undefined) next.text = args.text.trim();
@@ -88,23 +75,17 @@ export function useRetroMutations(roomId: Id<"rooms">) {
 
   const moveStickies = useMutation(api.retro.moveStickies).withOptimisticUpdate((store, args) => {
     const moved = new Map(args.moves.map((m) => [m.stickyId as string, m.position]));
-    patchBoard(store, args.roomId, (board) =>
+    patchBoard(store, (board) =>
       mapStickies(board, (s) => (moved.has(s._id) ? { ...s, position: moved.get(s._id)! } : s))
     );
   });
 
   const deleteSticky = useMutation(api.retro.deleteSticky).withOptimisticUpdate((store, args) => {
-    const found = boardOfSticky(store, args.stickyId);
-    if (!found) return;
-    const gone = found.board.stickies.find((s) => s._id === args.stickyId)!;
-    const children = found.board.stickies
-      .filter((s) => s.stackId === args.stickyId)
-      .sort((a, b) => a.createdAt - b.createdAt);
-    const heir = children[0];
-    store.setQuery(
-      api.retro.board,
-      { roomId: found.roomId },
-      mapStickies(found.board, (s) => {
+    patchBoard(store, (board) => {
+      const gone = board.stickies.find((s) => s._id === args.stickyId);
+      if (!gone) return board;
+      const heir = heirOf(board.stickies.filter((s) => s.stackId === args.stickyId));
+      return mapStickies(board, (s) => {
         if (s._id === args.stickyId) return null;
         if (heir && s._id === heir._id) {
           const { stackId: _root, ...rest } = s;
@@ -112,33 +93,24 @@ export function useRetroMutations(roomId: Id<"rooms">) {
         }
         if (heir && s.stackId === args.stickyId) return { ...s, stackId: heir._id };
         return s;
-      })
-    );
+      });
+    });
   });
 
   const stackSticky = useMutation(api.retro.stackSticky).withOptimisticUpdate((store, args) => {
-    const found = boardOfSticky(store, args.stickyId);
-    if (!found) return;
-    const onto = found.board.stickies.find((s) => s._id === args.ontoId);
-    if (!onto) return;
-    const target = rootOf(onto) as Id<"retroStickies">;
-    if (target === args.stickyId) return;
-    store.setQuery(
-      api.retro.board,
-      { roomId: found.roomId },
-      mapStickies(found.board, (s) =>
+    patchBoard(store, (board) => {
+      const onto = board.stickies.find((s) => s._id === args.ontoId);
+      const target = onto && (rootOf(onto) as Id<"retroStickies">);
+      if (!target || target === args.stickyId) return board;
+      return mapStickies(board, (s) =>
         s._id === args.stickyId || s.stackId === args.stickyId ? { ...s, stackId: target } : s
-      )
-    );
+      );
+    });
   });
 
   const unstackSticky = useMutation(api.retro.unstackSticky).withOptimisticUpdate((store, args) => {
-    const found = boardOfSticky(store, args.stickyId);
-    if (!found) return;
-    store.setQuery(
-      api.retro.board,
-      { roomId: found.roomId },
-      mapStickies(found.board, (s) => {
+    patchBoard(store, (board) =>
+      mapStickies(board, (s) => {
         if (s._id !== args.stickyId) return s;
         const { stackId: _root, ...rest } = s;
         return { ...rest, position: args.position, myVote: false };
@@ -147,61 +119,46 @@ export function useRetroMutations(roomId: Id<"rooms">) {
   });
 
   const toggleVote = useMutation(api.retro.toggleVote).withOptimisticUpdate((store, args) => {
-    const found = boardOfSticky(store, args.stickyId);
-    if (!found) return;
-    const sticky = found.board.stickies.find((s) => s._id === args.stickyId)!;
-    const topic = rootOf(sticky);
-    const current = found.board.stickies.find((s) => s._id === topic);
-    if (!current) return;
-    const voting = !current.myVote;
-    const data = store.getQuery(api.rooms.get, { roomId: found.roomId });
-    const budget = data?.room.retro?.votesPerPerson ?? Infinity;
-    if (voting && found.board.myVotes >= budget) return;
+    const board = store.getQuery(api.retro.board, { roomId });
+    if (!board) return;
+    const sticky = board.stickies.find((s) => s._id === args.stickyId);
+    const topic = sticky && board.stickies.find((s) => s._id === rootOf(sticky));
+    if (!topic) return;
+    const voting = !topic.myVote;
+    const budget = store.getQuery(api.rooms.get, { roomId })?.room.retro?.votesPerPerson ?? Infinity;
+    if (voting && board.myVotes >= budget) return;
     const delta = voting ? 1 : -1;
-    store.setQuery(api.retro.board, { roomId: found.roomId }, {
-      ...mapStickies(found.board, (s) => (s._id === topic ? { ...s, myVote: voting } : s)),
-      myVotes: found.board.myVotes + delta,
-      votesCast: found.board.votesCast + delta,
+    store.setQuery(api.retro.board, { roomId }, {
+      ...mapStickies(board, (s) => (s._id === topic._id ? { ...s, myVote: voting } : s)),
+      myVotes: board.myVotes + delta,
     });
+    const cast = store.getQuery(api.retro.votesCast, { roomId });
+    if (cast !== undefined) store.setQuery(api.retro.votesCast, { roomId }, cast + delta);
   });
 
   const setStep = useMutation(api.retro.setStep).withOptimisticUpdate((store, args) => {
-    patchRoom(store, args.roomId, (data) =>
-      data.room.retro ? { ...data, room: { ...data.room, retro: { ...data.room.retro, step: args.step } } } : data
-    );
+    patchRetro(store, (retro) => ({ ...retro, step: args.step }));
   });
 
   const stepDiscussion = useMutation(api.retro.stepDiscussion).withOptimisticUpdate((store, args) => {
-    const board = store.getQuery(api.retro.board, { roomId: args.roomId });
-    patchRoom(store, args.roomId, (data) => {
-      const retro = data.room.retro;
-      if (!retro || !board) return data;
-      const totals = new Map(board.stickies.map((s) => [s._id as string, s.votes ?? 0]));
-      const order = discussionOrder(board.stickies, totals, retro.columns);
-      const focus = stepFocus(order, retro.focusStickyId, args.direction) as Id<"retroStickies"> | undefined;
-      return { ...data, room: { ...data.room, retro: { ...retro, focusStickyId: focus } } };
-    });
+    const board = store.getQuery(api.retro.board, { roomId });
+    if (!board) return;
+    patchRetro(store, (retro) => ({
+      ...retro,
+      focusStickyId: stepFocus(topicOrder(board, retro.columns), retro.focusStickyId, args.direction) as
+        | Id<"retroStickies">
+        | undefined,
+    }));
   });
 
   const focusTopic = useMutation(api.retro.focusTopic).withOptimisticUpdate((store, args) => {
-    const board = store.getQuery(api.retro.board, { roomId: args.roomId });
-    const sticky = board?.stickies.find((s) => s._id === args.stickyId);
+    const sticky = store.getQuery(api.retro.board, { roomId })?.stickies.find((s) => s._id === args.stickyId);
     if (!sticky) return;
-    patchRoom(store, args.roomId, (data) =>
-      data.room.retro
-        ? {
-            ...data,
-            room: {
-              ...data.room,
-              retro: {
-                ...data.room.retro,
-                step: data.room.retro.step === "done" ? "done" : "discuss",
-                focusStickyId: rootOf(sticky) as Id<"retroStickies">,
-              },
-            },
-          }
-        : data
-    );
+    patchRetro(store, (retro) => ({
+      ...retro,
+      step: stepOnFocus(retro.step),
+      focusStickyId: rootOf(sticky) as Id<"retroStickies">,
+    }));
   });
 
   const updateNodePosition = useMutation(api.canvas.updateNodePosition).withOptimisticUpdate((store, args) => {
@@ -213,11 +170,6 @@ export function useRetroMutations(roomId: Id<"rooms">) {
       nodes.map((n) => (n.nodeId === args.nodeId ? { ...n, position: args.position } : n))
     );
   });
-
-  const patchItems = (store: OptimisticLocalStore, patch: (items: ActionItemView[]) => ActionItemView[]) => {
-    const items = store.getQuery(api.retro.actionItems, { roomId });
-    if (items) store.setQuery(api.retro.actionItems, { roomId }, patch(items));
-  };
 
   const addActionItem = useMutation(api.retro.addActionItem).withOptimisticUpdate((store, args) => {
     patchItems(store, (items) => [
@@ -275,5 +227,3 @@ export function useRetroMutations(roomId: Id<"rooms">) {
     updateColumn: useMutation(api.retro.updateColumn),
   };
 }
-
-export type RetroMutations = ReturnType<typeof useRetroMutations>;

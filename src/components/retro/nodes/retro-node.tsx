@@ -6,8 +6,9 @@ import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
 import { ArrowRight, Check, ChevronLeft, ChevronRight, ClipboardCopy, Eye, MessagesSquare, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { permissionProps } from "@/hooks/usePermissions";
-import type { RetroStep } from "@/convex/retroTemplates";
+import { RETRO_STEPS, type RetroStep } from "@/convex/retroTemplates";
 import { RETRO_NODE_WIDTH } from "@/convex/retroLayout";
+import { plural, stickiesLabel } from "../retro-summary";
 import type { RetroNodeData } from "../types";
 
 const STEPS: { step: Exclude<RetroStep, "done">; label: string }[] = [
@@ -16,38 +17,22 @@ const STEPS: { step: Exclude<RetroStep, "done">; label: string }[] = [
   { step: "discuss", label: "Discuss" },
 ];
 
-const ORDER: Record<RetroStep, number> = { write: 0, vote: 1, discuss: 2, done: 3 };
-
 /** The progress bar and its count, as in the poker session node. */
-function Progress({ value, max, label, complete }: { value: number; max: number; label: string; complete?: boolean }) {
+function Progress({ value, max, label }: { value: number; max: number; label: string }) {
   const percent = max > 0 ? Math.min((value / max) * 100, 100) : 0;
   return (
     <div className="mb-3 flex items-center gap-2">
       <div
-        className={cn(
-          "h-2 flex-1 overflow-hidden rounded-full",
-          complete ? "bg-green-200 dark:bg-status-success-bg" : "bg-blue-200 dark:bg-status-info-bg"
-        )}
+        className="h-2 flex-1 overflow-hidden rounded-full bg-blue-200 dark:bg-status-info-bg"
         role="progressbar"
         aria-label={label}
         aria-valuemin={0}
         aria-valuemax={max}
         aria-valuenow={value}
       >
-        <div
-          className={cn(
-            "h-2 transition-all duration-300",
-            complete ? "bg-green-500 dark:bg-status-success-fg" : "bg-blue-500 dark:bg-status-info-fg"
-          )}
-          style={{ width: `${percent}%` }}
-        />
+        <div className="h-2 bg-blue-500 transition-all duration-300 dark:bg-status-info-fg" style={{ width: `${percent}%` }} />
       </div>
-      <span
-        className={cn(
-          "font-mono text-xs font-medium whitespace-nowrap tabular-nums",
-          complete ? "text-green-700 dark:text-status-success-fg" : "text-blue-700 dark:text-status-info-fg"
-        )}
-      >
+      <span className="font-mono text-xs font-medium whitespace-nowrap text-blue-700 tabular-nums dark:text-status-info-fg">
         {label}
       </span>
     </div>
@@ -153,7 +138,8 @@ export const RetroNode = memo(({ data, selected }: NodeProps<Node<RetroNodeData,
         {/* The steps */}
         <nav className="mb-3 flex items-center justify-between rounded-md bg-gray-100/50 p-1 dark:bg-surface-2/50" aria-label="Retro steps">
           {STEPS.map(({ step: s, label }, i) => {
-            const state = ORDER[step] > ORDER[s] ? "past" : step === s ? "current" : "future";
+            const state =
+              RETRO_STEPS.indexOf(step) > RETRO_STEPS.indexOf(s) ? "past" : step === s ? "current" : "future";
             return (
               <button
                 key={s}
@@ -191,12 +177,12 @@ export const RetroNode = memo(({ data, selected }: NodeProps<Node<RetroNodeData,
         <p className="mb-3 text-xs leading-relaxed text-gray-600 dark:text-gray-400">
           {step === "write" && "Everyone writes at once. Stickies stay face-down until you reveal them."}
           {step === "vote" &&
-            `Drop a sticky on another to stack them. Then vote: ${votesPerPerson} ${votesPerPerson === 1 ? "vote" : "votes"} each.`}
+            `Drop a sticky on another to stack them. Then vote: ${plural(votesPerPerson, "vote")} each.`}
           {step === "discuss" && "Talk through the top topics. Add action items as you go."}
           {done &&
             (totalActions === 0
               ? "Retro complete. No action items this time."
-              : `Retro complete. ${openActions} of ${totalActions} action ${totalActions === 1 ? "item" : "items"} open.`)}
+              : `Retro complete. ${openActions} of ${plural(totalActions, "action item")} open.`)}
         </p>
 
         {/* The discussion's current topic */}
@@ -250,7 +236,7 @@ export const RetroNode = memo(({ data, selected }: NodeProps<Node<RetroNodeData,
                 decision={canFlow}
                 label={stickyCount === 0 ? "Waiting for stickies" : "Reveal all stickies"}
               >
-                {stickyCount === 0 ? "Waiting for stickies..." : `Reveal ${stickyCount} ${stickyCount === 1 ? "sticky" : "stickies"}`}
+                {stickyCount === 0 ? "Waiting for stickies..." : `Reveal ${stickiesLabel(stickyCount)}`}
               </Cta>
             </>
           )}

@@ -153,7 +153,7 @@ describe("room-owned reads take the reader guard", () => {
     ).resolves.toEqual([]);
   });
 
-  it("a non-member cannot read a retro's board or action items; a member can", async () => {
+  it("a non-member cannot read a retro's board, vote count or action items; a member can", async () => {
     const t = convexTest(schema, modules);
     await addUser(t, "auth-m");
     await addUser(t, "auth-x");
@@ -168,13 +168,16 @@ describe("room-owned reads take the reader guard", () => {
     await expect(asOutsider.query(api.retro.actionItems, { roomId })).rejects.toThrow(
       "You don't have access to this room"
     );
+    await expect(asOutsider.query(api.retro.votesCast, { roomId })).rejects.toThrow(
+      "You don't have access to this room"
+    );
 
     expect(await asMember.query(api.retro.board, { roomId })).toEqual({
       stickies: [],
       writers: 0,
-      votesCast: 0,
       myVotes: 0,
     });
+    expect(await asMember.query(api.retro.votesCast, { roomId })).toBe(0);
     expect(await asMember.query(api.retro.actionItems, { roomId })).toEqual([]);
   });
 

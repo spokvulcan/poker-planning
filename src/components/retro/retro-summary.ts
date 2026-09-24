@@ -1,3 +1,4 @@
+import { format } from "date-fns";
 import type { RetroColumn, RetroStep } from "@/convex/retroTemplates";
 import type { ActionItemView, StickyView } from "@/convex/model/retro";
 
@@ -14,15 +15,13 @@ export interface RetroSummaryInput {
 
 const oneLine = (text: string) => text.replace(/\s+/g, " ").trim();
 
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
 function stickyLine(sticky: StickyView): string {
   const text = oneLine(sticky.text ?? "");
   const gif = sticky.gif ? `![${oneLine(sticky.gif.title ?? "GIF")}](${sticky.gif.url})` : "";
   return [text, gif].filter(Boolean).join(" ") || "(empty)";
 }
 
-function plural(n: number, word: string): string {
+export function plural(n: number, word: string): string {
   return `${n} ${word}${n === 1 ? "" : "s"}`;
 }
 
@@ -38,8 +37,7 @@ export function stickiesLabel(n: number): string {
  * appear only as action item owners.
  */
 export function buildRetroSummary(input: RetroSummaryInput): string {
-  const created = new Date(input.createdAt);
-  const date = `${created.getDate()} ${MONTHS[created.getMonth()]} ${created.getFullYear()}`;
+  const date = format(input.createdAt, "d MMM yyyy");
   const visible = input.stickies.filter((s) => !s.hidden);
   const byId = new Map(visible.map((s) => [s._id as string, s]));
   const members = (rootId: string) => visible.filter((s) => s.stackId === rootId);

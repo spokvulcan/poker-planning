@@ -1,20 +1,14 @@
 "use client";
 
-import { FC, useRef, useState, useEffect } from "react";
+import { FC, useState, useEffect } from "react";
 import Link from "next/link";
 import {
   X,
-  Sun,
-  Moon,
-  Monitor,
   ArrowRight,
   AlertTriangle,
-  Info,
-  ShieldAlert,
   Zap,
   Settings,
 } from "lucide-react";
-import { useTheme } from "next-themes";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,13 +23,6 @@ import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/
 import { SidePanel } from "@/components/ui/side-panel";
 import { toast } from "@/lib/toast";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
   usePokerPermissions,
   permissionProps,
   permissionInputProps,
@@ -43,11 +30,12 @@ import {
 import { IntegrationSettingsSection } from "./integration-settings";
 import { useRoomSettingsActions } from "./hooks/useRoomSettingsActions";
 import type { Id } from "@/convex/_generated/dataModel";
-import { cn } from "@/lib/utils";
 import type { RoomWithRelatedData } from "@/convex/model/rooms";
 import type { PermissionLevel, PokerPermissionCategory, RoomPermissions } from "@/convex/permissions";
 
 import { ParticipantsSection } from "./participants-section";
+import { PermissionsSection } from "./permissions-section";
+import { ThemeSection } from "./theme-section";
 import { useIsDemoMode } from "./demo/DemoSimulationProvider";
 
 interface RoomSettingsPanelProps {
@@ -57,33 +45,11 @@ interface RoomSettingsPanelProps {
   onClose: () => void;
 }
 
-const PERMISSION_CONFIG: Record<PokerPermissionCategory, { label: string; description: string; tooltip: string }> = {
-  revealCards: {
-    label: "Reveal cards",
-    description: "Reveal votes, cancel auto-reveal",
-    tooltip: "Controls who can reveal votes and cancel the auto-reveal countdown.",
-  },
-  gameFlow: {
-    label: "Game flow",
-    description: "Reset game, start voting on issues",
-    tooltip: "Controls who can reset the game, start voting on an issue, or clear the current issue.",
-  },
-  issueManagement: {
-    label: "Issue management",
-    description: "Create, edit, delete, reorder issues",
-    tooltip: "Controls who can create, edit, delete, and reorder issues in the backlog.",
-  },
-  roomSettings: {
-    label: "Room settings",
-    description: "Rename room, toggle auto-reveal",
-    tooltip: "Controls who can rename the room and toggle the auto-reveal setting.",
-  },
-};
-
-const LEVEL_LABELS: Record<PermissionLevel, string> = {
-  everyone: "Everyone",
-  facilitators: "Facilitators",
-  owner: "Owner only",
+const PERMISSION_CONFIG: Record<PokerPermissionCategory, { label: string; description: string }> = {
+  revealCards: { label: "Reveal cards", description: "Reveal votes, cancel auto-reveal" },
+  gameFlow: { label: "Game flow", description: "Reset game, start voting on issues" },
+  issueManagement: { label: "Issue management", description: "Create, edit, delete, reorder issues" },
+  roomSettings: { label: "Room settings", description: "Rename room, toggle auto-reveal" },
 };
 
 export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
@@ -93,11 +59,9 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
   onClose,
 }) => {
   const isDemoMode = useIsDemoMode();
-  const { theme, setTheme } = useTheme();
 
   const [roomName, setRoomName] = useState(roomData.room.name);
   const [isSaving, setIsSaving] = useState(false);
-  const openSelectCountRef = useRef(0);
 
   // Writes come from the action seam, which no-ops internally in demo mode
   // (ADR-0003) — the remaining `isDemoMode` branches below are presentation only
@@ -150,8 +114,6 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
       toast.error("Failed to update permissions");
     }
   };
-
-  const currentPermissions = perms.permissions;
 
   return (
     <>
@@ -258,78 +220,7 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
               />
             </div>
 
-            {/* Appearance Section (Moved out of accordion) */}
-            <div className="pt-5 mt-4 border-t border-gray-100 dark:border-border/50">
-              <div className="flex flex-col gap-3">
-                <div className="space-y-1">
-                  <Label className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                    Theme
-                  </Label>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">
-                    Customize the look of the room
-                  </p>
-                </div>
-              <div className="flex gap-1.5 p-1 bg-gray-100/80 dark:bg-surface-2 rounded-lg border border-gray-200/50 dark:border-border/50">
-                <Tooltip>
-                  <TooltipTrigger render={
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setTheme("light")}
-                      className={cn(
-                        "flex-1 h-8 px-3 gap-2 rounded-md transition-all text-xs font-medium",
-                        theme === "light" 
-                          ? "bg-white dark:bg-surface-3 shadow-sm text-gray-900 border border-gray-200/50 dark:border-transparent" 
-                          : "text-gray-500 hover:text-gray-900 dark:hover:text-gray-300"
-                      )}
-                    >
-                      <Sun className="h-3.5 w-3.5" />
-                      Light
-                    </Button>
-                  } />
-                  <TooltipContent><p>Light theme</p></TooltipContent>
-                </Tooltip>
-                <Tooltip>
-                  <TooltipTrigger render={
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setTheme("dark")}
-                      className={cn(
-                        "flex-1 h-8 px-3 gap-2 rounded-md transition-all text-xs font-medium",
-                        theme === "dark" 
-                          ? "bg-white dark:bg-surface-3 shadow-sm text-gray-900 dark:text-white border border-gray-200/50 dark:border-transparent" 
-                          : "text-gray-500 hover:text-gray-900 dark:hover:text-gray-300"
-                      )}
-                    >
-                      <Moon className="h-3.5 w-3.5" />
-                      Dark
-                    </Button>
-                  } />
-                  <TooltipContent><p>Dark theme</p></TooltipContent>
-                </Tooltip>
-                <Tooltip>
-                  <TooltipTrigger render={
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setTheme("system")}
-                      className={cn(
-                        "flex-1 h-8 px-3 gap-2 rounded-md transition-all text-xs font-medium",
-                        theme === "system" 
-                          ? "bg-white dark:bg-surface-3 shadow-sm text-gray-900 dark:text-white border border-gray-200/50 dark:border-transparent" 
-                          : "text-gray-500 hover:text-gray-900 dark:hover:text-gray-300"
-                      )}
-                    >
-                      <Monitor className="h-3.5 w-3.5" />
-                      System
-                    </Button>
-                  } />
-                  <TooltipContent><p>System theme</p></TooltipContent>
-                </Tooltip>
-              </div>
-              </div>
-            </div>
+            <ThemeSection description="Customize the look of the room" />
           </div>
 
           {/* Scrollable Bottom Section */}
@@ -338,69 +229,17 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
             <div className="space-y-4">
               <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Configuration</h3>
               <Accordion className="space-y-3">
-                <AccordionItem value="permissions" className="border border-gray-200/50 dark:border-border rounded-lg px-4 bg-white dark:bg-surface-2/30 shadow-sm">
-                  <AccordionTrigger className="text-sm font-medium py-3.5 hover:no-underline text-gray-700 dark:text-gray-300">
-                    <div className="flex items-center gap-3">
-                      <ShieldAlert className="h-4 w-4 text-gray-400" />
-                      Permissions
-                    </div>
-                  </AccordionTrigger>
-                  <AccordionContent className="pb-4 pt-1">
-                    <div className="space-y-4">
-                      <div className="flex items-center gap-1.5 p-3 rounded-lg bg-gray-50 dark:bg-surface-3 border border-gray-100 dark:border-border/50">
-                        <Info className="h-4 w-4 text-blue-500 shrink-0" />
-                        <span className="text-xs text-gray-600 dark:text-gray-300">
-                          {perms.changePermissions.allowed ? "As the owner, you can control who can perform actions in this room." : "Only the room owner can change these permissions."}
-                        </span>
-                      </div>
-                      <div className="space-y-2">
-                        {(Object.keys(PERMISSION_CONFIG) as PokerPermissionCategory[]).map((category) => {
-                          const config = PERMISSION_CONFIG[category];
-                          return (
-                            <div
-                              key={category}
-                              className="flex items-center justify-between gap-4 py-2.5 px-3 rounded-lg hover:bg-gray-50 dark:hover:bg-surface-3/50 transition-colors border border-transparent hover:border-gray-100 dark:hover:border-border/50"
-                            >
-                              <div className="flex items-center gap-2 min-w-0">
-                                <div className="min-w-0">
-                                  <span className="text-sm font-medium text-gray-800 dark:text-gray-200">
-                                    {config.label}
-                                  </span>
-                                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                                    {config.description}
-                                  </p>
-                                </div>
-                              </div>
-                              <div className="shrink-0">
-                                {perms.changePermissions.allowed ? (
-                                  <Select
-                                    value={currentPermissions[category]}
-                                    onValueChange={(value) => handlePermissionChange(category, value as PermissionLevel)}
-                                    onOpenChange={(open) => { openSelectCountRef.current += open ? 1 : -1; }}
-                                  >
-                                    <SelectTrigger size="sm" className="h-8 text-xs w-[130px] bg-white dark:bg-surface-2">
-                                      <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent align="end">
-                                      <SelectItem value="everyone">Everyone</SelectItem>
-                                      <SelectItem value="facilitators">Facilitators</SelectItem>
-                                      <SelectItem value="owner">Owner only</SelectItem>
-                                    </SelectContent>
-                                  </Select>
-                                ) : (
-                                  <span className="text-xs font-medium text-gray-600 dark:text-gray-300 px-3 py-1.5 rounded-md bg-gray-100 dark:bg-surface-3">
-                                    {LEVEL_LABELS[currentPermissions[category]]}
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  </AccordionContent>
-                </AccordionItem>
-                
+                <PermissionsSection
+                  config={PERMISSION_CONFIG}
+                  permissions={perms.permissions}
+                  canChange={perms.changePermissions.allowed}
+                  note={{
+                    owner: "As the owner, you can control who can perform actions in this room.",
+                    others: "Only the room owner can change these permissions.",
+                  }}
+                  onChange={handlePermissionChange}
+                />
+
                 {!isDemoMode && (
                 <AccordionItem value="integrations" className="border border-gray-200/50 dark:border-border rounded-lg px-4 bg-white dark:bg-surface-2/30 shadow-sm">
                   <AccordionTrigger className="text-sm font-medium py-3.5 hover:no-underline text-gray-700 dark:text-gray-300">

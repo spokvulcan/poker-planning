@@ -63,23 +63,13 @@ function StickyEditor({
   const textRef = useRef<HTMLTextAreaElement>(null);
   const done = useRef(false);
 
-  // React Flow keeps a new node hidden until it has measured it, and a
-  // hidden element can't take focus: keep trying for a few frames.
+  // The node is drawn from its first frame (it has an initial size), so the
+  // editor can take focus as it mounts.
   useEffect(() => {
-    let frame = 0;
-    let tries = 0;
-    const focus = () => {
-      const el = textRef.current;
-      if (!el) return;
-      el.focus({ preventScroll: true });
-      if (document.activeElement === el) {
-        el.setSelectionRange(el.value.length, el.value.length);
-      } else if (tries++ < 20) {
-        frame = requestAnimationFrame(focus);
-      }
-    };
-    focus();
-    return () => cancelAnimationFrame(frame);
+    const el = textRef.current;
+    if (!el) return;
+    el.focus({ preventScroll: true });
+    el.setSelectionRange(el.value.length, el.value.length);
   }, []);
 
   const commit = () => {
@@ -203,13 +193,11 @@ function IconButton({
   label,
   onClick,
   children,
-  tone,
   destructive,
 }: {
   label: string;
   onClick: () => void;
   children: ReactElement;
-  tone?: StickyTone;
   destructive?: boolean;
 }) {
   return (
@@ -224,8 +212,7 @@ function IconButton({
             }}
             className={cn(
               "flex size-7 items-center justify-center rounded-md text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-surface-3 dark:hover:text-white",
-              destructive && "hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-500/10 dark:hover:text-red-400",
-              tone?.muted
+              destructive && "hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-500/10 dark:hover:text-red-400"
             )}
             aria-label={label}
           >
@@ -328,8 +315,8 @@ export const StickyNode = memo(({ data, selected, dragging }: NodeProps<StickyFl
     wasHidden.current = hidden;
   }, [hidden]);
 
-  const isTopic = !!sticky && sticky.stackId === undefined;
-  const showFocus = canFocus && isTopic && !hidden && !focused && step !== "write";
+  // Only a topic (a loose sticky or a stack's top) is a node of its own.
+  const showFocus = canFocus && !!sticky && !hidden && !focused && step !== "write";
   const stackDepth = Math.min(members.length, 2);
   const inEditor = editing || !!draft;
 
@@ -350,8 +337,8 @@ export const StickyNode = memo(({ data, selected, dragging }: NodeProps<StickyFl
     >
       {inEditor ? (
         <StickyEditor
-          initialText={draft?.text ?? sticky?.text ?? ""}
-          initialGif={draft?.gif ?? sticky?.gif}
+          initialText={sticky?.text ?? ""}
+          initialGif={sticky?.gif}
           tone={tone}
           onCommit={(text, gif) =>
             draft ? actions.commitDraft(draft.clientId, text, gif) : sticky && actions.commitEdit(sticky._id, text, gif ?? null)
@@ -415,14 +402,14 @@ export const StickyNode = memo(({ data, selected, dragging }: NodeProps<StickyFl
             </button>
           )}
           <span className="ml-auto" />
-          {isTopic && step === "vote" && (
+          {step === "vote" && (
             <VoteButton
               voted={!!sticky.myVote}
               disabled={!sticky.myVote && votesLeft <= 0}
               onClick={() => actions.toggleVote(sticky._id)}
             />
           )}
-          {isTopic && (step === "discuss" || step === "done") && (sticky.votes ?? 0) > 0 && (
+          {(step === "discuss" || step === "done") && (sticky.votes ?? 0) > 0 && (
             <span
               className="flex h-6 items-center gap-1 rounded-full bg-blue-500 px-2 font-mono text-xs font-semibold text-white tabular-nums dark:bg-blue-600"
               aria-label={`${sticky.votes} votes`}
@@ -443,7 +430,7 @@ export const StickyNode = memo(({ data, selected, dragging }: NodeProps<StickyFl
       )}
 
       {/* The discussion's order and where it is */}
-      {rank !== undefined && (step === "discuss" || step === "done") && (
+      {rank !== undefined && (
         <span
           className={cn(
             "absolute -top-3 left-3 flex h-6 items-center gap-1 rounded-full px-2 text-[11px] font-semibold shadow-sm",
@@ -496,7 +483,7 @@ export const StickyNode = memo(({ data, selected, dragging }: NodeProps<StickyFl
     <div
       className={cn(
         "group/sticky relative transition-opacity duration-300",
-        dimmed && !focused && "opacity-50 hover:opacity-100"
+        dimmed && "opacity-50 hover:opacity-100"
       )}
       data-testid="retro-sticky"
       data-hidden={hidden || undefined}
