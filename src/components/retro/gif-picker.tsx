@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { normalizeGifUrl } from "@/convex/retroRules";
 import type { Gif } from "@/convex/model/retro";
 import type { GifResult, GifSearchResponse } from "@/app/api/gifs/route";
+import { trackGifEvent } from "@/lib/analytics";
 import { cn } from "@/lib/utils";
 
 /** Quick searches for the moods a retro runs into. */
@@ -48,11 +49,17 @@ export function GifPicker({ onPick }: GifPickerProps): ReactElement {
     const id = ++request.current;
     setLoading(true);
     setError(null);
+    if (q && offset === 0) trackGifEvent("gif_search");
     try {
       const params = new URLSearchParams({ q, offset: String(offset) });
       const response = await fetch(`/api/gifs?${params}`);
-      const body = (await response.json()) as GifSearchResponse & { error?: string };
+      const body = (await response.json()) as GifSearchResponse & { error?: string; rateLimited?: boolean };
       if (id !== request.current) return;
+      if (body.rateLimited) {
+        // GIPHY's hourly limit is used up: a pasted link still works.
+        trackGifEvent("gif_search_limited");
+        setPasting(true);
+      }
       if (!response.ok) throw new Error(body.error ?? "GIF search is unavailable right now");
       setConfigured(body.configured);
       if (!body.configured) setPasting(true);
@@ -80,6 +87,7 @@ export function GifPicker({ onPick }: GifPickerProps): ReactElement {
     }
     try {
       const size = await measure(url);
+      trackGifEvent("gif_pick", { source: "link" });
       onPick({ url, ...size });
     } catch (e) {
       setLinkError(e instanceof Error ? e.message : "That link didn't load.");
@@ -129,7 +137,10 @@ export function GifPicker({ onPick }: GifPickerProps): ReactElement {
                 <button
                   key={gif.id}
                   type="button"
-                  onClick={() => onPick({ url: gif.url, width: gif.width, height: gif.height, title: gif.title })}
+                  onClick={() => {
+                    trackGifEvent("gif_pick", { source: "search" });
+                    onPick({ url: gif.url, width: gif.width, height: gif.height, title: gif.title });
+                  }}
                   className="mb-1.5 block w-full overflow-hidden rounded-md ring-blue-500 transition-transform hover:ring-2 focus-visible:ring-2 focus-visible:outline-none active:scale-95"
                   title={gif.title}
                 >

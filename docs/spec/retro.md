@@ -79,6 +79,7 @@ In every step stickies are written and moved, authors edit or delete their own, 
 ## 8. GIFs
 
 - The sticky editor's picker searches GIPHY through `/api/gifs`: a Next.js route holding `GIPHY_API_KEY`, open to signed-in sessions only (guests included), trending until you type, 24 results a page, rated pg-13, with "Powered by GIPHY" shown. Without the key the route answers `{ configured: false }` and the picker offers only "Paste a link".
+- **GIPHY's rate limit.** A beta key allows 100 calls an hour; Next caches a 200 answer for an hour (a search) or 10 minutes (trending), and never caches a refusal. When GIPHY refuses with 429 the route answers 429 with `rateLimited: true`, and the picker says the hourly limit is used up and opens "Paste a link". After answering, the route counts every search in `gifSearchUsage` (one row per hour: `requests`, cached answers included, and `rateLimited`) through `gifUsage.record`; `npx convex run gifUsage:recent` lists the latest hours. With analytics consent the picker also sends Google Analytics `gif_search` (a typed search), `gif_pick` (`source`: search or link) and `gif_search_limited`, never the search terms.
 - The server stores a GIF only if `normalizeGifUrl` accepts it: https, from a GIPHY (`media*.giphy.com`, `i.giphy.com`), Tenor (`media*.tenor.com`, `c.tenor.com`) or Imgur (`i.imgur.com`, image files only) media host. A `giphy.com/gifs/…` page link is rewritten to its media file; a Tenor page link is refused. Every viewer's browser loads the image from that host.
 
 ## 9. Permissions and guards

@@ -89,7 +89,7 @@ Copy `.env.example` to `.env.local` and configure the variables below.
 | `NEXT_PUBLIC_SITE_URL` | No | Your site URL (defaults to `https://agilekit.app`) |
 | `CONVEX_DEPLOY_KEY` | Prod | Deploy key for production (from Convex dashboard) |
 | `NEXT_PUBLIC_GA_ID` | No | Google Analytics 4 Measurement ID |
-| `GIPHY_API_KEY` | No | GIPHY key for GIF search on retro stickies, read only on the server by the `/api/gifs` route. Set it in `.env.local`, or in your host's environment (e.g. Vercel) in production. Without it the GIF picker only takes pasted GIPHY, Tenor or Imgur links |
+| `GIPHY_API_KEY` | No | GIPHY key for GIF search on retro stickies, read only on the server by the `/api/gifs` route. Set it in `.env.local`, or in your host's environment (e.g. Vercel) in production. Without it the GIF picker only takes pasted GIPHY, Tenor or Imgur links. A free key allows 100 calls an hour: `npx convex run gifUsage:recent --prod` shows searches per hour and how many GIPHY refused |
 
 #### Convex Server (via `npx convex env set`)
 
