@@ -4,21 +4,15 @@ import { ArrowRight, Calendar, Mail, Receipt } from "lucide-react";
 
 import { Footer } from "@/components/footer";
 import { Navbar } from "@/components/navbar";
+import { pageMetadata } from "@/lib/page-metadata";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = pageMetadata({
   title: "Refund Policy",
   description:
     "Review AgileKit's refund policy, including the 30 calendar day money-back guarantee for self-serve paid plans.",
-  openGraph: {
-    title: "Refund Policy | AgileKit",
-    description:
-      "Review AgileKit's refund policy, including the 30 calendar day money-back guarantee for self-serve paid plans.",
-    url: "https://agilekit.app/refund-policy",
-  },
-  alternates: {
-    canonical: "https://agilekit.app/refund-policy",
-  },
-};
+  path: "/refund-policy",
+  social: { title: "Refund Policy | AgileKit" },
+});
 
 const sections = [
   {

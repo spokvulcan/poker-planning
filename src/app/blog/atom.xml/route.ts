@@ -14,7 +14,7 @@ export async function GET() {
     id: siteConfig.url,
     link: siteConfig.url,
     language: "en",
-    favicon: `${siteConfig.url}/favicon.ico`,
+    favicon: `${siteConfig.url}/logo-64.png`,
     copyright: `All rights reserved ${new Date().getFullYear()}, ${siteConfig.name}`,
     feedLinks: {
       rss2: `${siteConfig.url}/blog/rss.xml`,

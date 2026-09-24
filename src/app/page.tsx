@@ -1,16 +1,17 @@
 import { Metadata } from "next";
 import { HomeContent } from "./home-content";
 import {
+  WebSiteSchema,
   WebApplicationSchema,
   OrganizationSchema,
   FAQSchema,
-  HowToSchema,
 } from "@/components/seo/structured-data";
 import { getLatestRelease, formatRelativeTime } from "@/lib/changelog";
+import { SITE_ORIGIN } from "@/lib/site-config";
 
 export const metadata: Metadata = {
   alternates: {
-    canonical: "https://agilekit.app",
+    canonical: SITE_ORIGIN,
   },
 };
 
@@ -25,10 +26,10 @@ export default function HomePage() {
 
   return (
     <>
+      <WebSiteSchema />
       <WebApplicationSchema />
       <OrganizationSchema />
       <FAQSchema />
-      <HowToSchema />
       <HomeContent versionInfo={versionInfo} />
     </>
   );

@@ -3,6 +3,7 @@ import Link from "next/link";
 import Image from "next/image";
 import type { ComponentProps, HTMLAttributes, ReactNode } from "react";
 import { Lightbulb, ArrowRight, HelpCircle, ChevronDown } from "lucide-react";
+import { START_ESTIMATING } from "@/lib/site-copy";
 
 // Wrapper for code blocks with syntax highlighting (handled by rehype-pretty-code)
 function Pre({ children, ...props }: HTMLAttributes<HTMLPreElement>) {
@@ -198,10 +199,11 @@ function Tldr({ children }: { children: ReactNode }) {
   );
 }
 
-// CTA component for "Try AgileKit" sections
+// CTA component for "Try AgileKit" sections. Every post's CTA promises a
+// session in seconds, so it opens the new game form rather than the homepage.
 function Cta({
   children,
-  href = "https://agilekit.app",
+  href = START_ESTIMATING.href,
   label = "Try AgileKit Free",
 }: {
   children?: ReactNode;

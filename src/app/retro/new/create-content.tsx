@@ -25,6 +25,7 @@ import {
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { NewTeamDialog } from "@/components/team/new-team-dialog";
 import { toast } from "@/lib/toast";
+import { trackConversion } from "@/lib/analytics";
 import { cn } from "@/lib/utils";
 import { tintClasses } from "@/components/retro/tints";
 import { FormatEditor } from "@/components/retro/format-editor";
@@ -201,6 +202,7 @@ export function CreateRetroContent() {
         ...(due !== undefined ? { collectUntil: due } : {}),
         ...(selectedTeam ? { teamId: selectedTeam._id, emailTeam } : {}),
       });
+      trackConversion("create_retro");
       router.push(`/room/${roomId}`);
     } catch (error) {
       console.error("Failed to create retro:", error);

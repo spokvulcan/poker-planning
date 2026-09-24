@@ -11,6 +11,8 @@ import { isEmbeddedDocument } from "@/lib/embed";
 import { TopLevelOnly } from "@/components/top-level-only";
 import { AnalyticsConsentBanner } from "@/components/legal/analytics-consent";
 import { SITE } from "@/lib/site-copy";
+import { SITE_ORIGIN } from "@/lib/site-config";
+import { SITE_OPEN_GRAPH, SITE_TWITTER } from "@/lib/page-metadata";
 
 import "./globals.css";
 
@@ -26,10 +28,10 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-const baseUrl = "https://agilekit.app";
-
+// No canonical here: every page inherits the root's, so one set here named
+// the homepage as the canonical of any page that forgot its own.
 export const metadata: Metadata = {
-  metadataBase: new URL(baseUrl),
+  metadataBase: new URL(SITE_ORIGIN),
   title: {
     default: SITE.title,
     template: SITE.titleTemplate,
@@ -51,29 +53,15 @@ export const metadata: Metadata = {
     },
   },
   openGraph: {
-    type: "website",
-    locale: "en_US",
-    url: baseUrl,
-    siteName: "AgileKit",
+    ...SITE_OPEN_GRAPH,
+    url: SITE_ORIGIN,
     title: SITE.openGraph.title,
     description: SITE.openGraph.description,
-    images: [
-      {
-        url: "/og-image.png",
-        width: 1200,
-        height: 630,
-        alt: SITE.openGraph.imageAlt,
-      },
-    ],
   },
   twitter: {
-    card: "summary_large_image",
+    ...SITE_TWITTER,
     title: SITE.twitter.title,
     description: SITE.twitter.description,
-    images: ["/og-image.png"],
-  },
-  alternates: {
-    canonical: baseUrl,
   },
   icons: {
     icon: "/icon.svg",

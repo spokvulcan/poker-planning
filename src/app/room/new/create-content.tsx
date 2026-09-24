@@ -28,6 +28,7 @@ import {
   FieldGroup,
 } from "@/components/ui/field";
 import { toast } from "@/lib/toast";
+import { trackConversion } from "@/lib/analytics";
 import { useCopyRoomUrlToClipboard } from "@/hooks/use-copy-room-url-to-clipboard";
 import {
   VOTING_SCALES,
@@ -142,6 +143,7 @@ export function CreateContent() {
         roomType: "canvas",
         votingScale,
       });
+      trackConversion("create_poker_room");
       router.push(`/room/${roomId}`);
     } catch (error) {
       console.error("Failed to create room:", error);

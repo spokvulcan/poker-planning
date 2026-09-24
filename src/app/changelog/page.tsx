@@ -8,22 +8,19 @@ import {
   formatRelativeTime,
   type ChangelogRelease,
 } from "@/lib/changelog";
+import { pageMetadata } from "@/lib/page-metadata";
 
-export const metadata: Metadata = {
-  title: "Changelog - AgileKit",
+export const metadata: Metadata = pageMetadata({
+  title: "Changelog",
   description:
     "Track the latest updates, features, and improvements to AgileKit. See what's new in our open-source planning poker tool.",
-  openGraph: {
-    title: "Changelog - AgileKit",
+  path: "/changelog",
+  social: {
+    title: "Changelog | AgileKit",
     description:
       "Track the latest updates, features, and improvements to AgileKit.",
-    type: "website",
-    url: "https://agilekit.dev/changelog",
   },
-  alternates: {
-    canonical: "https://agilekit.dev/changelog",
-  },
-};
+});
 
 /**
  * How many releases stay expanded. The rest sit behind a disclosure: the very
