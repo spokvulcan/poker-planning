@@ -191,19 +191,21 @@ export const IssueItem: FC<IssueItemProps> = ({
         {!isDemoMode &&
           (canManageIssues ? (
             <DropdownMenu>
-              <DropdownMenuTrigger>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  className={cn(
-                    "opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 transition-opacity",
-                    isCurrent ? "hover:bg-blue-100/50 dark:hover:bg-blue-800/30 text-blue-600/70" : "hover:bg-gray-100 dark:hover:bg-surface-3 text-gray-400"
-                  )}
-                >
-                  <MoreHorizontal className="h-4 w-4" />
-                  <span className="sr-only">Issue actions</span>
-                </Button>
-              </DropdownMenuTrigger>
+              <DropdownMenuTrigger
+                render={
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    className={cn(
+                      "opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 transition-opacity",
+                      isCurrent ? "hover:bg-blue-100/50 dark:hover:bg-blue-800/30 text-blue-600/70" : "hover:bg-gray-100 dark:hover:bg-surface-3 text-gray-400"
+                    )}
+                  >
+                    <MoreHorizontal className="h-4 w-4" />
+                    <span className="sr-only">Issue actions</span>
+                  </Button>
+                }
+              />
               <DropdownMenuContent align="end" className="w-40">
                 <DropdownMenuItem onClick={() => setIsEditingTitle(true)}>
                   <Pencil className="h-4 w-4 mr-2 text-gray-500" />
