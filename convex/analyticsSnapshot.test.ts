@@ -2,6 +2,7 @@
 import { convexTest } from "convex-test";
 import { describe, it, expect, vi, afterEach } from "vitest";
 import schema from "./schema";
+import { withComponents } from "./components.setup";
 import { api, internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import * as Analytics from "./model/analytics";
@@ -72,7 +73,7 @@ async function refreshSnapshot(t: T, roomId: Id<"rooms">): Promise<void> {
 
 describe("snapshot write path — round completion", () => {
   it("reveal with consensus upserts the room's snapshot with the completed history", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const userId = await seedUser(t, "auth-a");
     const roomId = await seedRoom(t);
     await addMembership(t, roomId, userId, IN);
@@ -103,12 +104,12 @@ describe("snapshot write path — round completion", () => {
 
     // The snapshot is fresh against the room's own activity clock, so the
     // read path serves it (see the freshness rule in model/analytics.ts).
-    const room = await t.run((ctx) => ctx.db.get(roomId));
+    const room = await t.run((ctx) => ctx.db.get("rooms", roomId));
     expect(snapshot!.computedAt).toBeGreaterThanOrEqual(room!.lastActivityAt);
   });
 
   it("a second completed round refreshes the one snapshot row in place", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const userId = await seedUser(t, "auth-a");
     const roomId = await seedRoom(t);
     await addMembership(t, roomId, userId, IN);
@@ -129,7 +130,7 @@ describe("snapshot write path — round completion", () => {
   });
 
   it("a consensus-less reveal (all special cards) writes no snapshot", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const userId = await seedUser(t, "auth-a");
     const roomId = await seedRoom(t);
     await addMembership(t, roomId, userId, IN);
@@ -196,7 +197,7 @@ describe("snapshot read path — fallback vs snapshot equivalence", () => {
   }
 
   it("all 9 queries return identical results from the fallback scan and the snapshot", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const { roomId } = await seedRichHistory(t);
 
     const fallback = await runAllQueries(t);
@@ -209,7 +210,7 @@ describe("snapshot read path — fallback vs snapshot equivalence", () => {
   });
 
   it("a fresh snapshot is the source of truth even if the tables drift", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const { roomId } = await seedRichHistory(t);
     await refreshSnapshot(t, roomId);
 
@@ -220,7 +221,7 @@ describe("snapshot read path — fallback vs snapshot equivalence", () => {
         .query("issues")
         .withIndex("by_room", (q) => q.eq("roomId", roomId))
         .collect();
-      await Promise.all(issues.map((i) => ctx.db.delete(i._id)));
+      await Promise.all(issues.map((i) => ctx.db.delete("issues", i._id)));
     });
 
     const asA = t.withIdentity({ subject: "auth-a" });
@@ -232,7 +233,7 @@ describe("snapshot read path — fallback vs snapshot equivalence", () => {
 describe("stale snapshot — history-changing writes outside completion", () => {
   it("removing a completed issue invalidates the snapshot (fallback serves the scan)", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
 
     vi.setSystemTime(BASE);
     const viewer = await seedUser(t, "auth-a");
@@ -260,7 +261,7 @@ describe("stale snapshot — history-changing writes outside completion", () => 
 
   it("editing a completed issue's estimate invalidates the snapshot", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
 
     vi.setSystemTime(BASE);
     const viewer = await seedUser(t, "auth-a");
@@ -288,7 +289,7 @@ describe("stale snapshot — history-changing writes outside completion", () => 
 
   it("the next completion after a stale period rewrites a correct snapshot", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
 
     vi.setSystemTime(BASE);
     const userId = await seedUser(t, "auth-a");
@@ -321,7 +322,7 @@ describe("stale snapshot — history-changing writes outside completion", () => 
 
 describe("export path — issue links fetched by room", () => {
   it("resolves roomId-tagged links; legacy untagged rows heal via the backfill migration", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const userId = await seedUser(t, "auth-a");
     const roomId = await seedRoom(t);
     await addMembership(t, roomId, userId, IN);
@@ -381,7 +382,7 @@ describe("export path — issue links fetched by room", () => {
 
 describe("snapshot invalidation on account-level user events", () => {
   it("user deletion invalidates the snapshot of a room they already left", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     // No membership: leaveRoom can't bump this room's activity, so only the
     // direct invalidation keeps the deleted user's votes out of analytics.
     const userId = await seedUser(t, "auth-gone");
@@ -406,7 +407,7 @@ describe("snapshot invalidation on account-level user events", () => {
   });
 
   it("identity merge invalidates snapshots for rooms whose votes were re-pointed", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const anonId = await seedUser(t, "auth-anon");
     const permId = await seedUser(t, "auth-perm");
     const roomId = await seedRoom(t);

@@ -85,7 +85,7 @@ export async function updateTimerState(
   }
 
   // Update the timer node
-  await ctx.db.patch(timerNode._id, {
+  await ctx.db.patch("canvasNodes", timerNode._id, {
     data: newData,
     lastUpdatedBy: args.userId,
     lastUpdatedAt: now,

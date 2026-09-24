@@ -221,14 +221,14 @@ export const deleteConnection = internalMutation({
 export const getConnectionById = internalQuery({
   args: { connectionId: v.id("integrationConnections") },
   handler: async (ctx, args) => {
-    return await ctx.db.get(args.connectionId);
+    return await ctx.db.get("integrationConnections", args.connectionId);
   },
 });
 
 export const getMappingById = internalQuery({
   args: { mappingId: v.id("integrationMappings") },
   handler: async (ctx, args) => {
-    return await ctx.db.get(args.mappingId);
+    return await ctx.db.get("integrationMappings", args.mappingId);
   },
 });
 
@@ -247,7 +247,7 @@ export const getConnectionForUser = internalQuery({
 export const getIssueData = internalQuery({
   args: { issueId: v.id("issues") },
   handler: async (ctx, args) => {
-    const issue = await ctx.db.get(args.issueId);
+    const issue = await ctx.db.get("issues", args.issueId);
     if (!issue) return null;
 
     const issueLink = await ctx.db
@@ -791,7 +791,7 @@ export const verifyCanManageIssues = internalQuery({
     roomId: v.id("rooms"),
   },
   handler: async (ctx, args) => {
-    const user = await ctx.db.get(args.userId);
+    const user = await ctx.db.get("users", args.userId);
     if (!user) throw new Error("User not found");
 
     await requireCanForUser(ctx, user, args.roomId, {

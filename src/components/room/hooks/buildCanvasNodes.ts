@@ -44,7 +44,7 @@ export interface CanvasNodeCallbacks {
   onToggleAutoComplete?: () => void;
   onCancelAutoReveal?: () => void;
   onOpenIssuesPanel?: () => void;
-  onUpdateNoteContent?: (nodeId: string, content: string) => void;
+  onUpdateNoteContent?: (nodeId: string, content: string) => Promise<void> | void;
   onDeleteNote?: (nodeId: string, hasContent: boolean) => void;
 }
 
@@ -260,9 +260,7 @@ function buildNoteNode(
       content: noteContent,
       lastUpdatedBy: node.data.lastUpdatedBy,
       lastUpdatedAt: node.data.lastUpdatedAt,
-      onUpdateContent: (content: string) => {
-        callbacks.onUpdateNoteContent?.(nodeId, content);
-      },
+      onUpdateContent: (content: string) => callbacks.onUpdateNoteContent?.(nodeId, content),
       onDelete: () => {
         callbacks.onDeleteNote?.(nodeId, !!noteContent);
       },

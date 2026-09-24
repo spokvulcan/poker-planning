@@ -57,7 +57,7 @@ export const dangerouslyDeleteAllData = internalMutation({
       let count = 0;
       const docs = await ctx.db.query(table).collect();
       for (const doc of docs) {
-        await ctx.db.delete(doc._id);
+        await ctx.db.delete(table, doc._id);
         count++;
       }
       results[table] = count;

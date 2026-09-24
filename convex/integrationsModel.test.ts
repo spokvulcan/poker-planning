@@ -159,7 +159,7 @@ describe("applyJiraWebhookEvent (via processJiraWebhook)", () => {
       issueSummary: "Second summary",
     });
 
-    const issue = await t.run((ctx) => ctx.db.get(issueId));
+    const issue = await t.run((ctx) => ctx.db.get("issues", issueId));
     expect(issue?.title).toBe("PROJ-1 - First summary");
     expect(await countRows(t, "webhookEvents")).toBe(1);
   });
@@ -172,7 +172,7 @@ describe("applyJiraWebhookEvent (via processJiraWebhook)", () => {
 
     // Backdate activity to a sentinel so the bump is observable.
     const sentinel = 1_000_000;
-    await t.run((ctx) => ctx.db.patch(roomId, { lastActivityAt: sentinel }));
+    await t.run((ctx) => ctx.db.patch("rooms", roomId, { lastActivityAt: sentinel }));
 
     await t.mutation(internal.integrations.jira.processJiraWebhook, {
       eventKey: "jira:10001:1700000000002",
@@ -181,7 +181,7 @@ describe("applyJiraWebhookEvent (via processJiraWebhook)", () => {
       issueSummary: "New summary",
     });
 
-    const room = await t.run((ctx) => ctx.db.get(roomId));
+    const room = await t.run((ctx) => ctx.db.get("rooms", roomId));
     expect(room?.lastActivityAt).toBeGreaterThan(sentinel);
   });
 
@@ -198,7 +198,7 @@ describe("applyJiraWebhookEvent (via processJiraWebhook)", () => {
     });
 
     expect(await countRows(t, "issueLinks")).toBe(0);
-    expect(await t.run((ctx) => ctx.db.get(issueId))).not.toBeNull();
+    expect(await t.run((ctx) => ctx.db.get("issues", issueId))).not.toBeNull();
   });
 });
 
@@ -304,7 +304,7 @@ describe("deregisterWebhook", () => {
     const t = convexTest(schema, modules);
     const userId = await seedUser(t, "auth-u");
     const connectionId = await seedConnection(t, userId);
-    await t.run((ctx) => ctx.db.delete(connectionId));
+    await t.run((ctx) => ctx.db.delete("integrationConnections", connectionId));
 
     await t.action(internal.integrations.jira.deregisterWebhook, {
       connectionId,
@@ -383,11 +383,11 @@ describe("removeRoomMapping", () => {
 
     // Backdate activity to a sentinel so the bump is observable.
     const sentinel = 1_000_000;
-    await t.run((ctx) => ctx.db.patch(roomId, { lastActivityAt: sentinel }));
+    await t.run((ctx) => ctx.db.patch("rooms", roomId, { lastActivityAt: sentinel }));
 
     await t.run((ctx) => Integrations.removeRoomMapping(ctx, roomId));
 
-    const room = await t.run((ctx) => ctx.db.get(roomId));
+    const room = await t.run((ctx) => ctx.db.get("rooms", roomId));
     expect(room?.lastActivityAt).toBeGreaterThan(sentinel);
   });
 });
@@ -412,7 +412,7 @@ describe("saveRoomMapping", () => {
 
     // Backdate createdAt to a sentinel so preservation is observable.
     const sentinel = 1_000_000;
-    await t.run((ctx) => ctx.db.patch(mappingId, { createdAt: sentinel }));
+    await t.run((ctx) => ctx.db.patch("integrationMappings", mappingId, { createdAt: sentinel }));
 
     const again = await t.run((ctx) =>
       Integrations.saveRoomMapping(ctx, {
@@ -427,7 +427,7 @@ describe("saveRoomMapping", () => {
     );
 
     expect(again).toBe(mappingId);
-    const mapping = await t.run((ctx) => ctx.db.get(mappingId));
+    const mapping = await t.run((ctx) => ctx.db.get("integrationMappings", mappingId));
     expect(mapping?.createdAt).toBe(sentinel);
     expect(mapping?.storyPointsFieldId).toBe("customfield_10016");
     expect(await countRows(t, "integrationMappings")).toBe(1);
@@ -444,7 +444,7 @@ describe("saveRoomMapping", () => {
 
     // Backdate activity to a sentinel so the bump is observable.
     const sentinel = 1_000_000;
-    await t.run((ctx) => ctx.db.patch(roomId, { lastActivityAt: sentinel }));
+    await t.run((ctx) => ctx.db.patch("rooms", roomId, { lastActivityAt: sentinel }));
 
     await t.run((ctx) =>
       Integrations.saveRoomMapping(ctx, {
@@ -457,7 +457,7 @@ describe("saveRoomMapping", () => {
       })
     );
 
-    const room = await t.run((ctx) => ctx.db.get(roomId));
+    const room = await t.run((ctx) => ctx.db.get("rooms", roomId));
     expect(room?.lastActivityAt).toBeGreaterThan(sentinel);
   });
 });
@@ -468,7 +468,7 @@ describe("toConnectionView", () => {
     const userId = await seedUser(t, "auth-u");
     const connectionId = await seedConnection(t, userId);
 
-    const connection = await t.run((ctx) => ctx.db.get(connectionId));
+    const connection = await t.run((ctx) => ctx.db.get("integrationConnections", connectionId));
     const view = Integrations.toConnectionView(connection!);
 
     expect(Object.keys(view).sort()).toEqual([
@@ -499,20 +499,20 @@ describe("setMappingWebhook", () => {
       jiraWebhookId: "wh-old",
     });
     await t.run((ctx) =>
-      ctx.db.patch(mappingId, { jiraWebhookRegisteredAt: 1_000_000 })
+      ctx.db.patch("integrationMappings", mappingId, { jiraWebhookRegisteredAt: 1_000_000 })
     );
 
     await t.run((ctx) =>
       Integrations.setMappingWebhook(ctx, mappingId, "wh-new")
     );
-    const replaced = await t.run((ctx) => ctx.db.get(mappingId));
+    const replaced = await t.run((ctx) => ctx.db.get("integrationMappings", mappingId));
     expect(replaced?.jiraWebhookId).toBe("wh-new");
     expect(replaced?.jiraWebhookRegisteredAt).toBeGreaterThan(1_000_000);
 
     await t.run((ctx) =>
       Integrations.setMappingWebhook(ctx, mappingId, undefined)
     );
-    const cleared = await t.run((ctx) => ctx.db.get(mappingId));
+    const cleared = await t.run((ctx) => ctx.db.get("integrationMappings", mappingId));
     expect(cleared?.jiraWebhookId).toBeUndefined();
     expect(cleared?.jiraWebhookRegisteredAt).toBeUndefined();
   });

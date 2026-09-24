@@ -42,6 +42,7 @@ import type * as model_gifUsage from "../model/gifUsage.js";
 import type * as model_integrations from "../model/integrations.js";
 import type * as model_issues from "../model/issues.js";
 import type * as model_permissions from "../model/permissions.js";
+import type * as model_presence from "../model/presence.js";
 import type * as model_refusal from "../model/refusal.js";
 import type * as model_retro from "../model/retro.js";
 import type * as model_roles from "../model/roles.js";
@@ -110,6 +111,7 @@ declare const fullApi: ApiFromModules<{
   "model/integrations": typeof model_integrations;
   "model/issues": typeof model_issues;
   "model/permissions": typeof model_permissions;
+  "model/presence": typeof model_presence;
   "model/refusal": typeof model_refusal;
   "model/retro": typeof model_retro;
   "model/roles": typeof model_roles;

@@ -83,8 +83,8 @@ describe("refreshExpiringTokens", () => {
 
     // Nothing was persisted: the failed refresh wrote no tokens, and the
     // fresh connection was never touched.
-    const expiringAfter = await t.run((ctx) => ctx.db.get(expiring));
-    const freshAfter = await t.run((ctx) => ctx.db.get(fresh));
+    const expiringAfter = await t.run((ctx) => ctx.db.get("integrationConnections", expiring));
+    const freshAfter = await t.run((ctx) => ctx.db.get("integrationConnections", fresh));
     expect(expiringAfter?.encryptedAccessToken).toBe("enc-access");
     expect(freshAfter?.encryptedAccessToken).toBe("enc-access");
   });

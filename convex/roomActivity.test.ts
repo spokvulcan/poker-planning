@@ -95,7 +95,7 @@ async function seedSessionNode(t: T, roomId: Id<"rooms">): Promise<void> {
 }
 
 async function lastActivityAt(t: T, roomId: Id<"rooms">): Promise<number> {
-  return (await t.run((ctx) => ctx.db.get(roomId)))!.lastActivityAt;
+  return (await t.run((ctx) => ctx.db.get("rooms", roomId)))!.lastActivityAt;
 }
 
 async function expectBumped(t: T, roomId: Id<"rooms">, stale: number) {
@@ -119,7 +119,7 @@ describe("room activity — voting round transitions bump", () => {
     const stale = staleTimestamp();
     const roomId = await seedRoom(t, stale);
     const issueId = await seedIssue(t, roomId, "voting");
-    await t.run((ctx) => ctx.db.patch(roomId, { currentIssueId: issueId }));
+    await t.run((ctx) => ctx.db.patch("rooms", roomId, { currentIssueId: issueId }));
 
     await t.run((ctx) => VotingRound.reset(ctx, roomId));
 
@@ -131,7 +131,7 @@ describe("room activity — voting round transitions bump", () => {
     const stale = staleTimestamp();
     const roomId = await seedRoom(t, stale);
     const issueId = await seedIssue(t, roomId, "voting");
-    await t.run((ctx) => ctx.db.patch(roomId, { currentIssueId: issueId }));
+    await t.run((ctx) => ctx.db.patch("rooms", roomId, { currentIssueId: issueId }));
 
     await t.run((ctx) => VotingRound.reveal(ctx, roomId));
 
@@ -143,7 +143,7 @@ describe("room activity — voting round transitions bump", () => {
     const stale = staleTimestamp();
     const roomId = await seedRoom(t, stale);
     const issueId = await seedIssue(t, roomId, "voting");
-    await t.run((ctx) => ctx.db.patch(roomId, { currentIssueId: issueId }));
+    await t.run((ctx) => ctx.db.patch("rooms", roomId, { currentIssueId: issueId }));
 
     await t.run((ctx) => VotingRound.abandon(ctx, roomId));
 
@@ -356,7 +356,7 @@ describe("room activity — role changes and rename bump (through the endpoints)
   async function seedOwnedRoom(t: T, stale: number) {
     const roomId = await seedRoom(t, stale);
     const ownerId = await addMember(t, roomId, "auth-owner", "owner");
-    await t.run((ctx) => ctx.db.patch(roomId, { ownerId }));
+    await t.run((ctx) => ctx.db.patch("rooms", roomId, { ownerId }));
     const asOwner = t.withIdentity({ subject: "auth-owner" });
     return { roomId, ownerId, asOwner };
   }
@@ -439,7 +439,7 @@ describe("room activity — the chokepoint owns the clock's precision (ADR-0018)
 
   async function seedRetroRoom(t: T, lastActivityAt: number): Promise<Id<"rooms">> {
     const roomId = await seedRoom(t, lastActivityAt);
-    await t.run((ctx) => ctx.db.patch(roomId, { roomType: "retro" }));
+    await t.run((ctx) => ctx.db.patch("rooms", roomId, { roomType: "retro" }));
     return roomId;
   }
 
@@ -476,7 +476,7 @@ describe("room activity — the chokepoint owns the clock's precision (ADR-0018)
   it("a room that is gone returns without patching (the join path bumps before it reads the room)", async () => {
     const t = convexTest(schema, modules);
     const roomId = await seedRoom(t, staleTimestamp());
-    await t.run((ctx) => ctx.db.delete(roomId));
+    await t.run((ctx) => ctx.db.delete("rooms", roomId));
 
     // Throws if the chokepoint patches a missing document.
     await t.run((ctx) => Rooms.updateRoomActivity(ctx, roomId));
@@ -487,7 +487,7 @@ describe("room activity — the chokepoint owns the clock's precision (ADR-0018)
     const before = Date.now();
     const owner = await t.run(async (ctx) => {
       const id = await ctx.db.insert("users", { authUserId: "auth-o", name: "O", createdAt: Date.now() });
-      return (await ctx.db.get(id))!;
+      return (await ctx.db.get("users", id))!;
     });
 
     const roomId = await t.run((ctx) => Retro.createRetro(ctx, { name: "R", owner }));
@@ -536,7 +536,7 @@ describe("room activity — every retro write goes through the chokepoint (ADR-0
   ) {
     for (const [name, act] of Object.entries(acts)) {
       const stale = Date.now() - HOUR - 60_000;
-      await t.run((ctx) => ctx.db.patch(roomId, { lastActivityAt: stale }));
+      await t.run((ctx) => ctx.db.patch("rooms", roomId, { lastActivityAt: stale }));
       await act();
       expect(await lastActivityAt(t, roomId), name).toBeGreaterThan(stale);
     }
@@ -626,7 +626,7 @@ describe("room activity — every retro write goes through the chokepoint (ADR-0
     const t = convexTest(schema, modules);
     const { roomId, owner } = await seedRetro(t);
     const fresh = Date.now() - 60_000;
-    await t.run((ctx) => ctx.db.patch(roomId, { lastActivityAt: fresh }));
+    await t.run((ctx) => ctx.db.patch("rooms", roomId, { lastActivityAt: fresh }));
 
     await stick(owner, roomId, "new");
 
@@ -636,9 +636,9 @@ describe("room activity — every retro write goes through the chokepoint (ADR-0
   it("a guest retro whose only sign of life in days is a sticky survives the sweep", async () => {
     const t = convexTest(schema, modules);
     const { roomId, owner } = await seedRetro(t);
-    expect((await t.run((ctx) => ctx.db.get(roomId)))!.retained).toBe(false);
+    expect((await t.run((ctx) => ctx.db.get("rooms", roomId)))!.retained).toBe(false);
     const sixDaysAgo = Date.now() - 6 * 24 * 60 * 60 * 1000;
-    await t.run((ctx) => ctx.db.patch(roomId, { lastActivityAt: sixDaysAgo }));
+    await t.run((ctx) => ctx.db.patch("rooms", roomId, { lastActivityAt: sixDaysAgo }));
 
     await stick(owner, roomId, "new");
 

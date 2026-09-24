@@ -2,7 +2,7 @@
 
 import { Handle, Position, NodeProps } from "@xyflow/react";
 import { StickyNote, X } from "lucide-react";
-import { ReactElement, memo, useState, useCallback, useEffect, useRef } from "react";
+import { ReactElement, memo, useState, useCallback, useEffect, useLayoutEffect, useRef } from "react";
 
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
@@ -12,22 +12,63 @@ import type { NoteNodeType } from "../types";
 // Debounce delay for auto-save (ms)
 const DEBOUNCE_DELAY = 500;
 
+/**
+ * Where `index` in `before` lands in `after`, treating the difference as one
+ * contiguous edit: an index ahead of the edit stays put, one past it keeps
+ * its distance from the end.
+ */
+function rebaseIndex(before: string, after: string, index: number): number {
+  const shorter = Math.min(before.length, after.length);
+  let prefix = 0;
+  while (prefix < shorter && before[prefix] === after[prefix]) prefix++;
+  if (index <= prefix) return index;
+  return Math.max(prefix, after.length - (before.length - index));
+}
+
 export const NoteNode = memo(
   ({ data, selected }: NodeProps<NoteNodeType>): ReactElement => {
     const { issueTitle, content, lastUpdatedBy, lastUpdatedAt, onUpdateContent, onDelete } = data;
 
     // Local state for textarea content
     const [localContent, setLocalContent] = useState(content);
+    // The server text the textarea last took in. Only a change to it is an
+    // edit to take in (a demo note's never changes, so typing there sticks).
+    const [syncedContent, setSyncedContent] = useState(content);
+    // From the first keystroke until the last save has landed.
     const [isSaving, setIsSaving] = useState(false);
+    const textareaRef = useRef<HTMLTextAreaElement>(null);
     const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     // Track pending content for cleanup flush
     const pendingContentRef = useRef<string | null>(null);
+    const savesInFlightRef = useRef(0);
+    const selectionAfterSyncRef = useRef<[number, number] | null>(null);
     const onUpdateContentRef = useRef(onUpdateContent);
 
-    // Sync local content when props change (from other users' edits)
+    // Take in the server's text (another user's edit, or the echo of our own
+    // save) only while nothing typed here is unsaved. Until then the local
+    // text wins: resetting it would drop what is being typed and move the
+    // caret, and the pending save overwrites the server's text anyway.
     useEffect(() => {
+      if (isSaving || content === syncedContent) return;
+      setSyncedContent(content);
+      if (content === localContent) return;
+      const textarea = textareaRef.current;
+      if (textarea && textarea === document.activeElement) {
+        selectionAfterSyncRef.current = [
+          rebaseIndex(localContent, content, textarea.selectionStart),
+          rebaseIndex(localContent, content, textarea.selectionEnd),
+        ];
+      }
       setLocalContent(content);
-    }, [content]);
+    }, [content, syncedContent, isSaving, localContent]);
+
+    // Keep the caret next to the text it was next to before a remote edit.
+    useLayoutEffect(() => {
+      const selection = selectionAfterSyncRef.current;
+      if (!selection) return;
+      selectionAfterSyncRef.current = null;
+      textareaRef.current?.setSelectionRange(...selection);
+    }, [localContent]);
 
     // Keep ref updated for cleanup
     useEffect(() => {
@@ -52,6 +93,20 @@ export const NoteNode = memo(
       return "over a day ago";
     }, [lastUpdatedAt]);
 
+    // Convex resolves a mutation only once query results that include it have
+    // arrived, so when the last save settles the server's text is current.
+    const save = useCallback(async (value: string) => {
+      savesInFlightRef.current += 1;
+      try {
+        await onUpdateContentRef.current(value);
+      } finally {
+        savesInFlightRef.current -= 1;
+        if (savesInFlightRef.current === 0 && pendingContentRef.current === null) {
+          setIsSaving(false);
+        }
+      }
+    }, []);
+
     // Debounced save handler
     const handleContentChange = useCallback(
       (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -67,12 +122,12 @@ export const NoteNode = memo(
 
         // Set new timer
         debounceTimerRef.current = setTimeout(() => {
-          onUpdateContent(newContent);
+          debounceTimerRef.current = null;
           pendingContentRef.current = null;
-          setIsSaving(false);
+          void save(newContent);
         }, DEBOUNCE_DELAY);
       },
-      [onUpdateContent]
+      [save]
     );
 
     // Cleanup timer on unmount - flush pending saves
@@ -86,7 +141,7 @@ export const NoteNode = memo(
           clearTimeout(debounceTimerRef.current);
           // Flush pending content before unmount
           if (pendingContentRef.current !== null) {
-            onUpdateContentRef.current(pendingContentRef.current);
+            void onUpdateContentRef.current(pendingContentRef.current);
           }
         }
       };
@@ -132,6 +187,7 @@ export const NoteNode = memo(
           {/* Content textarea */}
           <div className="p-3">
             <Textarea
+              ref={textareaRef}
               value={localContent}
               onChange={handleContentChange}
               placeholder="Add discussion notes, rationale, risks..."

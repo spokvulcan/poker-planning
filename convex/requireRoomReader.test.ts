@@ -78,7 +78,7 @@ describe("requireRoomReader — the room access guard", () => {
     const t = convexTest(schema, modules);
     const roomId = await seedRoom(t);
     await addMember(t, roomId, "auth-m");
-    await t.run((ctx) => ctx.db.delete(roomId));
+    await t.run((ctx) => ctx.db.delete("rooms", roomId));
 
     await expect(
       t.withIdentity({ subject: "auth-m" }).run((ctx) => requireRoomReader(ctx, roomId))

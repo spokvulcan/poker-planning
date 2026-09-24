@@ -32,7 +32,7 @@ export const disconnect = mutation({
   args: { connectionId: v.id("integrationConnections") },
   handler: async (ctx, args) => {
     const { user } = await requireAuthUser(ctx);
-    const connection = await ctx.db.get(args.connectionId);
+    const connection = await ctx.db.get("integrationConnections", args.connectionId);
     if (!connection || connection.userId !== user._id) {
       throw new Error("Connection not found");
     }
@@ -105,7 +105,7 @@ export const saveRoomMapping = mutation({
 
     // Verify the connection belongs to the current user
     const { user } = await requireAuthUser(ctx);
-    const connection = await ctx.db.get(args.connectionId);
+    const connection = await ctx.db.get("integrationConnections", args.connectionId);
     if (!connection || connection.userId !== user._id) {
       throw new Error("Connection not found");
     }

@@ -2,6 +2,7 @@
 import { convexTest, type TestConvex } from "convex-test";
 import { describe, it, expect, vi, afterEach } from "vitest";
 import schema from "./schema";
+import { withComponents } from "./components.setup";
 import { api } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import * as VotingRound from "./model/votingRound";
@@ -34,7 +35,7 @@ async function seedRoom(
 }
 
 async function readRoom(t: T, roomId: Id<"rooms">) {
-  return t.run((ctx) => ctx.db.get(roomId));
+  return t.run((ctx) => ctx.db.get("rooms", roomId));
 }
 
 async function scheduledFns(t: T) {
@@ -102,7 +103,7 @@ async function clearVotes(t: T, roomId: Id<"rooms">): Promise<void> {
       .query("votes")
       .withIndex("by_room", (q) => q.eq("roomId", roomId))
       .collect();
-    await Promise.all(votes.map((v) => ctx.db.delete(v._id)));
+    await Promise.all(votes.map((v) => ctx.db.delete("votes", v._id)));
   });
 }
 
@@ -125,7 +126,7 @@ async function armCountdown(
 
 describe("VotingRound.autoReveal", () => {
   it("reveals when its token is the room's live countdown", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const roomId = await seedRoom(t, { autoCompleteVoting: true });
     const memberId = await addMember(t, roomId);
     await armCountdown(t, roomId, [memberId]);
@@ -140,7 +141,7 @@ describe("VotingRound.autoReveal", () => {
   });
 
   it("no-ops when its token is no longer the room's live countdown (stale)", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const roomId = await seedRoom(t, { autoCompleteVoting: true });
     const memberId = await addMember(t, roomId);
     await armCountdown(t, roomId, [memberId]);
@@ -156,23 +157,23 @@ describe("VotingRound.autoReveal", () => {
   });
 
   it("no-ops when the room is already revealed", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const roomId = await seedRoom(t, { isGameOver: true });
     await t.run((ctx) => VotingRound.autoReveal(ctx, { roomId, token: 123 }));
     expect((await readRoom(t, roomId))?.isGameOver).toBe(true);
   });
 
   it("no-ops when no countdown is active", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const roomId = await seedRoom(t);
     await t.run((ctx) => VotingRound.autoReveal(ctx, { roomId, token: 123 }));
     expect((await readRoom(t, roomId))?.isGameOver).toBe(false);
   });
 
   it("no-ops when the room is gone", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const roomId = await seedRoom(t);
-    await t.run((ctx) => ctx.db.delete(roomId));
+    await t.run((ctx) => ctx.db.delete("rooms", roomId));
     // Should not throw.
     await t.run((ctx) => VotingRound.autoReveal(ctx, { roomId, token: 123 }));
     expect(await readRoom(t, roomId)).toBeNull();
@@ -189,12 +190,12 @@ describe("dropVoter — a roster exit reconciles the round", () => {
         .withIndex("by_room", (q) => q.eq("roomId", roomId))
         .collect();
       const m = members.find((x) => x.userId === userId);
-      if (m) await ctx.db.delete(m._id);
+      if (m) await ctx.db.delete("roomMemberships", m._id);
     });
   }
 
   it("arms the countdown once the dropped member was the last non-voter", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const roomId = await seedRoom(t, { autoCompleteVoting: true });
     const a = await addMember(t, roomId);
     const b = await addMember(t, roomId); // never votes — the lone blocker
@@ -209,7 +210,7 @@ describe("dropVoter — a roster exit reconciles the round", () => {
   });
 
   it("deletes the dropped member's own votes (round is sole writer of the votes table)", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const roomId = await seedRoom(t, { autoCompleteVoting: true });
     const a = await addMember(t, roomId);
     const b = await addMember(t, roomId);
@@ -229,7 +230,7 @@ describe("dropVoter — a roster exit reconciles the round", () => {
   });
 
   it("becoming a spectator arms the countdown when it completes the round", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const roomId = await seedRoom(t, { autoCompleteVoting: true });
     const a = await addMember(t, roomId);
     const b = await addMember(t, roomId); // hasn't voted
@@ -245,7 +246,7 @@ describe("dropVoter — a roster exit reconciles the round", () => {
   });
 
   it("becoming a spectator via editUser deletes the member's existing vote", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const roomId = await seedRoom(t, { autoCompleteVoting: true });
     const a = await addMember(t, roomId);
     const b = await addMember(t, roomId);
@@ -268,7 +269,7 @@ describe("dropVoter — a roster exit reconciles the round", () => {
   });
 
   it("leaving the room arms the countdown when it completes the round", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const roomId = await seedRoom(t, { autoCompleteVoting: true });
     const a = await addMember(t, roomId);
     const b = await addMember(t, roomId); // hasn't voted
@@ -285,7 +286,7 @@ describe("dropVoter — a roster exit reconciles the round", () => {
     // report "all in" — the length guard in areAllVotesIn prevents that. Verify
     // through the public interface: dropVoter on the last non-spectator with a
     // stray spectator vote row left behind must not arm anything.
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const roomId = await seedRoom(t, { autoCompleteVoting: true });
     const a = await addMember(t, roomId);
     await rawVote(t, roomId, a);
@@ -302,7 +303,7 @@ describe("dropVoter — a roster exit reconciles the round", () => {
   });
 
   it("a never-voted latecomer does not prevent the armed reveal from firing (let it reveal — ADR-0004)", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const roomId = await seedRoom(t, { autoCompleteVoting: true });
     const a = await addMember(t, roomId);
     const b = await addMember(t, roomId);
@@ -351,7 +352,7 @@ describe("early-reveal regression (issue #199)", () => {
       status: "pending",
       order: 1,
     });
-    await t.run((ctx) => ctx.db.patch(roomId, { currentIssueId: issueId }));
+    await t.run((ctx) => ctx.db.patch("rooms", roomId, { currentIssueId: issueId }));
     const a = await addMember(t, roomId);
     const b = await addMember(t, roomId);
     await rawVote(t, roomId, a);
@@ -398,7 +399,7 @@ describe("early-reveal regression (issue #199)", () => {
   }
 
   it("abandon to Quick Vote cannot early-reveal the next round", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const { roomId, members, T1, S1 } = await setupArmedRound(t);
 
     await t.run((ctx) => VotingRound.abandon(ctx, roomId));
@@ -409,7 +410,7 @@ describe("early-reveal regression (issue #199)", () => {
   });
 
   it("deleting the current issue cannot early-reveal the next round", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const { roomId, issueId, members, T1, S1 } = await setupArmedRound(t);
 
     await t.run((ctx) => Issues.removeIssue(ctx, issueId));
@@ -420,7 +421,7 @@ describe("early-reveal regression (issue #199)", () => {
   });
 
   it("switching directly to another issue cannot early-reveal the next round", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const { roomId, otherIssueId, members, T1, S1 } = await setupArmedRound(t);
 
     await t.run((ctx) =>
@@ -435,25 +436,25 @@ describe("early-reveal regression (issue #199)", () => {
 
 describe("VotingRound.abandon", () => {
   it("drops the issue target to a Quick Vote and reverts the issue to pending", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const roomId = await seedRoom(t);
     const issueId = await seedIssue(t, roomId, { status: "voting" });
-    await t.run((ctx) => ctx.db.patch(roomId, { currentIssueId: issueId }));
+    await t.run((ctx) => ctx.db.patch("rooms", roomId, { currentIssueId: issueId }));
 
     await t.run((ctx) => VotingRound.abandon(ctx, roomId));
 
     const room = await readRoom(t, roomId);
-    const issue = await t.run((ctx) => ctx.db.get(issueId));
+    const issue = await t.run((ctx) => ctx.db.get("issues", issueId));
     expect(room?.currentIssueId).toBeUndefined(); // Quick Vote
     expect(room?.isGameOver).toBe(false); // still in `voting`
     expect(issue?.status).toBe("pending");
   });
 
   it("clears prior votes", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const roomId = await seedRoom(t);
     const issueId = await seedIssue(t, roomId, { status: "voting" });
-    await t.run((ctx) => ctx.db.patch(roomId, { currentIssueId: issueId }));
+    await t.run((ctx) => ctx.db.patch("rooms", roomId, { currentIssueId: issueId }));
     const a = await addMember(t, roomId);
     await rawVote(t, roomId, a);
 
@@ -469,10 +470,10 @@ describe("VotingRound.abandon", () => {
   });
 
   it("closes the issue's open timing record", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const roomId = await seedRoom(t);
     const issueId = await seedIssue(t, roomId, { status: "voting" });
-    await t.run((ctx) => ctx.db.patch(roomId, { currentIssueId: issueId }));
+    await t.run((ctx) => ctx.db.patch("rooms", roomId, { currentIssueId: issueId }));
     await t.run((ctx) =>
       ctx.db.insert("votingTimestamps", {
         roomId,
@@ -495,10 +496,10 @@ describe("VotingRound.abandon", () => {
   });
 
   it("cancels an armed countdown", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const roomId = await seedRoom(t, { autoCompleteVoting: true });
     const issueId = await seedIssue(t, roomId, { status: "voting" });
-    await t.run((ctx) => ctx.db.patch(roomId, { currentIssueId: issueId }));
+    await t.run((ctx) => ctx.db.patch("rooms", roomId, { currentIssueId: issueId }));
     const memberId = await addMember(t, roomId);
     await armCountdown(t, roomId, [memberId]);
     const scheduledId = (await readRoom(t, roomId))!.autoRevealScheduledId!;
@@ -515,7 +516,7 @@ describe("VotingRound.abandon", () => {
   });
 
   it("on a target-less Quick Vote, stays in voting without error", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const roomId = await seedRoom(t); // no currentIssueId
 
     await t.run((ctx) => VotingRound.abandon(ctx, roomId));
@@ -528,17 +529,17 @@ describe("VotingRound.abandon", () => {
 
 describe("removeIssue of the current issue (delegates to abandon)", () => {
   it("ends the round cleanly: Quick Vote, cleared votes, issue removed", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const roomId = await seedRoom(t);
     const issueId = await seedIssue(t, roomId, { status: "voting" });
-    await t.run((ctx) => ctx.db.patch(roomId, { currentIssueId: issueId }));
+    await t.run((ctx) => ctx.db.patch("rooms", roomId, { currentIssueId: issueId }));
     const a = await addMember(t, roomId);
     await rawVote(t, roomId, a);
 
     await t.run((ctx) => Issues.removeIssue(ctx, issueId));
 
     const room = await readRoom(t, roomId);
-    const issue = await t.run((ctx) => ctx.db.get(issueId));
+    const issue = await t.run((ctx) => ctx.db.get("issues", issueId));
     const votes = await t.run((ctx) =>
       ctx.db
         .query("votes")
@@ -572,7 +573,7 @@ async function timingFor(t: T, issueId: Id<"issues">) {
 
 describe("VotingRound.start", () => {
   it("starts a round on an issue: marks it voting, clears votes, opens round 1", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const roomId = await seedRoom(t);
     const issueId = await seedIssue(t, roomId, { status: "pending" });
     const a = await addMember(t, roomId);
@@ -581,7 +582,7 @@ describe("VotingRound.start", () => {
     await t.run((ctx) => VotingRound.start(ctx, { roomId, issueId }));
 
     const room = await readRoom(t, roomId);
-    const issue = await t.run((ctx) => ctx.db.get(issueId));
+    const issue = await t.run((ctx) => ctx.db.get("issues", issueId));
     const timestamps = await timingFor(t, issueId);
     expect(room?.currentIssueId).toBe(issueId);
     expect(room?.isGameOver).toBe(false);
@@ -593,7 +594,7 @@ describe("VotingRound.start", () => {
   });
 
   it("starts a Quick Vote (no issue): clears votes and records no timing", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const roomId = await seedRoom(t);
     const a = await addMember(t, roomId);
     await rawVote(t, roomId, a);
@@ -614,28 +615,28 @@ describe("VotingRound.start", () => {
   });
 
   it("switching to a new issue reverts the previous issue to pending", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const roomId = await seedRoom(t);
     const first = await seedIssue(t, roomId, { status: "voting", order: 0 });
     const second = await seedIssue(t, roomId, { status: "pending", order: 1 });
-    await t.run((ctx) => ctx.db.patch(roomId, { currentIssueId: first }));
+    await t.run((ctx) => ctx.db.patch("rooms", roomId, { currentIssueId: first }));
 
     await t.run((ctx) => VotingRound.start(ctx, { roomId, issueId: second }));
 
     const room = await readRoom(t, roomId);
     expect(room?.currentIssueId).toBe(second);
-    expect((await t.run((ctx) => ctx.db.get(first)))?.status).toBe("pending");
-    expect((await t.run((ctx) => ctx.db.get(second)))?.status).toBe("voting");
+    expect((await t.run((ctx) => ctx.db.get("issues", first)))?.status).toBe("pending");
+    expect((await t.run((ctx) => ctx.db.get("issues", second)))?.status).toBe("voting");
   });
 });
 
 describe("VotingRound.reset", () => {
   it("re-opens the same issue and starts a new timed round (round 2)", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const roomId = await seedRoom(t);
     const issueId = await seedIssue(t, roomId, { status: "completed" });
     await t.run((ctx) =>
-      ctx.db.patch(roomId, { currentIssueId: issueId, isGameOver: true })
+      ctx.db.patch("rooms", roomId, { currentIssueId: issueId, isGameOver: true })
     );
     await t.run((ctx) =>
       ctx.db.insert("votingTimestamps", {
@@ -653,7 +654,7 @@ describe("VotingRound.reset", () => {
     await t.run((ctx) => VotingRound.reset(ctx, roomId));
 
     const room = await readRoom(t, roomId);
-    const issue = await t.run((ctx) => ctx.db.get(issueId));
+    const issue = await t.run((ctx) => ctx.db.get("issues", issueId));
     const ts = await timingFor(t, issueId);
     expect(room?.isGameOver).toBe(false);
     expect(room?.currentIssueId).toBe(issueId); // same target
@@ -666,10 +667,10 @@ describe("VotingRound.reset", () => {
 
 describe("VotingRound.reveal", () => {
   it("flips to revealed and snapshots the consensus + stats onto the issue", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const roomId = await seedRoom(t);
     const issueId = await seedIssue(t, roomId, { status: "voting" });
-    await t.run((ctx) => ctx.db.patch(roomId, { currentIssueId: issueId }));
+    await t.run((ctx) => ctx.db.patch("rooms", roomId, { currentIssueId: issueId }));
     const a = await addMember(t, roomId);
     const b = await addMember(t, roomId);
     const c = await addMember(t, roomId);
@@ -680,7 +681,7 @@ describe("VotingRound.reveal", () => {
     await t.run((ctx) => VotingRound.reveal(ctx, roomId));
 
     const room = await readRoom(t, roomId);
-    const issue = await t.run((ctx) => ctx.db.get(issueId));
+    const issue = await t.run((ctx) => ctx.db.get("issues", issueId));
     expect(room?.isGameOver).toBe(true);
     expect(issue?.status).toBe("completed");
     expect(issue?.finalEstimate).toBe("5"); // mode
@@ -692,10 +693,10 @@ describe("VotingRound.reveal", () => {
     // The demo room and pre-`votingScale` rooms have no scale; the canvas
     // panel still shows an average (client default `?? true`), so the stored
     // stats must be numeric too — not null (ADR-0002, no client/server divergence).
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const roomId = await seedRoom(t); // seedRoom sets no votingScale
     const issueId = await seedIssue(t, roomId, { status: "voting" });
-    await t.run((ctx) => ctx.db.patch(roomId, { currentIssueId: issueId }));
+    await t.run((ctx) => ctx.db.patch("rooms", roomId, { currentIssueId: issueId }));
     const a = await addMember(t, roomId);
     const b = await addMember(t, roomId);
     const c = await addMember(t, roomId);
@@ -705,16 +706,16 @@ describe("VotingRound.reveal", () => {
 
     await t.run((ctx) => VotingRound.reveal(ctx, roomId));
 
-    const issue = await t.run((ctx) => ctx.db.get(issueId));
+    const issue = await t.run((ctx) => ctx.db.get("issues", issueId));
     expect(issue?.voteStats?.average).toBe(4);
     expect(issue?.voteStats?.median).toBe(4);
   });
 
   it("snapshots per-voter alignment into individualVotes", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const roomId = await seedRoom(t);
     const issueId = await seedIssue(t, roomId, { status: "voting" });
-    await t.run((ctx) => ctx.db.patch(roomId, { currentIssueId: issueId }));
+    await t.run((ctx) => ctx.db.patch("rooms", roomId, { currentIssueId: issueId }));
     const a = await addMember(t, roomId);
     const b = await addMember(t, roomId);
     await rawVote(t, roomId, a, "5");
@@ -733,10 +734,10 @@ describe("VotingRound.reveal", () => {
   });
 
   it("snapshots agreement excluding special cards (the client/server divergence)", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const roomId = await seedRoom(t);
     const issueId = await seedIssue(t, roomId, { status: "voting" });
-    await t.run((ctx) => ctx.db.patch(roomId, { currentIssueId: issueId }));
+    await t.run((ctx) => ctx.db.patch("rooms", roomId, { currentIssueId: issueId }));
     const a = await addMember(t, roomId);
     const b = await addMember(t, roomId);
     const c = await addMember(t, roomId);
@@ -746,14 +747,14 @@ describe("VotingRound.reveal", () => {
 
     await t.run((ctx) => VotingRound.reveal(ctx, roomId));
 
-    const issue = await t.run((ctx) => ctx.db.get(issueId));
+    const issue = await t.run((ctx) => ctx.db.get("issues", issueId));
     expect(issue?.voteStats?.voteCount).toBe(2); // "?" excluded
     expect(issue?.voteStats?.agreement).toBe(100); // 2 of 2 on "5"
     expect(issue?.finalEstimate).toBe("5");
   });
 
   it("on a Quick Vote just flips to revealed (no issue to complete)", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const roomId = await seedRoom(t); // no currentIssueId
     const a = await addMember(t, roomId);
     await rawVote(t, roomId, a, "8");
@@ -767,7 +768,7 @@ describe("VotingRound.reveal", () => {
     // Revealing a round with only special cards (or no votes) yields no
     // consensus, so the issue isn't completed — but the round IS over, so its
     // open timing record must close at reveal, not leak until the next reset.
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const roomId = await seedRoom(t);
     const issueId = await seedIssue(t, roomId, { status: "pending" });
     await t.run((ctx) => VotingRound.start(ctx, { roomId, issueId })); // opens round 1
@@ -787,7 +788,7 @@ describe("VotingRound.reveal", () => {
   });
 
   it("cancels an armed countdown when revealing", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const roomId = await seedRoom(t, { autoCompleteVoting: true });
     const memberId = await addMember(t, roomId);
     await armCountdown(t, roomId, [memberId]);
@@ -807,7 +808,7 @@ describe("VotingRound.reveal", () => {
 
 describe("VotingRound.cancelCountdown", () => {
   it("clears the countdown and cancels the scheduled reveal, staying in voting", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const roomId = await seedRoom(t, { autoCompleteVoting: true });
     const memberId = await addMember(t, roomId);
     await armCountdown(t, roomId, [memberId]);
@@ -828,7 +829,7 @@ describe("VotingRound.cancelCountdown", () => {
 
 describe("VotingRound.castVote", () => {
   it("records a participant's card", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const roomId = await seedRoom(t, { autoCompleteVoting: false });
     const a = await addMember(t, roomId);
 
@@ -842,7 +843,7 @@ describe("VotingRound.castVote", () => {
   });
 
   it("changing a card updates the existing vote rather than duplicating", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const roomId = await seedRoom(t, { autoCompleteVoting: false });
     const a = await addMember(t, roomId);
     await t.run((ctx) =>
@@ -859,7 +860,7 @@ describe("VotingRound.castVote", () => {
   });
 
   it("arms the countdown once every non-spectator has voted", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const roomId = await seedRoom(t, { autoCompleteVoting: true });
     const a = await addMember(t, roomId);
 
@@ -873,7 +874,7 @@ describe("VotingRound.castVote", () => {
   });
 
   it("refuses a spectator's ballot — spectators are voteless (ADR-0004)", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const roomId = await seedRoom(t, { autoCompleteVoting: false });
     const s = await addMember(t, roomId, { isSpectator: true });
 
@@ -894,7 +895,7 @@ describe("VotingRound.castVote", () => {
 
 describe("VotingRound.retractVote", () => {
   it("removes the participant's card", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const roomId = await seedRoom(t, { autoCompleteVoting: false });
     const a = await addMember(t, roomId);
     await t.run((ctx) =>
@@ -907,7 +908,7 @@ describe("VotingRound.retractVote", () => {
   });
 
   it("cancels the countdown when the room is no longer fully voted", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const roomId = await seedRoom(t, { autoCompleteVoting: true });
     const a = await addMember(t, roomId);
     const b = await addMember(t, roomId);
@@ -928,7 +929,7 @@ describe("VotingRound.retractVote", () => {
 
 describe("linkAnonymousToPermanent — identity merge keeps spectators voteless (ADR-0004)", () => {
   it("drops the merged vote rather than leaving it on a spectator destination", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const roomId = await seedRoom(t);
 
     // Destination: a PERMANENT user who is a spectator in the room (no vote).
@@ -990,7 +991,7 @@ describe("linkAnonymousToPermanent — identity merge keeps spectators voteless 
   });
 
   it("transfers the vote to a non-spectator destination", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const roomId = await seedRoom(t);
 
     // Destination: a PERMANENT, non-spectator user who has not voted.
@@ -1062,7 +1063,7 @@ describe("VotingRound.setAutoComplete", () => {
   });
 
   it("disable mid-countdown clears the countdown fields and cancels the scheduled reveal", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const roomId = await seedRoom(t, { autoCompleteVoting: true });
     const a = await addMember(t, roomId);
     await armCountdown(t, roomId, [a]); // all in -> armed
@@ -1082,7 +1083,7 @@ describe("VotingRound.setAutoComplete", () => {
   });
 
   it("enable with all votes in arms the countdown immediately", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const roomId = await seedRoom(t, { autoCompleteVoting: false });
     const a = await addMember(t, roomId);
     await rawVote(t, roomId, a); // fully voted, but the setting was off -> unarmed
@@ -1103,7 +1104,7 @@ describe("VotingRound.setAutoComplete", () => {
   });
 
   it("enable with votes outstanding stays unarmed", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const roomId = await seedRoom(t, { autoCompleteVoting: false });
     const a = await addMember(t, roomId);
     await addMember(t, roomId); // a second non-spectator who has not voted
@@ -1119,7 +1120,7 @@ describe("VotingRound.setAutoComplete", () => {
   });
 
   it("enable -> disable -> enable re-arms with a fresh token and the stale job is inert", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(BASE);
     const roomId = await seedRoom(t, { autoCompleteVoting: false });
@@ -1150,7 +1151,7 @@ describe("VotingRound.setAutoComplete", () => {
   });
 
   it("registered toggleAutoComplete still enforces the room-settings permission", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const roomId = await seedRoom(t, { autoCompleteVoting: true });
     // A participant in a room whose settings category is owner-only.
     await t.run(async (ctx) => {
@@ -1165,7 +1166,7 @@ describe("VotingRound.setAutoComplete", () => {
         isSpectator: false,
         joinedAt: Date.now(),
       });
-      await ctx.db.patch(roomId, {
+      await ctx.db.patch("rooms", roomId, {
         permissions: {
           revealCards: "everyone",
           gameFlow: "everyone",

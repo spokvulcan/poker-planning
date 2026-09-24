@@ -243,7 +243,7 @@ describe("retros never count towards poker analytics", () => {
     const userId = await seedUser(t, "auth-a");
     const pokerId = await seedRoom(t, "Poker");
     const retroId = await seedRoom(t, "Retro");
-    await t.run((ctx) => ctx.db.patch(retroId, { roomType: "retro" }));
+    await t.run((ctx) => ctx.db.patch("rooms", retroId, { roomType: "retro" }));
     await addMembership(t, pokerId, userId, IN);
     await addMembership(t, retroId, userId, IN);
     await seedIssue(t, pokerId, { sequentialId: 1, votedAt: IN, finalEstimate: "5" });

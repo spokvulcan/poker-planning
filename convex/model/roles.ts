@@ -19,7 +19,7 @@ export async function promoteFacilitator(
     args.targetUserId
   );
 
-  await ctx.db.patch(target!._id, { role: "facilitator" });
+  await ctx.db.patch("roomMemberships", target!._id, { role: "facilitator" });
   await Rooms.updateRoomActivity(ctx, args.roomId);
 }
 
@@ -38,7 +38,7 @@ export async function demoteFacilitator(
     args.targetUserId
   );
 
-  await ctx.db.patch(target!._id, { role: "participant" });
+  await ctx.db.patch("roomMemberships", target!._id, { role: "participant" });
   await Rooms.updateRoomActivity(ctx, args.roomId);
 }
 
@@ -67,8 +67,8 @@ export async function transferOwnership(
   }
 
   // Swap roles: old owner → participant, new owner → owner
-  await ctx.db.patch(actorMembership._id, { role: "participant" });
-  await ctx.db.patch(target!._id, { role: "owner" });
+  await ctx.db.patch("roomMemberships", actorMembership._id, { role: "participant" });
+  await ctx.db.patch("roomMemberships", target!._id, { role: "owner" });
 
   await Rooms.setRoomOwner(ctx, room, args.targetUserId);
   await Rooms.updateRoomActivity(ctx, args.roomId);
@@ -87,6 +87,6 @@ export async function updatePermissions(
     verb: "changePerms",
   });
 
-  await ctx.db.patch(args.roomId, { permissions: args.permissions });
+  await ctx.db.patch("rooms", args.roomId, { permissions: args.permissions });
   await Rooms.updateRoomActivity(ctx, args.roomId);
 }

@@ -20,9 +20,9 @@ export const backfillIssueLinksRoomId = internalMutation({
     const outcomes = await Promise.all(
       links.map(async (link) => {
         if (link.roomId !== undefined) return "already-tagged";
-        const issue = await ctx.db.get(link.issueId);
+        const issue = await ctx.db.get("issues", link.issueId);
         if (!issue) return "orphaned";
-        await ctx.db.patch(link._id, { roomId: issue.roomId });
+        await ctx.db.patch("issueLinks", link._id, { roomId: issue.roomId });
         return "tagged";
       })
     );

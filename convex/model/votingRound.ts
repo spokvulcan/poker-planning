@@ -29,33 +29,33 @@ export async function start(
   ctx: MutationCtx,
   args: { roomId: Id<"rooms">; issueId?: Id<"issues"> }
 ): Promise<void> {
-  const room = await ctx.db.get(args.roomId);
+  const room = await ctx.db.get("rooms", args.roomId);
   if (!room) throw new Error("Room not found");
 
   if (args.issueId) {
-    const issue = await ctx.db.get(args.issueId);
+    const issue = await ctx.db.get("issues", args.issueId);
     if (!issue) throw new Error("Issue not found");
   }
 
   // Revert a different previous issue target back to pending, closing its round.
   if (room.currentIssueId && room.currentIssueId !== args.issueId) {
-    const previous = await ctx.db.get(room.currentIssueId);
+    const previous = await ctx.db.get("issues", room.currentIssueId);
     if (previous && previous.status === "voting") {
       await closeOpenTimingRecord(ctx, room.currentIssueId);
-      await ctx.db.patch(room.currentIssueId, { status: "pending" });
+      await ctx.db.patch("issues", room.currentIssueId, { status: "pending" });
     }
   }
 
   // Mark the new issue target as voting (Quick Vote has no issue status).
   if (args.issueId) {
-    await ctx.db.patch(args.issueId, { status: "voting" });
+    await ctx.db.patch("issues", args.issueId, { status: "voting" });
   }
 
   // Cancel any countdown left over from the previous round.
   await cancel(ctx, args.roomId);
 
   // Move to a fresh `voting` phase on the new target.
-  await ctx.db.patch(args.roomId, {
+  await ctx.db.patch("rooms", args.roomId, {
     currentIssueId: args.issueId,
     isGameOver: false,
   });
@@ -74,18 +74,18 @@ export async function start(
  * round (incrementing the round number).
  */
 export async function reset(ctx: MutationCtx, roomId: Id<"rooms">): Promise<void> {
-  const room = await ctx.db.get(roomId);
+  const room = await ctx.db.get("rooms", roomId);
   if (!room) throw new Error("Room not found");
 
   if (room.currentIssueId) {
-    const issue = await ctx.db.get(room.currentIssueId);
+    const issue = await ctx.db.get("issues", room.currentIssueId);
     if (issue && (issue.status === "voting" || issue.status === "completed")) {
       // A mid-vote reset leaves an open round; close it before opening a fresh
       // one so durations don't overlap.
       if (issue.status === "voting" && shouldRecordTiming(room.currentIssueId)) {
         await closeOpenTimingRecord(ctx, room.currentIssueId);
       }
-      await ctx.db.patch(room.currentIssueId, { status: "voting" });
+      await ctx.db.patch("issues", room.currentIssueId, { status: "voting" });
       if (shouldRecordTiming(room.currentIssueId)) {
         await openTimingRecord(ctx, roomId, room.currentIssueId);
       }
@@ -93,7 +93,7 @@ export async function reset(ctx: MutationCtx, roomId: Id<"rooms">): Promise<void
   }
 
   await cancel(ctx, roomId);
-  await ctx.db.patch(roomId, { isGameOver: false });
+  await ctx.db.patch("rooms", roomId, { isGameOver: false });
   await Rooms.updateRoomActivity(ctx, roomId);
   await clearRoomVotes(ctx, roomId);
 }
@@ -107,12 +107,12 @@ export async function reset(ctx: MutationCtx, roomId: Id<"rooms">): Promise<void
  * reached) also refreshes the room's analytics snapshot in the same mutation.
  */
 export async function reveal(ctx: MutationCtx, roomId: Id<"rooms">): Promise<void> {
-  const room = await ctx.db.get(roomId);
+  const room = await ctx.db.get("rooms", roomId);
   if (!room) throw new Error("Room not found");
 
   // Cancel the countdown as one unit, then settle to `revealed`.
   await cancel(ctx, roomId);
-  await ctx.db.patch(roomId, { isGameOver: true });
+  await ctx.db.patch("rooms", roomId, { isGameOver: true });
   await Rooms.updateRoomActivity(ctx, roomId);
 
   // Reveal effect: results node on canvas rooms.
@@ -188,7 +188,7 @@ async function snapshotVoterAlignment(
     .query("individualVotes")
     .withIndex("by_issue", (q) => q.eq("issueId", issueId))
     .collect();
-  await Promise.all(existing.map((row) => ctx.db.delete(row._id)));
+  await Promise.all(existing.map((row) => ctx.db.delete("individualVotes", row._id)));
 
   const votes = await Votes.getRoomVotes(ctx, roomId);
   const rows = computeVoterAlignment(votes, consensusLabel, votingScale);
@@ -238,15 +238,15 @@ async function scheduleJiraPushIfEnabled(
  * transition on a room that is already a Quick Vote (no target to drop).
  */
 export async function abandon(ctx: MutationCtx, roomId: Id<"rooms">): Promise<void> {
-  const room = await ctx.db.get(roomId);
+  const room = await ctx.db.get("rooms", roomId);
   if (!room) throw new Error("Room not found");
 
   // Revert the issue target (if any) to pending, closing its open round.
   if (room.currentIssueId) {
-    const issue = await ctx.db.get(room.currentIssueId);
+    const issue = await ctx.db.get("issues", room.currentIssueId);
     if (issue && issue.status === "voting") {
       await closeOpenTimingRecord(ctx, room.currentIssueId);
-      await ctx.db.patch(room.currentIssueId, { status: "pending" });
+      await ctx.db.patch("issues", room.currentIssueId, { status: "pending" });
     }
   }
 
@@ -254,7 +254,7 @@ export async function abandon(ctx: MutationCtx, roomId: Id<"rooms">): Promise<vo
   await cancel(ctx, roomId);
 
   // Fall back to a target-less Quick Vote, still in `voting`.
-  await ctx.db.patch(roomId, {
+  await ctx.db.patch("rooms", roomId, {
     currentIssueId: undefined,
     isGameOver: false,
   });
@@ -291,10 +291,10 @@ export async function setAutoComplete(
   await Rooms.updateRoomActivity(ctx, roomId);
   if (!enabled) {
     await cancel(ctx, roomId);
-    await ctx.db.patch(roomId, { autoCompleteVoting: false });
+    await ctx.db.patch("rooms", roomId, { autoCompleteVoting: false });
     return;
   }
-  await ctx.db.patch(roomId, { autoCompleteVoting: true });
+  await ctx.db.patch("rooms", roomId, { autoCompleteVoting: true });
   await evaluate(ctx, roomId);
 }
 
@@ -307,7 +307,7 @@ export async function setAutoComplete(
  * countdown is already running.
  */
 async function arm(ctx: MutationCtx, roomId: Id<"rooms">): Promise<void> {
-  const room = await ctx.db.get(roomId);
+  const room = await ctx.db.get("rooms", roomId);
   if (!room) throw new Error("Room not found");
   if (room.autoRevealCountdownStartedAt) return; // already counting down
 
@@ -317,7 +317,7 @@ async function arm(ctx: MutationCtx, roomId: Id<"rooms">): Promise<void> {
     internal.votingRound.autoReveal,
     { roomId, token }
   );
-  await ctx.db.patch(roomId, {
+  await ctx.db.patch("rooms", roomId, {
     autoRevealCountdownStartedAt: token,
     autoRevealScheduledId: scheduledId,
   });
@@ -329,7 +329,7 @@ async function arm(ctx: MutationCtx, roomId: Id<"rooms">): Promise<void> {
  * active (no-ops on missing fields).
  */
 async function cancel(ctx: MutationCtx, roomId: Id<"rooms">): Promise<void> {
-  const room = await ctx.db.get(roomId);
+  const room = await ctx.db.get("rooms", roomId);
   if (!room) return;
 
   if (room.autoRevealScheduledId) {
@@ -341,7 +341,7 @@ async function cancel(ctx: MutationCtx, roomId: Id<"rooms">): Promise<void> {
   }
 
   if (room.autoRevealCountdownStartedAt || room.autoRevealScheduledId) {
-    await ctx.db.patch(roomId, {
+    await ctx.db.patch("rooms", roomId, {
       autoRevealCountdownStartedAt: undefined,
       autoRevealScheduledId: undefined,
     });
@@ -354,7 +354,7 @@ async function cancel(ctx: MutationCtx, roomId: Id<"rooms">): Promise<void> {
  * and roster-shrink path so the countdown stays in sync.
  */
 async function evaluate(ctx: MutationCtx, roomId: Id<"rooms">): Promise<void> {
-  const room = await ctx.db.get(roomId);
+  const room = await ctx.db.get("rooms", roomId);
   if (!room) return;
   if (!room.autoCompleteVoting || room.isGameOver) return;
 
@@ -372,7 +372,7 @@ async function clearRoomVotes(ctx: MutationCtx, roomId: Id<"rooms">): Promise<vo
     .query("votes")
     .withIndex("by_room", (q) => q.eq("roomId", roomId))
     .collect();
-  await Promise.all(votes.map((vote) => ctx.db.delete(vote._id)));
+  await Promise.all(votes.map((vote) => ctx.db.delete("votes", vote._id)));
 }
 
 /**
@@ -424,7 +424,7 @@ async function closeOpenTimingRecord(
 
   const now = Date.now();
   const durationMs = now - latest.votingStartedAt;
-  await ctx.db.patch(latest._id, { votingEndedAt: now, durationMs });
+  await ctx.db.patch("votingTimestamps", latest._id, { votingEndedAt: now, durationMs });
   latest.votingEndedAt = now;
   latest.durationMs = durationMs;
   return { closed: true, timestamps };
@@ -463,7 +463,7 @@ async function completeTargetIssue(
     timeToConsensusMs = totalMs;
   }
 
-  await ctx.db.patch(args.issueId, {
+  await ctx.db.patch("issues", args.issueId, {
     status: "completed",
     finalEstimate: args.finalEstimate,
     votedAt: now,
@@ -509,7 +509,7 @@ export async function castVote(ctx: MutationCtx, args: CastVoteArgs): Promise<vo
   // Validate the card against the room's voting scale and re-derive its numeric
   // value server-side. pickCard is public, so an unchecked label/value would
   // flow into vote stats, exports, and auto-pushed Jira estimates.
-  const room = await ctx.db.get(args.roomId);
+  const room = await ctx.db.get("rooms", args.roomId);
   if (!room) throw new Error("Room not found");
   const scale = room.votingScale ?? DEFAULT_SCALE;
   const scaleCards: readonly string[] = scale.cards;
@@ -530,7 +530,7 @@ export async function castVote(ctx: MutationCtx, args: CastVoteArgs): Promise<vo
     .first();
 
   if (existing) {
-    await ctx.db.patch(existing._id, {
+    await ctx.db.patch("votes", existing._id, {
       cardLabel: args.cardLabel,
       cardValue,
       cardIcon: args.cardIcon,
@@ -567,7 +567,7 @@ export async function retractVote(
     .first();
 
   if (vote) {
-    await ctx.db.delete(vote._id);
+    await ctx.db.delete("votes", vote._id);
     await evaluate(ctx, args.roomId);
   }
 }
@@ -594,7 +594,7 @@ export async function dropVoter(
     .query("votes")
     .withIndex("by_room_user", (q) => q.eq("roomId", roomId).eq("userId", userId))
     .collect();
-  await Promise.all(votes.map((vote) => ctx.db.delete(vote._id)));
+  await Promise.all(votes.map((vote) => ctx.db.delete("votes", vote._id)));
 
   await evaluate(ctx, roomId);
 }
@@ -609,7 +609,7 @@ export async function autoReveal(
   ctx: MutationCtx,
   args: { roomId: Id<"rooms">; token: number }
 ): Promise<void> {
-  const room = await ctx.db.get(args.roomId);
+  const room = await ctx.db.get("rooms", args.roomId);
   if (!room) return; // room gone
   if (room.isGameOver) return; // already revealed
   if (!room.autoRevealCountdownStartedAt) return; // no countdown active

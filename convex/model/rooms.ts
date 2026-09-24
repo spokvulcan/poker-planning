@@ -43,8 +43,8 @@ export function isRetainedUnder(
 
 /** Hands a room to a new owner, keeping it when that owner keeps retros. */
 export async function setRoomOwner(ctx: MutationCtx, room: Doc<"rooms">, ownerId: Id<"users">): Promise<void> {
-  const owner = await ctx.db.get(ownerId);
-  await ctx.db.patch(room._id, { ownerId, retained: isRetainedUnder(room, owner) });
+  const owner = await ctx.db.get("users", ownerId);
+  await ctx.db.patch("rooms", room._id, { ownerId, retained: isRetainedUnder(room, owner) });
 }
 
 export interface SanitizedVote extends Doc<"votes"> {
@@ -132,7 +132,7 @@ export async function getRoomWithRelatedData(
   roomId: Id<"rooms">,
   currentUserId?: Id<"users">
 ): Promise<RoomWithRelatedData | null> {
-  const room = await ctx.db.get(roomId);
+  const room = await ctx.db.get("rooms", roomId);
   if (!room) return null;
 
   // Get users (via memberships), votes, and owner-absent status in parallel
@@ -206,7 +206,7 @@ export async function updateRoomActivity(
 ): Promise<void> {
   // A caller whose guard already loaded the room passes the row; the id
   // form re-reads it.
-  const room = typeof roomOrId === "string" ? await ctx.db.get(roomOrId) : roomOrId;
+  const room = typeof roomOrId === "string" ? await ctx.db.get("rooms", roomOrId) : roomOrId;
   if (!room) return;
   const now = Date.now();
   if (
@@ -215,7 +215,7 @@ export async function updateRoomActivity(
   ) {
     return;
   }
-  await ctx.db.patch(room._id, { lastActivityAt: now });
+  await ctx.db.patch("rooms", room._id, { lastActivityAt: now });
 }
 
 /**
@@ -226,6 +226,6 @@ export async function renameRoom(
   ctx: MutationCtx,
   args: { roomId: Id<"rooms">; name: string }
 ): Promise<void> {
-  await ctx.db.patch(args.roomId, { name: validateRoomName(args.name) });
+  await ctx.db.patch("rooms", args.roomId, { name: validateRoomName(args.name) });
   await updateRoomActivity(ctx, args.roomId);
 }

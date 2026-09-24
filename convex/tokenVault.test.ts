@@ -264,7 +264,7 @@ describe("vault write path (convex-test)", () => {
     const userId = await seedUser(t, "auth-u");
 
     const connectionId = await saveViaVault(t, userId);
-    const row = await t.run((ctx) => ctx.db.get(connectionId));
+    const row = await t.run((ctx) => ctx.db.get("integrationConnections", connectionId));
 
     expect(row).not.toBeNull();
     // No plaintext anywhere in the stored row.
@@ -281,7 +281,7 @@ describe("vault write path (convex-test)", () => {
     const userId = await seedUser(t, "auth-u");
 
     const connectionId = await saveViaVault(t, userId);
-    const row = await t.run((ctx) => ctx.db.get(connectionId));
+    const row = await t.run((ctx) => ctx.db.get("integrationConnections", connectionId));
 
     expect(await TokenVault.decryptAccessToken(row!, TEST_KEY)).toBe(
       PLAINTEXT_ACCESS
@@ -296,7 +296,7 @@ describe("vault write path (convex-test)", () => {
     const userId = await seedUser(t, "auth-u");
 
     const connectionId = await saveViaVault(t, userId);
-    const row = await t.run((ctx) => ctx.db.get(connectionId));
+    const row = await t.run((ctx) => ctx.db.get("integrationConnections", connectionId));
     const view = Integrations.toConnectionView(row!);
 
     expect(JSON.stringify(view)).not.toContain(row!.encryptedAccessToken);
@@ -309,7 +309,7 @@ describe("vault write path (convex-test)", () => {
     const t = convexTest(schema, modules);
     const userId = await seedUser(t, "auth-u");
     const connectionId = await saveViaVault(t, userId);
-    const before = await t.run((ctx) => ctx.db.get(connectionId));
+    const before = await t.run((ctx) => ctx.db.get("integrationConnections", connectionId));
 
     const NEW_ACCESS = "rotated-access-token!";
     const NEW_REFRESH = "rotated-refresh-token?";
@@ -324,7 +324,7 @@ describe("vault write path (convex-test)", () => {
       expiresAt: newExpiry,
     });
 
-    const after = await t.run((ctx) => ctx.db.get(connectionId));
+    const after = await t.run((ctx) => ctx.db.get("integrationConnections", connectionId));
     expect(JSON.stringify(after)).not.toContain(NEW_ACCESS);
     expect(JSON.stringify(after)).not.toContain(NEW_REFRESH);
     expect(after!.expiresAt).toBe(newExpiry);

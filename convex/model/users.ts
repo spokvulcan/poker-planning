@@ -3,6 +3,7 @@ import { Id, Doc } from "../_generated/dataModel";
 import { internal } from "../_generated/api";
 import * as Analytics from "./analytics";
 import * as Canvas from "./canvas";
+import * as Presence from "./presence";
 import * as Rooms from "./rooms";
 import * as VotingRound from "./votingRound";
 import { type MemberRole } from "../permissions";
@@ -55,7 +56,7 @@ export async function findOrCreateGlobalUser(
   if (existingUser) {
     // Update name if changed (unless the caller's identity is unverified)
     if (args.allowRename !== false && existingUser.name !== args.name) {
-      await ctx.db.patch(existingUser._id, { name: args.name });
+      await ctx.db.patch("users", existingUser._id, { name: args.name });
     }
     return existingUser._id;
   }
@@ -142,15 +143,15 @@ export async function joinRoom(
   const existingMembership = await getMembership(ctx, args.roomId, userId);
   if (existingMembership) {
     // If this is the room owner rejoining, ensure their role is set to "owner"
-    const room = await ctx.db.get(args.roomId);
+    const room = await ctx.db.get("rooms", args.roomId);
     if (room?.ownerId === userId && existingMembership.role !== "owner") {
-      await ctx.db.patch(existingMembership._id, { role: "owner" });
+      await ctx.db.patch("roomMemberships", existingMembership._id, { role: "owner" });
     }
     return userId;
   }
 
   // Determine role: owner if this user is the room's owner, otherwise participant
-  const room = await ctx.db.get(args.roomId);
+  const room = await ctx.db.get("rooms", args.roomId);
   const role = room?.ownerId === userId ? ("owner" as const) : undefined;
 
   // No spectator in a retro: everyone at the board writes. The bit stays on
@@ -181,7 +182,7 @@ export async function editUser(
   ctx: MutationCtx,
   args: EditUserArgs
 ): Promise<void> {
-  const user = await ctx.db.get(args.userId);
+  const user = await ctx.db.get("users", args.userId);
   if (!user) throw new Error("User not found");
 
   // Get membership for room context
@@ -193,7 +194,7 @@ export async function editUser(
 
   // Update name on global user if changed
   if (args.name !== undefined) {
-    await ctx.db.patch(args.userId, { name: args.name });
+    await ctx.db.patch("users", args.userId, { name: args.name });
   }
 
   // Handle spectator status transitions. Flip the roster bit first (membership is
@@ -204,7 +205,7 @@ export async function editUser(
   // on the way in), so un-spectating adds a fresh non-voter that can't silently
   // complete the round, and a latecomer never cancels a running countdown (ADR-0004).
   if (args.isSpectator !== undefined && args.isSpectator !== membership.isSpectator) {
-    await ctx.db.patch(membership._id, { isSpectator: args.isSpectator });
+    await ctx.db.patch("roomMemberships", membership._id, { isSpectator: args.isSpectator });
 
     if (args.isSpectator) {
       await VotingRound.dropVoter(ctx, args.roomId, args.userId);
@@ -226,9 +227,9 @@ export async function leaveRoom(
   // Membership and any canvas player node are this module's to remove. Delete the
   // membership FIRST so the non-spectator roster reflects the departure before the
   // round re-checks completion.
-  await ctx.db.delete(membership._id);
+  await ctx.db.delete("roomMemberships", membership._id);
 
-  const room = await ctx.db.get(roomId);
+  const room = await ctx.db.get("rooms", roomId);
   if (room && room.roomType === "canvas") {
     await Canvas.removePlayerNode(ctx, { roomId, userId });
   }
@@ -258,7 +259,7 @@ export async function getRoomUsers(
 
   // Get all users for these memberships
   const users = await Promise.all(
-    memberships.map((m) => ctx.db.get(m.userId))
+    memberships.map((m) => ctx.db.get("users", m.userId))
   );
 
   // Merge user and membership data
@@ -306,7 +307,7 @@ export async function updateGlobalUserName(
     throw new Error("User not found");
   }
 
-  await ctx.db.patch(user._id, { name });
+  await ctx.db.patch("users", user._id, { name });
 }
 
 /**
@@ -332,7 +333,7 @@ export async function ensureGlobalUserFromAuth(
   if (existingUser) {
     // User already exists (e.g., created by a race with joinRoom).
     // Patch in permanent account details that findOrCreateGlobalUser doesn't set.
-    await ctx.db.patch(existingUser._id, {
+    await ctx.db.patch("users", existingUser._id, {
       email: args.email,
       accountType: "permanent" as const,
       ...(args.avatarUrl ? { avatarUrl: args.avatarUrl } : {}),
@@ -364,7 +365,7 @@ export async function syncGlobalUserAvatar(
     .first();
 
   if (user && user.avatarUrl !== avatarUrl) {
-    await ctx.db.patch(user._id, { avatarUrl });
+    await ctx.db.patch("users", user._id, { avatarUrl });
   }
 }
 
@@ -394,10 +395,14 @@ export async function deleteUserByAuthUserId(
     .withIndex("by_user", (q) => q.eq("userId", user._id))
     .collect();
 
-  // Leave each room (cleans up votes, canvas nodes, presence)
+  // Leave each room (cleans up votes and canvas nodes)
   await Promise.all(
     memberships.map((membership) => leaveRoom(ctx, user._id, membership.roomId))
   );
+
+  // Presence outlives membership, so clear it for every room the user was
+  // ever seen in, not just the ones they are still in.
+  await Presence.removeUserPresence(ctx, user._id);
 
   // Delete individual vote snapshots for this user — across every room they
   // ever voted in, including ones they already left. Their history changes
@@ -407,14 +412,14 @@ export async function deleteUserByAuthUserId(
     .query("individualVotes")
     .withIndex("by_user", (q) => q.eq("userId", user._id))
     .collect();
-  await Promise.all(individualVotes.map((iv) => ctx.db.delete(iv._id)));
+  await Promise.all(individualVotes.map((iv) => ctx.db.delete("individualVotes", iv._id)));
   await Analytics.invalidateRoomAnalyticsSnapshots(
     ctx,
     individualVotes.map((iv) => iv.roomId)
   );
 
   // Delete the global user record
-  await ctx.db.delete(user._id);
+  await ctx.db.delete("users", user._id);
 }
 
 /** The retro rooms an account owns. */
@@ -436,7 +441,7 @@ async function handOffOwnedRetros(ctx: MutationCtx, ownerId: Id<"users">): Promi
       .filter((m) => m.userId !== ownerId)
       .sort((a, b) => a.joinedAt - b.joinedAt)[0];
     if (heir) {
-      await ctx.db.patch(heir._id, { role: "owner" });
+      await ctx.db.patch("roomMemberships", heir._id, { role: "owner" });
       await Rooms.setRoomOwner(ctx, room, heir.userId);
     } else {
       await ctx.scheduler.runAfter(0, internal.maintenance.deleteRoomAggregateChunk, { roomId: room._id });
@@ -453,12 +458,12 @@ const MAX_LINKED_RETRO_ROWS = 5000;
  * anonymous account turns permanent.
  */
 async function retainOwnedRetros(ctx: MutationCtx, ownerId: Id<"users">): Promise<void> {
-  const owner = await ctx.db.get(ownerId);
+  const owner = await ctx.db.get("users", ownerId);
   const retros = await ownedRetros(ctx, ownerId);
   await Promise.all(
     retros
       .filter((room) => !room.retained && Rooms.isRetainedUnder(room, owner))
-      .map((room) => ctx.db.patch(room._id, { retained: true }))
+      .map((room) => ctx.db.patch("rooms", room._id, { retained: true }))
   );
 }
 
@@ -499,7 +504,7 @@ export async function linkAnonymousToPermanent(
     // Update the permanent user with account details from the OAuth provider.
     // The permanent user was likely created by the auto-join race condition
     // (before onLinkAccount ran) and is missing email/accountType/avatarUrl.
-    await ctx.db.patch(existingPermanent._id, {
+    await ctx.db.patch("users", existingPermanent._id, {
       email: args.email,
       accountType: "permanent" as const,
       avatarUrl: args.avatarUrl,
@@ -516,10 +521,10 @@ export async function linkAnonymousToPermanent(
       const existingMembership = await getMembership(ctx, membership.roomId, existingPermanent._id);
       if (existingMembership) {
         // Already in room — delete the anonymous membership
-        await ctx.db.delete(membership._id);
+        await ctx.db.delete("roomMemberships", membership._id);
       } else {
         // Transfer membership to permanent user
-        await ctx.db.patch(membership._id, { userId: existingPermanent._id });
+        await ctx.db.patch("roomMemberships", membership._id, { userId: existingPermanent._id });
       }
     }
 
@@ -556,9 +561,9 @@ export async function linkAnonymousToPermanent(
         existingPermanent._id
       );
       if (existingVote || destMembership?.isSpectator) {
-        await ctx.db.delete(vote._id);
+        await ctx.db.delete("votes", vote._id);
       } else {
-        await ctx.db.patch(vote._id, { userId: existingPermanent._id });
+        await ctx.db.patch("votes", vote._id, { userId: existingPermanent._id });
       }
     }
 
@@ -582,9 +587,9 @@ export async function linkAnonymousToPermanent(
         .first();
 
       if (existingIv) {
-        await ctx.db.delete(iv._id);
+        await ctx.db.delete("individualVotes", iv._id);
       } else {
-        await ctx.db.patch(iv._id, { userId: existingPermanent._id });
+        await ctx.db.patch("individualVotes", iv._id, { userId: existingPermanent._id });
       }
     }
 
@@ -618,10 +623,10 @@ export async function linkAnonymousToPermanent(
 
       if (existingPlayerNode) {
         // Permanent user already has a player node in this room
-        await ctx.db.delete(node._id);
+        await ctx.db.delete("canvasNodes", node._id);
       } else {
         // Transfer node to permanent user (update both nodeId and data.userId)
-        await ctx.db.patch(node._id, {
+        await ctx.db.patch("canvasNodes", node._id, {
           nodeId: `player-${existingPermanent._id}`,
           data: { ...node.data, userId: existingPermanent._id },
         });
@@ -635,7 +640,7 @@ export async function linkAnonymousToPermanent(
       .collect();
 
     for (const room of ownedRooms) {
-      await ctx.db.patch(room._id, { ownerId: existingPermanent._id });
+      await ctx.db.patch("rooms", room._id, { ownerId: existingPermanent._id });
     }
 
     // Update lastUpdatedBy on any canvas nodes touched by the anonymous user
@@ -645,7 +650,7 @@ export async function linkAnonymousToPermanent(
       .collect();
 
     for (const node of updatedNodes) {
-      await ctx.db.patch(node._id, { lastUpdatedBy: existingPermanent._id });
+      await ctx.db.patch("canvasNodes", node._id, { lastUpdatedBy: existingPermanent._id });
     }
 
     // Retro stickies, votes and action items name people by reference:
@@ -667,23 +672,25 @@ export async function linkAnonymousToPermanent(
       if (vote) votedAlready.add(roomId);
     }
     await Promise.all([
-      ...stickies.map((sticky) => ctx.db.patch(sticky._id, { authorId: existingPermanent._id })),
+      ...stickies.map((sticky) => ctx.db.patch("retroStickies", sticky._id, { authorId: existingPermanent._id })),
       ...retroVotes.map((vote) =>
         votedAlready.has(vote.roomId)
-          ? ctx.db.delete(vote._id)
-          : ctx.db.patch(vote._id, { voterId: existingPermanent._id })
+          ? ctx.db.delete("retroStickyVotes", vote._id)
+          : ctx.db.patch("retroStickyVotes", vote._id, { voterId: existingPermanent._id })
       ),
-      ...ownedItems.map((item) => ctx.db.patch(item._id, { ownerId: existingPermanent._id })),
+      ...ownedItems.map((item) => ctx.db.patch("retroActionItems", item._id, { ownerId: existingPermanent._id })),
     ]);
     await retainOwnedRetros(ctx, existingPermanent._id);
 
-    // Delete the old anonymous user record
-    await ctx.db.delete(user._id);
+    // Delete the old anonymous user record and its presence; the client
+    // heartbeats as the permanent user from here on.
+    await Presence.removeUserPresence(ctx, user._id);
+    await ctx.db.delete("users", user._id);
     return;
   }
 
   // Simple case: update the user record to point to new authUserId
-  await ctx.db.patch(user._id, {
+  await ctx.db.patch("users", user._id, {
     authUserId: args.newAuthUserId,
     email: args.email,
     avatarUrl: args.avatarUrl,

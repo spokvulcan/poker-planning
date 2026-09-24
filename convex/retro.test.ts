@@ -3,6 +3,7 @@ import { convexTest } from "convex-test";
 import { describe, it, expect } from "vitest";
 import { ConvexError } from "convex/values";
 import schema from "./schema";
+import { withComponents } from "./components.setup";
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { DEFAULT_RETRO_PERMISSIONS } from "./permissions";
@@ -86,11 +87,11 @@ async function seen(t: T, who: string, roomId: Id<"rooms">, stickyId: Id<"retroS
 }
 
 async function retroState(t: T, roomId: Id<"rooms">) {
-  return (await t.run((ctx) => ctx.db.get(roomId)))!.retro!;
+  return (await t.run((ctx) => ctx.db.get("rooms", roomId)))!.retro!;
 }
 
 async function stickyRow(t: T, stickyId: Id<"retroStickies">) {
-  return (await t.run((ctx) => ctx.db.get(stickyId)))!;
+  return (await t.run((ctx) => ctx.db.get("retroStickies", stickyId)))!;
 }
 
 async function stickiesIn(t: T, roomId: Id<"rooms">) {
@@ -143,10 +144,10 @@ const FACILITATORS_ONLY = "Only facilitators and the owner can do this.";
 
 describe("retro.create", () => {
   it("opens a retro at `write` with the template's columns and the board's fixed nodes", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const { roomId, ownerId } = await seedRetro(t, "4ls");
 
-    const room = (await t.run((ctx) => ctx.db.get(roomId)))!;
+    const room = (await t.run((ctx) => ctx.db.get("rooms", roomId)))!;
     expect(room).toMatchObject({ name: "Sprint 41 retro", roomType: "retro", ownerId, retained: true });
     expect(room.retro).toEqual({
       step: "write",
@@ -178,18 +179,18 @@ describe("retro.create", () => {
   });
 
   it("a guest's retro is not retained", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     await seedUser(t, "guest");
 
     const roomId = await as(t, "guest").mutation(api.retro.create, { name: "R" });
 
-    expect((await t.run((ctx) => ctx.db.get(roomId)))?.retained).toBe(false);
+    expect((await t.run((ctx) => ctx.db.get("rooms", roomId)))?.retained).toBe(false);
   });
 });
 
 describe("the board — who sees what", () => {
   it("while writing, someone else's sticky is face-down: its place, never its words, GIF or author", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const { roomId } = await seedRetro(t);
     await as(t, "owner").mutation(api.retro.updateSettings, { roomId, showAuthors: true });
     const stickyId = await stick(t, "ann", roomId, {
@@ -214,7 +215,7 @@ describe("the board — who sees what", () => {
   });
 
   it("the vote step reveals every sticky's words to everyone", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const { roomId } = await seedRetro(t);
     const stickyId = await stick(t, "ann", roomId, { text: "Deploys are slow" });
 
@@ -228,7 +229,7 @@ describe("the board — who sees what", () => {
   });
 
   it("authors travel only when the retro shows them, and only once revealed", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const { roomId } = await seedRetro(t);
     const stickyId = await stick(t, "ann", roomId);
     await setStep(t, roomId, "vote");
@@ -244,7 +245,7 @@ describe("the board — who sees what", () => {
   });
 
   it("a sticky's height is kept from its author's browser only, and sent to nobody", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const { roomId } = await seedRetro(t);
     const stickyId = await stick(t, "ann", roomId);
     const measure = (who: string, height: number) =>
@@ -278,7 +279,7 @@ describe("the reveal", () => {
   }
 
   it("moves a sticky put under a face-down one clear of it, by the height its author's browser measured", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const { roomId } = await seedRetro(t);
     const { annAt, annId, bobAt, bobId } = await bobUnderAnnsGif(t, roomId);
 
@@ -289,7 +290,7 @@ describe("the reveal", () => {
   });
 
   it("is the only step that moves stickies", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const { roomId } = await seedRetro(t);
     const { bobAt, bobId } = await bobUnderAnnsGif(t, roomId);
     await setStep(t, roomId, "vote");
@@ -303,7 +304,7 @@ describe("the reveal", () => {
   });
 
   it("goes by face-down size when nobody measured a sticky", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const { roomId } = await seedRetro(t);
     const [pad] = padPositions(3);
     const annAt = nextStickyPosition(pad, []);
@@ -319,7 +320,7 @@ describe("the reveal", () => {
 
 describe("retro.addSticky", () => {
   it("a repeated clientId is the same sticky", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const { roomId } = await seedRetro(t);
 
     const first = await stick(t, "ann", roomId, { clientId: "dup", text: "Once" });
@@ -330,7 +331,7 @@ describe("retro.addSticky", () => {
   });
 
   it("refuses a sticky with neither words nor a GIF, and one for a column that is gone", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const { roomId } = await seedRetro(t);
 
     expect(await refusalOf(stick(t, "ann", roomId, { text: "   " }))).toBe("forbidden");
@@ -339,7 +340,7 @@ describe("retro.addSticky", () => {
   });
 
   it("refuses a GIF from a host outside the allowlist", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const { roomId } = await seedRetro(t);
 
     const call = stick(t, "ann", roomId, {
@@ -351,7 +352,7 @@ describe("retro.addSticky", () => {
   });
 
   it("takes a GIPHY page link and stores its media file, words optional", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const { roomId } = await seedRetro(t);
 
     const stickyId = await stick(t, "ann", roomId, {
@@ -365,7 +366,7 @@ describe("retro.addSticky", () => {
 
 describe("stacks", () => {
   it("while writing, only your own stickies stack", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const { roomId } = await seedRetro(t);
     const ann1 = await stick(t, "ann", roomId);
     const ann2 = await stick(t, "ann", roomId);
@@ -379,7 +380,7 @@ describe("stacks", () => {
   });
 
   it("once revealed, a sticky dropped on another joins that sticky's stack, and a stack's top brings its stack", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const { roomId } = await seedRetro(t);
     const a = await stick(t, "ann", roomId);
     const b = await stick(t, "bob", roomId);
@@ -401,7 +402,7 @@ describe("stacks", () => {
   });
 
   it("unstacking takes a sticky out and puts it down where it was dropped", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const { roomId } = await seedRetro(t);
     const a = await stick(t, "ann", roomId);
     const b = await stick(t, "bob", roomId);
@@ -416,7 +417,7 @@ describe("stacks", () => {
   });
 
   it("deleting a stack's top promotes its oldest sticky, which keeps the rest and the stack's votes", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const { roomId } = await seedRetro(t);
     const top = await stick(t, "ann", roomId, { position: { x: 50, y: 60 } });
     const older = await stick(t, "bob", roomId);
@@ -439,7 +440,7 @@ describe("stacks", () => {
   });
 
   it("deleting a loose sticky takes its votes with it", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const { roomId } = await seedRetro(t);
     const a = await stick(t, "ann", roomId);
     await setStep(t, roomId, "vote");
@@ -453,7 +454,7 @@ describe("stacks", () => {
 
 describe("votes", () => {
   it("are cast only in the vote step", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const { roomId } = await seedRetro(t);
     const a = await stick(t, "ann", roomId);
 
@@ -466,7 +467,7 @@ describe("votes", () => {
   });
 
   it("one per person per topic: voting again takes it back", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const { roomId } = await seedRetro(t);
     const a = await stick(t, "ann", roomId);
     await setStep(t, roomId, "vote");
@@ -480,7 +481,7 @@ describe("votes", () => {
   });
 
   it("a vote on any sticky of a stack is a vote for the stack", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const { roomId } = await seedRetro(t);
     const top = await stick(t, "ann", roomId);
     const member = await stick(t, "bob", roomId);
@@ -497,7 +498,7 @@ describe("votes", () => {
   });
 
   it("stay within the retro's budget", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const { roomId } = await seedRetro(t);
     await as(t, "owner").mutation(api.retro.updateSettings, { roomId, votesPerPerson: 2 });
     const a = await stick(t, "ann", roomId);
@@ -516,7 +517,7 @@ describe("votes", () => {
   });
 
   it("totals stay hidden while voting and show from the discussion on, a stack's on its top", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const { roomId } = await seedRetro(t);
     const top = await stick(t, "ann", roomId);
     const member = await stick(t, "bob", roomId);
@@ -564,7 +565,7 @@ describe("the discussion", () => {
     as(t, "owner").mutation(api.retro.focusTopic, { roomId, stickyId });
 
   it("opens on the most-voted topic", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const { roomId, most } = await seedVoted(t);
 
     await setStep(t, roomId, "discuss");
@@ -573,7 +574,7 @@ describe("the discussion", () => {
   });
 
   it("next and previous walk the voted topics in vote order, and stay put at either end", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const { roomId, most, some } = await seedVoted(t);
     await setStep(t, roomId, "discuss");
     const walk = async (direction: "next" | "previous") => {
@@ -588,7 +589,7 @@ describe("the discussion", () => {
   });
 
   it("any topic can take the spotlight once revealed, voted for or not, and a stacked sticky brings its stack", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const { roomId, most, some, none } = await seedVoted(t);
 
     // From the vote step, the spotlight opens the discussion.
@@ -601,7 +602,7 @@ describe("the discussion", () => {
   });
 
   it("going back to writing drops the walk, and nothing takes the spotlight while writing", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const { roomId, none } = await seedVoted(t);
     await setStep(t, roomId, "discuss");
 
@@ -614,7 +615,7 @@ describe("the discussion", () => {
 
 describe("permissions at the retro defaults", () => {
   it("a participant can't move the retro through its steps or change its settings", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const { roomId } = await seedRetro(t);
     const ann = as(t, "ann");
 
@@ -637,7 +638,7 @@ describe("permissions at the retro defaults", () => {
   });
 
   it("a participant writes, moves anyone's sticky, votes and adds action items", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const { roomId } = await seedRetro(t);
     const bobs = await stick(t, "bob", roomId);
 
@@ -656,7 +657,7 @@ describe("permissions at the retro defaults", () => {
   });
 
   it("before the reveal only the author touches a sticky, not even the owner", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const { roomId } = await seedRetro(t);
     const stickyId = await stick(t, "ann", roomId, { text: "Face-down" });
 
@@ -667,7 +668,7 @@ describe("permissions at the retro defaults", () => {
   });
 
   it("once revealed, only the author or a facilitator rewrites or removes a sticky", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const { roomId, bobId } = await seedRetro(t);
     const first = await stick(t, "ann", roomId, { text: "Mine" });
     const second = await stick(t, "ann", roomId, { text: "Also mine" });
@@ -689,7 +690,7 @@ describe("permissions at the retro defaults", () => {
   });
 
   it("someone outside the retro can't write on it", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const { roomId } = await seedRetro(t);
     await seedUser(t, "outsider");
 
@@ -697,7 +698,7 @@ describe("permissions at the retro defaults", () => {
   });
 
   it("the owner alone changes the permissions, and may open the steps to everyone", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const { roomId, bobId } = await seedRetro(t);
     await as(t, "owner").mutation(api.roles.promoteFacilitator, { roomId, targetUserId: bobId });
     const permissions = { ...DEFAULT_RETRO_PERMISSIONS, stageFlow: "everyone" as const };
@@ -714,7 +715,7 @@ describe("permissions at the retro defaults", () => {
 
 describe("action items", () => {
   it("anyone in the retro adds, updates and deletes them", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const { roomId, annId } = await seedRetro(t);
     const items = () => as(t, "bob").query(api.retro.actionItems, { roomId });
 
@@ -737,7 +738,7 @@ describe("action items", () => {
   });
 
   it("are owned only by someone in the retro, and need a few words", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const { roomId } = await seedRetro(t);
     const outsiderId = await seedUser(t, "outsider");
     const ann = as(t, "ann");
@@ -753,7 +754,7 @@ describe("action items", () => {
 
 describe("retro.startNext", () => {
   it("opens the next retro with the same columns and settings, carrying over only the open action items", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const { roomId, ownerId, bobId } = await seedRetro(t);
     const owner = as(t, "owner");
     await owner.mutation(api.retro.updateSettings, { roomId, votesPerPerson: 5, showAuthors: true });
@@ -765,8 +766,8 @@ describe("retro.startNext", () => {
 
     const nextId = await owner.mutation(api.retro.startNext, { roomId });
 
-    const previous = (await t.run((ctx) => ctx.db.get(roomId)))!;
-    const next = (await t.run((ctx) => ctx.db.get(nextId)))!;
+    const previous = (await t.run((ctx) => ctx.db.get("rooms", roomId)))!;
+    const next = (await t.run((ctx) => ctx.db.get("rooms", nextId)))!;
     expect(next).toMatchObject({ name: "Sprint 42 retro", roomType: "retro", ownerId, retained: true });
     expect(next.retro).toEqual({
       step: "write",
@@ -792,7 +793,7 @@ describe("retro.startNext", () => {
 
 describe("columns", () => {
   it("a new column gets its pad one step right of the rightmost", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const { roomId } = await seedRetro(t);
     const before = await padsIn(t, roomId);
 
@@ -818,7 +819,7 @@ describe("columns", () => {
   });
 
   it("a column with stickies stays, and so does the last one", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const { roomId } = await seedRetro(t);
     const remove = (columnId: string) => as(t, "owner").mutation(api.retro.removeColumn, { roomId, columnId });
     const stickyId = await stick(t, "ann", roomId, { columnId: "c1" });
@@ -836,7 +837,7 @@ describe("columns", () => {
 
 describe("retro.listMine", () => {
   it("lists the retros the person joined, newest first, and never a poker room", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const { roomId: first } = await seedRetro(t);
     const owner = as(t, "owner");
     const pokerId = await owner.mutation(api.rooms.create, { name: "Planning" });
@@ -862,7 +863,7 @@ describe("retro.listMine", () => {
   });
 
   it("is empty for a visitor without an account, even one already signed in", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
 
     expect(await t.query(api.retro.listMine, {})).toEqual([]);
     // A fresh session that has joined nothing has no user row yet.
@@ -872,7 +873,7 @@ describe("retro.listMine", () => {
 
 describe("retro.remove", () => {
   it("is the owner's alone, and takes every sticky, vote, action item, node and membership with the room", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const { roomId } = await seedRetro(t);
     const a = await stick(t, "ann", roomId);
     await setStep(t, roomId, "vote");
@@ -884,7 +885,7 @@ describe("retro.remove", () => {
     await as(t, "owner").mutation(api.retro.remove, { roomId });
     await drainScheduled(t);
 
-    expect(await t.run((ctx) => ctx.db.get(roomId))).toBeNull();
+    expect(await t.run((ctx) => ctx.db.get("rooms", roomId))).toBeNull();
     for (const table of ["retroStickies", "retroStickyVotes", "retroActionItems", "canvasNodes", "roomMemberships"] as const) {
       expect(await t.run((ctx) => ctx.db.query(table).collect()), table).toEqual([]);
     }
@@ -893,7 +894,7 @@ describe("retro.remove", () => {
 
 describe("account linking", () => {
   it("re-points a guest's stickies, votes and action items to the permanent account they sign in to", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const { roomId, annId } = await seedRetro(t);
     const stickyId = await stick(t, "ann", roomId);
     await setStep(t, roomId, "vote");
@@ -907,10 +908,10 @@ describe("account linking", () => {
       email: "ann@example.com",
     });
 
-    expect(await t.run((ctx) => ctx.db.get(annId))).toBeNull();
+    expect(await t.run((ctx) => ctx.db.get("users", annId))).toBeNull();
     expect((await stickyRow(t, stickyId)).authorId).toBe(permanentId);
     expect((await votesIn(t, roomId)).map((v) => v.voterId)).toEqual([permanentId]);
-    expect(await t.run((ctx) => ctx.db.get(itemId))).toMatchObject({ ownerId: permanentId });
+    expect(await t.run((ctx) => ctx.db.get("retroActionItems", itemId))).toMatchObject({ ownerId: permanentId });
     // The account now reads the sticky, and the vote, as its own.
     expect(await seen(t, "ann-permanent", roomId, stickyId)).toMatchObject({ mine: true, myVote: true });
   });
@@ -918,7 +919,7 @@ describe("account linking", () => {
 
 describe("account linking — votes", () => {
   it("drops a guest's votes in a retro where the permanent account already voted, instead of doubling them", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const { roomId } = await seedRetro(t);
     const first = await stick(t, "owner", roomId, { text: "First" });
     const second = await stick(t, "owner", roomId, { text: "Second" });
@@ -943,7 +944,7 @@ describe("account linking — votes", () => {
 
 describe("guards", () => {
   it("walks the topics only in Discuss", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const { roomId } = await seedRetro(t);
     await stick(t, "owner", roomId);
     const step = () => as(t, "owner").mutation(api.retro.stepDiscussion, { roomId, direction: "next" });
@@ -953,14 +954,14 @@ describe("guards", () => {
   });
 
   it("refuses a malformed client id rather than storing a shortened one", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const { roomId } = await seedRetro(t);
     expect(await refusalOf(stick(t, "ann", roomId, { clientId: "x".repeat(65) }))).toBe("forbidden");
     expect(await refusalOf(stick(t, "ann", roomId, { clientId: "x".repeat(64) }))).toBe("resolved");
   });
 
   it("refuses a votes-per-person that is not a number", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const { roomId } = await seedRetro(t);
     const set = (votesPerPerson: number) =>
       as(t, "owner").mutation(api.retro.updateSettings, { roomId, votesPerPerson });
@@ -970,7 +971,7 @@ describe("guards", () => {
   });
 
   it("refuses a sticky height that is not a number, and keeps a made-up one within bounds", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     const { roomId } = await seedRetro(t);
     const stickyId = await stick(t, "ann", roomId);
     const measure = (height: number) =>
@@ -986,16 +987,16 @@ describe("guards", () => {
 
 describe("transferring a retro", () => {
   it("keeps a guest's retro once it is handed to a permanent account", async () => {
-    const t = convexTest(schema, modules);
+    const t = withComponents(convexTest(schema, modules));
     await seedUser(t, "guest", "anonymous");
     const roomId = await as(t, "guest").mutation(api.retro.create, { name: "Guest retro" });
     await join(t, roomId, "guest");
     const keeperId = await seedUser(t, "keeper", "permanent");
     await join(t, roomId, "keeper");
-    expect((await t.run((ctx) => ctx.db.get(roomId)))!.retained).toBe(false);
+    expect((await t.run((ctx) => ctx.db.get("rooms", roomId)))!.retained).toBe(false);
 
     await as(t, "guest").mutation(api.roles.transferOwnership, { roomId, targetUserId: keeperId });
 
-    expect((await t.run((ctx) => ctx.db.get(roomId)))!).toMatchObject({ ownerId: keeperId, retained: true });
+    expect((await t.run((ctx) => ctx.db.get("rooms", roomId)))!).toMatchObject({ ownerId: keeperId, retained: true });
   });
 });

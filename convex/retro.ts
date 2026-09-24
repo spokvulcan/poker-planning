@@ -21,7 +21,7 @@ type MemberRoom = { user: Doc<"users">; membership: Doc<"roomMemberships">; room
 /** The room a retro write lands in, loaded after the attendance guard. */
 async function memberRoom(ctx: MutationCtx, roomId: Id<"rooms">): Promise<MemberRoom> {
   const { user, membership } = await requireRoomMember(ctx, roomId);
-  const room = await ctx.db.get(roomId);
+  const room = await ctx.db.get("rooms", roomId);
   if (!room) throw refusal("missing", "This retro is gone.");
   return { user, membership, room };
 }
@@ -31,7 +31,7 @@ async function memberSticky(
   ctx: MutationCtx,
   stickyId: Id<"retroStickies">
 ): Promise<MemberRoom & { sticky: Doc<"retroStickies"> }> {
-  const sticky = await ctx.db.get(stickyId);
+  const sticky = await ctx.db.get("retroStickies", stickyId);
   if (!sticky) throw refusal("missing", "That sticky is gone.");
   return { ...(await memberRoom(ctx, sticky.roomId)), sticky };
 }
@@ -72,7 +72,7 @@ export const updatePermissions = mutation({
   handler: async (ctx, args) => {
     const { room } = await requireCan(ctx, args.roomId, { kind: "relationship", verb: "changePerms" });
     Retro.retroOf(room);
-    await ctx.db.patch(room._id, { permissions: args.permissions });
+    await ctx.db.patch("rooms", room._id, { permissions: args.permissions });
     await updateRoomActivity(ctx, room);
   },
 });
@@ -294,7 +294,7 @@ export const updateActionItem = mutation({
     ownerId: v.optional(v.union(v.id("users"), v.null())),
   },
   handler: async (ctx, { itemId, ...patch }) => {
-    const item = await ctx.db.get(itemId);
+    const item = await ctx.db.get("retroActionItems", itemId);
     if (!item) throw refusal("missing", "That action item is gone.");
     const { room } = await requireCan(ctx, item.roomId, { kind: "category", category: "actionManagement" });
     await Retro.updateActionItem(ctx, room, item, patch);
@@ -304,7 +304,7 @@ export const updateActionItem = mutation({
 export const deleteActionItem = mutation({
   args: { itemId: v.id("retroActionItems") },
   handler: async (ctx, args) => {
-    const item = await ctx.db.get(args.itemId);
+    const item = await ctx.db.get("retroActionItems", args.itemId);
     if (!item) return;
     const { room } = await requireCan(ctx, item.roomId, { kind: "category", category: "actionManagement" });
     await Retro.deleteActionItem(ctx, room, item);
