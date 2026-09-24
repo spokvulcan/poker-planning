@@ -9,7 +9,7 @@
  * line about it may say what the board does, and the numbers it quotes come
  * from the product's own constants. It may not bring back what the board
  * does not have: teams, retro emails, kept history, a format library, JSON
- * export, or a claim that no author is stored.
+ * export, anonymous stickies, or a claim that no author is stored.
  */
 import { describe, it, expect } from "vitest";
 import * as homepage from "@/components/homepage/copy";
@@ -191,6 +191,7 @@ const RETRO_NEVER: [string, RegExp][] = [
     "that no author is stored (authors are hidden, not erased)",
     /\bno authors?\b[^.]*\bstored\b|\bstores? no authors?\b|\bnot even (for )?the facilitator\b/i,
   ],
+  ["that stickies are anonymous (names are hidden, the author is stored)", /\banonym\w*\b/i],
 ];
 
 /**
@@ -240,6 +241,7 @@ describe("the checker itself", () => {
         o: "Export the retro as JSON",
         p: "Six formats, or your own",
         q: "No author is stored, not even for the facilitator",
+        r: "Anonymous by default",
         label: "Start a retrospective",
       },
       RETRO: { points: ["Improves your retrospective"] },
@@ -258,12 +260,14 @@ describe("the checker itself", () => {
       "a pricing tier",
       "an outcome",
       "anonymity making it better",
+      "that stickies are anonymous (names are hidden, the author is stored)",
       "a number measuring the team",
       "a retro email, reminder or nudge (there are none)",
       "retro history (a retro keeps none)",
       "a JSON export (a retro copies as Markdown)",
       "a format library (five templates, columns edited on the board)",
       "that no author is stored (authors are hidden, not erased)",
+      "that stickies are anonymous (names are hidden, the author is stored)",
       "retrospective in a UI label",
       "an outcome",
       "retrospective in a UI label",
@@ -281,6 +285,7 @@ describe("the checker itself", () => {
         f: "Teammates see what was written, not by whom.",
         g: "A guest's retro is removed after 5 days without activity.",
         h: "Copy the retro as Markdown, or download it.",
+        i: "Names hidden by default. A setting shows authors when your team wants them.",
       },
       poker: {
         members: "Unlimited team members",

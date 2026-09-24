@@ -58,7 +58,7 @@ export const CEREMONIES = {
       "Everyone writes stickies at once, face-down until the reveal. Stack the similar ones, vote, talk through the top topics and leave with action items.",
     points: [
       "Five templates, or your own columns",
-      "Anonymous by default",
+      "Names hidden by default",
       "GIFs, timer and action items",
     ],
     cta: START_RETRO satisfies Cta,
@@ -202,8 +202,8 @@ export const APP_PREVIEW = {
           "Everyone writes at the same time. Stickies stay face-down until the facilitator reveals them, like cards in planning poker.",
       },
       {
-        id: "anonymous",
-        name: "Anonymous by default.",
+        id: "names",
+        name: "Names hidden by default.",
         description:
           "Teammates see what was written, not by whom. A setting shows authors when your team wants them.",
       },
@@ -251,7 +251,7 @@ export const CAPABILITIES = {
       "Action items with owners",
       "Open items carry over",
       "Markdown summary",
-      "Anonymous by default",
+      "Names hidden by default",
     ],
   },
 };
@@ -384,9 +384,9 @@ export const FAQ = {
         "No. Click 'Start estimating' or 'Start a retro' and share the link with your team. A guest's retro is removed after 5 days without activity; sign in and the retros you start are kept until you delete them.",
     },
     {
-      question: "Are retro stickies anonymous?",
+      question: "Do retro stickies show who wrote them?",
       answer:
-        "By default, yes: teammates see what was written, not by whom. A setting in the retro shows authors, and it shows them on every sticky, including ones written before it was turned on. Vote totals stay hidden until the discussion starts, and nobody sees how anyone else voted.",
+        "Not by default: teammates see what was written, not by whom. A setting in the retro shows authors, and it shows them on every sticky, including ones written before it was turned on. Vote totals stay hidden until the discussion starts, and nobody sees how anyone else voted.",
     },
     {
       question: "How many people can join a planning session?",
