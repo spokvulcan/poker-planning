@@ -42,10 +42,10 @@ export function userRows(): readonly UserRows[] {
 }
 
 /**
- * Deletes an account (a guest's sign-out included): each room it owns goes
- * to the member who joined first, or is deleted with nobody else in it; it
- * leaves every room, its votes and presence go, its integrations disconnect;
- * the stickies and action items it wrote stay in their retros, unnamed.
+ * Deletes an account (a guest's sign-out included): each room it owns is
+ * handed off (ADR-0029); it leaves every room, its votes and presence go,
+ * its integrations disconnect; the stickies and action items it wrote stay
+ * in their retros, unnamed.
  */
 export async function deleteAccount(ctx: MutationCtx, user: Doc<"users">): Promise<void> {
   for (const rows of userRows()) await rows.forget(ctx, user._id);

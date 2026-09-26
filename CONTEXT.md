@@ -45,7 +45,7 @@ _Avoid_: gate (an outcome-changing branch, per [ADR-0001](docs/adr/0001-lockdown
 ### Roles & permissions
 
 **Role**:
-A member's standing in one room: **owner** (exactly one; full control; transferable), **facilitator** (trusted helper, promoted by owner or another facilitator), or **participant** (default voter). A role is per-room, not global.
+A member's standing in one room: **owner** (exactly one; full control; transferable), **facilitator** (trusted helper, promoted by owner or another facilitator), or **participant** (default voter). A role is per-room, not global. A room's creator is its owner, in the room from the moment it exists.
 _Avoid_: rank, level (reserve "level" for permission level), tier
 
 **Permission level**:
@@ -57,8 +57,22 @@ One of the four owner-configurable buckets of actions a room type has. A poker r
 _Avoid_: permission group, scope; reusing a poker category name for a retro act
 
 **Lockdown**:
-The state after the owner *explicitly leaves* (membership deleted), detected at query time as "`ownerId` set, but no membership for that user". Owner-level and owner-only actions become unavailable. **Invariant:** lockdown is a *reason refinement, not a separate gate* — an absent owner already fails the role check, so lockdown only changes the **denial reason** to `owner-absent` (and thus the message/banner), never the allow/deny outcome (see [ADR-0001](docs/adr/0001-lockdown-is-a-denial-reason-not-a-gate.md)). Network disconnects do not trigger it. The owner ends it by rejoining: a returning owner is owner again.
+The state after the owner *explicitly leaves* (membership deleted), detected at query time as "`ownerId` set, but no membership for that user". Owner-level and owner-only actions become unavailable. **Invariant:** lockdown is a *reason refinement, not a separate gate* — an absent owner already fails the role check, so lockdown only changes the **denial reason** to `owner-absent` (and thus the message/banner), never the allow/deny outcome (see [ADR-0001](docs/adr/0001-lockdown-is-a-denial-reason-not-a-gate.md)). Network disconnects do not trigger it. The owner ends it by rejoining: a returning owner is owner again. An owner whose account is deleted can never rejoin, so their rooms get a **hand-off** instead.
 _Avoid_: orphaned, locked, frozen
+
+**Hand-off**:
+What becomes of the rooms an account owns when the account is deleted (a **guest**'s sign-out included): each goes to the member who joined it first, owner role and all. With nobody else in it, a **retro** is deleted with the account, and a **planning poker** room waits for whoever joins it next, who becomes its owner ([ADR-0029](docs/adr/0029-room-ownership-has-one-writer-and-is-handed-on.md)).
+_Avoid_: claim (the retired team retro's verb), orphan, inheritance
+
+### Accounts
+
+**Guest**:
+A person using AgileKit without signing in: an anonymous account that lives in their browser. Signing out deletes it.
+_Avoid_: anonymous user (anonymous is the account type), visitor
+
+**Account link**:
+A **guest** signing in to a permanent account, after which everything the guest had is the account's. A new account simply takes over the guest; an existing one has the guest folded into it, keeping one of anything both had in the same place: the more senior **role** in a room, one **vote** per **topic** within the **vote budget** in a retro.
+_Avoid_: merge (fine in code), upgrade, migration
 
 ### Ceremonies
 
@@ -113,7 +127,7 @@ A retro's setting, off by default, that names each revealed **sticky**'s author 
 _Avoid_: anonymous mode, anonymity, attribution (the team retro's stored-or-not promise)
 
 **Stack**:
-**Stickies** grouped by dropping one on another: one level deep, unnamed, filed under the sticky on top, and voted on and discussed as one **topic**. Unstacking puts a sticky back on the board and loses no vote. While the retro is in `write`, a person can stack only their own stickies.
+**Stickies** grouped by dropping one on another: one level deep, unnamed, filed under the sticky on top, and voted on and discussed as one **topic**. Unstacking puts a sticky back on the board as a topic of its own, with no votes: they stay with the stack. While the retro is in `write`, a person can stack and unstack only their own stickies.
 _Avoid_: cluster, group, theme (the team retro's clusters had names; a stack has none), pile
 
 **Topic**:
@@ -121,7 +135,7 @@ What a retro votes on and discusses: a loose **sticky**, or a whole **stack**.
 _Avoid_: item, theme, card
 
 **Vote** (retro):
-One person's vote for a **topic**, cast or taken back only while the retro is in `vote`, at most one per person per topic. Totals stay hidden until `discuss`.
+One person's vote for a **topic**, cast or taken back only while the retro is in `vote`, at most one per person per topic. Totals stay hidden until `discuss`. A vote belongs to its topic and moves with it: stacking two topics a person voted for gives one of their votes back, and a topic taken off the board gives its votes back ([ADR-0028](docs/adr/0028-a-vote-follows-its-topic.md)).
 _Avoid_: dot (the board draws one, but the thing is a vote), like, upvote; not the poker vote (see Flagged ambiguities)
 
 **Vote budget**:
@@ -133,7 +147,7 @@ The `discuss` step's walk through the **topics** that got votes, most votes firs
 _Avoid_: agenda, discussion walk (the team retro's snapshotted walk), coverage
 
 **Spotlight**:
-The one **topic** the **discussion** is on. A person who may run the retro moves it next or back along the order, or puts any revealed topic in it, voted for or not; everyone's view follows it.
+The one **topic** the **discussion** is on. A person who may run the retro moves it next or back along the order, or puts any revealed topic in it, voted for or not; everyone's view follows it. It stays on its topic when the topic is stacked onto another, and goes out when the topic leaves the board.
 _Avoid_: focus (fine in code), current topic, raise (the team retro's)
 
 **Action item**:
