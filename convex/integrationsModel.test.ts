@@ -574,3 +574,64 @@ describe("getIssueLinks", () => {
     expect(after[untaggedIssueId]?.externalId).toBe("PROJ-2");
   });
 });
+
+describe("disconnectOrphanedConnections migration", () => {
+  /** A connection left behind when its user row was deleted without it. */
+  async function seedOrphan(t: T, authUserId: string): Promise<Id<"integrationConnections">> {
+    const userId = await seedUser(t, authUserId);
+    const connectionId = await seedConnection(t, userId);
+    await t.run((ctx) => ctx.db.delete("users", userId));
+    return connectionId;
+  }
+
+  const getConnection = (t: T, connectionId: Id<"integrationConnections">) =>
+    t.run((ctx) => ctx.db.get("integrationConnections", connectionId));
+
+  it("disconnects connections whose user is gone, leaves the rest, and finds nothing on a second run", async () => {
+    const t = convexTest(schema, modules);
+    const liveConnectionId = await seedConnection(t, await seedUser(t, "auth-live"));
+    await seedMapping(t, await seedRoom(t), liveConnectionId, { jiraWebhookId: "wh-live" });
+    const hookedOrphanId = await seedOrphan(t, "auth-gone-1");
+    await seedMapping(t, await seedRoom(t), hookedOrphanId, { jiraWebhookId: "wh-orphan" });
+    const bareOrphanId = await seedOrphan(t, "auth-gone-2");
+
+    expect(await t.mutation(internal.migrations.disconnectOrphanedConnections, {})).toEqual({
+      total: 3,
+      orphaned: 2,
+      mappings: 1,
+    });
+
+    // Only the live user's mapping is left. The orphan with no live webhook
+    // goes at once; the other waits for its tail to deregister the webhook.
+    expect(await countRows(t, "integrationMappings")).toBe(1);
+    expect(await getConnection(t, bareOrphanId)).toBeNull();
+    const tails = await scheduledByName(t, ":finalizeDisconnect");
+    expect(tails.map((job) => job.args[0])).toEqual([
+      { connectionId: hookedOrphanId, webhookIds: ["wh-orphan"] },
+    ]);
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    expect(await getConnection(t, hookedOrphanId)).toBeNull();
+    expect(await getConnection(t, liveConnectionId)).not.toBeNull();
+
+    expect(await t.mutation(internal.migrations.disconnectOrphanedConnections, {})).toEqual({
+      total: 1,
+      orphaned: 0,
+      mappings: 0,
+    });
+    expect(await scheduledByName(t, ":finalizeDisconnect")).toHaveLength(1);
+  });
+
+  it("only counts on a dry run", async () => {
+    const t = convexTest(schema, modules);
+    const orphanId = await seedOrphan(t, "auth-gone");
+    await seedMapping(t, await seedRoom(t), orphanId, { jiraWebhookId: "wh-orphan" });
+
+    expect(
+      await t.mutation(internal.migrations.disconnectOrphanedConnections, { dryRun: true })
+    ).toEqual({ total: 1, orphaned: 1, mappings: 1 });
+
+    expect(await countRows(t, "integrationConnections")).toBe(1);
+    expect(await countRows(t, "integrationMappings")).toBe(1);
+    expect(await scheduledByName(t, ":finalizeDisconnect")).toHaveLength(0);
+  });
+});

@@ -1,18 +1,19 @@
 /// <reference types="vite/client" />
 import { convexTest } from "convex-test";
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import schema from "./schema";
 import { withComponents } from "./components.setup";
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { presence } from "./model/presence";
-import { type T, seedUser as seedNamedUser } from "./analytics.seeds";
+import { type T, seedUser as seedNamedUser, seedRoom } from "./analytics.seeds";
 
 // Account deletion: the user row and their memberships go; what they wrote
 // stays. A sticky's `authorId`, a vote's `voterId` and an action item's
 // `ownerId` dangle, and the reads render them as "Former member". A retro the account owned goes to whoever joined it first, or,
-// with nobody else in it, is deleted with the account. The auth provider's
-// record is not this module's to touch.
+// with nobody else in it, is deleted with the account. Integration
+// connections go the way Disconnect takes them. The auth provider's record
+// is not this module's to touch.
 
 const modules = import.meta.glob("./**/*.*s");
 
@@ -174,5 +175,166 @@ describe("presence on account deletion", () => {
 
     expect(await t.run((ctx) => ctx.db.get("users", guestId))).toBeNull();
     expect(await listUser(t, guestId)).toEqual([]);
+  });
+});
+
+describe("integration connections", () => {
+  // convex-test runs scheduled jobs on a real setTimeout; faking it keeps the
+  // disconnect tail pending until a test runs it.
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["setTimeout"] });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const seedConnection = (t: T, userId: Id<"users">, expiresAt = Date.now() + 3_600_000) =>
+    t.run((ctx) =>
+      ctx.db.insert("integrationConnections", {
+        userId,
+        provider: "jira",
+        encryptedAccessToken: "enc-access",
+        accessTokenIv: "iv",
+        accessTokenAuthTag: "tag",
+        encryptedRefreshToken: "enc-refresh",
+        refreshTokenIv: "riv",
+        refreshTokenAuthTag: "rtag",
+        expiresAt,
+        cloudId: "cloud-1",
+        scopes: [],
+        connectedAt: Date.now(),
+        lastRefreshedAt: Date.now(),
+      })
+    );
+  /** Maps a fresh room through the connection, with a live webhook when given one. */
+  const seedMapping = async (t: T, connectionId: Id<"integrationConnections">, jiraWebhookId?: string) => {
+    const roomId = await seedRoom(t);
+    return t.run((ctx) =>
+      ctx.db.insert("integrationMappings", {
+        roomId,
+        connectionId,
+        provider: "jira",
+        jiraProjectKey: "PROJ",
+        jiraWebhookId,
+        jiraWebhookRegisteredAt: jiraWebhookId ? Date.now() : undefined,
+        autoImport: false,
+        autoPushEstimates: true,
+        createdAt: Date.now(),
+      })
+    );
+  };
+  const getConnection = (t: T, connectionId: Id<"integrationConnections">) =>
+    t.run((ctx) => ctx.db.get("integrationConnections", connectionId));
+  const mappingsOf = (t: T, connectionId: Id<"integrationConnections">) =>
+    t.run((ctx) =>
+      ctx.db.query("integrationMappings").withIndex("by_connection", (q) => q.eq("connectionId", connectionId)).collect()
+    );
+  /** Pending finalizeDisconnect jobs: each deregisters webhooks, then deletes its connection. */
+  const disconnectTails = async (t: T) =>
+    (await t.run((ctx) => ctx.db.system.query("_scheduled_functions").collect()))
+      .filter((job) => job.name.endsWith(":finalizeDisconnect") && job.state.kind === "pending")
+      .map((job) => job.args[0]);
+  const connectionsShownTo = async (t: T, subject: string) =>
+    (await as(t, subject).query(api.integrations.getConnections, {})).map((c) => c._id);
+  const dueForRefresh = async (t: T) =>
+    (
+      await t.query(internal.integrations.tokenRefresh.getExpiringConnections, {
+        provider: "jira",
+        expiryThreshold: Date.now() + 45 * 60 * 1000,
+      })
+    ).map((c) => c._id);
+  const link = (t: T, oldAuthUserId: string, newAuthUserId: string) =>
+    t.mutation(internal.users.linkAnonymousAccount, {
+      oldAuthUserId,
+      newAuthUserId,
+      email: `${newAuthUserId}@example.com`,
+    });
+
+  describe("on account deletion", () => {
+    it("disconnects the account's connection the way Disconnect does, and its tokens stop being refreshed", async () => {
+      const t = withComponents(convexTest(schema, modules));
+      const leaverId = await seedUser(t, "leaver", "permanent");
+      const connectionId = await seedConnection(t, leaverId, Date.now() - 1_000);
+      await seedMapping(t, connectionId, "wh-1");
+      await seedMapping(t, connectionId);
+      expect(await dueForRefresh(t)).toEqual([connectionId]);
+
+      await as(t, "leaver").mutation(api.users.deleteUser, {});
+
+      expect(await mappingsOf(t, connectionId)).toEqual([]);
+      // The row outlives the account only until the tail has deregistered
+      // the live webhook with its credentials.
+      expect(await disconnectTails(t)).toEqual([{ connectionId, webhookIds: ["wh-1"] }]);
+      await t.finishAllScheduledFunctions(vi.runAllTimers);
+      expect(await getConnection(t, connectionId)).toBeNull();
+      expect(await dueForRefresh(t)).toEqual([]);
+    });
+
+    it("takes a guest's connection on sign-out, at once when no webhook is live", async () => {
+      const t = withComponents(convexTest(schema, modules));
+      const guestId = await seedUser(t, "guest", "anonymous");
+      const connectionId = await seedConnection(t, guestId);
+      await seedMapping(t, connectionId);
+
+      await as(t, "guest").mutation(api.users.deleteUser, {});
+
+      expect(await mappingsOf(t, connectionId)).toEqual([]);
+      expect(await getConnection(t, connectionId)).toBeNull();
+      expect(await disconnectTails(t)).toEqual([]);
+    });
+  });
+
+  describe("on linking a guest to a permanent account", () => {
+    it("keeps the connection where the guest's own row becomes the permanent account", async () => {
+      const t = withComponents(convexTest(schema, modules));
+      const guestId = await seedUser(t, "guest", "anonymous");
+      const connectionId = await seedConnection(t, guestId);
+
+      await link(t, "guest", "permanent");
+
+      expect(await getConnection(t, connectionId)).toMatchObject({ userId: guestId });
+      expect(await connectionsShownTo(t, "permanent")).toEqual([connectionId]);
+    });
+
+    it("moves the guest's connection into a permanent account without one, mappings and webhooks untouched", async () => {
+      const t = withComponents(convexTest(schema, modules));
+      const guestId = await seedUser(t, "guest", "anonymous");
+      const connectionId = await seedConnection(t, guestId);
+      const mappingId = await seedMapping(t, connectionId, "wh-1");
+      const permanentId = await seedUser(t, "permanent", "permanent");
+
+      await link(t, "guest", "permanent");
+
+      expect(await t.run((ctx) => ctx.db.get("users", guestId))).toBeNull();
+      expect(await getConnection(t, connectionId)).toMatchObject({ userId: permanentId });
+      expect(await t.run((ctx) => ctx.db.get("integrationMappings", mappingId))).toMatchObject({
+        connectionId,
+        jiraWebhookId: "wh-1",
+      });
+      expect(await disconnectTails(t)).toEqual([]);
+      expect(await connectionsShownTo(t, "permanent")).toEqual([connectionId]);
+    });
+
+    it("keeps the permanent account's own connection and disconnects the guest's", async () => {
+      const t = withComponents(convexTest(schema, modules));
+      const guestId = await seedUser(t, "guest", "anonymous");
+      const guestConnectionId = await seedConnection(t, guestId);
+      await seedMapping(t, guestConnectionId, "wh-guest");
+      const permanentId = await seedUser(t, "permanent", "permanent");
+      const ownConnectionId = await seedConnection(t, permanentId);
+      const ownMappingId = await seedMapping(t, ownConnectionId, "wh-own");
+
+      await link(t, "guest", "permanent");
+
+      expect(await mappingsOf(t, guestConnectionId)).toEqual([]);
+      expect(await disconnectTails(t)).toEqual([{ connectionId: guestConnectionId, webhookIds: ["wh-guest"] }]);
+      await t.finishAllScheduledFunctions(vi.runAllTimers);
+      expect(await getConnection(t, guestConnectionId)).toBeNull();
+      expect(await connectionsShownTo(t, "permanent")).toEqual([ownConnectionId]);
+      expect(await t.run((ctx) => ctx.db.get("integrationMappings", ownMappingId))).toMatchObject({
+        connectionId: ownConnectionId,
+        jiraWebhookId: "wh-own",
+      });
+    });
   });
 });

@@ -236,6 +236,9 @@ Use this for pages that require authentication (e.g., dashboard). Client-side re
    - Re-points retro stickies, retro votes and action items; where the permanent
      account already voted in a retro, the guest's votes there are dropped
    - Marks every retro the account now owns as retained (kept past the 5-day sweep)
+   - Moves the guest's integration connections across; where the permanent
+     account already has its own connection to a provider, it keeps that one
+     and the guest's is disconnected (room mappings removed, webhooks deregistered)
    - Updates accountType to "permanent", assigns email & avatarUrl
    - Safely deletes old anonymous record
 6. Redirected back to /room/abc123
