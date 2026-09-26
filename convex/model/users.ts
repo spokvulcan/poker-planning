@@ -7,7 +7,7 @@ import * as Integrations from "./integrations";
 import * as Presence from "./presence";
 import * as Rooms from "./rooms";
 import * as VotingRound from "./votingRound";
-import { type MemberRole } from "../permissions";
+import { getEffectiveRole, type MemberRole } from "../permissions";
 
 export interface JoinRoomArgs {
   roomId: Id<"rooms">;
@@ -474,6 +474,31 @@ async function retainOwnedRetros(ctx: MutationCtx, ownerId: Id<"users">): Promis
   );
 }
 
+/** Roles from most junior to most senior. */
+const ROLE_SENIORITY: readonly MemberRole[] = ["participant", "facilitator", "owner"];
+
+/** The more senior of two roles, for one person with two memberships in a room. */
+function seniorRole(a: MemberRole, b: MemberRole): MemberRole {
+  return ROLE_SENIORITY.indexOf(a) >= ROLE_SENIORITY.indexOf(b) ? a : b;
+}
+
+/**
+ * Gives an account the owner role in every room it owns and is in: an
+ * owner-role membership exists iff the owner is present (ADR-0001).
+ */
+async function ensureOwnerRoles(ctx: MutationCtx, ownerId: Id<"users">): Promise<void> {
+  const owned = await ctx.db
+    .query("rooms")
+    .withIndex("by_owner", (q) => q.eq("ownerId", ownerId))
+    .collect();
+  for (const room of owned) {
+    const membership = await getMembership(ctx, room._id, ownerId);
+    if (membership && membership.role !== "owner") {
+      await ctx.db.patch("roomMemberships", membership._id, { role: "owner" });
+    }
+  }
+}
+
 /**
  * Links an anonymous user account to a new permanent account.
  * Transfers all memberships, votes, canvas node ownerships, and integration
@@ -528,7 +553,13 @@ export async function linkAnonymousToPermanent(
       // Check if permanent user already has membership in this room
       const existingMembership = await getMembership(ctx, membership.roomId, existingPermanent._id);
       if (existingMembership) {
-        // Already in room — delete the anonymous membership
+        // Already in room — keep the more senior of the two roles, then
+        // delete the anonymous membership
+        const kept = getEffectiveRole(existingMembership);
+        const role = seniorRole(kept, getEffectiveRole(membership));
+        if (role !== kept) {
+          await ctx.db.patch("roomMemberships", existingMembership._id, { role });
+        }
         await ctx.db.delete("roomMemberships", membership._id);
       } else {
         // Transfer membership to permanent user
@@ -648,8 +679,12 @@ export async function linkAnonymousToPermanent(
       .collect();
 
     for (const room of ownedRooms) {
-      await ctx.db.patch("rooms", room._id, { ownerId: existingPermanent._id });
+      await Rooms.setRoomOwner(ctx, room, existingPermanent._id);
     }
+    // The merge can leave the permanent user in a room it owns without the
+    // owner role: it joined a room the guest owned (and had left) before this
+    // hook ran, or the guest's membership moved into a room it already owned.
+    await ensureOwnerRoles(ctx, existingPermanent._id);
 
     // Update lastUpdatedBy on any canvas nodes touched by the anonymous user
     const updatedNodes = await ctx.db

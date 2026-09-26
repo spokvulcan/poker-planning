@@ -233,6 +233,9 @@ Use this for pages that require authentication (e.g., dashboard). Client-side re
 5. Backend hook internal.users.linkAnonymousAccount executes:
    - Finds existing "anonymous" user via old authUserId
    - Transfers all roomMemberships, votes, and canvas node ownership
+   - Where both accounts are in a room, keeps one membership with the more
+     senior role; the permanent account holds the owner role in every room it
+     owns and is in
    - Re-points retro stickies, retro votes and action items; where the permanent
      account already voted in a retro, the guest's votes there are dropped
    - Marks every retro the account now owns as retained (kept past the 5-day sweep)
