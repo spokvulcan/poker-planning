@@ -7,7 +7,7 @@ import { api } from "@/convex/_generated/api";
 import { ArrowRight } from "lucide-react";
 
 import { useAuth } from "@/components/auth/auth-provider";
-import { authClient } from "@/lib/auth-client";
+import { SESSION_FAILED, useEnsureSession } from "@/hooks/useEnsureSession";
 import { Navbar } from "@/components/navbar";
 import { Footer } from "@/components/footer";
 import { Button } from "@/components/ui/button";
@@ -36,7 +36,6 @@ import {
   validateCustomScale,
 } from "@/convex/scales";
 import { cn } from "@/lib/utils";
-import { generateGuestName } from "@/lib/guest-names";
 
 // The one validator lives in convex/scales (throwing form, shared with the
 // backend); the form adapts it to inline error display.
@@ -68,9 +67,9 @@ export function CreateContent() {
   const [isCreating, setIsCreating] = useState(false);
 
   const router = useRouter();
-  const { isAuthenticated, isLoading: authLoading } = useAuth();
+  const { isLoading: authLoading } = useAuth();
   const createRoom = useMutation(api.rooms.create);
-  const ensureGlobalUser = useMutation(api.users.ensureGlobalUser);
+  const ensureSession = useEnsureSession();
   const { copyRoomUrlToClipboard } = useCopyRoomUrlToClipboard();
 
   const handleScaleChange = (type: VotingScaleType | "custom") => {
@@ -111,28 +110,13 @@ export function CreateContent() {
       votingScale = { type: selectedScale };
     }
 
-    // Ensure user is authenticated before creating a room
-    if (!isAuthenticated) {
-      try {
-        const result = await authClient.signIn.anonymous();
-        if (result.error) {
-          toast.error(result.error.message || "Failed to create session. Please try again.");
-          setIsCreating(false);
-          return;
-        }
-
-        const newAuthUserId = result.data?.user?.id;
-        if (newAuthUserId) {
-          await ensureGlobalUser({
-            authUserId: newAuthUserId,
-            name: generateGuestName(),
-          });
-        }
-      } catch {
-        toast.error("Failed to create session. Please try again.");
-        setIsCreating(false);
-        return;
-      }
+    // A guest session, ready in Convex before the create that needs it.
+    try {
+      await ensureSession({ createGlobalUser: true });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : SESSION_FAILED);
+      setIsCreating(false);
+      return;
     }
 
     let roomId: string | undefined = undefined;
@@ -159,7 +143,7 @@ export function CreateContent() {
         console.error("Failed to copy room URL to clipboard:", error);
       }
     }
-  }, [roomName, selectedScale, customCards, createRoom, ensureGlobalUser, router, copyRoomUrlToClipboard, isAuthenticated]);
+  }, [roomName, selectedScale, customCards, createRoom, ensureSession, router, copyRoomUrlToClipboard]);
 
   const getPreviewCards = (type: VotingScaleType | "custom") => {
     if (type === "custom") {
