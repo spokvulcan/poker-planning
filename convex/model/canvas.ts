@@ -308,9 +308,7 @@ export async function createNoteNode(
     userId: Id<"users">;
   }
 ): Promise<Id<"canvasNodes">> {
-  // The note shows the issue's title to everyone in this room, so an issue
-  // from another room is refused as not found, before any existing note is
-  // returned.
+  // Checked first: the note shows the issue's title to everyone in this room.
   const issue = await ctx.db.get("issues", args.issueId);
   if (!issue || issue.roomId !== args.roomId) {
     throw new Error("Issue not found");
