@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef, useCallback } from "react";
+import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
@@ -8,6 +9,7 @@ import { ceremonyOf } from "@/convex/ceremony";
 import { RoomCanvas } from "@/components/room/room-canvas";
 import { JoinRoomDialog } from "@/components/room/join-room-dialog";
 import { CenteredMessage } from "@/components/centered-message";
+import { Button } from "@/components/ui/button";
 import { useAuth } from "@/components/auth/auth-provider";
 import { Id } from "@/convex/_generated/dataModel";
 import { toast } from "@/lib/toast";
@@ -38,15 +40,20 @@ export function RoomContent() {
   // Query for global user (to check if they've joined any room before)
   const globalUser = useQuery(api.users.getGlobalUser, isAuthenticated ? {} : "skip");
 
-  if (!roomData) {
+  if (roomData === undefined) {
     return <CenteredMessage title="Loading..." body="Fetching room data" />;
   }
 
-  if (!roomData.room) {
+  if (roomData === null) {
     return (
       <CenteredMessage
         title="Room Not Found"
         body="This room doesn't exist or has been deleted"
+        action={
+          <Button render={<Link href="/" />} nativeButton={false}>
+            Back to home
+          </Button>
+        }
       />
     );
   }

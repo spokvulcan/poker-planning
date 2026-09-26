@@ -43,19 +43,20 @@ async function membershipOf(
 }
 
 /**
- * The role a person joins a room with: owner for the room's owner, nothing
- * stored (a participant) for everyone else.
+ * Seats a person who has just joined a room, or come back to it. The room's
+ * owner gets the owner role (back, for a returning owner, which ends the
+ * lockdown). A room whose owner's account was deleted with nobody else in it
+ * goes to whoever joins it next.
  */
-export function roleOnJoin(room: Pick<Doc<"rooms">, "ownerId">, userId: Id<"users">): "owner" | undefined {
-  return room.ownerId === userId ? "owner" : undefined;
-}
-
-/** Gives the owner role back to a room's owner when their membership lacks it (a returning owner). */
-export async function seatOwner(ctx: MutationCtx, room: Doc<"rooms">): Promise<void> {
+export async function memberJoined(ctx: MutationCtx, room: Doc<"rooms">, userId: Id<"users">): Promise<void> {
   if (!room.ownerId) return;
-  const membership = await membershipOf(ctx, room._id, room.ownerId);
-  if (membership && membership.role !== "owner") {
-    await ctx.db.patch("roomMemberships", membership._id, { role: "owner" });
+  if (room.ownerId === userId) {
+    const membership = await membershipOf(ctx, room._id, userId);
+    if (membership && membership.role !== "owner") {
+      await ctx.db.patch("roomMemberships", membership._id, { role: "owner" });
+    }
+  } else if (!(await ctx.db.get("users", room.ownerId))) {
+    await transferOwnership(ctx, room, userId);
   }
 }
 
@@ -106,9 +107,9 @@ export async function ownerTurnedPermanent(ctx: MutationCtx, ownerId: Id<"users"
 
 /**
  * The hand-off: when an owner's account is deleted, each room they own goes
- * to the member who joined it first, or, with nobody else in it, is deleted.
- * The same for both ceremonies, so no room is left with an owner who can
- * never come back.
+ * to the member who joined it first, so no room is left with an owner who can
+ * never come back. With nobody else in it, a retro goes with the account and
+ * a poker room waits for whoever joins it next (memberJoined), or the sweep.
  */
 async function handOff(ctx: MutationCtx, room: Doc<"rooms">, leavingOwnerId: Id<"users">): Promise<void> {
   const members = await ctx.db
@@ -120,7 +121,7 @@ async function handOff(ctx: MutationCtx, room: Doc<"rooms">, leavingOwnerId: Id<
     .sort((a, b) => a.joinedAt - b.joinedAt)[0];
   if (heir) {
     await transferOwnership(ctx, room, heir.userId);
-  } else {
+  } else if (!rulesOf(room).outlivesLoneOwner) {
     await scheduleRoomDeletion(ctx, room._id);
   }
 }

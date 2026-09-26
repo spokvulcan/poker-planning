@@ -26,6 +26,12 @@ export interface CeremonyRules {
   /** Whether a room owned by a permanent account outlives the inactivity sweep. */
   retainedByPermanentOwner: boolean;
   /**
+   * Whether the room stays when its owner's account is deleted with nobody
+   * else in it, for the next person who joins to take over. A retro goes with
+   * the account instead (ADR-0026).
+   */
+  outlivesLoneOwner: boolean;
+  /**
    * How stale the room's activity clock may get before a write moves it
    * (ADR-0018): 0 is exact, which poker analytics' freshness needs.
    */
@@ -44,6 +50,7 @@ export const CEREMONY_RULES: Readonly<Record<Ceremony, CeremonyRules>> = Object.
     votingRounds: true,
     playerNodes: true,
     retainedByPermanentOwner: false,
+    outlivesLoneOwner: true,
     activityGranularityMs: 0,
     inAnalytics: true,
   }),
@@ -54,6 +61,7 @@ export const CEREMONY_RULES: Readonly<Record<Ceremony, CeremonyRules>> = Object.
     votingRounds: false,
     playerNodes: false,
     retainedByPermanentOwner: true,
+    outlivesLoneOwner: false,
     activityGranularityMs: HOUR_MS,
     inAnalytics: false,
   }),

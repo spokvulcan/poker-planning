@@ -64,10 +64,9 @@ export async function getRoomUsers(ctx: QueryCtx, roomId: Id<"rooms">): Promise<
 }
 
 /**
- * Seats a person in a room. The room's owner joins as its owner, and a
- * returning owner gets the role back; everyone else joins as a participant,
- * sitting out as a spectator only where the ceremony has spectators. Joining
- * again changes nothing else.
+ * Seats a person in a room, as a participant who sits out as a spectator only
+ * where the ceremony has spectators; ownership decides who is seated as the
+ * owner (Ownership.memberJoined). Joining again changes nothing else.
  */
 export async function join(
   ctx: MutationCtx,
@@ -77,20 +76,17 @@ export async function join(
 ): Promise<Doc<"roomMemberships">> {
   await Rooms.updateRoomActivity(ctx, room);
   const existing = await getMembership(ctx, room._id, user._id);
-  if (existing) {
-    if (room.ownerId === user._id) await Ownership.seatOwner(ctx, room);
-    return (await ctx.db.get("roomMemberships", existing._id)) ?? existing;
-  }
-  const role = Ownership.roleOnJoin(room, user._id);
-  const membershipId = await ctx.db.insert("roomMemberships", {
-    roomId: room._id,
-    userId: user._id,
-    // The bit stays on the row where a ceremony has no spectators, always false.
-    isSpectator: rulesOf(room).spectators ? (options.isSpectator ?? false) : false,
-    joinedAt: Date.now(),
-    ...(role ? { role } : {}),
-  });
-  await Canvas.memberJoined(ctx, room, user._id);
+  const membershipId =
+    existing?._id ??
+    (await ctx.db.insert("roomMemberships", {
+      roomId: room._id,
+      userId: user._id,
+      // The bit stays on the row where a ceremony has no spectators, always false.
+      isSpectator: rulesOf(room).spectators ? (options.isSpectator ?? false) : false,
+      joinedAt: Date.now(),
+    }));
+  await Ownership.memberJoined(ctx, room, user._id);
+  if (!existing) await Canvas.memberJoined(ctx, room, user._id);
   return (await ctx.db.get("roomMemberships", membershipId))!;
 }
 

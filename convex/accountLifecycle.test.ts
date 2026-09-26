@@ -98,10 +98,25 @@ describe("deleting an account", () => {
     });
   });
 
-  it("deletes a poker room nobody else joined", async () => {
+  it("keeps a poker room nobody else joined for whoever joins it next, who takes it over", async () => {
     const t = withComponents(convexTest(schema, modules));
     await seedUser(t, "leaver");
     const roomId = await as(t, "leaver").mutation(api.rooms.create, { name: "Planning" });
+
+    await as(t, "leaver").mutation(api.users.deleteUser, {});
+
+    const cascades = await t.run((ctx) => ctx.db.system.query("_scheduled_functions").collect());
+    expect(cascades.some((job) => job.name.endsWith(":deleteRoomAggregateChunk"))).toBe(false);
+    const nextId = await join(t, roomId, "next");
+    expect((await room(t, roomId))?.ownerId).toBe(nextId);
+    expect((await membership(t, roomId, nextId))?.role).toBe("owner");
+    expect((await as(t, "next").query(api.rooms.get, { roomId }))?.isOwnerAbsent).toBe(false);
+  });
+
+  it("deletes a retro nobody else joined along with the account (ADR-0026)", async () => {
+    const t = withComponents(convexTest(schema, modules));
+    await seedUser(t, "leaver", "permanent");
+    const roomId = await as(t, "leaver").mutation(api.retro.create, { name: "Alone" });
 
     await as(t, "leaver").mutation(api.users.deleteUser, {});
 
