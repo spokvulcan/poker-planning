@@ -38,6 +38,7 @@ import { ParticipantsSection } from "@/components/room/participants-section";
 import { PermissionsSection } from "@/components/room/permissions-section";
 import { ThemeSection } from "@/components/room/theme-section";
 import { permissionInputProps, permissionProps, useRetroPermissions } from "@/hooks/usePermissions";
+import { useLiveText } from "@/hooks/use-live-text";
 import { runAct } from "@/lib/run-act";
 import { cn } from "@/lib/utils";
 import { stickiesLabel } from "./retro-summary";
@@ -51,6 +52,13 @@ const PERMISSION_CONFIG: Record<RetroPermissionCategory, { label: string; descri
 };
 
 const FAILED = "That didn't save. Try again.";
+
+const trimmed = (value: string) => value.trim();
+
+/** Saves through runAct (which shows the refusal), rejecting when it didn't land so the field keeps the text. */
+async function landed(act: Promise<unknown>): Promise<void> {
+  if (!(await runAct(act, FAILED))) throw new Error("Not saved");
+}
 
 function SectionTitle({ children }: { children: string }) {
   return (
@@ -73,35 +81,39 @@ function ColumnRow({
 }) {
   const updateColumn = useMutation(api.retro.updateColumn);
   const removeColumn = useMutation(api.retro.removeColumn);
-  const [title, setTitle] = useState(column.title);
-  const [emoji, setEmoji] = useState(column.emoji);
-  // Someone else renamed the column: show theirs (adjusting state in render).
-  const [seen, setSeen] = useState({ title: column.title, emoji: column.emoji });
-  if (seen.title !== column.title || seen.emoji !== column.emoji) {
-    setSeen({ title: column.title, emoji: column.emoji });
-    setTitle(column.title);
-    setEmoji(column.emoji);
-  }
+  // What's typed wins until it's saved; someone else's rename comes in otherwise.
+  const title = useLiveText<HTMLInputElement>({
+    value: column.title,
+    save: (next) => landed(updateColumn({ roomId, columnId: column.id, title: next })),
+    normalize: trimmed,
+  });
+  const emoji = useLiveText<HTMLInputElement>({
+    value: column.emoji,
+    save: (next) => landed(updateColumn({ roomId, columnId: column.id, emoji: next })),
+    normalize: trimmed,
+  });
 
-  const save = (patch: { title?: string; emoji?: string; color?: StickyColor }) =>
+  const save = (patch: { color: StickyColor }) =>
     void runAct(updateColumn({ roomId, columnId: column.id, ...patch }), FAILED);
 
   return (
     <div className="space-y-2 rounded-lg border border-gray-200/50 bg-white p-3 dark:border-border dark:bg-surface-2/30" data-testid="retro-column-row">
       <div className="flex items-center gap-2">
         <Input
-          value={emoji}
-          onChange={(e) => setEmoji(e.target.value)}
-          onBlur={() => emoji.trim() && emoji !== column.emoji && save({ emoji })}
+          ref={emoji.ref}
+          value={emoji.value}
+          onChange={(e) => emoji.setValue(e.target.value)}
+          onBlur={() => (emoji.value.trim() ? void emoji.commit() : emoji.revert())}
           aria-label={`${column.title} emoji`}
           className="h-9 w-12 px-0 text-center text-lg"
           disabled={!canEdit}
         />
         <Input
-          value={title}
+          ref={title.ref}
+          value={title.value}
           maxLength={MAX_COLUMN_TITLE_LENGTH}
-          onChange={(e) => setTitle(e.target.value)}
-          onBlur={() => title.trim() && title !== column.title && save({ title })}
+          onChange={(e) => title.setValue(e.target.value)}
+          onBlur={() => (title.value.trim() ? void title.commit() : title.revert())}
           onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
           aria-label={`${column.title} title`}
           className="h-9 flex-1 text-sm"
@@ -183,12 +195,12 @@ export const RetroSettingsPanel = memo(function RetroSettingsPanel({
   const updatePermissions = useMutation(api.retro.updatePermissions);
   const addColumn = useMutation(api.retro.addColumn);
   const removeRetro = useMutation(api.retro.remove);
-  const [name, setName] = useState(room.name);
-  const [seenName, setSeenName] = useState(room.name);
-  if (seenName !== room.name) {
-    setSeenName(room.name);
-    setName(room.name);
-  }
+  // What's typed wins until it's saved; someone else's rename comes in otherwise.
+  const name = useLiveText<HTMLInputElement>({
+    value: room.name,
+    save: (next) => landed(rename({ roomId: room._id, name: next.trim() })),
+    normalize: trimmed,
+  });
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   const counts = new Map<string, number>();
@@ -237,20 +249,19 @@ export const RetroSettingsPanel = memo(function RetroSettingsPanel({
               <div className="flex gap-2">
                 <Input
                   id="retro-name"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
+                  ref={name.ref}
+                  value={name.value}
+                  onChange={(e) => name.setValue(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter" && name.trim() && name !== room.name && canSettings) {
-                      void runAct(rename({ roomId: room._id, name: name.trim() }), FAILED);
-                    }
+                    if (e.key === "Enter" && name.value.trim() && canSettings) void name.commit();
                   }}
                   className="h-10 bg-gray-50 text-sm dark:bg-surface-2"
                   {...permissionInputProps(perms.retroSettings)}
                 />
                 <Button
                   className="h-10 px-4"
-                  onClick={() => void runAct(rename({ roomId: room._id, name: name.trim() }), FAILED)}
-                  disabled={!name.trim() || name === room.name}
+                  onClick={() => void name.commit()}
+                  disabled={!name.value.trim() || !name.dirty}
                   {...permissionProps(perms.retroSettings)}
                 >
                   Save

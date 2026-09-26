@@ -1,6 +1,7 @@
 "use client";
 
 import { memo, useRef, useState, type ReactElement } from "react";
+import { useLiveText } from "@/hooks/use-live-text";
 import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
 import { Pencil, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -9,6 +10,8 @@ import { PAD_HEIGHT, PAD_WIDTH } from "@/convex/retroLayout";
 import { STICKY_TONES } from "../sticky-colors";
 import { stickiesLabel } from "../retro-summary";
 import type { PadNodeData } from "../types";
+
+const trimmed = (value: string) => value.trim();
 
 /**
  * A column's sticky pad: the prompt, its emoji and colour, and a stack of
@@ -20,15 +23,19 @@ export const PadNode = memo(({ data, selected }: NodeProps<Node<PadNodeData, "pa
   const { column, count, canRename, actions } = data;
   const tone = STICKY_TONES[column.color];
   const [renaming, setRenaming] = useState(false);
-  const [title, setTitle] = useState(column.title);
+  // What's typed wins until it's saved; someone else's rename comes in otherwise.
+  const title = useLiveText<HTMLInputElement>({
+    value: column.title,
+    save: (next) => actions.renameColumn(column.id, next.trim()),
+    normalize: trimmed,
+  });
   // A drag that ends over the pad is not a click on it.
   const pressedAt = useRef<{ x: number; y: number } | null>(null);
 
   const finishRename = () => {
     setRenaming(false);
-    const next = title.trim();
-    if (next && next !== column.title) actions.renameColumn(column.id, next);
-    else setTitle(column.title);
+    if (title.value.trim()) void title.commit();
+    else title.revert();
   };
 
   return (
@@ -70,16 +77,17 @@ export const PadNode = memo(({ data, selected }: NodeProps<Node<PadNodeData, "pa
           {renaming ? (
             <input
               autoFocus
-              value={title}
+              ref={title.ref}
+              value={title.value}
               maxLength={MAX_COLUMN_TITLE_LENGTH}
-              onChange={(e) => setTitle(e.target.value)}
+              onChange={(e) => title.setValue(e.target.value)}
               onBlur={finishRename}
               onClick={(e) => e.stopPropagation()}
               onKeyDown={(e) => {
                 e.stopPropagation();
                 if (e.key === "Enter") finishRename();
                 if (e.key === "Escape") {
-                  setTitle(column.title);
+                  title.revert();
                   setRenaming(false);
                 }
               }}
@@ -95,7 +103,7 @@ export const PadNode = memo(({ data, selected }: NodeProps<Node<PadNodeData, "pa
                   onPointerDown={(e) => e.stopPropagation()}
                   onClick={(e) => {
                     e.stopPropagation();
-                    setTitle(column.title);
+                    title.revert();
                     setRenaming(true);
                   }}
                   className={cn(

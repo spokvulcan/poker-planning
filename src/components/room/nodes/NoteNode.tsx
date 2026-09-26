@@ -2,78 +2,23 @@
 
 import { Handle, Position, NodeProps } from "@xyflow/react";
 import { StickyNote, X } from "lucide-react";
-import { ReactElement, memo, useState, useCallback, useEffect, useLayoutEffect, useRef } from "react";
+import { ReactElement, memo, useCallback } from "react";
 
 import { Textarea } from "@/components/ui/textarea";
+import { useLiveText } from "@/hooks/use-live-text";
 import { cn } from "@/lib/utils";
 
 import type { NoteNodeType } from "../types";
 
-// Debounce delay for auto-save (ms)
-const DEBOUNCE_DELAY = 500;
-
-/**
- * Where `index` in `before` lands in `after`, treating the difference as one
- * contiguous edit: an index ahead of the edit stays put, one past it keeps
- * its distance from the end.
- */
-function rebaseIndex(before: string, after: string, index: number): number {
-  const shorter = Math.min(before.length, after.length);
-  let prefix = 0;
-  while (prefix < shorter && before[prefix] === after[prefix]) prefix++;
-  if (index <= prefix) return index;
-  return Math.max(prefix, after.length - (before.length - index));
-}
+// Save this long after typing stops (ms).
+const AUTOSAVE_MS = 500;
 
 export const NoteNode = memo(
   ({ data, selected }: NodeProps<NoteNodeType>): ReactElement => {
     const { issueTitle, content, lastUpdatedBy, lastUpdatedAt, onUpdateContent, onDelete } = data;
 
-    // Local state for textarea content
-    const [localContent, setLocalContent] = useState(content);
-    // The server text the textarea last took in. Only a change to it is an
-    // edit to take in (a demo note's never changes, so typing there sticks).
-    const [syncedContent, setSyncedContent] = useState(content);
-    // From the first keystroke until the last save has landed.
-    const [isSaving, setIsSaving] = useState(false);
-    const textareaRef = useRef<HTMLTextAreaElement>(null);
-    const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-    // Track pending content for cleanup flush
-    const pendingContentRef = useRef<string | null>(null);
-    const savesInFlightRef = useRef(0);
-    const selectionAfterSyncRef = useRef<[number, number] | null>(null);
-    const onUpdateContentRef = useRef(onUpdateContent);
-
-    // Take in the server's text (another user's edit, or the echo of our own
-    // save) only while nothing typed here is unsaved. Until then the local
-    // text wins: resetting it would drop what is being typed and move the
-    // caret, and the pending save overwrites the server's text anyway.
-    useEffect(() => {
-      if (isSaving || content === syncedContent) return;
-      setSyncedContent(content);
-      if (content === localContent) return;
-      const textarea = textareaRef.current;
-      if (textarea && textarea === document.activeElement) {
-        selectionAfterSyncRef.current = [
-          rebaseIndex(localContent, content, textarea.selectionStart),
-          rebaseIndex(localContent, content, textarea.selectionEnd),
-        ];
-      }
-      setLocalContent(content);
-    }, [content, syncedContent, isSaving, localContent]);
-
-    // Keep the caret next to the text it was next to before a remote edit.
-    useLayoutEffect(() => {
-      const selection = selectionAfterSyncRef.current;
-      if (!selection) return;
-      selectionAfterSyncRef.current = null;
-      textareaRef.current?.setSelectionRange(...selection);
-    }, [localContent]);
-
-    // Keep ref updated for cleanup
-    useEffect(() => {
-      onUpdateContentRef.current = onUpdateContent;
-    }, [onUpdateContent]);
+    // What's typed wins until it has landed; other people's edits come in otherwise.
+    const text = useLiveText<HTMLTextAreaElement>({ value: content, save: onUpdateContent, autosaveMs: AUTOSAVE_MS });
 
     // Format the "last edited" time
     const formatLastEdited = useCallback(() => {
@@ -92,60 +37,6 @@ export const NoteNode = memo(
 
       return "over a day ago";
     }, [lastUpdatedAt]);
-
-    // Convex resolves a mutation only once query results that include it have
-    // arrived, so when the last save settles the server's text is current.
-    const save = useCallback(async (value: string) => {
-      savesInFlightRef.current += 1;
-      try {
-        await onUpdateContentRef.current(value);
-      } finally {
-        savesInFlightRef.current -= 1;
-        if (savesInFlightRef.current === 0 && pendingContentRef.current === null) {
-          setIsSaving(false);
-        }
-      }
-    }, []);
-
-    // Debounced save handler
-    const handleContentChange = useCallback(
-      (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-        const newContent = e.target.value;
-        setLocalContent(newContent);
-        setIsSaving(true);
-        pendingContentRef.current = newContent;
-
-        // Clear existing timer
-        if (debounceTimerRef.current) {
-          clearTimeout(debounceTimerRef.current);
-        }
-
-        // Set new timer
-        debounceTimerRef.current = setTimeout(() => {
-          debounceTimerRef.current = null;
-          pendingContentRef.current = null;
-          void save(newContent);
-        }, DEBOUNCE_DELAY);
-      },
-      [save]
-    );
-
-    // Cleanup timer on unmount - flush pending saves
-    // NOTE: This calls an async mutation but doesn't await it. If the component
-    // unmounts during rapid navigation, the save may not complete. This is an
-    // acceptable trade-off since the 500ms debounce means users typically pause
-    // longer than that before switching issues, making data loss unlikely.
-    useEffect(() => {
-      return () => {
-        if (debounceTimerRef.current) {
-          clearTimeout(debounceTimerRef.current);
-          // Flush pending content before unmount
-          if (pendingContentRef.current !== null) {
-            void onUpdateContentRef.current(pendingContentRef.current);
-          }
-        }
-      };
-    }, []);
 
     return (
       <div className="relative">
@@ -187,9 +78,9 @@ export const NoteNode = memo(
           {/* Content textarea */}
           <div className="p-3">
             <Textarea
-              ref={textareaRef}
-              value={localContent}
-              onChange={handleContentChange}
+              ref={text.ref}
+              value={text.value}
+              onChange={(e) => text.setValue(e.target.value)}
               placeholder="Add discussion notes, rationale, risks..."
               className={cn(
                 "min-h-[100px] resize-none text-sm",
@@ -211,7 +102,7 @@ export const NoteNode = memo(
                 </>
               )}
             </span>
-            {isSaving && (
+            {text.unsaved && (
               <span className="text-xs text-amber-500 dark:text-amber-400 animate-pulse">
                 Saving...
               </span>

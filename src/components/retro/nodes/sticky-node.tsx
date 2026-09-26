@@ -4,6 +4,7 @@ import { memo, useEffect, useRef, useState, type ReactElement, type KeyboardEven
 import type { NodeProps } from "@xyflow/react";
 import { ArrowUpRight, Check, EyeOff, ImagePlus, Layers, Pencil, Target, Trash2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useLiveText } from "@/hooks/use-live-text";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { MAX_STICKY_TEXT_LENGTH } from "@/convex/retroTemplates";
@@ -43,24 +44,30 @@ function GifImage({ gif, className }: { gif: Gif; className?: string }) {
   );
 }
 
-/** The editor a sticky turns into while someone writes on it. */
+/**
+ * The editor a sticky turns into while someone writes on it. Until they
+ * type, it follows the sticky: an edit someone else saves meanwhile comes in
+ * rather than being overwritten when this one commits.
+ */
 function StickyEditor({
-  initialText,
+  text: savedText,
   initialGif,
   tone,
   onCommit,
   onCancel,
 }: {
-  initialText: string;
+  /** The sticky's saved words (empty for a new sticky). */
+  text: string;
   initialGif?: Gif;
   tone: StickyTone;
   onCommit: (text: string, gif: Gif | undefined) => void;
   onCancel: () => void;
 }) {
-  const [text, setText] = useState(initialText);
+  const live = useLiveText<HTMLTextAreaElement>({ value: savedText });
+  const text = live.value;
   const [gif, setGif] = useState<Gif | undefined>(initialGif);
   const [pickerOpen, setPickerOpen] = useState(false);
-  const textRef = useRef<HTMLTextAreaElement>(null);
+  const textRef = live.ref;
   const done = useRef(false);
 
   // The node is drawn from its first frame (it has an initial size), so the
@@ -122,7 +129,7 @@ function StickyEditor({
         ref={textRef}
         value={text}
         maxLength={MAX_STICKY_TEXT_LENGTH}
-        onChange={(e) => setText(e.target.value)}
+        onChange={(e) => live.setValue(e.target.value)}
         onKeyDown={onKeyDown}
         rows={3}
         placeholder={gif ? "Add a caption, or just press Enter" : "What's on your mind?"}
@@ -345,7 +352,7 @@ export const StickyNode = memo(({ data, selected, dragging }: NodeProps<StickyFl
     >
       {inEditor ? (
         <StickyEditor
-          initialText={sticky?.text ?? ""}
+          text={sticky?.text ?? ""}
           initialGif={sticky?.gif}
           tone={tone}
           onCommit={(text, gif) =>
