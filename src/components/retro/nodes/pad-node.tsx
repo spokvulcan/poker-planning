@@ -24,7 +24,7 @@ export const PadNode = memo(({ data, selected }: NodeProps<Node<PadNodeData, "pa
   const tone = STICKY_TONES[column.color];
   const [renaming, setRenaming] = useState(false);
   // What's typed wins until it's saved; someone else's rename comes in otherwise.
-  const title = useLiveText<HTMLInputElement>({
+  const [title, titleField] = useLiveText<HTMLInputElement>({
     value: column.title,
     save: (next) => actions.renameColumn(column.id, next.trim()),
     normalize: trimmed,
@@ -77,7 +77,7 @@ export const PadNode = memo(({ data, selected }: NodeProps<Node<PadNodeData, "pa
           {renaming ? (
             <input
               autoFocus
-              ref={title.ref}
+              ref={titleField}
               value={title.value}
               maxLength={MAX_COLUMN_TITLE_LENGTH}
               onChange={(e) => title.setValue(e.target.value)}

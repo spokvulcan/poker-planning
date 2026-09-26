@@ -33,7 +33,7 @@ export interface LiveTextOptions {
   normalize?: (value: string) => string;
 }
 
-export interface LiveText<E extends HTMLInputElement | HTMLTextAreaElement> {
+export interface LiveText {
   /** What the field shows. */
   value: string;
   /** The field's onChange. */
@@ -46,8 +46,6 @@ export interface LiveText<E extends HTMLInputElement | HTMLTextAreaElement> {
   dirty: boolean;
   /** Something typed here hasn't landed on the server yet. */
   unsaved: boolean;
-  /** Hand to the input or textarea, so a remote edit keeps the caret next to its text. */
-  ref: RefObject<E | null>;
 }
 
 /**
@@ -58,13 +56,16 @@ export interface LiveText<E extends HTMLInputElement | HTMLTextAreaElement> {
  * A remote edit that lands while the field is focused keeps the caret next to
  * the text it was next to. A discussion note saves as it's typed; a name
  * saves when committed. Every field that edits shared text goes through here.
+ *
+ * Returns the field's state, and a ref to hand to its input or textarea so a
+ * remote edit can keep the caret in place.
  */
 export function useLiveText<E extends HTMLInputElement | HTMLTextAreaElement = HTMLTextAreaElement>({
   value,
   save,
   autosaveMs,
   normalize = same,
-}: LiveTextOptions): LiveText<E> {
+}: LiveTextOptions): [LiveText, RefObject<E | null>] {
   const [local, setLocal] = useState(value);
   // The server value the field last took in. Only a change to it is an edit to take in.
   const [synced, setSynced] = useState(value);
@@ -175,13 +176,15 @@ export function useLiveText<E extends HTMLInputElement | HTMLTextAreaElement = H
     [saveRef]
   );
 
-  return {
-    value: local,
-    setValue,
-    commit,
-    revert,
-    dirty: normalize(local) !== normalize(synced),
-    unsaved,
+  return [
+    {
+      value: local,
+      setValue,
+      commit,
+      revert,
+      dirty: normalize(local) !== normalize(synced),
+      unsaved,
+    },
     ref,
-  };
+  ];
 }

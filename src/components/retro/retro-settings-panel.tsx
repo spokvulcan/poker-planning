@@ -82,12 +82,12 @@ function ColumnRow({
   const updateColumn = useMutation(api.retro.updateColumn);
   const removeColumn = useMutation(api.retro.removeColumn);
   // What's typed wins until it's saved; someone else's rename comes in otherwise.
-  const title = useLiveText<HTMLInputElement>({
+  const [title, titleField] = useLiveText<HTMLInputElement>({
     value: column.title,
     save: (next) => landed(updateColumn({ roomId, columnId: column.id, title: next })),
     normalize: trimmed,
   });
-  const emoji = useLiveText<HTMLInputElement>({
+  const [emoji, emojiField] = useLiveText<HTMLInputElement>({
     value: column.emoji,
     save: (next) => landed(updateColumn({ roomId, columnId: column.id, emoji: next })),
     normalize: trimmed,
@@ -100,7 +100,7 @@ function ColumnRow({
     <div className="space-y-2 rounded-lg border border-gray-200/50 bg-white p-3 dark:border-border dark:bg-surface-2/30" data-testid="retro-column-row">
       <div className="flex items-center gap-2">
         <Input
-          ref={emoji.ref}
+          ref={emojiField}
           value={emoji.value}
           onChange={(e) => emoji.setValue(e.target.value)}
           onBlur={() => (emoji.value.trim() ? void emoji.commit() : emoji.revert())}
@@ -109,7 +109,7 @@ function ColumnRow({
           disabled={!canEdit}
         />
         <Input
-          ref={title.ref}
+          ref={titleField}
           value={title.value}
           maxLength={MAX_COLUMN_TITLE_LENGTH}
           onChange={(e) => title.setValue(e.target.value)}
@@ -196,7 +196,7 @@ export const RetroSettingsPanel = memo(function RetroSettingsPanel({
   const addColumn = useMutation(api.retro.addColumn);
   const removeRetro = useMutation(api.retro.remove);
   // What's typed wins until it's saved; someone else's rename comes in otherwise.
-  const name = useLiveText<HTMLInputElement>({
+  const [name, nameField] = useLiveText<HTMLInputElement>({
     value: room.name,
     save: (next) => landed(rename({ roomId: room._id, name: next.trim() })),
     normalize: trimmed,
@@ -249,7 +249,7 @@ export const RetroSettingsPanel = memo(function RetroSettingsPanel({
               <div className="flex gap-2">
                 <Input
                   id="retro-name"
-                  ref={name.ref}
+                  ref={nameField}
                   value={name.value}
                   onChange={(e) => name.setValue(e.target.value)}
                   onKeyDown={(e) => {

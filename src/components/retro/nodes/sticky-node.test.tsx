@@ -47,11 +47,11 @@ function renderSticky(data: Partial<StickyNodeData>) {
     members: [],
     columnColors: { c1: "pink" },
     expanded: false,
+    canVote: false,
     votesLeft: 3,
     focused: false,
     discussed: false,
     dimmed: false,
-    dropTarget: false,
     canFocus: false,
     actions: actions(),
     ...data,
@@ -87,16 +87,16 @@ describe("StickyNode", () => {
   });
 
   it("in Vote, the dot button spends a vote, and takes one back", () => {
-    const data = renderSticky({ step: "vote" });
+    const data = renderSticky({ step: "vote", canVote: true });
     fireEvent.click(screen.getByRole("button", { name: "Vote" }));
     expect(data.actions.toggleVote).toHaveBeenCalledWith("s1");
     cleanup();
-    renderSticky({ step: "vote", sticky: sticky({ myVote: true }) });
+    renderSticky({ step: "vote", canVote: true, sticky: sticky({ myVote: true }) });
     expect(screen.getByRole("button", { name: "Voted" }).getAttribute("aria-pressed")).toBe("true");
   });
 
   it("with no votes left, a topic you haven't voted for can't take one", () => {
-    const data = renderSticky({ step: "vote", votesLeft: 0 });
+    const data = renderSticky({ step: "vote", canVote: true, votesLeft: 0 });
     const button = screen.getByRole("button", { name: "Vote" });
     expect(button.getAttribute("aria-disabled")).toBe("true");
     fireEvent.click(button);
@@ -111,12 +111,24 @@ describe("StickyNode", () => {
   });
 
   it("a stack shows how many it holds, and opens to list them", () => {
-    const member = sticky({ _id: "s2" as Id<"retroStickies">, clientId: "client-2", text: "Standups drag on", stackId: "s1" as Id<"retroStickies"> });
+    const member = {
+      ...sticky({ _id: "s2" as Id<"retroStickies">, clientId: "client-2", text: "Standups drag on", stackId: "s1" as Id<"retroStickies"> }),
+      canUnstack: true,
+    };
     const data = renderSticky({ step: "vote", members: [member] });
     fireEvent.click(screen.getByRole("button", { name: "Open the stack of 2" }));
     expect(data.actions.toggleExpanded).toHaveBeenCalledWith("s1");
     cleanup();
     renderSticky({ step: "vote", members: [member], expanded: true });
     expect(screen.getByText("Standups drag on")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Take off the stack" }));
+    cleanup();
+    renderSticky({ step: "write", members: [{ ...member, canUnstack: false }], expanded: true });
+    expect(screen.queryByRole("button", { name: "Take off the stack" })).toBeNull();
+  });
+
+  it("offers no vote where the step doesn't take one", () => {
+    renderSticky({ step: "discuss", canVote: false });
+    expect(screen.queryByRole("button", { name: "Vote" })).toBeNull();
   });
 });

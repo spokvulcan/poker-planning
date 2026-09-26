@@ -15,8 +15,8 @@ export type Ceremony = "poker" | "retro";
 export interface CeremonyRules {
   /** What the product calls it. */
   name: "Planning poker" | "Retro";
-  /** What copy calls a link to one ("Copy room link", "Copy retro link"). */
-  linkNoun: "room" | "retro";
+  /** What the room's own copy calls it, as in a title ("Copy Room Link", "Retro Settings"). */
+  noun: "Room" | "Retro";
   /** Whether a member may sit out as a spectator. A retro has none: everyone at the board writes. */
   spectators: boolean;
   /** Whether the room runs voting rounds: cards, votes, reveal, issues. */
@@ -39,7 +39,7 @@ const HOUR_MS = 60 * 60 * 1000;
 export const CEREMONY_RULES: Readonly<Record<Ceremony, CeremonyRules>> = Object.freeze({
   poker: Object.freeze({
     name: "Planning poker",
-    linkNoun: "room",
+    noun: "Room",
     spectators: true,
     votingRounds: true,
     playerNodes: true,
@@ -49,7 +49,7 @@ export const CEREMONY_RULES: Readonly<Record<Ceremony, CeremonyRules>> = Object.
   }),
   retro: Object.freeze({
     name: "Retro",
-    linkNoun: "retro",
+    noun: "Retro",
     spectators: false,
     votingRounds: false,
     playerNodes: false,

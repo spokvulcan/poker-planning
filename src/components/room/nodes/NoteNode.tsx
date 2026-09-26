@@ -18,7 +18,11 @@ export const NoteNode = memo(
     const { issueTitle, content, lastUpdatedBy, lastUpdatedAt, onUpdateContent, onDelete } = data;
 
     // What's typed wins until it has landed; other people's edits come in otherwise.
-    const text = useLiveText<HTMLTextAreaElement>({ value: content, save: onUpdateContent, autosaveMs: AUTOSAVE_MS });
+    const [text, textarea] = useLiveText<HTMLTextAreaElement>({
+      value: content,
+      save: onUpdateContent,
+      autosaveMs: AUTOSAVE_MS,
+    });
 
     // Format the "last edited" time
     const formatLastEdited = useCallback(() => {
@@ -78,7 +82,7 @@ export const NoteNode = memo(
           {/* Content textarea */}
           <div className="p-3">
             <Textarea
-              ref={text.ref}
+              ref={textarea}
               value={text.value}
               onChange={(e) => text.setValue(e.target.value)}
               placeholder="Add discussion notes, rationale, risks..."

@@ -11,6 +11,7 @@ import { MAX_STICKY_TEXT_LENGTH } from "@/convex/retroTemplates";
 import type { Gif, StickyView } from "@/convex/model/retro";
 import type { StickyColor } from "@/convex/retroTemplates";
 import { FACE_DOWN_HEIGHT, STICKY_WIDTH, STICKY_MIN_HEIGHT } from "@/convex/retroLayout";
+import { useIsDropTarget } from "@/components/whiteboard/whiteboard";
 import { GifPicker } from "../gif-picker";
 import { STICKY_TONES, type StickyTone } from "../sticky-colors";
 import type { StickyFlowNode } from "../types";
@@ -63,11 +64,10 @@ function StickyEditor({
   onCommit: (text: string, gif: Gif | undefined) => void;
   onCancel: () => void;
 }) {
-  const live = useLiveText<HTMLTextAreaElement>({ value: savedText });
+  const [live, textRef] = useLiveText<HTMLTextAreaElement>({ value: savedText });
   const text = live.value;
   const [gif, setGif] = useState<Gif | undefined>(initialGif);
   const [pickerOpen, setPickerOpen] = useState(false);
-  const textRef = live.ref;
   const done = useRef(false);
 
   // The node is drawn from its first frame (it has an initial size), so the
@@ -77,7 +77,7 @@ function StickyEditor({
     if (!el) return;
     el.focus({ preventScroll: true });
     el.setSelectionRange(el.value.length, el.value.length);
-  }, []);
+  }, [textRef]);
 
   const commit = () => {
     if (done.current) return;
@@ -288,7 +288,7 @@ function StackMember({
  * stack them; vote with a dot while the retro is in Vote; in Discuss the
  * topic under discussion lifts into the spotlight.
  */
-export const StickyNode = memo(({ data, selected, dragging }: NodeProps<StickyFlowNode>): ReactElement => {
+export const StickyNode = memo(({ id, data, selected, dragging }: NodeProps<StickyFlowNode>): ReactElement => {
   const {
     sticky,
     draft,
@@ -299,15 +299,16 @@ export const StickyNode = memo(({ data, selected, dragging }: NodeProps<StickyFl
     members,
     columnColors,
     expanded,
+    canVote,
     votesLeft,
     rank,
     focused,
     discussed,
     dimmed,
-    dropTarget,
     canFocus,
     actions,
   } = data;
+  const dropTarget = useIsDropTarget(id);
   const tone = STICKY_TONES[color];
   const hidden = sticky?.hidden ?? false;
 
@@ -326,7 +327,7 @@ export const StickyNode = memo(({ data, selected, dragging }: NodeProps<StickyFl
   }, [hidden]);
 
   // Only a topic (a loose sticky or a stack's top) is a node of its own.
-  const showFocus = canFocus && !!sticky && !hidden && !focused && step !== "write";
+  const showFocus = canFocus && !!sticky && !hidden && !focused;
   const stackDepth = Math.min(members.length, 2);
   const inEditor = editing || !!draft;
   // Face-down, it is one size whatever it holds, or its size would tell.
@@ -379,7 +380,7 @@ export const StickyNode = memo(({ data, selected, dragging }: NodeProps<StickyFl
                   member={member}
                   tone={tone}
                   otherColor={columnColors[member.columnId] !== color ? columnColors[member.columnId] : undefined}
-                  canUnstack={step !== "write"}
+                  canUnstack={member.canUnstack}
                   onUnstack={() => actions.unstack(member._id)}
                 />
               ))}
@@ -417,7 +418,7 @@ export const StickyNode = memo(({ data, selected, dragging }: NodeProps<StickyFl
             </button>
           )}
           <span className="ml-auto" />
-          {step === "vote" && (
+          {canVote && (
             <VoteButton
               voted={!!sticky.myVote}
               disabled={!sticky.myVote && votesLeft <= 0}

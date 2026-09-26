@@ -4,6 +4,7 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams } from "next/navigation";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import { ceremonyOf } from "@/convex/ceremony";
 import { RoomCanvas } from "@/components/room/room-canvas";
 import { JoinRoomDialog } from "@/components/room/join-room-dialog";
 import { CenteredMessage } from "@/components/centered-message";
@@ -157,7 +158,7 @@ function JoinGate({
 
   // If user has membership, show the room canvas
   if (isInRoom) {
-    return roomType === "retro" ? (
+    return ceremonyOf(roomData.room) === "retro" ? (
       <RetroCanvas roomData={roomData} currentUserId={existingMembership._id} />
     ) : (
       <RoomCanvas roomData={roomData} currentUserId={existingMembership._id} />

@@ -5,6 +5,7 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useDemoSimulation } from "../demo/DemoSimulationProvider";
 import { useStableActions } from "@/hooks/useStableActions";
+import { useMoveCanvasNodes } from "@/components/whiteboard/use-move-canvas-nodes";
 
 /**
  * Every backend write the canvas can trigger, behind one frozen-identity object.
@@ -23,8 +24,8 @@ export interface CanvasActions {
   updateNoteContent: (nodeId: string, content: string) => Promise<void>;
   createNote: (issueId: Id<"issues">) => void;
   deleteNote: (nodeId: string) => void;
-  /** Persists a node position. Debouncing stays at the call site. */
-  updateNodePosition: (nodeId: string, position: { x: number; y: number }) => void;
+  /** Saves where a drop (or an arrow-key nudge) left nodes, in one write. */
+  moveNodes: (moves: { nodeId: string; position: { x: number; y: number } }[]) => void;
   removeUser: (userId: Id<"users">) => void;
 }
 
@@ -56,7 +57,7 @@ export function useCanvasActions({
   const showCards = useMutation(api.rooms.showCards);
   const resetGame = useMutation(api.rooms.resetGame);
   const pickCard = useMutation(api.votes.pickCard);
-  const updateNodePositionMutation = useMutation(api.canvas.updateNodePosition);
+  const moveNodesMutation = useMoveCanvasNodes();
   const toggleAutoCompleteMutation = useMutation(api.rooms.toggleAutoComplete);
   const cancelAutoRevealCountdown = useMutation(api.rooms.cancelAutoRevealCountdown);
   const updateNoteContentMutation = useMutation(api.canvas.updateNoteContent);
@@ -145,12 +146,12 @@ export function useCanvasActions({
         console.error("Failed to delete note:", error);
       }
     },
-    updateNodePosition: async (nodeId: string, position: { x: number; y: number }) => {
-      if (isDemo || !currentUserId) return;
+    moveNodes: async (moves) => {
+      if (isDemo || !currentUserId || moves.length === 0) return;
       try {
-        await updateNodePositionMutation({ roomId, nodeId, position, userId: currentUserId });
+        await moveNodesMutation({ roomId, moves, userId: currentUserId });
       } catch (error) {
-        console.error("Failed to update node position:", error);
+        console.error("Failed to move nodes:", error);
       }
     },
     removeUser: async (userId: Id<"users">) => {

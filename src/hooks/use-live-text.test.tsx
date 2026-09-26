@@ -8,10 +8,10 @@ import { render, screen, cleanup, fireEvent, act } from "@testing-library/react"
 import { rebaseIndex, useLiveText, type LiveTextOptions } from "./use-live-text";
 
 function Field(props: LiveTextOptions & { onResult?: (landed: boolean) => void }) {
-  const text = useLiveText<HTMLInputElement>(props);
+  const [text, field] = useLiveText<HTMLInputElement>(props);
   return (
     <>
-      <input aria-label="field" ref={text.ref} value={text.value} onChange={(e) => text.setValue(e.target.value)} />
+      <input aria-label="field" ref={field} value={text.value} onChange={(e) => text.setValue(e.target.value)} />
       <button onClick={() => void text.commit().then((landed) => props.onResult?.(landed))}>commit</button>
       <button onClick={text.revert}>revert</button>
       <output aria-label="state">{`${text.dirty ? "dirty" : "clean"} ${text.unsaved ? "unsaved" : "saved"}`}</output>

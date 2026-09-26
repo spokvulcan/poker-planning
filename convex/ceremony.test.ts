@@ -43,9 +43,9 @@ describe("rulesOf", () => {
     });
   });
 
-  it("names a link to each the way the copy does", () => {
-    expect(rulesOf({ roomType: "canvas" }).linkNoun).toBe("room");
-    expect(rulesOf({ roomType: "retro" }).linkNoun).toBe("retro");
+  it("names each the way its copy does", () => {
+    expect(rulesOf({ roomType: "canvas" }).noun).toBe("Room");
+    expect(rulesOf({ roomType: "retro" }).noun).toBe("Retro");
   });
 });
 

@@ -71,7 +71,7 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
   const perms = usePokerPermissions(roomData, currentUserId);
 
   // What's typed wins until it's saved; someone else's rename comes in otherwise.
-  const roomName = useLiveText<HTMLInputElement>({
+  const [roomName, roomNameField] = useLiveText<HTMLInputElement>({
     value: roomData.room.name,
     save: (name) => settingsActions.rename(name.trim()),
     normalize: trimmed,
@@ -164,7 +164,7 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
               <div className="flex gap-2">
                 <Input
                   id="room-name"
-                  ref={roomName.ref}
+                  ref={roomNameField}
                   value={roomName.value}
                   onChange={(e) => perms.roomSettings.allowed && roomName.setValue(e.target.value)}
                   onKeyDown={(e) => {

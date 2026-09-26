@@ -63,7 +63,6 @@ function input({ retro, perms, ...overrides }: InputOverrides = {}): RetroNodesI
     draft: null,
     editingId: null,
     expandedIds: new Set(),
-    dropTargetId: null,
     actions,
     ...overrides,
   };
@@ -103,12 +102,31 @@ describe("buildRetroNodes", () => {
     expect([count("pad-c1"), count("pad-c2"), count("pad-c3")]).toEqual([2, 1, 0]);
   });
 
-  it("lets the author, not everyone, change a sticky; a facilitator's call covers the rest", () => {
+  it("lets the author, not everyone, change a sticky; a facilitator's call covers the rest once revealed", () => {
     const stickies = [sticky("s1", { mine: true }), sticky("s2")];
-    const asParticipant = stickyNodes(buildRetroNodes(input({ board: board(stickies) })));
-    expect(asParticipant.map((n) => n.data.canEdit)).toEqual([true, false]);
-    const asFacilitator = stickyNodes(buildRetroNodes(input({ board: board(stickies), perms: { cardManagement: RESOLVED_ALLOWED } })));
-    expect(asFacilitator.map((n) => n.data.canEdit)).toEqual([true, true]);
+    const at = (step: RetroStep, cardManagement: ResolvedDecision) =>
+      stickyNodes(buildRetroNodes(input({ retro: { step }, board: board(stickies), perms: { cardManagement } }))).map(
+        (n) => n.data.canEdit
+      );
+
+    expect(at("vote", DENIED)).toEqual([true, false]);
+    expect(at("vote", RESOLVED_ALLOWED)).toEqual([true, true]);
+    // Before the reveal nobody touches a sticky they can't read, a facilitator neither.
+    expect(at("write", RESOLVED_ALLOWED)).toEqual([true, false]);
+  });
+
+  it("offers votes only in Vote, the spotlight once revealed, and unstacking your own while writing", () => {
+    const stickies = [
+      sticky("s1"),
+      sticky("s2", { stackId: "s1" as Id<"retroStickies">, mine: true }),
+      sticky("s3", { stackId: "s1" as Id<"retroStickies"> }),
+    ];
+    const at = (step: RetroStep) => stickyNodes(buildRetroNodes(input({ retro: { step }, board: board(stickies) })))[0].data;
+
+    expect([at("write").canVote, at("vote").canVote, at("discuss").canVote]).toEqual([false, true, false]);
+    expect([at("write").canFocus, at("vote").canFocus]).toEqual([false, true]);
+    expect(at("write").members.map((m) => m.canUnstack)).toEqual([true, false]);
+    expect(at("vote").members.map((m) => m.canUnstack)).toEqual([true, true]);
   });
 
   it("holds a sticky the server hasn't confirmed: not draggable, not editable", () => {
@@ -158,13 +176,6 @@ describe("buildRetroNodes", () => {
         data: expect.objectContaining({ editing: true, color: "pink", draft: expect.objectContaining({ clientId: "draft-1" }) }),
       }),
     ]);
-  });
-
-  it("marks the sticky under a dragged one as the drop target", () => {
-    const nodes = stickyNodes(
-      buildRetroNodes(input({ retro: { step: "vote" }, board: board([sticky("s1"), sticky("s2")]), dropTargetId: "client-s2" }))
-    );
-    expect(nodes.map((n) => n.data.dropTarget)).toEqual([false, true]);
   });
 });
 
