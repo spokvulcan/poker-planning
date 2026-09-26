@@ -6,6 +6,7 @@
 
 import { internalMutation } from "./_generated/server";
 import { v } from "convex/values";
+import { internal } from "./_generated/api";
 import * as Integrations from "./model/integrations";
 
 /**
@@ -73,5 +74,71 @@ export const disconnectOrphanedConnections = internalMutation({
     }
 
     return { total: connections.length, orphaned: orphans.length, mappings };
+  },
+});
+
+/** How many rooms one step of `backfillOwnerRoles` checks. */
+const OWNER_ROLE_BACKFILL_BATCH = 200;
+
+/**
+ * Gives a room's owner the owner role where they are in the room under
+ * another one. Merging a guest into a permanent account that had already
+ * joined the room could leave it that way (see
+ * model/users.linkAnonymousToPermanent): the owner counts as present, so no
+ * lockdown shows, yet owner-only actions are refused. An owner-role
+ * membership exists iff the owner is present (ADR-0001), so a room whose
+ * owner has no membership is in lockdown and is left alone; no membership
+ * is ever added.
+ *
+ * Pages through every room, rescheduling itself until done, so no step
+ * outgrows a transaction. Each step returns the running totals, and the
+ * last one also logs them.
+ */
+export const backfillOwnerRoles = internalMutation({
+  args: {
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+    roomsChecked: v.optional(v.number()),
+    membershipsRepaired: v.optional(v.number()),
+  },
+  handler: async (
+    ctx,
+    args
+  ): Promise<{ roomsChecked: number; membershipsRepaired: number; done: boolean }> => {
+    const batchSize = args.batchSize ?? OWNER_ROLE_BACKFILL_BATCH;
+    const { page, isDone, continueCursor } = await ctx.db
+      .query("rooms")
+      .paginate({ numItems: batchSize, cursor: args.cursor ?? null });
+
+    const outcomes = await Promise.all(
+      page.map(async (room) => {
+        const ownerId = room.ownerId;
+        if (!ownerId) return "no-owner";
+        const membership = await ctx.db
+          .query("roomMemberships")
+          .withIndex("by_room_user", (q) => q.eq("roomId", room._id).eq("userId", ownerId))
+          .first();
+        if (!membership) return "lockdown";
+        if (membership.role === "owner") return "owner";
+        await ctx.db.patch("roomMemberships", membership._id, { role: "owner" });
+        return "repaired";
+      })
+    );
+
+    const totals = {
+      roomsChecked: (args.roomsChecked ?? 0) + page.length,
+      membershipsRepaired:
+        (args.membershipsRepaired ?? 0) + outcomes.filter((o) => o === "repaired").length,
+    };
+    if (isDone) {
+      console.log("Owner role backfill complete:", totals);
+    } else {
+      await ctx.scheduler.runAfter(0, internal.migrations.backfillOwnerRoles, {
+        cursor: continueCursor,
+        batchSize,
+        ...totals,
+      });
+    }
+    return { ...totals, done: isDone };
   },
 });
