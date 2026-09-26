@@ -32,9 +32,11 @@ export async function start(
   const room = await ctx.db.get("rooms", args.roomId);
   if (!room) throw new Error("Room not found");
 
+  // The round writes its status, timing and results onto the issue, so an
+  // issue from another room is refused as not found, before anything is written.
   if (args.issueId) {
     const issue = await ctx.db.get("issues", args.issueId);
-    if (!issue) throw new Error("Issue not found");
+    if (!issue || issue.roomId !== args.roomId) throw new Error("Issue not found");
   }
 
   // Revert a different previous issue target back to pending, closing its round.
