@@ -18,8 +18,8 @@ import { getProviderHandler } from "../integrations/registry";
  * Webhook *semantics* (what an event does to issues and links) live in the
  * adapter too; this module owns only the shared dedup table. The registered
  * wrappers in integrations.ts (public API) and integrations/jira.ts
- * (internal) delegate here, so every writer of these tables funnels through
- * the same code.
+ * (internal), and account deletion and linking in model/users.ts, delegate
+ * here, so every writer of these tables funnels through the same code.
  */
 
 // ---------------------------------------------------------------------------
@@ -343,6 +343,67 @@ export async function scheduleWebhookDeregistration(
       connectionId: mapping.connectionId,
       webhookId,
     });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Account lifecycle
+// ---------------------------------------------------------------------------
+
+/** A user's connections: at most one per provider (saveConnection upserts). */
+async function userConnections(
+  ctx: MutationCtx,
+  userId: Id<"users">
+): Promise<Doc<"integrationConnections">[]> {
+  return await ctx.db
+    .query("integrationConnections")
+    .withIndex("by_user_provider", (q) => q.eq("userId", userId))
+    .collect();
+}
+
+/**
+ * Account deletion's share: each of the user's connections goes through the
+ * disconnect cascade, as if they had pressed Disconnect. Its mappings are
+ * deleted, its live webhooks deregistered, and the row goes with its
+ * encrypted tokens, so the refresh sweep stops refreshing them. The
+ * connection outlives the user row only until finalizeDisconnect has used
+ * its credentials.
+ */
+export async function disconnectUserConnections(
+  ctx: MutationCtx,
+  userId: Id<"users">
+): Promise<void> {
+  for (const connection of await userConnections(ctx, userId)) {
+    await disconnectConnection(ctx, connection._id);
+  }
+}
+
+/**
+ * Account linking's share, when a guest merges into an existing permanent
+ * account: the guest's connection moves across, its mappings and webhooks
+ * untouched. Where the permanent account already has its own connection to
+ * that provider, it keeps that one (one connection per user and provider)
+ * and the guest's is disconnected instead.
+ */
+export async function transferUserConnections(
+  ctx: MutationCtx,
+  fromUserId: Id<"users">,
+  toUserId: Id<"users">
+): Promise<void> {
+  for (const connection of await userConnections(ctx, fromUserId)) {
+    const own = await ctx.db
+      .query("integrationConnections")
+      .withIndex("by_user_provider", (q) =>
+        q.eq("userId", toUserId).eq("provider", connection.provider)
+      )
+      .first();
+    if (own) {
+      await disconnectConnection(ctx, connection._id);
+    } else {
+      await ctx.db.patch("integrationConnections", connection._id, {
+        userId: toUserId,
+      });
+    }
   }
 }
 

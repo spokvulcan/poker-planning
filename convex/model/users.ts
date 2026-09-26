@@ -3,6 +3,7 @@ import { Id, Doc } from "../_generated/dataModel";
 import { internal } from "../_generated/api";
 import * as Analytics from "./analytics";
 import * as Canvas from "./canvas";
+import * as Integrations from "./integrations";
 import * as Presence from "./presence";
 import * as Rooms from "./rooms";
 import * as VotingRound from "./votingRound";
@@ -371,7 +372,8 @@ export async function syncGlobalUserAvatar(
 
 /**
  * Completely deletes a user from the system (on sign out)
- * Removes from all rooms, deletes memberships, votes, canvas nodes, presence, and the user record
+ * Removes from all rooms, deletes memberships, votes, canvas nodes, presence,
+ * integration connections, and the user record
  */
 export async function deleteUserByAuthUserId(
   ctx: MutationCtx,
@@ -417,6 +419,11 @@ export async function deleteUserByAuthUserId(
     ctx,
     individualVotes.map((iv) => iv.roomId)
   );
+
+  // Their integration connections go the way Disconnect takes them: room
+  // mappings deleted, live webhooks deregistered, then the row with its
+  // encrypted tokens.
+  await Integrations.disconnectUserConnections(ctx, user._id);
 
   // Delete the global user record
   await ctx.db.delete("users", user._id);
@@ -469,7 +476,8 @@ async function retainOwnedRetros(ctx: MutationCtx, ownerId: Id<"users">): Promis
 
 /**
  * Links an anonymous user account to a new permanent account.
- * Transfers all memberships, votes, and canvas node ownerships.
+ * Transfers all memberships, votes, canvas node ownerships, and integration
+ * connections.
  */
 
 export async function linkAnonymousToPermanent(
@@ -681,6 +689,10 @@ export async function linkAnonymousToPermanent(
       ...ownedItems.map((item) => ctx.db.patch("retroActionItems", item._id, { ownerId: existingPermanent._id })),
     ]);
     await retainOwnedRetros(ctx, existingPermanent._id);
+
+    // Integration connections, one per user and provider: the guest's moves
+    // across unless the permanent account has its own, which it keeps.
+    await Integrations.transferUserConnections(ctx, user._id, existingPermanent._id);
 
     // Delete the old anonymous user record and its presence; the client
     // heartbeats as the permanent user from here on.
