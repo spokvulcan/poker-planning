@@ -1,7 +1,7 @@
 /// <reference types="vite/client" />
 import { convexTest, type TestConvex } from "convex-test";
 import { describe, it, expect } from "vitest";
-import { internal } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 import schema from "./schema";
 import { withComponents } from "./components.setup";
 import type { Id } from "./_generated/dataModel";
@@ -130,6 +130,86 @@ describe("retained: account linking", () => {
       ownerId: permanentId,
       retained: true,
     });
+  });
+});
+
+/**
+ * A merge hands the guest's rooms and memberships to the permanent account.
+ * Where both are in a room, one membership stays, with the more senior role;
+ * wherever the permanent account ends up owning a room it is in, it holds the
+ * owner role, since an owner-role membership exists iff the owner is present
+ * (ADR-0001).
+ */
+describe("account linking: roles", () => {
+  const as = (t: T, subject: string) => t.withIdentity({ subject });
+  const join = (t: T, roomId: Id<"rooms">, subject: string) =>
+    as(t, subject).mutation(api.users.join, { roomId, name: subject, authUserId: subject });
+  const rolesIn = (t: T, roomId: Id<"rooms">) =>
+    t.run(async (ctx) =>
+      (await ctx.db.query("roomMemberships").withIndex("by_room", (q) => q.eq("roomId", roomId)).collect())
+        .map(({ userId, role }) => ({ userId, role }))
+    );
+  const link = (t: T) =>
+    t.mutation(internal.users.linkAnonymousAccount, {
+      oldAuthUserId: "auth-guest",
+      newAuthUserId: "auth-perm",
+      email: "perm@example.com",
+    });
+
+  it("a permanent account already in the guest's retro becomes its owner, with the owner role, and can delete it", async () => {
+    const t = withComponents(convexTest(schema, modules));
+    await seedUser(t, "auth-guest", "G");
+    const roomId = await as(t, "auth-guest").mutation(api.retro.create, { name: "Retro" });
+    await join(t, roomId, "auth-guest");
+    // The auto-join race: the new identity joins before onLinkAccount runs.
+    const permanentId = await seedUser(t, "auth-perm", "P", "permanent");
+    await join(t, roomId, "auth-perm");
+
+    await link(t);
+
+    expect(await t.run((ctx) => ctx.db.get("rooms", roomId))).toMatchObject({ ownerId: permanentId });
+    expect(await rolesIn(t, roomId)).toEqual([{ userId: permanentId, role: "owner" }]);
+    await as(t, "auth-perm").mutation(api.retro.remove, { roomId });
+    expect(await scheduledCascadeRoomIds(t)).toEqual(new Set([roomId]));
+  });
+
+  it("keeps the guest's facilitator role over the permanent account's participant one", async () => {
+    const t = withComponents(convexTest(schema, modules));
+    const ownerId = await seedUser(t, "auth-owner", "O", "permanent");
+    const roomId = await as(t, "auth-owner").mutation(api.retro.create, { name: "Retro" });
+    await join(t, roomId, "auth-owner");
+    const guestId = await join(t, roomId, "auth-guest");
+    await as(t, "auth-owner").mutation(api.roles.promoteFacilitator, { roomId, targetUserId: guestId });
+    const permanentId = await seedUser(t, "auth-perm", "P", "permanent");
+    await join(t, roomId, "auth-perm");
+
+    await link(t);
+
+    expect(await rolesIn(t, roomId)).toEqual([
+      { userId: ownerId, role: "owner" },
+      { userId: permanentId, role: "facilitator" },
+    ]);
+  });
+
+  it("gives the permanent account the owner role in each room it owns and is in, the guest's or its own", async () => {
+    const t = withComponents(convexTest(schema, modules));
+    const guestId = await seedUser(t, "auth-guest", "G");
+    const permanentId = await seedUser(t, "auth-perm", "P", "permanent");
+    // The guest owns one retro and has left it; the permanent account is in it.
+    const guestsRoom = await as(t, "auth-guest").mutation(api.retro.create, { name: "Guest's" });
+    await join(t, guestsRoom, "auth-guest");
+    await as(t, "auth-guest").mutation(api.users.leave, { roomId: guestsRoom, userId: guestId });
+    await join(t, guestsRoom, "auth-perm");
+    // The permanent account owns the other and has left it; the guest is in it.
+    const permanentsRoom = await as(t, "auth-perm").mutation(api.retro.create, { name: "Permanent's" });
+    await join(t, permanentsRoom, "auth-perm");
+    await as(t, "auth-perm").mutation(api.users.leave, { roomId: permanentsRoom, userId: permanentId });
+    await join(t, permanentsRoom, "auth-guest");
+
+    await link(t);
+
+    expect(await rolesIn(t, guestsRoom)).toEqual([{ userId: permanentId, role: "owner" }]);
+    expect(await rolesIn(t, permanentsRoom)).toEqual([{ userId: permanentId, role: "owner" }]);
   });
 });
 
