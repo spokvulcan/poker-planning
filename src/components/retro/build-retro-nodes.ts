@@ -9,7 +9,7 @@ import type { ActionItemView, BoardView, RetroState, StickyView } from "@/convex
 import type { CanvasNode } from "@/convex/model/canvas";
 import type { ResolvedDecision, RetroPermissionCategory } from "@/convex/permissions";
 import type { RetroColumn } from "@/convex/retroTemplates";
-import { discussionOrder } from "@/convex/retroRules";
+import { discussionOrder } from "@/convex/retroSteps";
 import {
   actionsPosition,
   padNodeId,

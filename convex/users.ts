@@ -1,5 +1,6 @@
 import { mutation, query, internalMutation } from "./_generated/server";
 import { v } from "convex/values";
+import * as Memberships from "./model/memberships";
 import * as Users from "./model/users";
 import {
   requireAuth,
@@ -82,7 +83,7 @@ export const join = mutation({
         args.authUserId
       );
       if (existingUser) {
-        const membership = await Users.getMembership(
+        const membership = await Memberships.getMembership(
           ctx,
           args.roomId,
           existingUser._id

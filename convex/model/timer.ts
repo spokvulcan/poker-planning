@@ -1,5 +1,6 @@
 import { MutationCtx } from "../_generated/server";
 import { Id } from "../_generated/dataModel";
+import * as Canvas from "./canvas";
 import * as Rooms from "./rooms";
 import {
   calculateCurrentTime,
@@ -15,82 +16,36 @@ export interface UpdateTimerStateArgs {
   userId: Id<"users">;
 }
 
-/**
- * Updates timer state based on user action
- */
-export async function updateTimerState(
-  ctx: MutationCtx,
-  args: UpdateTimerStateArgs
-): Promise<void> {
-  const now = Date.now();
-
-  // Find the timer node
-  const timerNode = await ctx.db
-    .query("canvasNodes")
-    .withIndex("by_room_node", (q) =>
-      q.eq("roomId", args.roomId).eq("nodeId", args.nodeId)
-    )
-    .unique();
-
-  if (!timerNode || timerNode.type !== "timer") {
-    throw new Error("Timer node not found");
-  }
-
-  // Validate the action
-  validateTimerAction(timerNode.data, args.action);
-
-  // Calculate current elapsed time before updating
-  const currentState = calculateCurrentTime(timerNode.data, now);
-
-  let newData: TimerState;
-
-  switch (args.action) {
+/** What a timer action does to a timer's state at `now`. */
+function transition(state: TimerState, action: TimerAction, now: number, userId: Id<"users">): TimerState {
+  switch (action) {
     case "start":
-      newData = {
-        ...timerNode.data,
-        isRunning: true,
-        startedAt: now,
-        pausedAt: null,
-        lastUpdatedBy: args.userId,
-        lastAction: "start",
-      };
-      break;
-
+      return { ...state, isRunning: true, startedAt: now, pausedAt: null, lastUpdatedBy: userId, lastAction: "start" };
     case "pause":
-      newData = {
-        ...timerNode.data,
+      return {
+        ...state,
         isRunning: false,
         startedAt: null,
         pausedAt: now,
-        elapsedSeconds: currentState.currentSeconds,
-        lastUpdatedBy: args.userId,
+        elapsedSeconds: calculateCurrentTime(state, now).currentSeconds,
+        lastUpdatedBy: userId,
         lastAction: "pause",
       };
-      break;
-
     case "reset":
-      newData = {
-        ...timerNode.data,
-        isRunning: false,
-        startedAt: null,
-        pausedAt: null,
-        elapsedSeconds: 0,
-        lastUpdatedBy: args.userId,
-        lastAction: "reset",
-      };
-      break;
-
-    default:
-      throw new Error(`Invalid timer action: ${args.action}`);
+      return { ...state, isRunning: false, startedAt: null, pausedAt: null, elapsedSeconds: 0, lastUpdatedBy: userId, lastAction: "reset" };
   }
+}
 
-  // Update the timer node
-  await ctx.db.patch("canvasNodes", timerNode._id, {
-    data: newData,
-    lastUpdatedBy: args.userId,
-    lastUpdatedAt: now,
+/**
+ * Runs a timer action on a canvas timer: the timer's rules are here and in
+ * timerState, its storage is the canvas's.
+ */
+export async function updateTimerState(ctx: MutationCtx, args: UpdateTimerStateArgs): Promise<void> {
+  const now = Date.now();
+  await Canvas.updateTimer(ctx, args.roomId, args.nodeId, args.userId, (state) => {
+    validateTimerAction(state, args.action);
+    return transition(state, args.action, now, args.userId);
   });
-
   // A timer action is room activity — a room driven only by its timer must not
   // read as abandoned to the cleanup cascade.
   await Rooms.updateRoomActivity(ctx, args.roomId);

@@ -1,7 +1,6 @@
 import { MutationCtx } from "../_generated/server";
 import { Doc } from "../_generated/dataModel";
-import { internal } from "../_generated/api";
-import { ORPHAN_SWEPT_TABLES, OrphanSweptTable } from "./roomAggregate";
+import { ORPHAN_SWEPT_TABLES, OrphanSweptTable, scheduleRoomDeletion } from "./roomAggregate";
 
 export interface RemoveInactiveRoomsResult {
   /** Rooms whose cascade was scheduled (each runs as its own mutation). */
@@ -40,11 +39,7 @@ export async function removeInactiveRooms(
   console.log(`Scheduling ${inactiveRooms.length} inactive rooms for cleanup`);
 
   for (const room of inactiveRooms) {
-    await ctx.scheduler.runAfter(
-      0,
-      internal.maintenance.deleteRoomAggregateChunk,
-      { roomId: room._id }
-    );
+    await scheduleRoomDeletion(ctx, room._id);
   }
 
   return { roomsScheduled: inactiveRooms.length };

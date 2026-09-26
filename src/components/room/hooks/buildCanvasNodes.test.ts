@@ -11,7 +11,7 @@ import { describe, it, expect } from "vitest";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { CanvasNode } from "@/convex/model/canvas";
 import type { SanitizedVote } from "@/convex/model/rooms";
-import type { RoomUserData } from "@/convex/model/users";
+import type { RoomUserData } from "@/convex/model/memberships";
 import { RESOLVED_ALLOWED } from "@/convex/permissions";
 import { computeVotingCardRow } from "@/convex/canvasLayout";
 import { DEFAULT_SCALE } from "@/convex/scales";

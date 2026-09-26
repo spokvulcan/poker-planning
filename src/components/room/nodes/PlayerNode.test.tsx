@@ -7,7 +7,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import { render, screen, cleanup } from "@testing-library/react";
 import { ReactFlowProvider, type NodeProps } from "@xyflow/react";
 import type { Id } from "@/convex/_generated/dataModel";
-import type { RoomUserData } from "@/convex/model/users";
+import type { RoomUserData } from "@/convex/model/memberships";
 import type { PlayerNodeData, PlayerNodeType } from "../types";
 import { PlayerNode } from "./PlayerNode";
 

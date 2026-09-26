@@ -1,7 +1,8 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import * as Retro from "./model/retro";
-import { renameRoom, updateRoomActivity } from "./model/rooms";
+import * as Roles from "./model/roles";
+import { renameRoom } from "./model/rooms";
 import {
   getOptionalAuthUser,
   requireAuthUser,
@@ -70,10 +71,7 @@ export const rename = mutation({
 export const updatePermissions = mutation({
   args: { roomId: v.id("rooms"), permissions: retroPermissionsValidator },
   handler: async (ctx, args) => {
-    const { room } = await requireCan(ctx, args.roomId, { kind: "relationship", verb: "changePerms" });
-    Retro.retroOf(room);
-    await ctx.db.patch("rooms", room._id, { permissions: args.permissions });
-    await updateRoomActivity(ctx, room);
+    await Roles.updatePermissions(ctx, args);
   },
 });
 
@@ -255,8 +253,8 @@ export const stackSticky = mutation({
 export const unstackSticky = mutation({
   args: { stickyId: v.id("retroStickies"), position: positionValidator },
   handler: async (ctx, args) => {
-    const { room, sticky } = await memberSticky(ctx, args.stickyId);
-    await Retro.unstackSticky(ctx, room, sticky, args.position);
+    const { user, room, sticky } = await memberSticky(ctx, args.stickyId);
+    await Retro.unstackSticky(ctx, room, user, sticky, args.position);
   },
 });
 

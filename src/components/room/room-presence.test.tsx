@@ -59,7 +59,7 @@ vi.mock("@convex-dev/presence/react", async () => {
 import { act, render } from "@testing-library/react";
 import { createElement, type ReactNode } from "react";
 import type { Id } from "@/convex/_generated/dataModel";
-import type { RoomUserData } from "@/convex/model/users";
+import type { RoomUserData } from "@/convex/model/memberships";
 import {
   orderUsersByPresence,
   type UserWithPresence,

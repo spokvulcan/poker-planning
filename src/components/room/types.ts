@@ -1,7 +1,7 @@
 import { Node } from "@xyflow/react";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { SanitizedVote } from "@/convex/model/rooms";
-import type { RoomUserData } from "@/convex/model/users";
+import type { RoomUserData } from "@/convex/model/memberships";
 import type { MemberRole, ResolvedDecision } from "@/convex/permissions";
 import type { Phase } from "@/convex/phase";
 import type { TimerState } from "@/convex/timerState";

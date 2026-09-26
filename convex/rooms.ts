@@ -24,7 +24,7 @@ export const create = mutation({
   },
   handler: async (ctx, args) => {
     const { user } = await requireAuthUser(ctx);
-    return await Rooms.createRoom(ctx, { ...args, ownerId: user._id });
+    return await Rooms.createRoom(ctx, { ...args, owner: user });
   },
 });
 

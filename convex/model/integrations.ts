@@ -6,6 +6,7 @@ import {
 } from "./tokenVault";
 import * as Rooms from "./rooms";
 import { getProviderHandler } from "../integrations/registry";
+import type { UserRows } from "./userRows";
 
 /**
  * The integrations model: the one owner of the db-side invariants for
@@ -324,6 +325,42 @@ export async function disconnectConnection(
     await ctx.db.delete("integrationConnections", connectionId);
   }
 }
+
+/** A person's provider connections. */
+async function connectionsOf(ctx: MutationCtx, userId: Id<"users">): Promise<Doc<"integrationConnections">[]> {
+  return await ctx.db
+    .query("integrationConnections")
+    .withIndex("by_user_provider", (q) => q.eq("userId", userId))
+    .collect();
+}
+
+/**
+ * A person's provider connections, with the OAuth tokens they hold. A deleted
+ * account's connections disconnect like any other: their room mappings go,
+ * their webhooks are deregistered, and the tokens are deleted, so nothing
+ * refreshes or uses them again. A guest's connection becomes the account's,
+ * unless the account already has its own with that provider.
+ */
+export const integrationUserRows: UserRows = {
+  fields: ["integrationConnections.userId"],
+
+  async forget(ctx, userId) {
+    for (const connection of await connectionsOf(ctx, userId)) {
+      await disconnectConnection(ctx, connection._id);
+    }
+  },
+
+  async fold(ctx, from, into) {
+    for (const connection of await connectionsOf(ctx, from)) {
+      const own = await ctx.db
+        .query("integrationConnections")
+        .withIndex("by_user_provider", (q) => q.eq("userId", into).eq("provider", connection.provider))
+        .first();
+      if (own) await disconnectConnection(ctx, connection._id);
+      else await ctx.db.patch("integrationConnections", connection._id, { userId: into });
+    }
+  },
+};
 
 /**
  * Schedules remote deregistration of a mapping's webhook via its provider

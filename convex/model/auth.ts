@@ -11,7 +11,7 @@ import {
   type ResolvedDecision,
 } from "../permissions";
 import { isRoomOwnerAbsent } from "./permissions";
-import { getMembership } from "./users";
+import { getMembership } from "./memberships";
 
 /**
  * Auth identity returned by ctx.auth.getUserIdentity().

@@ -14,8 +14,9 @@ import { type T, seedUser as seedNamedUser } from "./analytics.seeds";
 // The whiteboard retro through its API (convex/retro.ts): what a new retro
 // holds, who sees what on the board in each step, stickies and stacks,
 // votes and the discussion walk, action items, the next retro, columns, and
-// who may do what at the default permissions. The pure rules (totals, the
-// walk's order, GIF links) are in retroRules.test.ts.
+// who may do what at the default permissions. The pure rules are tested on
+// their own: topics and votes in retroTopics.test.ts, steps and the walk in
+// retroSteps.test.ts, GIF links in gifLinks.test.ts.
 
 const modules = import.meta.glob("./**/*.*s");
 
@@ -117,11 +118,16 @@ async function padsIn(t: T, roomId: Id<"rooms">) {
 
 /** The refusal code a call is turned away with, or "resolved" when it goes through. */
 async function refusalOf(call: Promise<unknown>): Promise<string> {
+  return (await refusalWith(call)).code;
+}
+
+/** The refusal a call is turned away with: its code and the message the board shows. */
+async function refusalWith(call: Promise<unknown>): Promise<{ code: string; message?: string }> {
   try {
     await call;
-    return "resolved";
+    return { code: "resolved" };
   } catch (error) {
-    if (error instanceof ConvexError) return (error.data as { code: string }).code;
+    if (error instanceof ConvexError) return error.data as { code: string; message: string };
     throw error;
   }
 }
@@ -450,6 +456,91 @@ describe("stacks", () => {
 
     expect(await votesIn(t, roomId)).toEqual([]);
   });
+
+  it("while writing, only your own stickies come off a stack", async () => {
+    const t = withComponents(convexTest(schema, modules));
+    const { roomId } = await seedRetro(t);
+    const top = await stick(t, "ann", roomId);
+    const under = await stick(t, "ann", roomId);
+    await stack(t, "ann", under, top);
+    const unstack = (who: string) =>
+      as(t, who).mutation(api.retro.unstackSticky, { stickyId: under, position: { x: 300, y: 0 } });
+
+    // Bob can't read Ann's stack yet, so he can't take it apart either.
+    expect(await refusalOf(unstack("bob"))).toBe("stage");
+    expect(await refusalOf(unstack("ann"))).toBe("resolved");
+    expect((await stickyRow(t, under)).stackId).toBeUndefined();
+  });
+
+  it("unstacking leaves the votes with the stack", async () => {
+    const t = withComponents(convexTest(schema, modules));
+    const { roomId } = await seedRetro(t);
+    const top = await stick(t, "ann", roomId);
+    const under = await stick(t, "bob", roomId);
+    await setStep(t, roomId, "vote");
+    await vote(t, "owner", under);
+    await stack(t, "bob", under, top);
+
+    await as(t, "bob").mutation(api.retro.unstackSticky, { stickyId: under, position: { x: 300, y: 0 } });
+
+    expect(await seen(t, "owner", roomId, top)).toMatchObject({ myVote: true });
+    expect(await seen(t, "owner", roomId, under)).toMatchObject({ myVote: false });
+  });
+
+  it("deleting a sticky from a stack keeps the votes it brought to the stack", async () => {
+    const t = withComponents(convexTest(schema, modules));
+    const { roomId } = await seedRetro(t);
+    const top = await stick(t, "bob", roomId);
+    const under = await stick(t, "ann", roomId);
+    await setStep(t, roomId, "vote");
+    await vote(t, "bob", under);
+    await vote(t, "owner", under);
+    await stack(t, "ann", under, top);
+
+    await as(t, "ann").mutation(api.retro.deleteSticky, { stickyId: under });
+
+    await setStep(t, roomId, "discuss");
+    expect(await seen(t, "bob", roomId, top)).toMatchObject({ votes: 2, myVote: true });
+  });
+});
+
+describe("stacks and votes (ADR-0028)", () => {
+  it("stacking two topics someone voted for keeps one of their votes and gives the other back", async () => {
+    const t = withComponents(convexTest(schema, modules));
+    const { roomId, annId } = await seedRetro(t);
+    const x = await stick(t, "bob", roomId);
+    const y = await stick(t, "bob", roomId);
+    await setStep(t, roomId, "vote");
+    await vote(t, "ann", x);
+    await vote(t, "ann", y);
+    await vote(t, "owner", x);
+
+    await stack(t, "bob", x, y);
+
+    const votes = await votesIn(t, roomId);
+    expect(votes.map((v) => v.stickyId)).toEqual([y, y]);
+    expect(votes.filter((v) => v.voterId === annId)).toHaveLength(1);
+    const board = await as(t, "ann").query(api.retro.board, { roomId });
+    expect(board.myVotes).toBe(1);
+    expect(board.stickies.find((s) => s._id === y)).toMatchObject({ myVote: true });
+
+    // One click takes the one vote back.
+    await vote(t, "ann", y);
+    expect(await seen(t, "ann", roomId, y)).toMatchObject({ myVote: false });
+  });
+
+  it("a stack's votes are filed under its top, whichever sticky was voted for", async () => {
+    const t = withComponents(convexTest(schema, modules));
+    const { roomId } = await seedRetro(t);
+    const top = await stick(t, "ann", roomId);
+    const loose = await stick(t, "bob", roomId);
+    await setStep(t, roomId, "vote");
+    await vote(t, "owner", loose);
+
+    await stack(t, "bob", loose, top);
+
+    expect((await votesIn(t, roomId)).map((v) => v.stickyId)).toEqual([top]);
+  });
 });
 
 describe("votes", () => {
@@ -689,6 +780,23 @@ describe("permissions at the retro defaults", () => {
     expect(await stickiesIn(t, roomId)).toEqual([]);
   });
 
+  it("a refusal to change someone else's sticky says who may, at whatever level the owner set", async () => {
+    const t = withComponents(convexTest(schema, modules));
+    const { roomId, bobId } = await seedRetro(t);
+    const stickyId = await stick(t, "ann", roomId);
+    await as(t, "owner").mutation(api.retro.updatePermissions, {
+      roomId,
+      permissions: { ...DEFAULT_RETRO_PERMISSIONS, cardManagement: "owner" },
+    });
+    await as(t, "owner").mutation(api.roles.promoteFacilitator, { roomId, targetUserId: bobId });
+    await setStep(t, roomId, "vote");
+
+    expect(await refusalWith(as(t, "bob").mutation(api.retro.updateSticky, { stickyId, text: "Bob's" }))).toEqual({
+      code: "forbidden",
+      message: "Only the owner can do this.",
+    });
+  });
+
   it("someone outside the retro can't write on it", async () => {
     const t = withComponents(convexTest(schema, modules));
     const { roomId } = await seedRetro(t);
@@ -918,8 +1026,11 @@ describe("account linking", () => {
 });
 
 describe("account linking — votes", () => {
-  it("drops a guest's votes in a retro where the permanent account already voted, instead of doubling them", async () => {
-    const t = withComponents(convexTest(schema, modules));
+  /**
+   * Ann votes as a guest and as the account she signs in to, in one retro,
+   * then signs in with the budget at `votesPerPerson`.
+   */
+  async function seedTwoVoters(t: T, votesPerPerson: number) {
     const { roomId } = await seedRetro(t);
     const first = await stick(t, "owner", roomId, { text: "First" });
     const second = await stick(t, "owner", roomId, { text: "Second" });
@@ -929,12 +1040,31 @@ describe("account linking — votes", () => {
     await vote(t, "ann", first);
     await vote(t, "ann", second);
     await vote(t, "ann-permanent", first);
-
+    await as(t, "owner").mutation(api.retro.updateSettings, { roomId, votesPerPerson });
     await t.mutation(internal.users.linkAnonymousAccount, {
       oldAuthUserId: "ann",
       newAuthUserId: "ann-permanent",
       email: "ann@example.com",
     });
+    return { roomId, first, second, permanentId };
+  }
+
+  it("folds a guest's votes into the account's: one per topic, the account's own kept", async () => {
+    const t = withComponents(convexTest(schema, modules));
+    const { roomId, first, second, permanentId } = await seedTwoVoters(t, 3);
+
+    const votes = await votesIn(t, roomId);
+    expect(votes.map((v) => [v.stickyId, v.voterId]).sort()).toEqual(
+      [
+        [first, permanentId],
+        [second, permanentId],
+      ].sort()
+    );
+  });
+
+  it("keeps the folded votes within the retro's budget", async () => {
+    const t = withComponents(convexTest(schema, modules));
+    const { roomId, first, permanentId } = await seedTwoVoters(t, 1);
 
     const votes = await votesIn(t, roomId);
     expect(votes).toHaveLength(1);

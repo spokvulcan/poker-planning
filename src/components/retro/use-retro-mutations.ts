@@ -5,7 +5,8 @@ import type { OptimisticLocalStore } from "convex/browser";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { ActionItemView, BoardView, RetroState, StickyView } from "@/convex/model/retro";
-import { heirOf, rootOf, stepFocus, stepOnFocus } from "@/convex/retroRules";
+import { heirOf, rootOf } from "@/convex/retroTopics";
+import { walk } from "@/convex/retroSteps";
 import { topicOrder } from "./build-retro-nodes";
 import { OPTIMISTIC_PREFIX } from "./optimistic";
 
@@ -145,7 +146,7 @@ export function useRetroMutations(roomId: Id<"rooms">) {
     if (!board) return;
     patchRetro(store, (retro) => ({
       ...retro,
-      focusStickyId: stepFocus(topicOrder(board, retro.columns), retro.focusStickyId, args.direction) as
+      focusStickyId: walk(topicOrder(board, retro.columns) as Id<"retroStickies">[], retro.focusStickyId, args.direction) as
         | Id<"retroStickies">
         | undefined,
     }));
@@ -156,7 +157,7 @@ export function useRetroMutations(roomId: Id<"rooms">) {
     if (!sticky) return;
     patchRetro(store, (retro) => ({
       ...retro,
-      step: stepOnFocus(retro.step),
+      step: retro.step === "done" ? "done" : "discuss",
       focusStickyId: rootOf(sticky) as Id<"retroStickies">,
     }));
   });

@@ -12,7 +12,7 @@
  */
 import type { Doc, Id } from "@/convex/_generated/dataModel";
 import type { CanvasNode } from "@/convex/model/canvas";
-import type { RoomUserData } from "@/convex/model/users";
+import type { RoomUserData } from "@/convex/model/memberships";
 import { COUNTDOWN_DURATION_MS } from "@/convex/constants";
 import {
   computeHorizontalLayout,

@@ -2,6 +2,7 @@ import { Presence } from "@convex-dev/presence";
 import { components } from "../_generated/api";
 import { MutationCtx } from "../_generated/server";
 import { Id } from "../_generated/dataModel";
+import type { UserRows } from "./userRows";
 
 /**
  * Presence lives in the @convex-dev/presence component: its own tables, keyed
@@ -33,3 +34,15 @@ export async function removeUserPresence(ctx: MutationCtx, userId: Id<"users">):
     if (rooms.length < USER_PRESENCE_BATCH) return;
   }
 }
+
+/**
+ * Who is online where. A deleted account's presence goes everywhere; a guest
+ * who signs in heartbeats as the account from then on, so the guest's goes too.
+ */
+export const presenceUserRows: UserRows = {
+  fields: ["presence"],
+  forget: removeUserPresence,
+  async fold(ctx, from) {
+    await removeUserPresence(ctx, from);
+  },
+};
