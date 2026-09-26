@@ -143,7 +143,9 @@ export const membershipUserRows: UserRows = {
   },
 
   // In a room both were in, the account keeps its seat, and a guest's facilitator
-  // role with it. An owner role is ownership's to seat (ownershipUserRows.fold).
+  // role with it. The owner role is ownership's to seat: in the rooms the guest
+  // owned (ownershipUserRows.fold), and where the guest's seat brings the
+  // account back into a room it owns (Ownership.memberJoined).
   async fold(ctx, from, into) {
     const memberships = await ctx.db
       .query("roomMemberships")
@@ -151,14 +153,16 @@ export const membershipUserRows: UserRows = {
       .collect();
     for (const guest of memberships) {
       const account = await getMembership(ctx, guest.roomId, into);
-      if (!account) {
+      if (account) {
+        if (getEffectiveRole(guest) === "facilitator" && getEffectiveRole(account) === "participant") {
+          await ctx.db.patch("roomMemberships", account._id, { role: "facilitator" });
+        }
+        await ctx.db.delete("roomMemberships", guest._id);
+      } else {
         await ctx.db.patch("roomMemberships", guest._id, { userId: into });
-        continue;
+        const room = await ctx.db.get("rooms", guest.roomId);
+        if (room) await Ownership.memberJoined(ctx, room, into);
       }
-      if (getEffectiveRole(guest) === "facilitator" && getEffectiveRole(account) === "participant") {
-        await ctx.db.patch("roomMemberships", account._id, { role: "facilitator" });
-      }
-      await ctx.db.delete("roomMemberships", guest._id);
     }
   },
 };

@@ -19,8 +19,9 @@ import type { UserRows } from "./userRows";
  * Webhook *semantics* (what an event does to issues and links) live in the
  * adapter too; this module owns only the shared dedup table. The registered
  * wrappers in integrations.ts (public API) and integrations/jira.ts
- * (internal) delegate here, so every writer of these tables funnels through
- * the same code.
+ * (internal), and account deletion and linking (integrationUserRows, run by
+ * model/accountLifecycle.ts), delegate here, so every writer of these tables
+ * funnels through the same code.
  */
 
 // ---------------------------------------------------------------------------
@@ -326,7 +327,7 @@ export async function disconnectConnection(
   }
 }
 
-/** A person's provider connections. */
+/** A person's provider connections: at most one per provider (saveConnection upserts). */
 async function connectionsOf(ctx: MutationCtx, userId: Id<"users">): Promise<Doc<"integrationConnections">[]> {
   return await ctx.db
     .query("integrationConnections")
