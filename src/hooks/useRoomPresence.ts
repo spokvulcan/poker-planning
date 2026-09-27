@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import usePresence from "@convex-dev/presence/react";
-import type { RoomUserData } from "@/convex/model/users";
+import type { RoomUserData } from "@/convex/model/memberships";
 import { api } from "@/convex/_generated/api";
 import { useDemoSimulation } from "@/components/room/demo/DemoSimulationProvider";
 

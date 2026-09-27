@@ -16,7 +16,7 @@ import type { Edge } from "@xyflow/react";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { CanvasNode } from "@/convex/model/canvas";
 import type { SanitizedVote } from "@/convex/model/rooms";
-import type { RoomUserData } from "@/convex/model/users";
+import type { RoomUserData } from "@/convex/model/memberships";
 import type { ResolvedDecision } from "@/convex/permissions";
 import type { Phase } from "@/convex/phase";
 import { computeVotingCardRow } from "@/convex/canvasLayout";
@@ -44,7 +44,7 @@ export interface CanvasNodeCallbacks {
   onToggleAutoComplete?: () => void;
   onCancelAutoReveal?: () => void;
   onOpenIssuesPanel?: () => void;
-  onUpdateNoteContent?: (nodeId: string, content: string) => Promise<void> | void;
+  onUpdateNoteContent?: (nodeId: string, content: string) => Promise<boolean | void> | void;
   onDeleteNote?: (nodeId: string, hasContent: boolean) => void;
 }
 

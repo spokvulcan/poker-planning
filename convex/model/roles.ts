@@ -1,7 +1,9 @@
 import { MutationCtx } from "../_generated/server";
 import { Id } from "../_generated/dataModel";
-import { RoomPermissions } from "../permissions";
+import { ceremonyOf, NOT_THIS_CEREMONY } from "../ceremony";
+import { isRetroPermissions, type RetroPermissions, type RoomPermissions } from "../permissions";
 import { requireCan } from "./auth";
+import * as Ownership from "./ownership";
 import * as Rooms from "./rooms";
 
 /**
@@ -50,7 +52,7 @@ export async function transferOwnership(
   ctx: MutationCtx,
   args: { roomId: Id<"rooms">; targetUserId: Id<"users"> }
 ): Promise<void> {
-  const { user, membership: actorMembership, room, target } = await requireCan(
+  const { user, room } = await requireCan(
     ctx,
     args.roomId,
     { kind: "relationship", verb: "transfer" },
@@ -66,27 +68,20 @@ export async function transferOwnership(
     throw new Error("Cannot transfer ownership to yourself");
   }
 
-  // Swap roles: old owner → participant, new owner → owner
-  await ctx.db.patch("roomMemberships", actorMembership._id, { role: "participant" });
-  await ctx.db.patch("roomMemberships", target!._id, { role: "owner" });
-
-  await Rooms.setRoomOwner(ctx, room, args.targetUserId);
+  await Ownership.transferOwnership(ctx, room, args.targetUserId);
   await Rooms.updateRoomActivity(ctx, args.roomId);
 }
 
 /**
- * Updates room permission settings.
- * Caller must be owner.
+ * Sets who may do what in a room: the poker room's categories or the retro's,
+ * whichever the room's ceremony has. Owner only.
  */
 export async function updatePermissions(
   ctx: MutationCtx,
-  args: { roomId: Id<"rooms">; permissions: RoomPermissions }
+  args: { roomId: Id<"rooms">; permissions: RoomPermissions | RetroPermissions }
 ): Promise<void> {
-  await requireCan(ctx, args.roomId, {
-    kind: "relationship",
-    verb: "changePerms",
-  });
-
-  await ctx.db.patch("rooms", args.roomId, { permissions: args.permissions });
-  await Rooms.updateRoomActivity(ctx, args.roomId);
+  const { room } = await requireCan(ctx, args.roomId, { kind: "relationship", verb: "changePerms" });
+  if (isRetroPermissions(args.permissions) !== (ceremonyOf(room) === "retro")) throw new Error(NOT_THIS_CEREMONY);
+  await ctx.db.patch("rooms", room._id, { permissions: args.permissions });
+  await Rooms.updateRoomActivity(ctx, room);
 }

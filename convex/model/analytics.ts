@@ -1,6 +1,8 @@
 import { QueryCtx, MutationCtx } from "../_generated/server";
 import { Doc, Id } from "../_generated/dataModel";
 import * as AnalyticsMath from "../analyticsMath";
+import { rulesOf } from "../ceremony";
+import type { UserRows } from "./userRows";
 
 // The response shapes are owned by the pure projection module; re-exported
 // here so existing imports from this module keep working.
@@ -96,7 +98,7 @@ export async function getUserMemberships(
   const results = await Promise.all(
     memberships.map(async (membership) => {
       const room = await ctx.db.get("rooms", membership.roomId);
-      if (!room || room.roomType === "retro") return null;
+      if (!room || !rulesOf(room).inAnalytics) return null;
       return { membership, room };
     })
   );
@@ -306,6 +308,42 @@ export async function invalidateRoomAnalyticsSnapshots(
     })
   );
 }
+
+/**
+ * The per-voter history (individual vote snapshots) and the room snapshots
+ * built from it. Either change rewrites a room's history, so the rooms'
+ * snapshots are invalidated directly: an account going or folding is not
+ * room activity, so the clock the snapshots' freshness reads doesn't move.
+ */
+export const analyticsUserRows: UserRows = {
+  fields: ["individualVotes.userId", "roomAnalyticsSnapshots.history"],
+
+  async forget(ctx, userId) {
+    const rows = await ctx.db
+      .query("individualVotes")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .collect();
+    await Promise.all(rows.map((row) => ctx.db.delete("individualVotes", row._id)));
+    await invalidateRoomAnalyticsSnapshots(ctx, rows.map((row) => row.roomId));
+  },
+
+  // Where both have a snapshot for the same issue, the account's is kept.
+  async fold(ctx, from, into) {
+    const rows = await ctx.db
+      .query("individualVotes")
+      .withIndex("by_user", (q) => q.eq("userId", from))
+      .collect();
+    for (const row of rows) {
+      const own = await ctx.db
+        .query("individualVotes")
+        .withIndex("by_room_user_issue", (q) => q.eq("roomId", row.roomId).eq("userId", into).eq("issueId", row.issueId))
+        .first();
+      if (own) await ctx.db.delete("individualVotes", row._id);
+      else await ctx.db.patch("individualVotes", row._id, { userId: into });
+    }
+    await invalidateRoomAnalyticsSnapshots(ctx, rows.map((row) => row.roomId));
+  },
+};
 
 /** Flattens the aggregate into issue entries carrying their room context. */
 function flattenIssues(history: RoomHistory[]): AnalyticsMath.RoomIssue[] {

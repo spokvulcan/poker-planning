@@ -11,7 +11,8 @@ import {
   type ResolvedDecision,
 } from "../permissions";
 import { isRoomOwnerAbsent } from "./permissions";
-import { getMembership } from "./users";
+import { getMembership } from "./memberships";
+import { NOT_THIS_CEREMONY } from "../ceremony";
 
 /**
  * Auth identity returned by ctx.auth.getUserIdentity().
@@ -290,7 +291,7 @@ export async function resolveRoomAction(
     // A category from the other ceremony has no level here (ADR-0013).
     const level = categoryLevel(effective, spec.category);
     if (level === undefined) {
-      throw new Error("This action does not apply to this room type.");
+      throw new Error(NOT_THIS_CEREMONY);
     }
     action = { kind: "category", category: spec.category, level };
   } else {

@@ -286,6 +286,18 @@ async function seedRetroRows(
   });
 }
 
+describe("the room inventory", () => {
+  it("lists every table keyed by a room, so a new one can't outlive its room", () => {
+    const keyedByRoom = Object.entries(schema.tables)
+      .filter(([, table]) => "roomId" in (table as unknown as { validator: { fields: object } }).validator.fields)
+      .map(([name]) => name)
+      // Owned through its issue: the cascade expands it from the room's issues.
+      .filter((name) => name !== "issueLinks");
+
+    expect([...ROOM_OWNED_TABLES].sort()).toEqual(keyedByRoom.sort());
+  });
+});
+
 describe("deleteRoomAggregateChunk (registered continuation)", () => {
   it("deletes the room and one row in every room-owned table through the continuation loop", async () => {
     const t = withComponents(convexTest(schema, modules));
@@ -508,13 +520,10 @@ describe("removeInactiveRooms", () => {
     );
 
     // Only a canvas node move — no votes, no issues — keeps the room alive.
-    await t.run((ctx) =>
-      Canvas.updateNodePosition(ctx, {
-        roomId,
-        nodeId: "session-current",
-        position: { x: 10, y: 20 },
-        userId,
-      })
+    await t.run(async (ctx) =>
+      Canvas.moveNodes(ctx, (await ctx.db.get("rooms", roomId))!, [
+        { nodeId: "session-current", position: { x: 10, y: 20 } },
+      ], userId)
     );
 
     const result = await t.mutation(internal.cleanup.removeInactiveRooms, {});

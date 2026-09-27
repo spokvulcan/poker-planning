@@ -5,10 +5,13 @@ import * as Rooms from "./rooms";
 import * as Canvas from "./canvas";
 import * as Votes from "./votes";
 import * as Analytics from "./analytics";
+import { getMembership } from "./memberships";
 import { cardNumericValue, computeVoterAlignment } from "./alignment";
 import { summarize, VoteStatsSummary } from "../summarize";
 import { DEFAULT_SCALE, VotingScale } from "../scales";
 import { COUNTDOWN_DURATION_MS } from "../constants";
+import { NOT_THIS_CEREMONY, rulesOf } from "../ceremony";
+import type { UserRows } from "./userRows";
 
 /**
  * VotingRound — the module that owns the round's lifecycle (ADR-0002).
@@ -117,10 +120,8 @@ export async function reveal(ctx: MutationCtx, roomId: Id<"rooms">): Promise<voi
   await ctx.db.patch("rooms", roomId, { isGameOver: true });
   await Rooms.updateRoomActivity(ctx, roomId);
 
-  // Reveal effect: results node on canvas rooms.
-  if (room.roomType === "canvas") {
-    await Canvas.upsertResultsNode(ctx, { roomId });
-  }
+  // Reveal effect: the canvas shows the results.
+  await Canvas.roundRevealed(ctx, room);
 
   // Issue-coupled settle (only when the target is an issue).
   if (room.currentIssueId) {
@@ -513,6 +514,7 @@ export async function castVote(ctx: MutationCtx, args: CastVoteArgs): Promise<vo
   // flow into vote stats, exports, and auto-pushed Jira estimates.
   const room = await ctx.db.get("rooms", args.roomId);
   if (!room) throw new Error("Room not found");
+  if (!rulesOf(room).votingRounds) throw new Error(NOT_THIS_CEREMONY);
   const scale = room.votingScale ?? DEFAULT_SCALE;
   const scaleCards: readonly string[] = scale.cards;
   if (!scaleCards.includes(args.cardLabel)) {
@@ -619,3 +621,46 @@ export async function autoReveal(
 
   await reveal(ctx, args.roomId);
 }
+
+/**
+ * The round's votes of a person. A deleted account's go once its memberships
+ * have (so each room's round re-checks completion against the smaller roster);
+ * a guest's move to the account they signed in to, one vote per room.
+ */
+export const votingRoundUserRows: UserRows = {
+  fields: ["votes.userId"],
+
+  // Leaving each room dropped the votes there (membershipUserRows); any vote
+  // left is in a room the person no longer sits in.
+  async forget(ctx, userId) {
+    const votes = await ctx.db
+      .query("votes")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .collect();
+    for (const roomId of new Set(votes.map((vote) => vote.roomId))) await dropVoter(ctx, roomId, userId);
+  },
+
+  // Runs after the memberships are folded, so the account's seat in each room
+  // is the one the vote lands on. A guest's vote is dropped where the account
+  // already voted, or sits out as a spectator (spectators are voteless,
+  // ADR-0004). Moving a vote between voters is not a round action, so the
+  // countdown is left alone: a merge that completes a live round arms it on
+  // the next vote or roster change.
+  async fold(ctx, from, into) {
+    const votes = await ctx.db
+      .query("votes")
+      .withIndex("by_user", (q) => q.eq("userId", from))
+      .collect();
+    for (const vote of votes) {
+      const [own, seat] = await Promise.all([
+        ctx.db
+          .query("votes")
+          .withIndex("by_room_user", (q) => q.eq("roomId", vote.roomId).eq("userId", into))
+          .first(),
+        getMembership(ctx, vote.roomId, into),
+      ]);
+      if (own || seat?.isSpectator) await ctx.db.delete("votes", vote._id);
+      else await ctx.db.patch("votes", vote._id, { userId: into });
+    }
+  },
+};

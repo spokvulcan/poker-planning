@@ -4,12 +4,14 @@ import { memo, useEffect, useRef, useState, type ReactElement, type KeyboardEven
 import type { NodeProps } from "@xyflow/react";
 import { ArrowUpRight, Check, EyeOff, ImagePlus, Layers, Pencil, Target, Trash2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useLiveText } from "@/hooks/use-live-text";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { MAX_STICKY_TEXT_LENGTH } from "@/convex/retroTemplates";
 import type { Gif, StickyView } from "@/convex/model/retro";
 import type { StickyColor } from "@/convex/retroTemplates";
 import { FACE_DOWN_HEIGHT, STICKY_WIDTH, STICKY_MIN_HEIGHT } from "@/convex/retroLayout";
+import { useIsDropTarget } from "@/components/whiteboard/whiteboard";
 import { GifPicker } from "../gif-picker";
 import { STICKY_TONES, type StickyTone } from "../sticky-colors";
 import type { StickyFlowNode } from "../types";
@@ -43,24 +45,29 @@ function GifImage({ gif, className }: { gif: Gif; className?: string }) {
   );
 }
 
-/** The editor a sticky turns into while someone writes on it. */
+/**
+ * The editor a sticky turns into while someone writes on it. Until they
+ * type, it follows the sticky: an edit someone else saves meanwhile comes in
+ * rather than being overwritten when this one commits.
+ */
 function StickyEditor({
-  initialText,
+  text: savedText,
   initialGif,
   tone,
   onCommit,
   onCancel,
 }: {
-  initialText: string;
+  /** The sticky's saved words (empty for a new sticky). */
+  text: string;
   initialGif?: Gif;
   tone: StickyTone;
   onCommit: (text: string, gif: Gif | undefined) => void;
   onCancel: () => void;
 }) {
-  const [text, setText] = useState(initialText);
+  const [live, textRef] = useLiveText<HTMLTextAreaElement>({ value: savedText });
+  const text = live.value;
   const [gif, setGif] = useState<Gif | undefined>(initialGif);
   const [pickerOpen, setPickerOpen] = useState(false);
-  const textRef = useRef<HTMLTextAreaElement>(null);
   const done = useRef(false);
 
   // The node is drawn from its first frame (it has an initial size), so the
@@ -70,7 +77,7 @@ function StickyEditor({
     if (!el) return;
     el.focus({ preventScroll: true });
     el.setSelectionRange(el.value.length, el.value.length);
-  }, []);
+  }, [textRef]);
 
   const commit = () => {
     if (done.current) return;
@@ -122,7 +129,7 @@ function StickyEditor({
         ref={textRef}
         value={text}
         maxLength={MAX_STICKY_TEXT_LENGTH}
-        onChange={(e) => setText(e.target.value)}
+        onChange={(e) => live.setValue(e.target.value)}
         onKeyDown={onKeyDown}
         rows={3}
         placeholder={gif ? "Add a caption, or just press Enter" : "What's on your mind?"}
@@ -281,7 +288,7 @@ function StackMember({
  * stack them; vote with a dot while the retro is in Vote; in Discuss the
  * topic under discussion lifts into the spotlight.
  */
-export const StickyNode = memo(({ data, selected, dragging }: NodeProps<StickyFlowNode>): ReactElement => {
+export const StickyNode = memo(({ id, data, selected, dragging }: NodeProps<StickyFlowNode>): ReactElement => {
   const {
     sticky,
     draft,
@@ -292,15 +299,16 @@ export const StickyNode = memo(({ data, selected, dragging }: NodeProps<StickyFl
     members,
     columnColors,
     expanded,
+    canVote,
     votesLeft,
     rank,
     focused,
     discussed,
     dimmed,
-    dropTarget,
     canFocus,
     actions,
   } = data;
+  const dropTarget = useIsDropTarget(id);
   const tone = STICKY_TONES[color];
   const hidden = sticky?.hidden ?? false;
 
@@ -319,7 +327,7 @@ export const StickyNode = memo(({ data, selected, dragging }: NodeProps<StickyFl
   }, [hidden]);
 
   // Only a topic (a loose sticky or a stack's top) is a node of its own.
-  const showFocus = canFocus && !!sticky && !hidden && !focused && step !== "write";
+  const showFocus = canFocus && !!sticky && !hidden && !focused;
   const stackDepth = Math.min(members.length, 2);
   const inEditor = editing || !!draft;
   // Face-down, it is one size whatever it holds, or its size would tell.
@@ -345,7 +353,7 @@ export const StickyNode = memo(({ data, selected, dragging }: NodeProps<StickyFl
     >
       {inEditor ? (
         <StickyEditor
-          initialText={sticky?.text ?? ""}
+          text={sticky?.text ?? ""}
           initialGif={sticky?.gif}
           tone={tone}
           onCommit={(text, gif) =>
@@ -372,7 +380,7 @@ export const StickyNode = memo(({ data, selected, dragging }: NodeProps<StickyFl
                   member={member}
                   tone={tone}
                   otherColor={columnColors[member.columnId] !== color ? columnColors[member.columnId] : undefined}
-                  canUnstack={step !== "write"}
+                  canUnstack={member.canUnstack}
                   onUnstack={() => actions.unstack(member._id)}
                 />
               ))}
@@ -410,7 +418,7 @@ export const StickyNode = memo(({ data, selected, dragging }: NodeProps<StickyFl
             </button>
           )}
           <span className="ml-auto" />
-          {step === "vote" && (
+          {canVote && (
             <VoteButton
               voted={!!sticky.myVote}
               disabled={!sticky.myVote && votesLeft <= 0}

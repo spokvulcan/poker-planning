@@ -1,34 +1,23 @@
 "use client";
 
-import {
-  ReactFlow,
-  ReactFlowProvider,
-  useNodesInitialized,
-  useNodesState,
-  useReactFlow,
-  type NodeChange,
-  type NodeTypes,
-  type OnNodeDrag,
-} from "@xyflow/react";
-import "@xyflow/react/dist/style.css";
-import { useEffect, useMemo, useRef, useState, type ReactElement, type MouseEvent } from "react";
+import { useReactFlow, useStore, type NodeTypes, type ReactFlowState, type XYPosition } from "@xyflow/react";
+import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
+import { isEqual } from "lodash";
 import { useRouter } from "next/navigation";
 import { useQuery } from "convex/react";
-import { isEqual } from "lodash";
 import { ClipboardCopy, Download } from "lucide-react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { RoomWithRelatedData } from "@/convex/model/rooms";
 import type { RetroStep } from "@/convex/retroTemplates";
+import { stickyActAllowed } from "@/convex/retroSteps";
 import { nextStickyPosition, PAD_WIDTH, padNodeId, STICKY_MIN_HEIGHT, STICKY_WIDTH } from "@/convex/retroLayout";
-import { CanvasDotsBackground } from "@/components/canvas-dots-background";
 import { CanvasNavigation } from "@/components/room/canvas-navigation";
-import { RoomPresenceProvider } from "@/components/room/room-presence";
 import { TimerNode } from "@/components/room/nodes/TimerNode";
 import { usePanelState } from "@/components/room/hooks/usePanelState";
+import { Whiteboard, WhiteboardProviders, centerOn, type WhiteboardDrop } from "@/components/whiteboard/whiteboard";
 import { useRetroPermissions } from "@/hooks/usePermissions";
 import { useStableActions } from "@/hooks/useStableActions";
-import { useIsMobile } from "@/hooks/use-mobile";
 import { toast } from "@/lib/toast";
 import { runAct } from "@/lib/run-act";
 import { copyTextToClipboard } from "@/utils/copy-text-to-clipboard";
@@ -38,14 +27,15 @@ import { PadNode } from "./nodes/pad-node";
 import { StickyNode } from "./nodes/sticky-node";
 import { ActionsNode } from "./nodes/actions-node";
 import { RetroSettingsPanel } from "./retro-settings-panel";
-import { buildRetroEdges, buildRetroNodes, topicOrder } from "./build-retro-nodes";
+import { buildRetroEdges, buildRetroNodes } from "./build-retro-nodes";
+import { topicOrder } from "./board-view";
 import { buildRetroSummary } from "./retro-summary";
+import { freshHeights, type MeasuredSticky } from "./sticky-heights";
 import { useRetroMutations } from "./use-retro-mutations";
 import { isOptimistic } from "./optimistic";
 import type { RetroBoardActions, RetroFlowNode, StickyFlowNode } from "./types";
 
-// Outside the component so React Flow sees stable objects: it re-applies
-// any prop whose identity changes, on every render.
+// Outside the component so React Flow sees a stable object.
 const nodeTypes: NodeTypes = {
   retro: RetroNode,
   pad: PadNode,
@@ -53,13 +43,9 @@ const nodeTypes: NodeTypes = {
   actions: ActionsNode,
   timer: TimerNode,
 };
-const PRO_OPTIONS = { hideAttribution: true };
-const DEFAULT_VIEWPORT = { x: 0, y: 0, zoom: 0.8 };
-const SNAP_GRID: [number, number] = [10, 10];
-const DELETE_KEYS = ["Backspace", "Delete"];
-const PAN_BUTTONS = [1, 2];
 
 const FAILED = "That didn't go through. Try again.";
+const MOVE_FAILED = "That move didn't save.";
 
 interface RetroCanvasProps {
   roomData: RoomWithRelatedData;
@@ -72,37 +58,42 @@ type Draft = {
   position: { x: number; y: number };
 };
 
-/**
- * Copies the derived nodes into React Flow's buffer. A node that hasn't
- * changed keeps its object, so React Flow skips it and its memo holds; a
- * changed one keeps what React Flow owns locally (selection, measurements,
- * and its position while it's being dragged).
- */
-function mergeNodes(previous: RetroFlowNode[], derived: RetroFlowNode[]): RetroFlowNode[] {
-  const byId = new Map(previous.map((n) => [n.id, n]));
-  return derived.map((node) => {
-    const local = byId.get(node.id);
-    if (!local) return node;
-    const samePlace = local.dragging || (local.position.x === node.position.x && local.position.y === node.position.y);
-    const same =
-      samePlace &&
-      local.type === node.type &&
-      local.draggable === node.draggable &&
-      local.zIndex === node.zIndex &&
-      isEqual(local.data, node.data);
-    if (same) return local;
-    return {
-      ...node,
-      selected: local.selected,
-      ...(local.measured ? { measured: local.measured } : {}),
-      ...(local.dragging ? { position: local.position, dragging: true } : {}),
-    } as RetroFlowNode;
+/** The viewer's stickies as React Flow measured them. */
+function measuredStickies(state: ReactFlowState): MeasuredSticky[] {
+  return (state.nodes as RetroFlowNode[]).flatMap((node) => {
+    if (node.type !== "sticky" || !node.data.sticky?.mine || isOptimistic(node.data.sticky._id)) return [];
+    const open = Boolean(node.data.editing || node.data.expanded);
+    return [{ stickyId: node.data.sticky._id, height: Math.round(node.measured?.height ?? 0), open }];
   });
 }
 
+/**
+ * While writing, a sticky is face-up only in its author's browser, so that
+ * browser records how tall each of its own is drawn, for the reveal to move
+ * stickies clear of the ones that turn out taller (ADR-0027).
+ */
+function StickyHeights({ onHeights }: { onHeights: (heights: { stickyId: Id<"retroStickies">; height: number }[]) => void }) {
+  // Compared by value, so it changes only when a measurement does.
+  const measured = useStore(measuredStickies, isEqual);
+  const seen = useRef(new Map<string, number>());
+  const sent = useRef(new Map<string, number>());
+  useEffect(() => {
+    if (measured.length === 0) return;
+    const heights = freshHeights(measured, seen.current, sent.current);
+    if (heights.length > 0) onHeights(heights);
+  }, [measured, onHeights]);
+  return null;
+}
+
+/**
+ * The retro's adapter onto the whiteboard: its nodes, and what its gestures
+ * mean. A sticky dropped on another stacks, any other drop is a move, Delete
+ * takes off the stickies the viewer may remove, and a double-click writes a
+ * sticky where it lands. During the discussion the board follows the
+ * spotlight.
+ */
 function RetroCanvasInner({ roomData, currentUserId }: RetroCanvasProps): ReactElement {
   const router = useRouter();
-  const isMobile = useIsMobile();
   const { room } = roomData;
   const roomId = room._id;
   const retro = room.retro!;
@@ -119,7 +110,6 @@ function RetroCanvasInner({ roomData, currentUserId }: RetroCanvasProps): ReactE
   const [draft, setDraft] = useState<Draft | null>(null);
   const [editingId, setEditingId] = useState<Id<"retroStickies"> | null>(null);
   const [expandedIds, setExpandedIds] = useState<ReadonlySet<string>>(new Set());
-  const [dropTargetId, setDropTargetId] = useState<string | null>(null);
   const { isSettingsOpen, openSettings, closeAll } = usePanelState();
 
   // The tab is titled by the retro (the route's metadata can only say "room").
@@ -229,14 +219,7 @@ function RetroCanvasInner({ roomData, currentUserId }: RetroCanvasProps): ReactE
     focusTopic: (stickyId) => void runAct(m.focusTopic({ roomId, stickyId }), FAILED),
     panToTopic: (stickyId) => {
       const sticky = stickyOf(stickyId);
-      const node = sticky && flow.getNode(sticky.clientId);
-      if (!node) return;
-      void flow.setCenter(
-        node.position.x + (node.measured?.width ?? STICKY_WIDTH) / 2,
-        node.position.y + (node.measured?.height ?? STICKY_MIN_HEIGHT) / 2,
-        // Keep the viewer's zoom unless it's too far out to read a sticky.
-        { zoom: Math.max(flow.getZoom(), 0.7), duration: 500 }
-      );
+      if (sticky) centerOn(flow, sticky.clientId);
     },
     setStep: (step: RetroStep) => void runAct(m.setStep({ roomId, step }), FAILED),
     stepDiscussion: (direction) => void runAct(m.stepDiscussion({ roomId, direction }), FAILED),
@@ -249,96 +232,58 @@ function RetroCanvasInner({ roomData, currentUserId }: RetroCanvasProps): ReactE
       }
     },
     copySummary: () => void copySummary(),
-    renameColumn: (columnId, title) => void runAct(m.updateColumn({ roomId, columnId, title }), FAILED),
+    renameColumn: (columnId, title) => runAct(m.updateColumn({ roomId, columnId, title }), FAILED),
     addActionItem: (text) => void runAct(m.addActionItem({ roomId, text }), "That action item didn't save."),
     // A pending item offers nothing to click (see ActionRow), so these only see saved ones.
     updateActionItem: (itemId, patch) => void runAct(m.updateActionItem({ itemId, ...patch }), FAILED),
     deleteActionItem: (itemId) => void runAct(m.deleteActionItem({ itemId }), FAILED),
   });
 
-  /** Which sticky a dragged sticky would stack onto: the one under its centre. */
-  const stackTargetFor = (node: RetroFlowNode): StickyFlowNode | undefined => {
-    if (node.type !== "sticky" || !node.data.sticky) return undefined;
-    const dragged = node.data.sticky;
-    const cx = node.position.x + (node.measured?.width ?? STICKY_WIDTH) / 2;
-    const cy = node.position.y + (node.measured?.height ?? STICKY_MIN_HEIGHT) / 2;
-    return flow
-      .getIntersectingNodes(node)
-      .filter((n): n is StickyFlowNode => n.type === "sticky" && n.id !== node.id && !!n.data.sticky)
-      .find((n) => {
-        const target = n.data.sticky!;
-        if (isOptimistic(target._id)) return false;
-        if (retro.step === "write" && !(dragged.mine && target.mine)) return false;
-        const w = n.measured?.width ?? STICKY_WIDTH;
-        const h = n.measured?.height ?? STICKY_MIN_HEIGHT;
-        return cx >= n.position.x && cx <= n.position.x + w && cy >= n.position.y && cy <= n.position.y + h;
-      });
-  };
-
-  const [nodes, setNodes, applyNodeChanges] = useNodesState<RetroFlowNode>([]);
-
-  const onNodesChange = (changes: NodeChange<RetroFlowNode>[]) => {
-    const kept = changes.filter((change) => {
-      if (change.type !== "remove") return true;
-      // Delete/Backspace on a selection: only stickies the viewer may remove.
-      const node = flow.getNode(change.id);
-      if (node?.type === "sticky" && node.data.sticky && node.data.canEdit) {
-        actions.deleteSticky(node.data.sticky._id);
+  // What the board's gestures mean here, frozen like the node actions.
+  const gestures = useStableActions({
+    // A sticky dropped on a sticky it may join stacks with it.
+    canDropOn: (dragged: RetroFlowNode, target: RetroFlowNode) =>
+      dragged.type === "sticky" &&
+      target.type === "sticky" &&
+      !!dragged.data.sticky &&
+      !!target.data.sticky &&
+      !isOptimistic(target.data.sticky._id) &&
+      stickyActAllowed(retro.step, "stack", dragged.data.sticky.mine && target.data.sticky.mine).allowed,
+    onDrop: ({ nodes, target }: WhiteboardDrop<RetroFlowNode>) => {
+      const [only] = nodes;
+      if (target?.type === "sticky" && target.data.sticky && only?.type === "sticky" && only.data.sticky) {
+        void runAct(
+          m.stackSticky({ stickyId: only.data.sticky._id, ontoId: target.data.sticky._id }),
+          "Those didn't stack. Try again."
+        );
+        return;
       }
-      return false;
-    });
-    applyNodeChanges(kept);
-  };
-
-  const onNodeDrag: OnNodeDrag<RetroFlowNode> = (_event, node, dragged) => {
-    const target = dragged.length === 1 ? stackTargetFor(node) : undefined;
-    setDropTargetId(target?.id ?? null);
-  };
-
-  const onNodeDragStop: OnNodeDrag<RetroFlowNode> = (_event, node, dragged) => {
-    setDropTargetId(null);
-    const target = dragged.length === 1 ? stackTargetFor(node) : undefined;
-    if (target && node.type === "sticky" && node.data.sticky) {
-      void runAct(
-        m.stackSticky({ stickyId: node.data.sticky._id, ontoId: target.data.sticky!._id }),
-        "Those didn't stack. Try again."
+      const stickyMoves = nodes.flatMap((node) =>
+        node.type === "sticky" && node.data.sticky && !isOptimistic(node.data.sticky._id)
+          ? [{ stickyId: node.data.sticky._id, position: node.position }]
+          : []
       );
-      return;
-    }
-    const moves = dragged
-      .filter((n): n is StickyFlowNode => n.type === "sticky" && !!n.data.sticky && !isOptimistic(n.data.sticky._id))
-      .map((n) => ({ stickyId: n.data.sticky!._id, position: n.position }));
-    if (moves.length > 0) void runAct(m.moveStickies({ roomId, moves }), "That move didn't save.");
-    for (const n of dragged) {
-      if (n.type === "sticky") continue;
-      void runAct(
-        m.updateNodePosition({ roomId, nodeId: n.id, position: n.position, userId: currentUserId }),
-        "That move didn't save."
+      if (stickyMoves.length > 0) void runAct(m.moveStickies({ roomId, moves: stickyMoves }), MOVE_FAILED);
+      const nodeMoves = nodes.flatMap((node) => (node.type === "sticky" ? [] : [{ nodeId: node.id, position: node.position }]));
+      if (nodeMoves.length > 0) {
+        void runAct(m.moveNodes({ roomId, moves: nodeMoves, userId: currentUserId }), MOVE_FAILED);
+      }
+    },
+    // Delete on a selection takes off only the stickies the viewer may remove.
+    onDeleteNodes: (nodes: RetroFlowNode[]) => {
+      for (const node of nodes) {
+        if (node.type === "sticky" && node.data.sticky && node.data.canEdit) actions.deleteSticky(node.data.sticky._id);
+      }
+    },
+    // Double-click anywhere: a sticky right there, in the column whose pad is nearest.
+    onPaneDoubleClick: (at: XYPosition) => {
+      const pads = flow.getNodes().filter((n) => n.type === "pad");
+      if (pads.length === 0) return;
+      const nearest = pads.reduce((best, pad) =>
+        Math.abs(pad.position.x + PAD_WIDTH / 2 - at.x) < Math.abs(best.position.x + PAD_WIDTH / 2 - at.x) ? pad : best
       );
-    }
-  };
-
-  // Double-click anywhere on the board: a sticky right there, in the
-  // column whose pad is nearest.
-  const onPaneClick = (event: MouseEvent) => {
-    if (event.detail !== 2) return;
-    const at = flow.screenToFlowPosition({ x: event.clientX, y: event.clientY });
-    const pads = flow.getNodes().filter((n) => n.type === "pad");
-    if (pads.length === 0) return;
-    const nearest = pads.reduce((best, pad) =>
-      Math.abs(pad.position.x + PAD_WIDTH / 2 - at.x) < Math.abs(best.position.x + PAD_WIDTH / 2 - at.x) ? pad : best
-    );
-    const columnId = nearest.type === "pad" ? nearest.data.column.id : undefined;
-    if (columnId) actions.startDraft(columnId, { x: at.x - STICKY_WIDTH / 2, y: at.y - 24 });
-  };
-
-  // The canvas's own handlers, frozen too, so React Flow and the chrome
-  // never see a new prop on a re-render.
-  const handlers = useStableActions({
-    onNodesChange,
-    onNodeDrag,
-    onNodeDragStop,
-    onPaneClick,
+      if (nearest.type === "pad") actions.startDraft(nearest.data.column.id, { x: at.x - STICKY_WIDTH / 2, y: at.y - 24 });
+    },
     setSettingsOpen: (open: boolean) => (open ? openSettings() : closeAll()),
     downloadSummary: () => {
       const current = summary();
@@ -350,133 +295,88 @@ function RetroCanvasInner({ roomData, currentUserId }: RetroCanvasProps): ReactE
         .catch((error) => console.error("Failed to record sticky heights:", error)),
   });
 
-  const derivedNodes = useMemo(
+  // Nothing until the board and its fixed nodes have both arrived, so the
+  // first fit takes in the whole board.
+  const nodes = useMemo(
     () =>
-      buildRetroNodes({
-        roomId,
-        viewerId: currentUserId,
-        name: room.name,
-        retro,
-        perms,
-        board,
-        votesCast: votesCast ?? 0,
-        items,
-        canvasNodes,
-        members: roomData.users,
-        draft,
-        editingId,
-        expandedIds,
-        dropTargetId,
-        actions,
-      }),
-    [roomId, currentUserId, room.name, retro, perms, board, votesCast, items, canvasNodes, roomData.users, draft, editingId, expandedIds, dropTargetId, actions]
+      board && canvasNodes
+        ? buildRetroNodes({
+            roomId,
+            viewerId: currentUserId,
+            name: room.name,
+            retro,
+            perms,
+            board,
+            votesCast: votesCast ?? 0,
+            items,
+            canvasNodes,
+            members: roomData.users,
+            draft,
+            editingId,
+            expandedIds,
+            actions,
+          })
+        : [],
+    [roomId, currentUserId, room.name, retro, perms, board, votesCast, items, canvasNodes, roomData.users, draft, editingId, expandedIds, actions]
   );
   const edges = useMemo(
     () => buildRetroEdges(retro.columns, !!canvasNodes?.some((n) => n.nodeId === "timer")),
     [retro.columns, canvasNodes]
   );
 
-  useEffect(() => {
-    setNodes((previous) => mergeNodes(previous, derivedNodes));
-  }, [derivedNodes, setNodes]);
-
-  // While writing, a sticky is face-up only in its author's browser, so that
-  // browser records how tall each of its own is drawn, for the reveal to move
-  // stickies clear of the ones that turn out taller (ADR-0027). Only a fresh
-  // measurement counts: right after an edit or an open stack closes, the one
-  // React Flow holds is still the editor's or the stack's.
-  const heightsSeen = useRef(new Map<string, number>());
-  const heightsSent = useRef(new Map<string, number>());
-  useEffect(() => {
-    const heights: { stickyId: Id<"retroStickies">; height: number }[] = [];
-    for (const node of nodes) {
-      if (node.type !== "sticky" || !node.data.sticky?.mine) continue;
-      const stickyId = node.data.sticky._id;
-      const height = Math.round(node.measured?.height ?? 0);
-      if (!height || isOptimistic(stickyId) || heightsSeen.current.get(stickyId) === height) continue;
-      heightsSeen.current.set(stickyId, height);
-      if (node.data.editing || node.data.expanded || heightsSent.current.get(stickyId) === height) continue;
-      heightsSent.current.set(stickyId, height);
-      heights.push({ stickyId, height });
-    }
-    if (heights.length > 0) handlers.measureStickies(heights);
-  }, [nodes, handlers]);
-
-  // Fit the board once, when it first has its nodes measured.
-  const initialized = useNodesInitialized();
-  const fitted = useRef(false);
-  useEffect(() => {
-    if (!initialized || fitted.current || !board || !canvasNodes) return;
-    fitted.current = true;
-    void flow.fitView({ padding: 0.12, maxZoom: 1, duration: 0 });
-  }, [initialized, board, canvasNodes, flow]);
-
   // The spotlight: when the discussion moves, everyone's view follows it.
-  const focusId = retro.step === "discuss" ? retro.focusStickyId : undefined;
-  useEffect(() => {
-    if (!focusId || !fitted.current) return;
-    actions.panToTopic(focusId);
-  }, [focusId, actions]);
+  const spotlit = retro.step === "discuss" && retro.focusStickyId ? stickyOf(retro.focusStickyId)?.clientId : undefined;
 
   const shareActions = useMemo(
     () => [
       { label: "Copy summary", icon: ClipboardCopy, onSelect: actions.copySummary },
-      { label: "Download Markdown", icon: Download, onSelect: handlers.downloadSummary },
+      { label: "Download Markdown", icon: Download, onSelect: gestures.downloadSummary },
     ],
-    [actions, handlers]
+    [actions, gestures]
   );
 
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-white dark:bg-surface-1" data-testid="retro-board" data-step={retro.step}>
-      <div className="relative h-full min-w-0 flex-1">
+    <Whiteboard
+      nodes={nodes}
+      edges={edges}
+      nodeTypes={nodeTypes}
+      onDrop={gestures.onDrop}
+      canDropOn={gestures.canDropOn}
+      onDeleteNodes={gestures.onDeleteNodes}
+      onPaneDoubleClick={gestures.onPaneDoubleClick}
+      followNodeId={spotlit}
+      className="bg-white dark:bg-surface-1"
+      testId="retro-board"
+      navigation={
         <CanvasNavigation
           roomData={roomData}
           isSettingsOpen={isSettingsOpen}
-          onSettingsPanelChange={handlers.setSettingsOpen}
+          onSettingsPanelChange={gestures.setSettingsOpen}
           shareActions={shareActions}
         />
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          nodeTypes={nodeTypes}
-          onNodesChange={handlers.onNodesChange}
-          onNodeDrag={handlers.onNodeDrag}
-          onNodeDragStop={handlers.onNodeDragStop}
-          onPaneClick={handlers.onPaneClick}
-          proOptions={PRO_OPTIONS}
-          minZoom={0.1}
-          maxZoom={2.5}
-          defaultViewport={DEFAULT_VIEWPORT}
-          nodesConnectable={false}
-          edgesFocusable={false}
-          zoomOnDoubleClick={false}
-          snapToGrid
-          snapGrid={SNAP_GRID}
-          panOnScroll
-          selectionOnDrag={!isMobile}
-          panOnDrag={isMobile ? true : PAN_BUTTONS}
-          preventScrolling={false}
-          deleteKeyCode={DELETE_KEYS}
-          onlyRenderVisibleElements={false}
-        >
-          <CanvasDotsBackground />
-        </ReactFlow>
-        {board && board.stickies.length === 0 && !draft && retro.step === "write" && (
-          <div className="pointer-events-none absolute inset-x-0 bottom-6 flex justify-center px-4">
-            <p className="rounded-full bg-white/95 px-4 py-2 text-sm text-gray-600 shadow-lg ring-1 ring-foreground/10 backdrop-blur-sm dark:bg-surface-1/95 dark:text-gray-300">
-              Click a pad to write a sticky (GIFs welcome), or double-click anywhere on the board.
-            </p>
-          </div>
-        )}
-      </div>
-      <RetroSettingsPanel
-        roomData={roomData}
-        currentUserId={currentUserId}
-        isOpen={isSettingsOpen}
-        onClose={closeAll}
-        onCopySummary={actions.copySummary}
-      />
-    </div>
+      }
+      overlay={
+        <>
+          <StickyHeights onHeights={gestures.measureStickies} />
+          {board && board.stickies.length === 0 && !draft && retro.step === "write" && (
+            <div className="pointer-events-none absolute inset-x-0 bottom-6 flex justify-center px-4">
+              <p className="rounded-full bg-white/95 px-4 py-2 text-sm text-gray-600 shadow-lg ring-1 ring-foreground/10 backdrop-blur-sm dark:bg-surface-1/95 dark:text-gray-300">
+                Click a pad to write a sticky (GIFs welcome), or double-click anywhere on the board.
+              </p>
+            </div>
+          )}
+        </>
+      }
+      panels={
+        <RetroSettingsPanel
+          roomData={roomData}
+          currentUserId={currentUserId}
+          isOpen={isSettingsOpen}
+          onClose={closeAll}
+          onCopySummary={actions.copySummary}
+        />
+      }
+    />
   );
 }
 
@@ -487,10 +387,10 @@ function RetroCanvasInner({ roomData, currentUserId }: RetroCanvasProps): ReactE
  */
 export function RetroCanvas(props: RetroCanvasProps): ReactElement {
   return (
-    <ReactFlowProvider>
-      <RoomPresenceProvider roomId={props.roomData.room._id} userId={props.currentUserId} users={props.roomData.users}>
-        <RetroCanvasInner {...props} />
-      </RoomPresenceProvider>
-    </ReactFlowProvider>
+    <WhiteboardProviders
+      presence={{ roomId: props.roomData.room._id, userId: props.currentUserId, users: props.roomData.users }}
+    >
+      <RetroCanvasInner {...props} />
+    </WhiteboardProviders>
   );
 }

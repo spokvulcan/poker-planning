@@ -11,6 +11,7 @@ import * as Timer from "./model/timer";
 import * as Rooms from "./model/rooms";
 import * as Retro from "./model/retro";
 import { DEFAULT_RETRO_PERMISSIONS } from "./permissions";
+import { CEREMONY_RULES } from "./ceremony";
 
 const modules = import.meta.glob("./**/*.*s");
 
@@ -214,63 +215,37 @@ describe("room activity — timer and canvas ops bump", () => {
     await expectBumped(t, roomId, stale);
   });
 
-  it("updateNodePosition bumps", async () => {
+  it("moveNodes bumps", async () => {
     const t = convexTest(schema, modules);
     const stale = staleTimestamp();
     const roomId = await seedRoom(t, stale);
     const userId = await addMember(t, roomId, "auth-a");
     await seedSessionNode(t, roomId);
 
-    await t.run((ctx) =>
-      Canvas.updateNodePosition(ctx, {
-        roomId,
-        nodeId: "session-current",
-        position: { x: 5, y: 5 },
-        userId,
-      })
+    await t.run(async (ctx) =>
+      Canvas.moveNodes(ctx, (await ctx.db.get("rooms", roomId))!, [
+        { nodeId: "session-current", position: { x: 5, y: 5 } },
+      ], userId)
     );
 
     await expectBumped(t, roomId, stale);
   });
 
-  it("createNoteNode bumps", async () => {
+  it("createNote bumps", async () => {
     const t = convexTest(schema, modules);
     const stale = staleTimestamp();
     const roomId = await seedRoom(t, stale);
     const userId = await addMember(t, roomId, "auth-a");
     const issueId = await seedIssue(t, roomId);
 
-    await t.run((ctx) => Canvas.createNoteNode(ctx, { roomId, issueId, userId }));
-
-    await expectBumped(t, roomId, stale);
-  });
-
-  it("updateNoteContent bumps", async () => {
-    const t = convexTest(schema, modules);
-    const stale = staleTimestamp();
-    const roomId = await seedRoom(t, stale);
-    const userId = await addMember(t, roomId, "auth-a");
-    const issueId = await seedIssue(t, roomId);
-    const nodeId = `note-${issueId}`;
-    await t.run((ctx) =>
-      ctx.db.insert("canvasNodes", {
-        roomId,
-        nodeId,
-        type: "note",
-        position: { x: 0, y: 0 },
-        data: { issueId, issueTitle: "Issue 1", content: "" },
-        lastUpdatedAt: Date.now(),
-      })
-    );
-
-    await t.run((ctx) =>
-      Canvas.updateNoteContent(ctx, { roomId, nodeId, content: "notes", userId })
+    await t.run(async (ctx) =>
+      Canvas.createNote(ctx, (await ctx.db.get("rooms", roomId))!, issueId, (await ctx.db.get("users", userId))!)
     );
 
     await expectBumped(t, roomId, stale);
   });
 
-  it("deleteNoteNode bumps", async () => {
+  it("updateNote bumps", async () => {
     const t = convexTest(schema, modules);
     const stale = staleTimestamp();
     const roomId = await seedRoom(t, stale);
@@ -288,7 +263,32 @@ describe("room activity — timer and canvas ops bump", () => {
       })
     );
 
-    await t.run((ctx) => Canvas.deleteNoteNode(ctx, { roomId, nodeId, userId }));
+    await t.run(async (ctx) =>
+      Canvas.updateNote(ctx, (await ctx.db.get("rooms", roomId))!, nodeId, "notes", (await ctx.db.get("users", userId))!)
+    );
+
+    await expectBumped(t, roomId, stale);
+  });
+
+  it("deleteNote bumps", async () => {
+    const t = convexTest(schema, modules);
+    const stale = staleTimestamp();
+    const roomId = await seedRoom(t, stale);
+    await addMember(t, roomId, "auth-a");
+    const issueId = await seedIssue(t, roomId);
+    const nodeId = `note-${issueId}`;
+    await t.run((ctx) =>
+      ctx.db.insert("canvasNodes", {
+        roomId,
+        nodeId,
+        type: "note",
+        position: { x: 0, y: 0 },
+        data: { issueId, issueTitle: "Issue 1", content: "" },
+        lastUpdatedAt: Date.now(),
+      })
+    );
+
+    await t.run(async (ctx) => Canvas.deleteNote(ctx, (await ctx.db.get("rooms", roomId))!, nodeId));
 
     await expectBumped(t, roomId, stale);
   });
@@ -435,7 +435,7 @@ describe("room activity — role changes and rename bump (through the endpoints)
 });
 
 describe("room activity — the chokepoint owns the clock's precision (ADR-0018)", () => {
-  const HOUR = Rooms.RETRO_ACTIVITY_GRANULARITY_MS;
+  const HOUR = CEREMONY_RULES.retro.activityGranularityMs;
 
   async function seedRetroRoom(t: T, lastActivityAt: number): Promise<Id<"rooms">> {
     const roomId = await seedRoom(t, lastActivityAt);
@@ -497,7 +497,7 @@ describe("room activity — the chokepoint owns the clock's precision (ADR-0018)
 });
 
 describe("room activity — every retro write goes through the chokepoint (ADR-0018)", () => {
-  const HOUR = Rooms.RETRO_ACTIVITY_GRANULARITY_MS;
+  const HOUR = CEREMONY_RULES.retro.activityGranularityMs;
   const as = (t: T, subject: string) => t.withIdentity({ subject });
 
   /** Sticks a sticky in the first column; its text is its clientId. */

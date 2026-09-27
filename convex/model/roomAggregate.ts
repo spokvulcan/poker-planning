@@ -1,5 +1,6 @@
 import { MutationCtx } from "../_generated/server";
 import { Doc, Id } from "../_generated/dataModel";
+import { internal } from "../_generated/api";
 import { scheduleWebhookDeregistration } from "./integrations";
 import * as Presence from "./presence";
 
@@ -58,6 +59,16 @@ export type RoomOwnedTable = (typeof ROOM_OWNED_TABLES)[number];
  * continuation rather than one unbounded collect-and-delete transaction).
  */
 export const ROOM_DELETE_BATCH_SIZE = 500;
+
+/**
+ * Deletes a room and everything it owns, in bounded steps
+ * (internal.maintenance.deleteRoomAggregateChunk reschedules itself until
+ * the cascade is done). The one way a room is deleted: the sweep, an owner
+ * deleting it, and a hand-off with nobody to hand to all come through here.
+ */
+export async function scheduleRoomDeletion(ctx: MutationCtx, roomId: Id<"rooms">): Promise<void> {
+  await ctx.scheduler.runAfter(0, internal.maintenance.deleteRoomAggregateChunk, { roomId });
+}
 
 export interface RoomAggregateDeleteStep {
   /** true once the room row itself is deleted — the cascade is complete. */

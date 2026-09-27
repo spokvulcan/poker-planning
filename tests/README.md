@@ -37,7 +37,7 @@ Added `data-testid` attributes to key components:
 - `how-it-works-tab-poker`, `how-it-works-tab-retro`, `app-preview-tab-poker`, `app-preview-tab-retro` - Per-ceremony tabs
 - `hero-github-link` - GitHub repository link
 - `trust-free`, `trust-no-account`, `trust-realtime` - Trust indicators
-- `retro-board`, `retro-node` - The retro's canvas and its retro node, both carrying `data-step` (`write`, `vote`, `discuss`, `done`)
+- `retro-board`, `retro-node` - The retro's canvas, and its retro node carrying `data-step` (`write`, `vote`, `discuss`, `done`)
 - `retro-pad`, `retro-sticky` - A column's pad and a sticky; a sticky carries `data-hidden` (face-down to this viewer), `data-mine` and `data-focused` (in the spotlight)
 - `retro-actions`, `retro-action-item` - The action items node and each item in it
 - `gif-picker`, `retro-settings-panel`, `retro-column-row`, `votes-per-person` - The GIF picker and the retro's settings
@@ -64,7 +64,7 @@ The retro's rules are proven below the browser; Playwright keeps only what needs
 
 | Layer | Where | What it proves |
 |-------|-------|----------------|
-| Convex (`convex-test`) | `convex/retro.test.ts`, `convex/retroRules.test.ts`, `convex/retention.test.ts`, `convex/accountDeletion.test.ts`, `convex/roomActivity.test.ts`, `convex/requireRoomReader.test.ts` | The face-down projection, stacks, votes, the discussion order, permissions, action items, the next retro, retention, account linking and deletion, the activity clock |
+| Convex (`convex-test`) | `convex/retro.test.ts`, `convex/retroTopics.test.ts`, `convex/retroSteps.test.ts`, `convex/retention.test.ts`, `convex/accountDeletion.test.ts`, `convex/accountLifecycle.test.ts`, `convex/roomActivity.test.ts`, `convex/requireRoomReader.test.ts` | The face-down projection, stacks, votes, the discussion order, permissions, action items, the next retro, retention, account linking and deletion, the activity clock |
 | Node | `src/components/retro/build-retro-nodes.test.ts`, `src/components/retro/retro-summary.test.ts` | What the board draws in each step; the Markdown summary |
 | Playwright | `tests/retro/retro-board.spec.ts` | Two browsers: stickies face-down until the reveal, votes hidden until the discussion, the spotlight and action items shared; the next retro carrying open action items over |
 | Manual | `tests/retro/MANUAL.md` | Touch, drag-to-stack and GIF flows a headless browser cannot fake |

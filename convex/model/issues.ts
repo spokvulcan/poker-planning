@@ -1,5 +1,6 @@
 import { QueryCtx, MutationCtx } from "../_generated/server";
 import { Id, Doc } from "../_generated/dataModel";
+import * as Canvas from "./canvas";
 import * as Rooms from "./rooms";
 import * as VotingRound from "./votingRound";
 import {
@@ -197,6 +198,9 @@ export async function removeIssue(
     .collect();
   await Promise.all(individualVotes.map((iv) => ctx.db.delete("individualVotes", iv._id)));
 
+  // Its discussion note goes with it.
+  await Canvas.issueRemoved(ctx, issue.roomId, issueId);
+
   await ctx.db.delete("issues", issueId);
 }
 
@@ -209,16 +213,8 @@ export async function getIssuesForExport(
 ): Promise<ExportableIssue[]> {
   const issues = await listIssues(ctx, roomId);
 
-  // Fetch all notes for room in a single query (avoid N+1)
-  const noteNodes = await ctx.db
-    .query("canvasNodes")
-    .withIndex("by_room_type", (q) => q.eq("roomId", roomId).eq("type", "note"))
-    .collect();
-
-  // Build lookup map: issueId -> note content
-  const notesByIssueId = new Map<string, string | null>(
-    noteNodes.map((n) => [n.data?.issueId as string, n.data?.content ?? null])
-  );
+  // Every note of the room in one read (avoid N+1).
+  const notesByIssueId = await Canvas.noteContents(ctx, roomId);
 
   return issues.map((issue) => ({
     title: issue.title,

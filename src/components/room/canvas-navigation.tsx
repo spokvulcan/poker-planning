@@ -43,6 +43,7 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import type { RoomWithRelatedData } from "@/convex/model/rooms";
+import { rulesOf } from "@/convex/ceremony";
 import { copyTextToClipboard } from "@/utils/copy-text-to-clipboard";
 import { UserPresenceAvatars } from "./user-presence-avatars";
 import { useIsDemoMode } from "./demo/DemoSimulationProvider";
@@ -84,7 +85,7 @@ export const CanvasNavigation = memo(function CanvasNavigation({
 }: CanvasNavigationProps) {
   const isDemoMode = useIsDemoMode();
   // What the link and the settings are called: a room, or a retro.
-  const linkNoun = roomData.room.roomType === "retro" ? "Retro" : "Room";
+  const linkNoun = rulesOf(roomData.room).noun;
   const { zoomIn, zoomOut, fitView } = useReactFlow();
   const router = useRouter();
 
@@ -218,7 +219,7 @@ export const CanvasNavigation = memo(function CanvasNavigation({
                   className="w-full h-11 justify-start gap-3"
                 >
                   <Copy className="h-4 w-4" />
-                  Copy Room Link
+                  Copy {linkNoun} Link
                 </Button>
 
                 {/* View Controls */}

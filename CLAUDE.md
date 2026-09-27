@@ -58,6 +58,10 @@ convex/
 
 **Auth guards** (`convex/model/auth.ts`): Every mutation must enforce authorization. Use `requireCan(ctx, roomId, spec)` for permission-checked operations (`requireCanForUser` where the user is already resolved, e.g. action contexts), `requireActingUser(ctx, roomId, userId)` for room-scoped mutations that take a client-supplied `userId` (verifies authenticated + member + acting as that user), and `requireAuth(ctx)` for global mutations. Never re-implement these checks inline in handlers. See [docs/authentication.md](docs/authentication.md) for full patterns.
 
+**Ceremony rules** (`convex/ceremony.ts`): whatever differs between planning poker and a retro (spectators, voting rounds, player nodes, retention, activity precision, the hand-off) is read from `rulesOf(room)`. Never compare `roomType` directly.
+
+**One writer per concern**: `model/memberships.ts` writes `roomMemberships`, `model/ownership.ts` writes a room's owner, owner role and retention, `model/canvas.ts` writes `canvasNodes`, `model/votingRound.ts` writes poker votes. Deleting an account and a guest signing in go through `model/accountLifecycle.ts`: a module that stores a user id implements `UserRows` (`model/userRows.ts`), or `convex/accountLifecycle.test.ts` fails (ADR-0030).
+
 Example usage in frontend:
 
 ```typescript
@@ -70,12 +74,12 @@ const createRoom = useMutation(api.rooms.create);
 
 ### Canvas Node System
 
-The room canvas (`src/components/room/`) uses React Flow with custom node types:
+Both ceremonies are drawn on one whiteboard (`src/components/whiteboard/whiteboard.tsx`). It owns React Flow's node buffer, saving drops (one `canvas.moveNodes` write per drop, with an optimistic update), keyboard nudges, Delete, dropping one node onto another, fitting and following a node. Each ceremony is an adapter that derives its nodes from the server and says what the gestures mean:
 
-- **Node types** defined in `src/components/room/nodes/` (PlayerNode, SessionNode, TimerNode, VotingCardNode, ResultsNode, NoteNode)
-- **Type definitions** in `src/components/room/types.ts` - defines `CustomNodeType` union
-- **Node state** synced via Convex (`canvasNodes` table)
-- **Layout logic** in `useCanvasLayout.ts`, state management in `useCanvasNodes.ts`
+- **Planning poker**: `src/components/room/room-canvas.tsx`. Node types in `src/components/room/nodes/` (PlayerNode, SessionNode, TimerNode, VotingCardNode, ResultsNode, NoteNode), derived in `hooks/buildCanvasNodes.ts` and `hooks/useCanvasNodes.ts`; the `CustomNodeType` union is in `src/components/room/types.ts`
+- **Retro**: `src/components/retro/retro-canvas.tsx`. Nodes built in `build-retro-nodes.ts`; writes in `use-retro-mutations.ts` are optimistic updates that apply the same pure rules as the server (`convex/retroTopics.ts`, `convex/retroSteps.ts`)
+- **Node state** synced via Convex (`canvasNodes` table), written only by `convex/model/canvas.ts`
+- **Text over shared data** (notes, names, stickies) goes through `useLiveText` (`src/hooks/use-live-text.ts`), which never overwrites what someone is typing
 
 ### Database Schema
 

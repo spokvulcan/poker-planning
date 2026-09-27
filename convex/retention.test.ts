@@ -53,10 +53,15 @@ async function scheduledCascadeRoomIds(t: T): Promise<Set<string>> {
 }
 
 describe("retained: writers", () => {
-  it("createRoom stamps a new room retained: false", async () => {
+  it("createRoom stamps a new room retained: false, even for a permanent owner", async () => {
     const t = withComponents(convexTest(schema, modules));
-    const roomId = await t.run((ctx) =>
-      Rooms.createRoom(ctx, { name: "New", votingScale: { type: "fibonacci" } })
+    const ownerId = await seedUser(t, "auth-perm", "P", "permanent");
+    const roomId = await t.run(async (ctx) =>
+      Rooms.createRoom(ctx, {
+        name: "New",
+        votingScale: { type: "fibonacci" },
+        owner: (await ctx.db.get("users", ownerId))!,
+      })
     );
     const room = await t.run((ctx) => ctx.db.get("rooms", roomId));
     expect(room?.retained).toBe(false);
@@ -93,7 +98,9 @@ describe("retained: account linking", () => {
     const retroId = await t.run(async (ctx) =>
       Retro.createRetro(ctx, { name: "Retro", owner: (await ctx.db.get("users", guestId))! })
     );
-    const pokerId = await t.run((ctx) => Rooms.createRoom(ctx, { name: "Poker", ownerId: guestId }));
+    const pokerId = await t.run(async (ctx) =>
+      Rooms.createRoom(ctx, { name: "Poker", owner: (await ctx.db.get("users", guestId))! })
+    );
     return { retroId, pokerId };
   }
 

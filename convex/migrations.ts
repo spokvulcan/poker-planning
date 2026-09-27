@@ -84,7 +84,7 @@ const OWNER_ROLE_BACKFILL_BATCH = 200;
  * Gives a room's owner the owner role where they are in the room under
  * another one. Merging a guest into a permanent account that had already
  * joined the room could leave it that way (see
- * model/users.linkAnonymousToPermanent): the owner counts as present, so no
+ * model/accountLifecycle.linkAccount): the owner counts as present, so no
  * lockdown shows, yet owner-only actions are refused. An owner-role
  * membership exists iff the owner is present (ADR-0001), so a room whose
  * owner has no membership is in lockdown and is left alone; no membership

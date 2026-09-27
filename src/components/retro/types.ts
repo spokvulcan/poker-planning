@@ -26,7 +26,8 @@ export interface RetroBoardActions {
   stepDiscussion: (direction: "next" | "previous") => void;
   startNext: () => void;
   copySummary: () => void;
-  renameColumn: (columnId: string, title: string) => void;
+  /** Resolves to whether the rename landed. */
+  renameColumn: (columnId: string, title: string) => Promise<boolean>;
   addActionItem: (text: string) => void;
   updateActionItem: (
     itemId: Id<"retroActionItems">,
@@ -79,18 +80,19 @@ export type StickyNodeData = {
   editing: boolean;
   /** The viewer may change what it says (theirs, or a facilitator's call). */
   canEdit: boolean;
-  /** The other stickies in its stack, when this is a stack's top. */
-  members: StickyView[];
+  /** The other stickies in its stack, when this is a stack's top, and whether the viewer may take each off. */
+  members: (StickyView & { canUnstack: boolean })[];
   /** Every column's colour, for stacked stickies that came from another column. */
   columnColors: Readonly<Record<string, StickyColor>>;
   expanded: boolean;
+  /** The step lets the viewer vote on it now. */
+  canVote: boolean;
   votesLeft: number;
   /** The topic's place in the discussion (1-based), when it has one. */
   rank?: number;
   focused: boolean;
   discussed: boolean;
   dimmed: boolean;
-  dropTarget: boolean;
   canFocus: boolean;
   actions: RetroBoardActions;
 };

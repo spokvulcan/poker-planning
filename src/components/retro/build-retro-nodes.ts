@@ -9,7 +9,7 @@ import type { ActionItemView, BoardView, RetroState, StickyView } from "@/convex
 import type { CanvasNode } from "@/convex/model/canvas";
 import type { ResolvedDecision, RetroPermissionCategory } from "@/convex/permissions";
 import type { RetroColumn } from "@/convex/retroTemplates";
-import { discussionOrder } from "@/convex/retroRules";
+import { stepAllows, stickyActAllowed, stickyEditDecision } from "@/convex/retroSteps";
 import {
   actionsPosition,
   padNodeId,
@@ -21,6 +21,7 @@ import {
 import { buildTimerNode } from "@/components/room/hooks/buildCanvasNodes";
 import type { RetroBoardActions, RetroFlowNode, RetroMember } from "./types";
 import { isOptimistic } from "./optimistic";
+import { topicOrder } from "./board-view";
 
 export interface RetroNodesInput {
   roomId: Id<"rooms">;
@@ -38,7 +39,6 @@ export interface RetroNodesInput {
   draft: { clientId: string; columnId: string; position: { x: number; y: number } } | null;
   editingId: Id<"retroStickies"> | null;
   expandedIds: ReadonlySet<string>;
-  dropTargetId: string | null;
   actions: RetroBoardActions;
 }
 
@@ -47,13 +47,6 @@ export interface RetroNodesInput {
  * keeps a new node hidden, and a draft's editor couldn't take focus.
  */
 const STICKY_SIZE = { initialWidth: STICKY_WIDTH, initialHeight: STICKY_MIN_HEIGHT };
-
-/** The discussion's order of topics, from the totals the board carries in Discuss. */
-export function topicOrder(board: BoardView | undefined, columns: readonly RetroColumn[]): string[] {
-  if (!board) return [];
-  const totals = new Map(board.stickies.map((s) => [s._id as string, s.votes ?? 0]));
-  return discussionOrder(board.stickies, totals, columns);
-}
 
 /** A short, readable label for a topic: its words, its GIF's title, or its face. */
 export function topicLabel(sticky: StickyView | undefined): string | undefined {
@@ -138,11 +131,14 @@ export function buildRetroNodes(input: RetroNodesInput): RetroFlowNode[] {
     if (s.stackId) membersOf.set(s.stackId, [...(membersOf.get(s.stackId) ?? []), s]);
   }
   const votesLeft = retro.votesPerPerson - (board?.myVotes ?? 0);
+  // What the step lets anyone do right now; who may do it is the permissions'.
+  const canVote = stepAllows(step, "vote").allowed;
+  const canSpotlight = stepAllows(step, "spotlight").allowed && perms.stageFlow.allowed;
   for (const sticky of stickies) {
     if (sticky.stackId) continue;
     const pending = isOptimistic(sticky._id);
     // Nobody but the author touches a sticky before the reveal.
-    const canEdit = !pending && (sticky.mine || (perms.cardManagement.allowed && !sticky.hidden));
+    const canEdit = !pending && stickyEditDecision(step, sticky.mine, perms.cardManagement).allowed;
     const editing = input.editingId === sticky._id;
     const rank = order.indexOf(sticky._id);
     const isFocused = step === "discuss" && sticky._id === retro.focusStickyId;
@@ -159,16 +155,18 @@ export function buildRetroNodes(input: RetroNodesInput): RetroFlowNode[] {
         step,
         editing,
         canEdit,
-        members: (membersOf.get(sticky._id) ?? []).sort((a, b) => a.createdAt - b.createdAt),
+        members: (membersOf.get(sticky._id) ?? [])
+          .sort((a, b) => a.createdAt - b.createdAt)
+          .map((member) => ({ ...member, canUnstack: !pending && stickyActAllowed(step, "unstack", member.mine).allowed })),
         columnColors,
         expanded: input.expandedIds.has(sticky._id),
+        canVote: canVote && !pending,
         votesLeft,
         ...(rank >= 0 ? { rank: rank + 1 } : {}),
         focused: isFocused,
         discussed: discussing && rank >= 0 && (step === "done" || (focusIndex >= 0 && rank < focusIndex)),
         dimmed: step === "discuss" && !!retro.focusStickyId && !isFocused,
-        dropTarget: input.dropTargetId === sticky.clientId,
-        canFocus: perms.stageFlow.allowed && !pending,
+        canFocus: canSpotlight && !pending,
         actions,
       },
     });
@@ -191,11 +189,11 @@ export function buildRetroNodes(input: RetroNodesInput): RetroFlowNode[] {
         members: [],
         columnColors,
         expanded: false,
+        canVote: false,
         votesLeft,
         focused: false,
         discussed: false,
         dimmed: false,
-        dropTarget: false,
         canFocus: false,
         actions,
       },

@@ -26,7 +26,7 @@
  * need no demo branching of their own.
  */
 import { createContext, useContext, useMemo, type ReactNode } from "react";
-import type { RoomUserData } from "@/convex/model/users";
+import type { RoomUserData } from "@/convex/model/memberships";
 import {
   orderUsersByPresence,
   useRoomPresence,

@@ -1,4 +1,5 @@
 import { Doc } from "./_generated/dataModel";
+import { ceremonyOf } from "./ceremony";
 
 // --- Types ---
 
@@ -51,6 +52,11 @@ export type EffectivePermissions =
   | { ceremony: "retro"; permissions: RetroPermissions };
 
 // --- Defaults ---
+
+/** Whether a set of permissions is a retro's, by its own categories, rather than a poker room's. */
+export function isRetroPermissions(permissions: RoomPermissions | RetroPermissions): permissions is RetroPermissions {
+  return "stageFlow" in permissions;
+}
 
 export const DEFAULT_PERMISSIONS: RoomPermissions = {
   revealCards: "everyone",
@@ -299,27 +305,25 @@ function decideRole(
 // --- Helpers ---
 
 /**
- * Returns the effective permissions for a room, keyed by its ceremony: the
- * poker set for roomType "canvas" or undefined, the retro set for "retro".
- * Falls back to that ceremony's defaults when nothing is stored — or when the
- * stored shape belongs to the other ceremony, which no writer produces but the
- * union schema cannot rule out.
+ * Returns the effective permissions for a room, keyed by its ceremony
+ * (ceremony.ts). Falls back to that ceremony's defaults when nothing is
+ * stored — or when the stored shape belongs to the other ceremony, which the
+ * one writer (model/roles.updatePermissions) refuses but the union schema
+ * cannot rule out.
  */
 export function getEffectivePermissions(
   room: Pick<Doc<"rooms">, "roomType" | "permissions">
 ): EffectivePermissions {
   const stored = room.permissions;
-  if (room.roomType === "retro") {
+  if (ceremonyOf(room) === "retro") {
     return {
       ceremony: "retro",
-      permissions:
-        stored && "stageFlow" in stored ? stored : DEFAULT_RETRO_PERMISSIONS,
+      permissions: stored && isRetroPermissions(stored) ? stored : DEFAULT_RETRO_PERMISSIONS,
     };
   }
   return {
     ceremony: "poker",
-    permissions:
-      stored && "revealCards" in stored ? stored : DEFAULT_PERMISSIONS,
+    permissions: stored && !isRetroPermissions(stored) ? stored : DEFAULT_PERMISSIONS,
   };
 }
 

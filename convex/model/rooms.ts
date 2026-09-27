@@ -1,9 +1,11 @@
 import { QueryCtx, MutationCtx } from "../_generated/server";
 import { Id, Doc } from "../_generated/dataModel";
 import * as Canvas from "./canvas";
-import * as Users from "./users";
+import * as Memberships from "./memberships";
+import * as Ownership from "./ownership";
 import { VOTING_SCALES, VotingScaleType, validateCustomScale } from "../scales";
 import { MAX_ROOM_NAME_LENGTH } from "../constants";
+import { rulesOf } from "../ceremony";
 import { isRoomOwnerAbsent } from "./permissions";
 
 export interface CreateRoomArgs {
@@ -30,30 +32,13 @@ export function validateRoomName(name: string): string {
   return trimmed;
 }
 
-/**
- * Whether a room is kept past the inactivity sweep with `owner` owning it:
- * a retro is once a permanent account owns it, and a kept room stays kept.
- */
-export function isRetainedUnder(
-  room: Pick<Doc<"rooms">, "roomType" | "retained">,
-  owner: Pick<Doc<"users">, "accountType"> | null
-): boolean {
-  return room.retained || (room.roomType === "retro" && owner?.accountType === "permanent");
-}
-
-/** Hands a room to a new owner, keeping it when that owner keeps retros. */
-export async function setRoomOwner(ctx: MutationCtx, room: Doc<"rooms">, ownerId: Id<"users">): Promise<void> {
-  const owner = await ctx.db.get("users", ownerId);
-  await ctx.db.patch("rooms", room._id, { ownerId, retained: isRetainedUnder(room, owner) });
-}
-
 export interface SanitizedVote extends Doc<"votes"> {
   hasVoted: boolean;
 }
 
 export interface RoomWithRelatedData {
   room: Doc<"rooms">;
-  users: Users.RoomUserData[];
+  users: Memberships.RoomUserData[];
   votes: SanitizedVote[];
   isOwnerAbsent: boolean;
 }
@@ -96,32 +81,44 @@ function resolveVotingScale(scaleConfig?: CreateRoomArgs["votingScale"]) {
   };
 }
 
+/** The fields a new room of either ceremony is written with, besides its own. */
+type RoomFields = Omit<
+  Doc<"rooms">,
+  "_id" | "_creationTime" | "createdAt" | "lastActivityAt" | "ownerId" | "retained"
+>;
+
 /**
- * Creates a new room with the specified configuration
+ * Opens a room of either ceremony: the row, its owner (ownership decides
+ * whether it's kept), the board it starts with, and its owner seated in it,
+ * so the person who made it lands straight on its canvas.
  */
+export async function openRoom(ctx: MutationCtx, owner: Doc<"users">, fields: RoomFields): Promise<Id<"rooms">> {
+  const now = Date.now();
+  const roomId = await ctx.db.insert("rooms", {
+    ...fields,
+    name: validateRoomName(fields.name),
+    createdAt: now,
+    lastActivityAt: now,
+    ...Ownership.initialOwnership(fields, owner),
+  });
+  const room = (await ctx.db.get("rooms", roomId))!;
+  await Canvas.openBoard(ctx, room);
+  await Memberships.join(ctx, room, owner);
+  return roomId;
+}
+
+/** Opens a planning poker room with its voting scale. */
 export async function createRoom(
   ctx: MutationCtx,
-  args: CreateRoomArgs & { ownerId?: Id<"users"> }
+  args: CreateRoomArgs & { owner: Doc<"users"> }
 ): Promise<Id<"rooms">> {
-  const votingScale = resolveVotingScale(args.votingScale);
-
-  const roomId = await ctx.db.insert("rooms", {
-    name: validateRoomName(args.name),
-    roomType: "canvas", // Always canvas now
+  return await openRoom(ctx, args.owner, {
+    name: args.name,
+    roomType: "canvas",
     autoCompleteVoting: args.autoCompleteVoting ?? false,
     isGameOver: false,
-    votingScale,
-    createdAt: Date.now(),
-    lastActivityAt: Date.now(),
-    // Poker rooms are never retained: five quiet days and they go.
-    retained: false,
-    ...(args.ownerId ? { ownerId: args.ownerId } : {}),
+    votingScale: resolveVotingScale(args.votingScale),
   });
-
-  // Always initialize canvas nodes
-  await Canvas.initializeCanvasNodes(ctx, { roomId });
-
-  return roomId;
 }
 
 /**
@@ -137,7 +134,7 @@ export async function getRoomWithRelatedData(
 
   // Get users (via memberships), votes, and owner-absent status in parallel
   const [users, votes, ownerAbsent] = await Promise.all([
-    Users.getRoomUsers(ctx, roomId),
+    Memberships.getRoomUsers(ctx, roomId),
     ctx.db
       .query("votes")
       .withIndex("by_room", (q) => q.eq("roomId", roomId))
@@ -180,25 +177,17 @@ export function sanitizeVotes(
 }
 
 /**
- * How stale a retro room's clock must be before the chokepoint patches it
- * (ADR-0018). The sweep and the listings need day-level precision; the room
- * row is every guard's read and every member's subscription, so a retro
- * patches it at most once an hour instead of once per write.
- */
-export const RETRO_ACTIVITY_GRANULARITY_MS = 60 * 60 * 1000;
-
-/**
  * The single chokepoint for room activity writes (ADR-0005). Every
  * user-initiated mutation touching room-scoped state routes its bump through
  * here, so the cleanup cascade's inactivity window (model/cleanup.ts)
  * reflects real use — a room worked only via its timer or canvas must not
  * read as abandoned.
  *
- * The chokepoint owns the clock's precision (ADR-0018): a retro room is
- * patched only when its stored clock is over an hour old; every other room
- * unconditionally, because poker analytics compares `computedAt` to this
- * clock exactly (ADR-0007). A room that is gone returns without patching —
- * the join path bumps before it reads the room.
+ * The chokepoint owns the clock's precision (ADR-0018), which the ceremony
+ * sets: exact for a poker room, because poker analytics compares
+ * `computedAt` to this clock exactly (ADR-0007); at most once an hour for a
+ * retro, whose readers need only day-level precision. A room that is gone
+ * returns without patching.
  */
 export async function updateRoomActivity(
   ctx: MutationCtx,
@@ -209,12 +198,8 @@ export async function updateRoomActivity(
   const room = typeof roomOrId === "string" ? await ctx.db.get("rooms", roomOrId) : roomOrId;
   if (!room) return;
   const now = Date.now();
-  if (
-    room.roomType === "retro" &&
-    now - room.lastActivityAt <= RETRO_ACTIVITY_GRANULARITY_MS
-  ) {
-    return;
-  }
+  const granularity = rulesOf(room).activityGranularityMs;
+  if (granularity > 0 && now - room.lastActivityAt <= granularity) return;
   await ctx.db.patch("rooms", room._id, { lastActivityAt: now });
 }
 

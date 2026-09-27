@@ -1,6 +1,6 @@
 "use client";
 
-import { FC, useState, useEffect } from "react";
+import { FC } from "react";
 import Link from "next/link";
 import {
   X,
@@ -22,6 +22,7 @@ import {
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/components/ui/accordion";
 import { SidePanel } from "@/components/ui/side-panel";
 import { toast } from "@/lib/toast";
+import { useLiveText } from "@/hooks/use-live-text";
 import {
   usePokerPermissions,
   permissionProps,
@@ -45,6 +46,7 @@ interface RoomSettingsPanelProps {
   onClose: () => void;
 }
 
+
 const PERMISSION_CONFIG: Record<PokerPermissionCategory, { label: string; description: string }> = {
   revealCards: { label: "Reveal cards", description: "Reveal votes, cancel auto-reveal" },
   gameFlow: { label: "Game flow", description: "Reset game, start voting on issues" },
@@ -60,9 +62,6 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
 }) => {
   const isDemoMode = useIsDemoMode();
 
-  const [roomName, setRoomName] = useState(roomData.room.name);
-  const [isSaving, setIsSaving] = useState(false);
-
   // Writes come from the action seam, which no-ops internally in demo mode
   // (ADR-0003) — the remaining `isDemoMode` branches below are presentation only
   // (hide/disable/read-only controls), never write guards.
@@ -70,26 +69,21 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
 
   const perms = usePokerPermissions(roomData, currentUserId);
 
-  // Sync room name with prop when it changes externally
-  useEffect(() => {
-    setRoomName(roomData.room.name);
-  }, [roomData.room.name]);
+  // What's typed wins until it's saved; someone else's rename comes in otherwise.
+  const [roomName, roomNameField] = useLiveText<HTMLInputElement>({
+    value: roomData.room.name,
+    save: (name) => settingsActions.rename(name),
+    required: true,
+  });
 
   const handleSaveRoomName = async () => {
-    if (!roomName.trim() || roomName === roomData.room.name) return;
-
-    setIsSaving(true);
-    try {
-      await settingsActions.rename(roomName.trim());
+    if (!roomName.canCommit) return;
+    if (await roomName.commit()) {
       toast.success("Room renamed", {
-        description: `Room is now called "${roomName.trim()}"`,
+        description: `Room is now called "${roomName.value.trim()}"`,
       });
-    } catch (error) {
-      console.error("Failed to rename room:", error);
+    } else {
       toast.error("Failed to rename room");
-      setRoomName(roomData.room.name);
-    } finally {
-      setIsSaving(false);
     }
   };
 
@@ -169,8 +163,9 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
               <div className="flex gap-2">
                 <Input
                   id="room-name"
-                  value={roomName}
-                  onChange={(e) => perms.roomSettings.allowed && setRoomName(e.target.value)}
+                  ref={roomNameField}
+                  value={roomName.value}
+                  onChange={(e) => perms.roomSettings.allowed && roomName.setValue(e.target.value)}
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && perms.roomSettings.allowed) handleSaveRoomName();
                   }}
@@ -183,15 +178,11 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
                   <Button
                     size="default"
                     onClick={handleSaveRoomName}
-                    disabled={
-                      isSaving ||
-                      !roomName.trim() ||
-                      roomName === roomData.room.name
-                    }
+                    disabled={!roomName.canCommit}
                     className="h-10 px-4 whitespace-nowrap"
                     {...permissionProps(perms.roomSettings)}
                   >
-                    {isSaving ? "Saving..." : "Save"}
+                    Save
                   </Button>
                 )}
               </div>

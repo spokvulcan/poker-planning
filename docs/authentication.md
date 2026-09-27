@@ -40,7 +40,10 @@ The authentication system consists of three layers:
 | `convex/http.ts` | HTTP routes for auth endpoints |
 | `convex/schema.ts` | Database schema with `users` and `roomMemberships` tables |
 | `convex/users.ts` | User/membership API (join, leave, edit, queries, linkAccount) |
-| `convex/model/users.ts` | User/membership business logic & account linking logic |
+| `convex/model/users.ts` | Identity: user rows, names, avatars; joining and leaving a room |
+| `convex/model/memberships.ts` | Room attendance: the one writer of `roomMemberships` |
+| `convex/model/ownership.ts` | Who owns a room: creation, transfer, a returning owner, the hand-off |
+| `convex/model/accountLifecycle.ts` | Deleting an account and linking a guest to an account, through every module's `UserRows` |
 | `convex/model/auth.ts` | Auth guard helpers (`requireAuth`, `requireAuthUser`, `requireRoomMember`, `requireRoomReader`, `requireActingUser`, `requireCan`, `getOptionalAuthUser`) |
 | `convex/email.ts` | Internal action that sends the Magic Link email via Resend (the only email AgileKit sends) |
 
@@ -230,20 +233,24 @@ Use this for pages that require authentication (e.g., dashboard). Client-side re
 2. Redirected to /auth/signin?from=/room/abc123
 3. Signs in with Google or Magic Link
 4. BetterAuth creates permanent user and fires onLinkAccount hook
-5. Backend hook internal.users.linkAnonymousAccount executes:
+5. Backend hook internal.users.linkAnonymousAccount executes
+   (model/accountLifecycle.ts `linkAccount`):
    - Finds existing "anonymous" user via old authUserId
-   - Transfers all roomMemberships, votes, and canvas node ownership
-   - Where both accounts are in a room, keeps one membership with the more
-     senior role; the permanent account holds the owner role in every room it
-     owns and is in
-   - Re-points retro stickies, retro votes and action items; where the permanent
-     account already voted in a retro, the guest's votes there are dropped
-   - Marks every retro the account now owns as retained (kept past the 5-day sweep)
-   - Moves the guest's integration connections across; where the permanent
-     account already has its own connection to a provider, it keeps that one
-     and the guest's is disconnected (room mappings removed, webhooks deregistered)
+   - With no permanent account yet, the guest's own row becomes permanent and
+     keeps everything; otherwise every module folds the guest's rows into the
+     account (its `UserRows.fold`) and the guest row is deleted:
+   - Rooms the guest owned go to the account, owner role included
+   - Memberships, votes and canvas nodes move across; where both accounts are
+     in a room, one membership stays with the more senior role, and the
+     account holds the owner role in every room it owns and is in
+   - Retro stickies and action items move across; where both voted in a retro,
+     the account keeps one vote per topic up to the vote budget, its own first,
+     and the guest's other votes are refunded
+   - Every retro the account now owns is retained (kept past the 5-day sweep)
+   - The guest's integration connections move across; where the account already
+     has its own connection to a provider, it keeps that one and the guest's is
+     disconnected (room mappings removed, webhooks deregistered)
    - Updates accountType to "permanent", assigns email & avatarUrl
-   - Safely deletes old anonymous record
 6. Redirected back to /room/abc123
 ```
 

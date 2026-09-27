@@ -1,13 +1,15 @@
 import { MutationCtx, QueryCtx } from "../_generated/server";
 import { Id, Doc } from "../_generated/dataModel";
-import { internal } from "../_generated/api";
-import * as Analytics from "./analytics";
-import * as Canvas from "./canvas";
-import * as Integrations from "./integrations";
-import * as Presence from "./presence";
+import * as AccountLifecycle from "./accountLifecycle";
+import * as Memberships from "./memberships";
 import * as Rooms from "./rooms";
-import * as VotingRound from "./votingRound";
-import { getEffectiveRole, type MemberRole } from "../permissions";
+
+/**
+ * People: the app's `users` rows, one per person, each linked to an auth
+ * identity (BetterAuth's user id). Which rooms a person is in is
+ * memberships.ts's; how an account ends, deleted or folded into another,
+ * is accountLifecycle.ts's.
+ */
 
 export interface JoinRoomArgs {
   roomId: Id<"rooms">;
@@ -29,18 +31,6 @@ export interface EditUserArgs {
   isSpectator?: boolean;
 }
 
-// Merged user data returned to frontend (user + membership combined)
-export interface RoomUserData {
-  _id: Id<"users">;
-  name: string;
-  avatarUrl?: string;
-  isSpectator: boolean;
-  isBot?: boolean;
-  role: MemberRole;
-  joinedAt: number;
-  membershipId: Id<"roomMemberships">;
-}
-
 /**
  * Finds or creates a global user by authUserId
  */
@@ -48,12 +38,7 @@ export async function findOrCreateGlobalUser(
   ctx: MutationCtx,
   args: { authUserId: string; name: string; allowRename?: boolean }
 ): Promise<Id<"users">> {
-  // Check for existing global user
-  const existingUser = await ctx.db
-    .query("users")
-    .withIndex("by_auth_user", (q) => q.eq("authUserId", args.authUserId))
-    .first();
-
+  const existingUser = await getGlobalUserByAuthUserId(ctx, args.authUserId);
   if (existingUser) {
     // Update name if changed (unless the caller's identity is unverified)
     if (args.allowRename !== false && existingUser.name !== args.name) {
@@ -62,10 +47,9 @@ export async function findOrCreateGlobalUser(
     return existingUser._id;
   }
 
-  // Create new global user.
   // Don't set accountType here — we can't reliably determine it from a mutation
   // context. The BetterAuth session (isAnonymous) is the authoritative source
-  // for the frontend. linkAnonymousToPermanent sets "permanent" on upgrade.
+  // for the frontend. Linking an account sets "permanent" on upgrade.
   return await ctx.db.insert("users", {
     authUserId: args.authUserId,
     name: args.name,
@@ -87,208 +71,64 @@ export async function getGlobalUserByAuthUserId(
 }
 
 /**
- * Gets membership for a user in a room
- */
-export async function getMembership(
-  ctx: QueryCtx,
-  roomId: Id<"rooms">,
-  userId: Id<"users">
-): Promise<Doc<"roomMemberships"> | null> {
-  return await ctx.db
-    .query("roomMemberships")
-    .withIndex("by_room_user", (q) => q.eq("roomId", roomId).eq("userId", userId))
-    .first();
-}
-
-/**
- * Gets membership by authUserId for a specific room
+ * A person and their membership in a room, by auth identity; null when they
+ * have no user row or aren't in the room.
  */
 export async function getMembershipByAuthUserId(
   ctx: QueryCtx,
   roomId: Id<"rooms">,
   authUserId: string
 ): Promise<{ user: Doc<"users">; membership: Doc<"roomMemberships"> } | null> {
-  // Find global user
-  const user = await ctx.db
-    .query("users")
-    .withIndex("by_auth_user", (q) => q.eq("authUserId", authUserId))
-    .first();
-
+  const user = await getGlobalUserByAuthUserId(ctx, authUserId);
   if (!user) return null;
-
-  // Find membership in this room
-  const membership = await getMembership(ctx, roomId, user._id);
+  const membership = await Memberships.getMembership(ctx, roomId, user._id);
   if (!membership) return null;
-
   return { user, membership };
 }
 
 /**
- * Adds a user to a room or returns existing membership if authUserId matches
+ * Joins a person to a room by auth identity, making their user row on the
+ * way when this is their first room.
  */
-export async function joinRoom(
-  ctx: MutationCtx,
-  args: JoinRoomArgs
-): Promise<Id<"users">> {
-  // Update room activity
-  await Rooms.updateRoomActivity(ctx, args.roomId);
-
-  // Find or create global user
+export async function joinRoom(ctx: MutationCtx, args: JoinRoomArgs): Promise<Id<"users">> {
+  const room = await ctx.db.get("rooms", args.roomId);
+  if (!room) throw new Error("Room not found");
   const userId = await findOrCreateGlobalUser(ctx, {
     authUserId: args.authUserId,
     name: args.name,
     allowRename: args.allowRename,
   });
-
-  // Check if membership already exists for this room
-  const existingMembership = await getMembership(ctx, args.roomId, userId);
-  if (existingMembership) {
-    // If this is the room owner rejoining, ensure their role is set to "owner"
-    const room = await ctx.db.get("rooms", args.roomId);
-    if (room?.ownerId === userId && existingMembership.role !== "owner") {
-      await ctx.db.patch("roomMemberships", existingMembership._id, { role: "owner" });
-    }
-    return userId;
-  }
-
-  // Determine role: owner if this user is the room's owner, otherwise participant
-  const room = await ctx.db.get("rooms", args.roomId);
-  const role = room?.ownerId === userId ? ("owner" as const) : undefined;
-
-  // No spectator in a retro: everyone at the board writes. The bit stays on
-  // the row, always false, whatever the client sent.
-  const isSpectator = room?.roomType === "retro" ? false : (args.isSpectator ?? false);
-
-  // Create membership
-  await ctx.db.insert("roomMemberships", {
-    roomId: args.roomId,
-    userId,
-    isSpectator,
-    joinedAt: Date.now(),
-    ...(role ? { role } : {}),
-  });
-
-  // Check if this is a canvas room and create player node
-  if (room && room.roomType === "canvas") {
-    await Canvas.upsertPlayerNode(ctx, { roomId: args.roomId, userId });
-  }
-
+  const user = (await ctx.db.get("users", userId))!;
+  await Memberships.join(ctx, room, user, { isSpectator: args.isSpectator });
   return userId;
 }
 
 /**
- * Updates user information (name on global user, isSpectator on membership)
+ * Updates a member's name (their global one) and whether they sit out as a
+ * spectator in this room.
  */
-export async function editUser(
-  ctx: MutationCtx,
-  args: EditUserArgs
-): Promise<void> {
-  const user = await ctx.db.get("users", args.userId);
+export async function editUser(ctx: MutationCtx, args: EditUserArgs): Promise<void> {
+  const [user, room] = await Promise.all([ctx.db.get("users", args.userId), ctx.db.get("rooms", args.roomId)]);
   if (!user) throw new Error("User not found");
+  if (!room) throw new Error("Room not found");
+  if (!(await Memberships.getMembership(ctx, room._id, user._id))) throw new Error("User not in room");
 
-  // Get membership for room context
-  const membership = await getMembership(ctx, args.roomId, args.userId);
-  if (!membership) throw new Error("User not in room");
-
-  // Update room activity
-  await Rooms.updateRoomActivity(ctx, args.roomId);
-
-  // Update name on global user if changed
   if (args.name !== undefined) {
     await ctx.db.patch("users", args.userId, { name: args.name });
   }
-
-  // Handle spectator status transitions. Flip the roster bit first (membership is
-  // this module's to write), then hand the round its due: becoming a spectator
-  // drops this voter, so the round deletes their votes and re-checks completion —
-  // it may now arm the auto-reveal countdown. Un-spectating needs no reconcile:
-  // a spectator is voteless (castVote refuses them; this branch dropped any vote
-  // on the way in), so un-spectating adds a fresh non-voter that can't silently
-  // complete the round, and a latecomer never cancels a running countdown (ADR-0004).
-  if (args.isSpectator !== undefined && args.isSpectator !== membership.isSpectator) {
-    await ctx.db.patch("roomMemberships", membership._id, { isSpectator: args.isSpectator });
-
-    if (args.isSpectator) {
-      await VotingRound.dropVoter(ctx, args.roomId, args.userId);
-    }
+  if (args.isSpectator !== undefined) {
+    await Memberships.setSpectator(ctx, room, args.userId, args.isSpectator);
+  } else {
+    await Rooms.updateRoomActivity(ctx, room);
   }
 }
 
 /**
- * Removes a user from a room (deletes membership, keeps global user)
+ * Takes a person out of a room: they leave, or someone removes them.
  */
-export async function leaveRoom(
-  ctx: MutationCtx,
-  userId: Id<"users">,
-  roomId: Id<"rooms">
-): Promise<void> {
-  const membership = await getMembership(ctx, roomId, userId);
-  if (!membership) return;
-
-  // Membership and any canvas player node are this module's to remove. Delete the
-  // membership FIRST so the non-spectator roster reflects the departure before the
-  // round re-checks completion.
-  await ctx.db.delete("roomMemberships", membership._id);
-
+export async function leaveRoom(ctx: MutationCtx, userId: Id<"users">, roomId: Id<"rooms">): Promise<void> {
   const room = await ctx.db.get("rooms", roomId);
-  if (room && room.roomType === "canvas") {
-    await Canvas.removePlayerNode(ctx, { roomId, userId });
-  }
-
-  // Hand off to the round: drop the leaver's votes (the round is the sole writer
-  // of the votes table — ADR-0002) and reconcile the auto-reveal countdown, which
-  // may now arm if the leaver was the last non-voter. The remove/kick path funnels
-  // through here too, so it is covered.
-  await VotingRound.dropVoter(ctx, roomId, userId);
-
-  // Update room activity
-  await Rooms.updateRoomActivity(ctx, roomId);
-}
-
-/**
- * Gets all users in a room (via memberships)
- */
-export async function getRoomUsers(
-  ctx: QueryCtx,
-  roomId: Id<"rooms">
-): Promise<RoomUserData[]> {
-  // Get all memberships for this room
-  const memberships = await ctx.db
-    .query("roomMemberships")
-    .withIndex("by_room", (q) => q.eq("roomId", roomId))
-    .collect();
-
-  // Get all users for these memberships
-  const users = await Promise.all(
-    memberships.map((m) => ctx.db.get("users", m.userId))
-  );
-
-  // Merge user and membership data
-  return memberships.map((membership, index) => {
-    const user = users[index];
-    if (!user) throw new Error("User not found for membership");
-    return {
-      _id: user._id,
-      name: user.name,
-      avatarUrl: user.avatarUrl,
-      isSpectator: membership.isSpectator,
-      role: membership.role ?? "participant",
-      joinedAt: membership.joinedAt,
-      membershipId: membership._id,
-    };
-  });
-}
-
-/**
- * Checks if a user name is already taken in a room
- */
-export async function isUserNameTaken(
-  ctx: QueryCtx,
-  roomId: Id<"rooms">,
-  name: string
-): Promise<boolean> {
-  const users = await getRoomUsers(ctx, roomId);
-  return users.some((user) => user.name.toLowerCase() === name.toLowerCase());
+  if (room) await Memberships.leave(ctx, room, userId);
 }
 
 /**
@@ -299,15 +139,10 @@ export async function updateGlobalUserName(
   authUserId: string,
   name: string
 ): Promise<void> {
-  const user = await ctx.db
-    .query("users")
-    .withIndex("by_auth_user", (q) => q.eq("authUserId", authUserId))
-    .first();
-
+  const user = await getGlobalUserByAuthUserId(ctx, authUserId);
   if (!user) {
     throw new Error("User not found");
   }
-
   await ctx.db.patch("users", user._id, { name });
 }
 
@@ -326,10 +161,7 @@ export async function ensureGlobalUserFromAuth(
     avatarUrl?: string;
   }
 ): Promise<void> {
-  const existingUser = await ctx.db
-    .query("users")
-    .withIndex("by_auth_user", (q) => q.eq("authUserId", args.authUserId))
-    .first();
+  const existingUser = await getGlobalUserByAuthUserId(ctx, args.authUserId);
 
   if (existingUser) {
     // User already exists (e.g., created by a race with joinRoom).
@@ -360,151 +192,25 @@ export async function syncGlobalUserAvatar(
   authUserId: string,
   avatarUrl: string
 ): Promise<void> {
-  const user = await ctx.db
-    .query("users")
-    .withIndex("by_auth_user", (q) => q.eq("authUserId", authUserId))
-    .first();
-
+  const user = await getGlobalUserByAuthUserId(ctx, authUserId);
   if (user && user.avatarUrl !== avatarUrl) {
     await ctx.db.patch("users", user._id, { avatarUrl });
   }
 }
 
 /**
- * Completely deletes a user from the system (on sign out)
- * Removes from all rooms, deletes memberships, votes, canvas nodes, presence,
- * integration connections, and the user record
+ * Deletes a person's account (on "Delete account", and on a guest's sign-out).
  */
-export async function deleteUserByAuthUserId(
-  ctx: MutationCtx,
-  authUserId: string
-): Promise<void> {
-  // Find global user
-  const user = await ctx.db
-    .query("users")
-    .withIndex("by_auth_user", (q) => q.eq("authUserId", authUserId))
-    .first();
-
-  if (!user) return;
-
-  // A retro outlives its owner's account: it goes to whoever joined it
-  // first, or, with nobody else in it, it goes with the account.
-  await handOffOwnedRetros(ctx, user._id);
-
-  // Find all memberships for this user
-  const memberships = await ctx.db
-    .query("roomMemberships")
-    .withIndex("by_user", (q) => q.eq("userId", user._id))
-    .collect();
-
-  // Leave each room (cleans up votes and canvas nodes)
-  await Promise.all(
-    memberships.map((membership) => leaveRoom(ctx, user._id, membership.roomId))
-  );
-
-  // Presence outlives membership, so clear it for every room the user was
-  // ever seen in, not just the ones they are still in.
-  await Presence.removeUserPresence(ctx, user._id);
-
-  // Delete individual vote snapshots for this user — across every room they
-  // ever voted in, including ones they already left. Their history changes
-  // there, so invalidate those rooms' analytics snapshots directly (an
-  // account deletion is not room liveness, so no activity bump).
-  const individualVotes = await ctx.db
-    .query("individualVotes")
-    .withIndex("by_user", (q) => q.eq("userId", user._id))
-    .collect();
-  await Promise.all(individualVotes.map((iv) => ctx.db.delete("individualVotes", iv._id)));
-  await Analytics.invalidateRoomAnalyticsSnapshots(
-    ctx,
-    individualVotes.map((iv) => iv.roomId)
-  );
-
-  // Their integration connections go the way Disconnect takes them: room
-  // mappings deleted, live webhooks deregistered, then the row with its
-  // encrypted tokens.
-  await Integrations.disconnectUserConnections(ctx, user._id);
-
-  // Delete the global user record
-  await ctx.db.delete("users", user._id);
-}
-
-/** The retro rooms an account owns. */
-async function ownedRetros(ctx: MutationCtx, ownerId: Id<"users">): Promise<Doc<"rooms">[]> {
-  const owned = await ctx.db
-    .query("rooms")
-    .withIndex("by_owner", (q) => q.eq("ownerId", ownerId))
-    .collect();
-  return owned.filter((room) => room.roomType === "retro");
-}
-
-async function handOffOwnedRetros(ctx: MutationCtx, ownerId: Id<"users">): Promise<void> {
-  for (const room of await ownedRetros(ctx, ownerId)) {
-    const members = await ctx.db
-      .query("roomMemberships")
-      .withIndex("by_room", (q) => q.eq("roomId", room._id))
-      .collect();
-    const heir = members
-      .filter((m) => m.userId !== ownerId)
-      .sort((a, b) => a.joinedAt - b.joinedAt)[0];
-    if (heir) {
-      await ctx.db.patch("roomMemberships", heir._id, { role: "owner" });
-      await Rooms.setRoomOwner(ctx, room, heir.userId);
-    } else {
-      await ctx.scheduler.runAfter(0, internal.maintenance.deleteRoomAggregateChunk, { roomId: room._id });
-    }
-  }
-}
-
-/** How many retro rows of one kind an account linking re-points; an anonymous account never writes more. */
-const MAX_LINKED_RETRO_ROWS = 5000;
-
-/**
- * Keeps a permanent account's retros: every retro room it owns becomes
- * retained, so the inactivity sweep leaves it alone. Called once an
- * anonymous account turns permanent.
- */
-async function retainOwnedRetros(ctx: MutationCtx, ownerId: Id<"users">): Promise<void> {
-  const owner = await ctx.db.get("users", ownerId);
-  const retros = await ownedRetros(ctx, ownerId);
-  await Promise.all(
-    retros
-      .filter((room) => !room.retained && Rooms.isRetainedUnder(room, owner))
-      .map((room) => ctx.db.patch("rooms", room._id, { retained: true }))
-  );
-}
-
-/** Roles from most junior to most senior. */
-const ROLE_SENIORITY: readonly MemberRole[] = ["participant", "facilitator", "owner"];
-
-/** The more senior of two roles, for one person with two memberships in a room. */
-function seniorRole(a: MemberRole, b: MemberRole): MemberRole {
-  return ROLE_SENIORITY.indexOf(a) >= ROLE_SENIORITY.indexOf(b) ? a : b;
+export async function deleteUserByAuthUserId(ctx: MutationCtx, authUserId: string): Promise<void> {
+  const user = await getGlobalUserByAuthUserId(ctx, authUserId);
+  if (user) await AccountLifecycle.deleteAccount(ctx, user);
 }
 
 /**
- * Gives an account the owner role in every room it owns and is in: an
- * owner-role membership exists iff the owner is present (ADR-0001).
+ * A guest signed in to a permanent account: everything the guest had becomes
+ * the account's. A fresh sign-in with no guest row has nothing to carry: the
+ * account's user row is made when it first joins a room.
  */
-async function ensureOwnerRoles(ctx: MutationCtx, ownerId: Id<"users">): Promise<void> {
-  const owned = await ctx.db
-    .query("rooms")
-    .withIndex("by_owner", (q) => q.eq("ownerId", ownerId))
-    .collect();
-  for (const room of owned) {
-    const membership = await getMembership(ctx, room._id, ownerId);
-    if (membership && membership.role !== "owner") {
-      await ctx.db.patch("roomMemberships", membership._id, { role: "owner" });
-    }
-  }
-}
-
-/**
- * Links an anonymous user account to a new permanent account.
- * Transfers all memberships, votes, canvas node ownerships, and integration
- * connections.
- */
-
 export async function linkAnonymousToPermanent(
   ctx: MutationCtx,
   args: {
@@ -515,237 +221,8 @@ export async function linkAnonymousToPermanent(
     avatarUrl?: string;
   }
 ): Promise<void> {
-  // Find existing user by old anonymous authUserId
-  const user = await ctx.db
-    .query("users")
-    .withIndex("by_auth_user", (q) => q.eq("authUserId", args.oldAuthUserId))
-    .first();
-
-  if (!user) {
-    // No application user found — might be a fresh sign-in without prior room join
-    // BetterAuth will create the auth user; our app user gets created on next room join
-    return;
-  }
-
-  // Check if there's already a user with the new authUserId (shouldn't happen normally)
-  const existingPermanent = await ctx.db
-    .query("users")
-    .withIndex("by_auth_user", (q) => q.eq("authUserId", args.newAuthUserId))
-    .first();
-
-  if (existingPermanent) {
-    // Update the permanent user with account details from the OAuth provider.
-    // The permanent user was likely created by the auto-join race condition
-    // (before onLinkAccount ran) and is missing email/accountType/avatarUrl.
-    await ctx.db.patch("users", existingPermanent._id, {
-      email: args.email,
-      accountType: "permanent" as const,
-      avatarUrl: args.avatarUrl,
-    });
-
-    // Merge: transfer memberships from anonymous user to existing permanent user
-    const memberships = await ctx.db
-      .query("roomMemberships")
-      .withIndex("by_user", (q) => q.eq("userId", user._id))
-      .collect();
-
-    for (const membership of memberships) {
-      // Check if permanent user already has membership in this room
-      const existingMembership = await getMembership(ctx, membership.roomId, existingPermanent._id);
-      if (existingMembership) {
-        // Already in room — keep the more senior of the two roles, then
-        // delete the anonymous membership
-        const kept = getEffectiveRole(existingMembership);
-        const role = seniorRole(kept, getEffectiveRole(membership));
-        if (role !== kept) {
-          await ctx.db.patch("roomMemberships", existingMembership._id, { role });
-        }
-        await ctx.db.delete("roomMemberships", membership._id);
-      } else {
-        // Transfer membership to permanent user
-        await ctx.db.patch("roomMemberships", membership._id, { userId: existingPermanent._id });
-      }
-    }
-
-    // Transfer votes.
-    // Sole-writer exception (ADR-0004): this re-points vote *ownership* during a
-    // sign-in identity merge — not a round action — so it writes the votes table
-    // directly and does NOT reconcile the auto-reveal countdown. Accepted because
-    // the merge is a cold sign-in path; a merge that happens to complete a live
-    // round won't auto-arm until the next vote or roster change.
-    // Rule: keep at most one vote per (room, user). If the permanent user already
-    // voted in a room, or is a spectator there (spectators are voteless), drop the
-    // anonymous vote; otherwise re-point it to the permanent user.
-    const votes = await ctx.db
-      .query("votes")
-      .withIndex("by_user", (q) => q.eq("userId", user._id))
-      .collect();
-
-    for (const vote of votes) {
-      const existingVote = await ctx.db
-        .query("votes")
-        .withIndex("by_room_user", (q) =>
-          q.eq("roomId", vote.roomId).eq("userId", existingPermanent._id)
-        )
-        .first();
-
-      // Drop the anonymous vote (rather than transfer it) when the permanent
-      // user already voted in this room, OR is a spectator there. Spectators are
-      // voteless (ADR-0004): re-pointing a vote onto a spectator would recreate
-      // the "spectator holds a vote row" state that strands the auto-reveal
-      // countdown when that member is later un-spectated.
-      const destMembership = await getMembership(
-        ctx,
-        vote.roomId,
-        existingPermanent._id
-      );
-      if (existingVote || destMembership?.isSpectator) {
-        await ctx.db.delete("votes", vote._id);
-      } else {
-        await ctx.db.patch("votes", vote._id, { userId: existingPermanent._id });
-      }
-    }
-
-    // Transfer individual vote snapshots
-    // Rule: If both users have snapshots for the same issue,
-    // keep the permanent user's and delete the anonymous one.
-    const anonIndividualVotes = await ctx.db
-      .query("individualVotes")
-      .withIndex("by_user", (q) => q.eq("userId", user._id))
-      .collect();
-
-    for (const iv of anonIndividualVotes) {
-      const existingIv = await ctx.db
-        .query("individualVotes")
-        .withIndex("by_room_user_issue", (q) =>
-          q
-            .eq("roomId", iv.roomId)
-            .eq("userId", existingPermanent._id)
-            .eq("issueId", iv.issueId)
-        )
-        .first();
-
-      if (existingIv) {
-        await ctx.db.delete("individualVotes", iv._id);
-      } else {
-        await ctx.db.patch("individualVotes", iv._id, { userId: existingPermanent._id });
-      }
-    }
-
-    // Both branches above rewrote room history (a vote row deleted or
-    // re-pointed) — invalidate the affected rooms' analytics snapshots.
-    await Analytics.invalidateRoomAnalyticsSnapshots(
-      ctx,
-      anonIndividualVotes.map((iv) => iv.roomId)
-    );
-
-    // Transfer canvas nodes (ownership & player nodes)
-    // Query each room the anonymous user is a member of to find their player nodes
-    const playerNodes: Doc<"canvasNodes">[] = [];
-    for (const membership of memberships) {
-      const node = await ctx.db
-        .query("canvasNodes")
-        .withIndex("by_room_node", (q) =>
-          q.eq("roomId", membership.roomId).eq("nodeId", `player-${user._id}`)
-        )
-        .first();
-      if (node) playerNodes.push(node);
-    }
-
-    for (const node of playerNodes) {
-      const existingPlayerNode = await ctx.db
-        .query("canvasNodes")
-        .withIndex("by_room_node", (q) =>
-          q.eq("roomId", node.roomId).eq("nodeId", `player-${existingPermanent._id}`)
-        )
-        .first();
-
-      if (existingPlayerNode) {
-        // Permanent user already has a player node in this room
-        await ctx.db.delete("canvasNodes", node._id);
-      } else {
-        // Transfer node to permanent user (update both nodeId and data.userId)
-        await ctx.db.patch("canvasNodes", node._id, {
-          nodeId: `player-${existingPermanent._id}`,
-          data: { ...node.data, userId: existingPermanent._id },
-        });
-      }
-    }
-
-    // Transfer room ownership from anonymous user to permanent user
-    const ownedRooms = await ctx.db
-      .query("rooms")
-      .withIndex("by_owner", (q) => q.eq("ownerId", user._id))
-      .collect();
-
-    for (const room of ownedRooms) {
-      await Rooms.setRoomOwner(ctx, room, existingPermanent._id);
-    }
-    // The merge can leave the permanent user in a room it owns without the
-    // owner role: it joined a room the guest owned (and had left) before this
-    // hook ran, or the guest's membership moved into a room it already owned.
-    await ensureOwnerRoles(ctx, existingPermanent._id);
-
-    // Update lastUpdatedBy on any canvas nodes touched by the anonymous user
-    const updatedNodes = await ctx.db
-      .query("canvasNodes")
-      .withIndex("by_last_updated_by", (q) => q.eq("lastUpdatedBy", user._id))
-      .collect();
-
-    for (const node of updatedNodes) {
-      await ctx.db.patch("canvasNodes", node._id, { lastUpdatedBy: existingPermanent._id });
-    }
-
-    // Retro stickies, votes and action items name people by reference:
-    // re-point the anonymous account's rows to the permanent one.
-    const [stickies, retroVotes, ownedItems] = await Promise.all([
-      ctx.db.query("retroStickies").withIndex("by_author", (q) => q.eq("authorId", user._id)).take(MAX_LINKED_RETRO_ROWS),
-      ctx.db.query("retroStickyVotes").withIndex("by_voter", (q) => q.eq("voterId", user._id)).take(MAX_LINKED_RETRO_ROWS),
-      ctx.db.query("retroActionItems").withIndex("by_owner", (q) => q.eq("ownerId", user._id)).take(MAX_LINKED_RETRO_ROWS),
-    ]);
-    // One person, one set of votes per retro: where the permanent account
-    // has already voted, the guest's votes there are dropped rather than
-    // doubled up (and over budget).
-    const votedAlready = new Set<string>();
-    for (const roomId of new Set(retroVotes.map((vote) => vote.roomId))) {
-      const vote = await ctx.db
-        .query("retroStickyVotes")
-        .withIndex("by_room_voter", (q) => q.eq("roomId", roomId).eq("voterId", existingPermanent._id))
-        .first();
-      if (vote) votedAlready.add(roomId);
-    }
-    await Promise.all([
-      ...stickies.map((sticky) => ctx.db.patch("retroStickies", sticky._id, { authorId: existingPermanent._id })),
-      ...retroVotes.map((vote) =>
-        votedAlready.has(vote.roomId)
-          ? ctx.db.delete("retroStickyVotes", vote._id)
-          : ctx.db.patch("retroStickyVotes", vote._id, { voterId: existingPermanent._id })
-      ),
-      ...ownedItems.map((item) => ctx.db.patch("retroActionItems", item._id, { ownerId: existingPermanent._id })),
-    ]);
-    await retainOwnedRetros(ctx, existingPermanent._id);
-
-    // Integration connections, one per user and provider: the guest's moves
-    // across unless the permanent account has its own, which it keeps.
-    await Integrations.transferUserConnections(ctx, user._id, existingPermanent._id);
-
-    // Delete the old anonymous user record and its presence; the client
-    // heartbeats as the permanent user from here on.
-    await Presence.removeUserPresence(ctx, user._id);
-    await ctx.db.delete("users", user._id);
-    return;
-  }
-
-  // Simple case: update the user record to point to new authUserId
-  await ctx.db.patch("users", user._id, {
-    authUserId: args.newAuthUserId,
-    email: args.email,
-    avatarUrl: args.avatarUrl,
-    accountType: "permanent",
-    // Always preserve the user's chosen display name over the OAuth provider name.
-    // Anonymous users always have a name (set on room join), so this only applies
-    // if the user record somehow has an empty name.
-    ...(args.name && !user.name ? { name: args.name } : {}),
-  });
-  await retainOwnedRetros(ctx, user._id);
+  const guest = await getGlobalUserByAuthUserId(ctx, args.oldAuthUserId);
+  if (!guest) return;
+  const account = await getGlobalUserByAuthUserId(ctx, args.newAuthUserId);
+  await AccountLifecycle.linkAccount(ctx, guest, account, args);
 }

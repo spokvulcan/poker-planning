@@ -23,11 +23,14 @@ const writes = vi.hoisted(() => ({
 }));
 
 vi.mock("convex/react", () => ({
-  useMutation: () => (args: unknown) => {
-    writes.calls.push({ args });
-    return writes.reject
-      ? Promise.reject(new Error("mutation failed"))
-      : Promise.resolve(undefined);
+  useMutation: () => {
+    const mutate = (args: unknown) => {
+      writes.calls.push({ args });
+      return writes.reject
+        ? Promise.reject(new Error("mutation failed"))
+        : Promise.resolve(undefined);
+    };
+    return Object.assign(mutate, { withOptimisticUpdate: () => mutate });
   },
   useQuery: () => undefined,
 }));
@@ -50,7 +53,7 @@ function invokeAll(actions: ReturnType<typeof useCanvasActions>) {
   actions.updateNoteContent("note-1", "hello");
   actions.createNote(ISSUE_ID);
   actions.deleteNote("note-1");
-  actions.updateNodePosition("note-1", { x: 1, y: 2 });
+  actions.moveNodes([{ nodeId: "note-1", position: { x: 1, y: 2 } }]);
   actions.removeUser(USER_ID);
 }
 

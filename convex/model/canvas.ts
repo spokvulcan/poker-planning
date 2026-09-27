@@ -1,6 +1,9 @@
 import { QueryCtx, MutationCtx } from "../_generated/server";
-import { Id } from "../_generated/dataModel";
+import { Doc, Id } from "../_generated/dataModel";
 import * as Rooms from "./rooms";
+import { membershipsOf } from "./memberships";
+import { refusal } from "./refusal";
+import { rulesOf, ceremonyOf, NOT_THIS_CEREMONY } from "../ceremony";
 import {
   computeHorizontalLayout,
   NOTE_POSITION,
@@ -9,16 +12,29 @@ import {
   TIMER_POSITION,
   type Position,
 } from "../canvasLayout";
+import {
+  actionsPosition,
+  nextPadPosition,
+  padNodeId,
+  padPositions,
+  RETRO_NODE_POSITION,
+  RETRO_TIMER_POSITION,
+} from "../retroLayout";
 import { IDLE_TIMER, type TimerState } from "../timerState";
-
-// Re-exported for compatibility — the geometry now lives in canvasLayout.ts.
-export type { Position } from "../canvasLayout";
+import type { UserRows } from "./userRows";
 
 /**
- * Persisted `data` payload for each canvas node `type`. The column is stored as
- * `v.any()` in the schema (node shapes evolve independently of migrations), so
- * this discriminated union is the read-side contract asserted by
- * {@link getCanvasNodes} — it lets callers narrow `data` by `type`.
+ * The room canvas: every node on a room's whiteboard, and the one module that
+ * reads and writes `canvasNodes`. Other modules say what happened (a member
+ * joined, a round was revealed, a column was added, an issue went) and this
+ * module decides what that does to the board. Node ids and each node type's
+ * stored data stay in here: the schema keeps `data` as `v.any()`, so the
+ * typed contract below is this module's, and no other module casts it.
+ */
+
+/**
+ * The stored `data` of each node type, and the read-side contract of
+ * {@link getCanvasNodes}: callers narrow `data` by `type`.
  */
 export type CanvasNodeData =
   | { type: "player"; data: { userId: Id<"users"> } }
@@ -29,11 +45,11 @@ export type CanvasNodeData =
         issueId: Id<"issues">;
         issueTitle: string;
         content: string;
-        lastUpdatedBy?: string; // display name (user.name), not an Id — see writes in this file
+        lastUpdatedBy?: string; // a display name, not an Id
         lastUpdatedAt?: number;
       };
     }
-  // session / results / story carry no persisted payload
+  // session / results / story carry no stored payload
   | { type: "session"; data: Record<string, never> }
   | { type: "results"; data: Record<string, never> }
   | { type: "story"; data: Record<string, never> }
@@ -51,377 +67,380 @@ export type CanvasNode = {
   lastUpdatedAt: number;
 } & CanvasNodeData;
 
-// Maximum length for note content (10KB)
-const MAX_NOTE_CONTENT_LENGTH = 10000;
+type NodeType = CanvasNodeData["type"];
+type DataOf<T extends NodeType> = Extract<CanvasNodeData, { type: T }>["data"];
 
-/**
- * Recalculates layout for all session/player nodes.
- * Called when players join or leave to maintain balanced layout.
- */
-export async function relayoutNodes(
-  ctx: MutationCtx,
-  roomId: Id<"rooms">
-): Promise<void> {
-  // Get all nodes for the room
-  const nodes = await ctx.db
+/** Longest note a discussion can take. */
+const MAX_NOTE_CONTENT_LENGTH = 10000;
+/** Most nodes one drop can move. */
+export const MAX_MOVES = 200;
+
+const SESSION_NODE_ID = "session-current";
+const RESULTS_NODE_ID = "results";
+const TIMER_NODE_ID = "timer";
+
+function playerNodeId(userId: Id<"users">): string {
+  return `player-${userId}`;
+}
+
+function noteNodeId(issueId: Id<"issues">): string {
+  return `note-${issueId}`;
+}
+
+// --- Storage --------------------------------------------------------------------
+
+async function nodesOf(ctx: QueryCtx, roomId: Id<"rooms">): Promise<Doc<"canvasNodes">[]> {
+  return await ctx.db
     .query("canvasNodes")
     .withIndex("by_room", (q) => q.eq("roomId", roomId))
     .collect();
+}
 
-  // Find session and player nodes
-  const sessionNode = nodes.find((n) => n.type === "session");
-  const playerNodes = nodes.filter((n) => n.type === "player");
+async function nodeById(ctx: QueryCtx, roomId: Id<"rooms">, nodeId: string): Promise<Doc<"canvasNodes"> | null> {
+  return await ctx.db
+    .query("canvasNodes")
+    .withIndex("by_room_node", (q) => q.eq("roomId", roomId).eq("nodeId", nodeId))
+    .unique();
+}
 
-  if (!sessionNode) return;
+async function insertNode<T extends NodeType>(
+  ctx: MutationCtx,
+  roomId: Id<"rooms">,
+  node: { nodeId: string; type: T; position: Position; data: DataOf<T> }
+): Promise<Id<"canvasNodes">> {
+  return await ctx.db.insert("canvasNodes", {
+    roomId,
+    nodeId: node.nodeId,
+    type: node.type,
+    position: { ...node.position },
+    data: node.data,
+    lastUpdatedAt: Date.now(),
+  });
+}
 
-  // Compute new layout
-  const playerNodeIds = playerNodes.map((n) => n.nodeId);
-  const newPositions = computeHorizontalLayout(
-    sessionNode.nodeId,
-    playerNodeIds
-  );
+/** A node's stored data (the `v.any()` column), typed by the type the caller expects it to be. */
+function dataOf<T extends NodeType>(node: Doc<"canvasNodes">, type: T): DataOf<T> {
+  if (node.type !== type) throw new Error(`Expected a ${type} node, found ${node.type}`);
+  return node.data as DataOf<T>;
+}
 
-  // Build update operations for unlocked nodes
-  const now = Date.now();
-  const updateOperations = newPositions
-    .map((pos) => {
-      const node = nodes.find((n) => n.nodeId === pos.nodeId);
-      return node && !node.isLocked ? { node, position: pos.position } : null;
+/** A spot on the board: refused when it isn't a number, and kept within the board's bounds. */
+export function validPosition(position: Position): Position {
+  if (!Number.isFinite(position.x) || !Number.isFinite(position.y)) {
+    throw refusal("forbidden", "That spot is off the board.");
+  }
+  const clamp = (n: number) => Math.min(Math.max(n, -100_000), 100_000);
+  return { x: clamp(position.x), y: clamp(position.y) };
+}
+
+// --- Reads ----------------------------------------------------------------------
+
+/** Every node of a room's canvas, typed by node type. */
+export async function getCanvasNodes(ctx: QueryCtx, roomId: Id<"rooms">): Promise<CanvasNode[]> {
+  // `data` is stored as `v.any()`; this module's writes keep it to the per-type contract.
+  return (await nodesOf(ctx, roomId)) as CanvasNode[];
+}
+
+/** Each issue's discussion note, for the issue export. */
+export async function noteContents(ctx: QueryCtx, roomId: Id<"rooms">): Promise<Map<Id<"issues">, string>> {
+  const notes = await ctx.db
+    .query("canvasNodes")
+    .withIndex("by_room_type", (q) => q.eq("roomId", roomId).eq("type", "note"))
+    .collect();
+  return new Map(
+    notes.map((note) => {
+      const data = dataOf(note, "note");
+      return [data.issueId, data.content] as const;
     })
-    .filter((op): op is NonNullable<typeof op> => op !== null);
-
-  // Execute all updates in parallel
-  await Promise.all(
-    updateOperations.map((op) =>
-      ctx.db.patch("canvasNodes", op.node._id, {
-        position: op.position,
-        lastUpdatedAt: now,
-      })
-    )
   );
 }
 
+// --- The board a room starts with -----------------------------------------------
+
 /**
- * Initializes canvas nodes when a canvas room is created
+ * Lays out a new room's board: a poker room's timer and session node, or a
+ * retro's retro node, timer, action items and one pad per column.
  */
-export async function initializeCanvasNodes(
-  ctx: MutationCtx,
-  args: { roomId: Id<"rooms"> }
-): Promise<void> {
-  const room = await ctx.db.get("rooms", args.roomId);
-  if (!room || room.roomType !== "canvas") {
-    throw new Error("Invalid canvas room");
+export async function openBoard(ctx: MutationCtx, room: Doc<"rooms">): Promise<void> {
+  if (ceremonyOf(room) === "poker") {
+    await Promise.all([
+      insertNode(ctx, room._id, { nodeId: TIMER_NODE_ID, type: "timer", position: TIMER_POSITION, data: { ...IDLE_TIMER } }),
+      insertNode(ctx, room._id, { nodeId: SESSION_NODE_ID, type: "session", position: SESSION_INITIAL_POSITION, data: {} }),
+    ]);
+    return;
   }
 
-  // Check if nodes already exist
-  const existingNodes = await ctx.db
-    .query("canvasNodes")
-    .withIndex("by_room", (q) => q.eq("roomId", args.roomId))
-    .first();
-
-  if (existingNodes) {
-    return; // Already initialized
-  }
-
-  const now = Date.now();
-
-  // Create initial nodes in parallel
+  const columns = room.retro?.columns ?? [];
+  const pads = padPositions(columns.length);
   await Promise.all([
-    // Create timer node
-    ctx.db.insert("canvasNodes", {
-      roomId: args.roomId,
-      nodeId: "timer",
-      type: "timer",
-      position: { ...TIMER_POSITION },
-      data: { ...IDLE_TIMER },
-      lastUpdatedAt: now,
-    }),
-    // Create session node
-    ctx.db.insert("canvasNodes", {
-      roomId: args.roomId,
-      nodeId: "session-current",
-      type: "session",
-      position: { ...SESSION_INITIAL_POSITION },
-      data: {},
-      lastUpdatedAt: now,
-    }),
+    insertNode(ctx, room._id, { nodeId: "retro", type: "retro", position: RETRO_NODE_POSITION, data: {} }),
+    insertNode(ctx, room._id, { nodeId: TIMER_NODE_ID, type: "timer", position: RETRO_TIMER_POSITION, data: { ...IDLE_TIMER } }),
+    insertNode(ctx, room._id, { nodeId: "actions", type: "actions", position: actionsPosition(columns.length), data: {} }),
+    ...columns.map((column, i) =>
+      insertNode(ctx, room._id, { nodeId: padNodeId(column.id), type: "pad", position: pads[i], data: { columnId: column.id } })
+    ),
   ]);
 }
 
-/**
- * Gets all canvas nodes for a room
- */
-export async function getCanvasNodes(
-  ctx: QueryCtx,
-  roomId: Id<"rooms">
-): Promise<CanvasNode[]> {
-  const nodes = await ctx.db
-    .query("canvasNodes")
-    .withIndex("by_room", (q) => q.eq("roomId", roomId))
-    .collect();
-  // `data` is persisted as `v.any()`; assert the per-`type` read contract.
-  return nodes as CanvasNode[];
-}
+// --- Members --------------------------------------------------------------------
 
 /**
- * Updates a node's position
+ * Lays the session and player nodes out again: the session centred, the
+ * players in a row beneath it. Locked nodes stay where they are.
  */
-export async function updateNodePosition(
+async function relayoutPlayers(ctx: MutationCtx, roomId: Id<"rooms">): Promise<void> {
+  const nodes = await nodesOf(ctx, roomId);
+  const session = nodes.find((n) => n.type === "session");
+  if (!session) return;
+  const players = nodes.filter((n) => n.type === "player");
+  const byId = new Map(nodes.map((n) => [n.nodeId, n]));
+  const now = Date.now();
+  await Promise.all(
+    computeHorizontalLayout(session.nodeId, players.map((n) => n.nodeId)).map(({ nodeId, position }) => {
+      const node = byId.get(nodeId);
+      return node && !node.isLocked
+        ? ctx.db.patch("canvasNodes", node._id, { position, lastUpdatedAt: now })
+        : Promise.resolve();
+    })
+  );
+}
+
+/** A member arrived: in a poker room they get a player node, and the row makes room. */
+export async function memberJoined(ctx: MutationCtx, room: Doc<"rooms">, userId: Id<"users">): Promise<void> {
+  if (!rulesOf(room).playerNodes) return;
+  if (await nodeById(ctx, room._id, playerNodeId(userId))) return;
+  await insertNode(ctx, room._id, { nodeId: playerNodeId(userId), type: "player", position: { x: 0, y: 0 }, data: { userId } });
+  await relayoutPlayers(ctx, room._id);
+}
+
+/** A member left: their player node goes, and the row closes up. */
+export async function memberLeft(ctx: MutationCtx, room: Doc<"rooms">, userId: Id<"users">): Promise<void> {
+  if (!rulesOf(room).playerNodes) return;
+  const node = await nodeById(ctx, room._id, playerNodeId(userId));
+  if (node) await ctx.db.delete("canvasNodes", node._id);
+  await relayoutPlayers(ctx, room._id);
+}
+
+// --- The voting round -----------------------------------------------------------
+
+/** A round was revealed: the results node shows up, once. */
+export async function roundRevealed(ctx: MutationCtx, room: Doc<"rooms">): Promise<void> {
+  if (!rulesOf(room).votingRounds) return;
+  if (await nodeById(ctx, room._id, RESULTS_NODE_ID)) return;
+  await insertNode(ctx, room._id, { nodeId: RESULTS_NODE_ID, type: "results", position: RESULTS_POSITION, data: {} });
+}
+
+// --- Retro columns --------------------------------------------------------------
+
+/** A retro column was added: its pad goes one step right of the rightmost pad. */
+export async function columnAdded(ctx: MutationCtx, roomId: Id<"rooms">, columnId: string): Promise<void> {
+  const pads = await ctx.db
+    .query("canvasNodes")
+    .withIndex("by_room_type", (q) => q.eq("roomId", roomId).eq("type", "pad"))
+    .take(32);
+  await insertNode(ctx, roomId, {
+    nodeId: padNodeId(columnId),
+    type: "pad",
+    position: nextPadPosition(pads.map((p) => p.position)),
+    data: { columnId },
+  });
+}
+
+/** A retro column was removed: its pad goes with it. */
+export async function columnRemoved(ctx: MutationCtx, roomId: Id<"rooms">, columnId: string): Promise<void> {
+  const pad = await nodeById(ctx, roomId, padNodeId(columnId));
+  if (pad) await ctx.db.delete("canvasNodes", pad._id);
+}
+
+// --- Moves ----------------------------------------------------------------------
+
+/**
+ * Puts nodes where a drop left them. A node deleted mid-drag, or locked, is
+ * skipped: a drop never fails on the one node that went away.
+ */
+export async function moveNodes(
   ctx: MutationCtx,
-  args: {
-    roomId: Id<"rooms">;
-    nodeId: string;
-    position: Position;
-    userId: Id<"users">;
-  }
+  room: Doc<"rooms">,
+  moves: readonly { nodeId: string; position: Position }[],
+  userId: Id<"users">
 ): Promise<void> {
-  const node = await ctx.db
-    .query("canvasNodes")
-    .withIndex("by_room_node", (q) =>
-      q.eq("roomId", args.roomId).eq("nodeId", args.nodeId)
-    )
-    .unique();
-
-  if (!node) {
-    throw new Error("Node not found");
-  }
-
-  if (node.isLocked) {
-    throw new Error("Node is locked");
-  }
-
-  await ctx.db.patch("canvasNodes", node._id, {
-    position: args.position,
-    lastUpdatedBy: args.userId,
-    lastUpdatedAt: Date.now(),
-  });
-
-  await Rooms.updateRoomActivity(ctx, args.roomId);
+  if (moves.length > MAX_MOVES) throw refusal("forbidden", "Too many things at once.");
+  const now = Date.now();
+  await Promise.all(
+    moves.map(async (move) => {
+      const node = await nodeById(ctx, room._id, move.nodeId);
+      if (!node || node.isLocked) return;
+      await ctx.db.patch("canvasNodes", node._id, {
+        position: validPosition(move.position),
+        lastUpdatedBy: userId,
+        lastUpdatedAt: now,
+      });
+    })
+  );
+  await Rooms.updateRoomActivity(ctx, room);
 }
 
-/**
- * Creates or updates a player node
- */
-export async function upsertPlayerNode(
+// --- Discussion notes -----------------------------------------------------------
+
+/** Opens a discussion note for one of the room's issues; asking again returns the same note. */
+export async function createNote(
   ctx: MutationCtx,
-  args: {
-    roomId: Id<"rooms">;
-    userId: Id<"users">;
-    position?: Position;
-  }
+  room: Doc<"rooms">,
+  issueId: Id<"issues">,
+  author: Doc<"users">
 ): Promise<Id<"canvasNodes">> {
-  const nodeId = `player-${args.userId}`;
+  if (!rulesOf(room).votingRounds) throw new Error(NOT_THIS_CEREMONY);
+  const issue = await ctx.db.get("issues", issueId);
+  // An issue from another room is as good as missing: its title stays there.
+  if (!issue || issue.roomId !== room._id) throw new Error("Issue not found");
+  const existing = await nodeById(ctx, room._id, noteNodeId(issueId));
+  if (existing) return existing._id;
 
-  const existingNode = await ctx.db
-    .query("canvasNodes")
-    .withIndex("by_room_node", (q) =>
-      q.eq("roomId", args.roomId).eq("nodeId", nodeId)
-    )
-    .unique();
-
-  if (existingNode) {
-    return existingNode._id;
-  }
-
-  // Create with temporary position (will be updated by relayout)
-  const position = args.position ?? { x: 0, y: 0 };
-
-  const id = await ctx.db.insert("canvasNodes", {
-    roomId: args.roomId,
-    nodeId,
-    type: "player",
-    position,
-    data: { userId: args.userId },
-    lastUpdatedAt: Date.now(),
-  });
-
-  // Trigger relayout to position all nodes correctly
-  await relayoutNodes(ctx, args.roomId);
-
-  return id;
-}
-
-
-/**
- * Creates or updates results node
- */
-export async function upsertResultsNode(
-  ctx: MutationCtx,
-  args: { roomId: Id<"rooms"> }
-): Promise<Id<"canvasNodes">> {
-  const nodeId = "results";
-
-  const existingNode = await ctx.db
-    .query("canvasNodes")
-    .withIndex("by_room_node", (q) =>
-      q.eq("roomId", args.roomId).eq("nodeId", nodeId)
-    )
-    .unique();
-
-  if (existingNode) {
-    return existingNode._id;
-  }
-
-  return await ctx.db.insert("canvasNodes", {
-    roomId: args.roomId,
-    nodeId,
-    type: "results",
-    position: { ...RESULTS_POSITION },
-    data: {},
-    lastUpdatedAt: Date.now(),
-  });
-}
-
-
-/**
- * Removes player node when user leaves
- */
-export async function removePlayerNode(
-  ctx: MutationCtx,
-  args: { roomId: Id<"rooms">; userId: Id<"users"> }
-): Promise<void> {
-  const nodeId = `player-${args.userId}`;
-
-  const node = await ctx.db
-    .query("canvasNodes")
-    .withIndex("by_room_node", (q) =>
-      q.eq("roomId", args.roomId).eq("nodeId", nodeId)
-    )
-    .unique();
-
-  if (node) {
-    await ctx.db.delete("canvasNodes", node._id);
-  }
-
-  // Trigger relayout to rebalance remaining nodes
-  await relayoutNodes(ctx, args.roomId);
-}
-
-/**
- * Creates a note node for an issue
- */
-export async function createNoteNode(
-  ctx: MutationCtx,
-  args: {
-    roomId: Id<"rooms">;
-    issueId: Id<"issues">;
-    userId: Id<"users">;
-  }
-): Promise<Id<"canvasNodes">> {
-  // Checked first: the note shows the issue's title to everyone in this room.
-  const issue = await ctx.db.get("issues", args.issueId);
-  if (!issue || issue.roomId !== args.roomId) {
-    throw new Error("Issue not found");
-  }
-
-  const nodeId = `note-${args.issueId}`;
-
-  // Check if note already exists for this issue
-  const existingNode = await ctx.db
-    .query("canvasNodes")
-    .withIndex("by_room_node", (q) =>
-      q.eq("roomId", args.roomId).eq("nodeId", nodeId)
-    )
-    .unique();
-
-  if (existingNode) {
-    return existingNode._id;
-  }
-
-  // Get user name for lastUpdatedBy display
-  const user = await ctx.db.get("users", args.userId);
-
-  const id = await ctx.db.insert("canvasNodes", {
-    roomId: args.roomId,
-    nodeId,
+  const id = await insertNode(ctx, room._id, {
+    nodeId: noteNodeId(issueId),
     type: "note",
-    position: { ...NOTE_POSITION },
-    data: {
-      issueId: args.issueId,
-      issueTitle: issue.title,
-      content: "",
-      lastUpdatedBy: user?.name ?? "Unknown",
-      lastUpdatedAt: Date.now(),
-    },
-    lastUpdatedAt: Date.now(),
+    position: NOTE_POSITION,
+    data: { issueId, issueTitle: issue.title, content: "", lastUpdatedBy: author.name, lastUpdatedAt: Date.now() },
   });
-
-  await Rooms.updateRoomActivity(ctx, args.roomId);
+  await Rooms.updateRoomActivity(ctx, room);
   return id;
 }
 
-/**
- * Updates the content of a note node
- */
-export async function updateNoteContent(
+async function noteNode(ctx: QueryCtx, roomId: Id<"rooms">, nodeId: string): Promise<Doc<"canvasNodes">> {
+  const node = await nodeById(ctx, roomId, nodeId);
+  if (!node) throw new Error("Note node not found");
+  if (node.type !== "note") throw new Error("Node is not a note");
+  return node;
+}
+
+/** Rewrites a discussion note, naming its last editor. */
+export async function updateNote(
   ctx: MutationCtx,
-  args: {
-    roomId: Id<"rooms">;
-    nodeId: string;
-    content: string;
-    userId: Id<"users">;
-  }
+  room: Doc<"rooms">,
+  nodeId: string,
+  content: string,
+  editor: Doc<"users">
 ): Promise<void> {
-  // Validate content length
-  if (args.content.length > MAX_NOTE_CONTENT_LENGTH) {
+  if (content.length > MAX_NOTE_CONTENT_LENGTH) {
     throw new Error(`Note content too long (max ${MAX_NOTE_CONTENT_LENGTH} characters)`);
   }
-
-  const node = await ctx.db
-    .query("canvasNodes")
-    .withIndex("by_room_node", (q) =>
-      q.eq("roomId", args.roomId).eq("nodeId", args.nodeId)
-    )
-    .unique();
-
-  if (!node) {
-    throw new Error("Note node not found");
-  }
-
-  if (node.type !== "note") {
-    throw new Error("Node is not a note");
-  }
-
-  // Get user name for display
-  const user = await ctx.db.get("users", args.userId);
-
+  const node = await noteNode(ctx, room._id, nodeId);
+  const now = Date.now();
   await ctx.db.patch("canvasNodes", node._id, {
-    data: {
-      ...node.data,
-      content: args.content,
-      lastUpdatedBy: user?.name ?? "Unknown",
-      lastUpdatedAt: Date.now(),
-    },
+    data: { ...dataOf(node, "note"), content, lastUpdatedBy: editor.name, lastUpdatedAt: now },
+    lastUpdatedAt: now,
+  });
+  await Rooms.updateRoomActivity(ctx, room);
+}
+
+/** Takes a discussion note off the board. */
+export async function deleteNote(ctx: MutationCtx, room: Doc<"rooms">, nodeId: string): Promise<void> {
+  const node = await noteNode(ctx, room._id, nodeId);
+  await ctx.db.delete("canvasNodes", node._id);
+  await Rooms.updateRoomActivity(ctx, room);
+}
+
+/** An issue went: its discussion note goes too. */
+export async function issueRemoved(ctx: MutationCtx, roomId: Id<"rooms">, issueId: Id<"issues">): Promise<void> {
+  const note = await nodeById(ctx, roomId, noteNodeId(issueId));
+  if (note) await ctx.db.delete("canvasNodes", note._id);
+}
+
+// --- The timer ------------------------------------------------------------------
+
+/**
+ * Moves a timer node on: `next` turns its current state into the new one
+ * (the timer's own rules live in timerState). Throws when the node is not a timer.
+ */
+export async function updateTimer(
+  ctx: MutationCtx,
+  roomId: Id<"rooms">,
+  nodeId: string,
+  userId: Id<"users">,
+  next: (state: TimerState) => TimerState
+): Promise<void> {
+  const node = await nodeById(ctx, roomId, nodeId);
+  if (!node || node.type !== "timer") throw new Error("Timer node not found");
+  await ctx.db.patch("canvasNodes", node._id, {
+    data: next(dataOf(node, "timer")),
+    lastUpdatedBy: userId,
     lastUpdatedAt: Date.now(),
   });
+}
 
-  // Update room activity
-  await Rooms.updateRoomActivity(ctx, args.roomId);
+// --- Accounts -------------------------------------------------------------------
+
+/**
+ * The nodes that name a person: every node they last moved, and the timers
+ * of the rooms they are in, which name whoever last ran them. Runs while the
+ * person's memberships are still there.
+ */
+async function nodesNaming(ctx: QueryCtx, userId: Id<"users">): Promise<Doc<"canvasNodes">[]> {
+  const [moved, memberships] = await Promise.all([
+    ctx.db
+      .query("canvasNodes")
+      .withIndex("by_last_updated_by", (q) => q.eq("lastUpdatedBy", userId))
+      .collect(),
+    membershipsOf(ctx, userId),
+  ]);
+  const timers = await Promise.all(
+    memberships.map(({ roomId }) =>
+      ctx.db
+        .query("canvasNodes")
+        .withIndex("by_room_type", (q) => q.eq("roomId", roomId).eq("type", "timer"))
+        .collect()
+    )
+  );
+  const byId = new Map(moved.map((node) => [node._id, node]));
+  for (const timer of timers.flat()) {
+    if (dataOf(timer, "timer").lastUpdatedBy === userId) byId.set(timer._id, timer);
+  }
+  return [...byId.values()];
+}
+
+/** A node with `from` replaced by `into`, or dropped (`null`), wherever it names them. */
+function renamed(node: Doc<"canvasNodes">, from: Id<"users">, into: Id<"users"> | null): Doc<"canvasNodes"> {
+  const { lastUpdatedBy, ...rest } = node;
+  const by = lastUpdatedBy === from ? into : lastUpdatedBy;
+  const timer = node.type === "timer" ? dataOf(node, "timer") : undefined;
+  return {
+    ...rest,
+    ...(by ? { lastUpdatedBy: by } : {}),
+    ...(timer && timer.lastUpdatedBy === from ? { data: { ...timer, lastUpdatedBy: into } } : {}),
+  };
 }
 
 /**
- * Deletes a note node
+ * What the canvas keeps about a person: their player nodes, and who last
+ * moved a node or ran a timer. Account deletion runs `forget` before the
+ * memberships go, account linking runs `fold` while the guest's are there.
  */
-export async function deleteNoteNode(
-  ctx: MutationCtx,
-  args: { roomId: Id<"rooms">; nodeId: string; userId: Id<"users"> }
-): Promise<void> {
-  const node = await ctx.db
-    .query("canvasNodes")
-    .withIndex("by_room_node", (q) =>
-      q.eq("roomId", args.roomId).eq("nodeId", args.nodeId)
-    )
-    .unique();
+export const canvasUserRows: UserRows = {
+  fields: ["canvasNodes.lastUpdatedBy", "canvasNodes.data"],
 
-  if (!node) {
-    throw new Error("Note node not found");
-  }
+  // Player nodes go with the memberships (memberLeft); the rest stop naming the person.
+  async forget(ctx, userId) {
+    const own = playerNodeId(userId);
+    await Promise.all(
+      (await nodesNaming(ctx, userId))
+        .filter((node) => node.nodeId !== own)
+        .map((node) => ctx.db.replace("canvasNodes", node._id, renamed(node, userId, null)))
+    );
+  },
 
-  if (node.type !== "note") {
-    throw new Error("Node is not a note");
-  }
-
-  await ctx.db.delete("canvasNodes", node._id);
-
-  await Rooms.updateRoomActivity(ctx, args.roomId);
-}
+  // A guest's player node becomes the account's, unless the account has one in that room already.
+  async fold(ctx, from, into) {
+    for (const { roomId } of await membershipsOf(ctx, from)) {
+      const guestNode = await nodeById(ctx, roomId, playerNodeId(from));
+      if (!guestNode) continue;
+      if (await nodeById(ctx, roomId, playerNodeId(into))) {
+        await ctx.db.delete("canvasNodes", guestNode._id);
+      } else {
+        await ctx.db.patch("canvasNodes", guestNode._id, { nodeId: playerNodeId(into), data: { userId: into } });
+      }
+    }
+    await Promise.all(
+      (await nodesNaming(ctx, from)).map((node) => ctx.db.replace("canvasNodes", node._id, renamed(node, from, into)))
+    );
+  },
+};

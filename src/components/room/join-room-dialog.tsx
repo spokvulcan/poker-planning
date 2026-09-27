@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import { rulesOf } from "@/convex/ceremony";
 import { Doc, Id } from "@/convex/_generated/dataModel";
 import { useAuth } from "@/components/auth/auth-provider";
 import { authClient } from "@/lib/auth-client";
@@ -21,9 +22,7 @@ interface JoinRoomDialogProps {
 
 export function JoinRoomDialog({ roomId, roomName, roomType }: JoinRoomDialogProps) {
   // A retro has no spectators: everyone at the board writes.
-  const isRetro = roomType === "retro";
-  const noun = isRetro ? "Retro" : "Room";
-  const allowSpectator = !isRetro;
+  const { noun, spectators: allowSpectator } = rulesOf({ roomType });
   const { authUserId } = useAuth();
   const joinRoom = useMutation(api.users.join);
 

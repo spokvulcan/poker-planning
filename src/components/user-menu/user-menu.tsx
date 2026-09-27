@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { useTheme } from "next-themes";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import { rulesOf } from "@/convex/ceremony";
 import { useAuth } from "@/components/auth/auth-provider";
 import { useSignOut } from "@/hooks/useSignOut";
 import { UserAvatar } from "./user-avatar";
@@ -53,10 +54,10 @@ export function UserMenu() {
       : "skip"
   );
 
-  // A retro has no spectators; the room page already holds this
-  // subscription, so reading the room type here costs nothing.
+  // Only some ceremonies have spectators (a retro has none); the room page
+  // already holds this subscription, so reading the room here costs nothing.
   const roomData = useQuery(api.rooms.get, roomId ? { roomId } : "skip");
-  const isRetro = roomData?.room?.roomType === "retro";
+  const hasSpectators = roomData?.room ? rulesOf(roomData.room).spectators : false;
 
   const editGlobalUser = useMutation(api.users.editGlobalUser);
   const editUser = useMutation(api.users.edit);
@@ -156,8 +157,8 @@ export function UserMenu() {
             Edit name
           </DropdownMenuItem>
 
-          {/* Spectator toggle - only show when in a poker room */}
-          {isInRoom && !isRetro && (
+          {/* Spectator toggle - only where the ceremony has spectators */}
+          {isInRoom && hasSpectators && (
             <div
               data-testid="spectator-toggle-row"
               className="flex items-center justify-between px-1.5 py-1 cursor-pointer rounded-md hover:bg-gray-100 dark:hover:bg-white/10"

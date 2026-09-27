@@ -1,7 +1,7 @@
 import { Node } from "@xyflow/react";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { SanitizedVote } from "@/convex/model/rooms";
-import type { RoomUserData } from "@/convex/model/users";
+import type { RoomUserData } from "@/convex/model/memberships";
 import type { MemberRole, ResolvedDecision } from "@/convex/permissions";
 import type { Phase } from "@/convex/phase";
 import type { TimerState } from "@/convex/timerState";
@@ -77,7 +77,8 @@ export type NoteNodeData = {
   lastUpdatedBy?: string; // User name who last edited
   lastUpdatedAt?: number;
   /** Saves the note's text; a returned promise settles once the save has landed. */
-  onUpdateContent: (content: string) => Promise<void> | void;
+  /** Resolves to `false` when the text didn't land. */
+  onUpdateContent: (content: string) => Promise<boolean | void> | void;
   onDelete?: () => void;
 };
 

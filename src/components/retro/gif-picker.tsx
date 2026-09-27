@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState, type ReactElement } from "rea
 import { Link2, Loader2, Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { normalizeGifUrl } from "@/convex/retroRules";
+import { normalizeGifUrl } from "@/convex/gifLinks";
 import type { Gif } from "@/convex/model/retro";
 import type { GifResult, GifSearchResponse } from "@/app/api/gifs/route";
 import { trackGifEvent } from "@/lib/analytics";
