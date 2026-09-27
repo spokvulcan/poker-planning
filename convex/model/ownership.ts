@@ -1,6 +1,7 @@
 import { MutationCtx, QueryCtx } from "../_generated/server";
 import { Doc, Id } from "../_generated/dataModel";
 import { rulesOf } from "../ceremony";
+import { getMembership } from "./memberships";
 import { scheduleRoomDeletion } from "./roomAggregate";
 import type { UserRows } from "./userRows";
 
@@ -16,7 +17,7 @@ import type { UserRows } from "./userRows";
  */
 
 /** Whether a room is kept past the inactivity sweep with `owner` owning it. A kept room stays kept. */
-export function isRetainedUnder(
+function isRetainedUnder(
   room: Pick<Doc<"rooms">, "roomType" | "retained">,
   owner: Pick<Doc<"users">, "accountType"> | null
 ): boolean {
@@ -31,15 +32,12 @@ export function initialOwnership(
   return { ownerId: owner._id, retained: isRetainedUnder({ ...room, retained: false }, owner) };
 }
 
-async function membershipOf(
-  ctx: QueryCtx,
-  roomId: Id<"rooms">,
-  userId: Id<"users">
-): Promise<Doc<"roomMemberships"> | null> {
-  return await ctx.db
-    .query("roomMemberships")
-    .withIndex("by_room_user", (q) => q.eq("roomId", roomId).eq("userId", userId))
-    .first();
+/** The owner role on a person's membership, when they have one without it. */
+async function giveOwnerRole(ctx: MutationCtx, roomId: Id<"rooms">, userId: Id<"users">): Promise<void> {
+  const membership = await getMembership(ctx, roomId, userId);
+  if (membership && membership.role !== "owner") {
+    await ctx.db.patch("roomMemberships", membership._id, { role: "owner" });
+  }
 }
 
 /**
@@ -51,10 +49,7 @@ async function membershipOf(
 export async function memberJoined(ctx: MutationCtx, room: Doc<"rooms">, userId: Id<"users">): Promise<void> {
   if (!room.ownerId) return;
   if (room.ownerId === userId) {
-    const membership = await membershipOf(ctx, room._id, userId);
-    if (membership && membership.role !== "owner") {
-      await ctx.db.patch("roomMemberships", membership._id, { role: "owner" });
-    }
+    await giveOwnerRole(ctx, room._id, userId);
   } else if (!(await ctx.db.get("users", room.ownerId))) {
     await transferOwnership(ctx, room, userId);
   }
@@ -69,7 +64,7 @@ export async function transferOwnership(ctx: MutationCtx, room: Doc<"rooms">, ow
   const previous = room.ownerId;
   await setOwnerOf(ctx, room, ownerId);
   if (previous && previous !== ownerId) {
-    const leaving = await membershipOf(ctx, room._id, previous);
+    const leaving = await getMembership(ctx, room._id, previous);
     if (leaving?.role === "owner") await ctx.db.patch("roomMemberships", leaving._id, { role: "participant" });
   }
 }
@@ -78,10 +73,7 @@ export async function transferOwnership(ctx: MutationCtx, room: Doc<"rooms">, ow
 async function setOwnerOf(ctx: MutationCtx, room: Doc<"rooms">, ownerId: Id<"users">): Promise<void> {
   const owner = await ctx.db.get("users", ownerId);
   await ctx.db.patch("rooms", room._id, { ownerId, retained: isRetainedUnder(room, owner) });
-  const membership = await membershipOf(ctx, room._id, ownerId);
-  if (membership && membership.role !== "owner") {
-    await ctx.db.patch("roomMemberships", membership._id, { role: "owner" });
-  }
+  await giveOwnerRole(ctx, room._id, ownerId);
 }
 
 /** The rooms a person owns. */

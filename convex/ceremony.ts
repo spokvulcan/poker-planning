@@ -13,8 +13,6 @@ import type { Doc } from "./_generated/dataModel";
 export type Ceremony = "poker" | "retro";
 
 export interface CeremonyRules {
-  /** What the product calls it. */
-  name: "Planning poker" | "Retro";
   /** What the room's own copy calls it, as in a title ("Copy Room Link", "Retro Settings"). */
   noun: "Room" | "Retro";
   /** Whether a member may sit out as a spectator. A retro has none: everyone at the board writes. */
@@ -44,7 +42,6 @@ const HOUR_MS = 60 * 60 * 1000;
 
 export const CEREMONY_RULES: Readonly<Record<Ceremony, CeremonyRules>> = Object.freeze({
   poker: Object.freeze({
-    name: "Planning poker",
     noun: "Room",
     spectators: true,
     votingRounds: true,
@@ -55,7 +52,6 @@ export const CEREMONY_RULES: Readonly<Record<Ceremony, CeremonyRules>> = Object.
     inAnalytics: true,
   }),
   retro: Object.freeze({
-    name: "Retro",
     noun: "Retro",
     spectators: false,
     votingRounds: false,

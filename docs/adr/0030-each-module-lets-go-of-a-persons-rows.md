@@ -14,5 +14,5 @@ So every module that keeps rows naming a person implements one small interface (
 ## Consequences
 
 - A module that starts storing a user id fails the completeness test until it says how to forget and fold it.
-- The order is part of the design: rooms are handed off, and the canvas lets go of a person's nodes, while their memberships still say where they were, and memberships go before the voting round drops their votes, so a round re-checks completion against the smaller roster ([ADR-0004](0004-roster-exit-reconciles-the-auto-reveal-countdown.md)).
+- The order is part of the design: rooms are handed off, and the canvas lets go of a person's nodes, while their memberships still say where they were, and memberships go before the voting round, so a guest's vote lands on the account's seat. A deleted account leaves each room the way a person does, so a round it was the last one yet to vote in finishes without it ([ADR-0004](0004-roster-exit-reconciles-the-auto-reveal-countdown.md)).
 - What a person wrote in a retro stays after they go, named "Former member", because the retro's `forget` keeps it on purpose. A module's `forget` decides what "letting go" means for its rows.

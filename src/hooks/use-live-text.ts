@@ -17,6 +17,7 @@ export function rebaseIndex(before: string, after: string, index: number): numbe
 }
 
 const same = (value: string) => value;
+const trimmed = (value: string) => value.trim();
 
 export interface LiveTextOptions {
   /** The server's value: whatever anyone last saved. */
@@ -24,13 +25,18 @@ export interface LiveTextOptions {
   /**
    * Saves a value. A returned promise settles once the server has it, which
    * a Convex mutation does: it resolves after the query results that include
-   * the write have arrived. Without it, the field only follows the server.
+   * the write have arrived. Resolving to `false` (as `runAct` does) or
+   * rejecting means it didn't land, and the field keeps what was typed.
+   * Without it, the field only follows the server.
    */
   save?: (value: string) => unknown;
   /** Save this long after typing stops. Without it, typing is saved on `commit`. */
   autosaveMs?: number;
-  /** What counts as no change (a trimmed name, say). A stable function. */
-  normalize?: (value: string) => string;
+  /**
+   * A name, say: spaces around it are no change and aren't saved, and it is
+   * never saved blank. Committing a blank one reverts it.
+   */
+  required?: boolean;
 }
 
 export interface LiveText {
@@ -44,6 +50,8 @@ export interface LiveText {
   revert: () => void;
   /** What's typed differs from the server's value. */
   dirty: boolean;
+  /** What's typed can be saved: it's a change, and not blank where the value is required. */
+  canCommit: boolean;
   /** Something typed here hasn't landed on the server yet. */
   unsaved: boolean;
 }
@@ -64,8 +72,9 @@ export function useLiveText<E extends HTMLInputElement | HTMLTextAreaElement = H
   value,
   save,
   autosaveMs,
-  normalize = same,
+  required = false,
 }: LiveTextOptions): [LiveText, RefObject<E | null>] {
+  const normalize = required ? trimmed : same;
   const [local, setLocal] = useState(value);
   // The server value the field last took in. Only a change to it is an edit to take in.
   const [synced, setSynced] = useState(value);
@@ -104,24 +113,24 @@ export function useLiveText<E extends HTMLInputElement | HTMLTextAreaElement = H
   }, [local]);
 
   const send = useCallback(
-    async (next: string): Promise<boolean> => {
+    async (typed: string): Promise<boolean> => {
+      const next = normalize(typed);
       inFlight.current += 1;
       let landed = false;
       try {
-        await saveRef.current?.(next);
-        landed = true;
+        landed = (await saveRef.current?.(next)) !== false;
       } catch {
         landed = false;
       } finally {
         inFlight.current -= 1;
       }
       // Done once the last save has landed and nothing was typed since it left.
-      if (landed && inFlight.current === 0 && timer.current === null && localRef.current === next) {
+      if (landed && inFlight.current === 0 && timer.current === null && normalize(localRef.current) === next) {
         setUnsaved(false);
       }
       return landed;
     },
-    [saveRef, localRef]
+    [saveRef, localRef, normalize]
   );
 
   const setValue = useCallback(
@@ -141,20 +150,6 @@ export function useLiveText<E extends HTMLInputElement | HTMLTextAreaElement = H
     [autosaveMs, send]
   );
 
-  const commit = useCallback(async (): Promise<boolean> => {
-    if (timer.current) {
-      clearTimeout(timer.current);
-      timer.current = null;
-    }
-    queued.current = null;
-    const next = localRef.current;
-    if (normalize(next) === normalize(syncedRef.current)) {
-      if (inFlight.current === 0) setUnsaved(false);
-      return true;
-    }
-    return await send(next);
-  }, [localRef, syncedRef, normalize, send]);
-
   const revert = useCallback(() => {
     if (timer.current) {
       clearTimeout(timer.current);
@@ -166,23 +161,43 @@ export function useLiveText<E extends HTMLInputElement | HTMLTextAreaElement = H
     setUnsaved(false);
   }, [valueRef]);
 
+  const commit = useCallback(async (): Promise<boolean> => {
+    if (timer.current) {
+      clearTimeout(timer.current);
+      timer.current = null;
+    }
+    queued.current = null;
+    const next = normalize(localRef.current);
+    if (required && !next) {
+      revert();
+      return false;
+    }
+    if (next === normalize(syncedRef.current)) {
+      if (inFlight.current === 0) setUnsaved(false);
+      return true;
+    }
+    return await send(next);
+  }, [localRef, syncedRef, normalize, required, revert, send]);
+
   // A field that goes away with typing still queued saves it on the way out.
   useEffect(
     () => () => {
       if (!timer.current) return;
       clearTimeout(timer.current);
-      if (queued.current !== null) void saveRef.current?.(queued.current);
+      if (queued.current !== null) void saveRef.current?.(normalize(queued.current));
     },
-    [saveRef]
+    [saveRef, normalize]
   );
 
+  const dirty = normalize(local) !== normalize(synced);
   return [
     {
       value: local,
       setValue,
       commit,
       revert,
-      dirty: normalize(local) !== normalize(synced),
+      dirty,
+      canCommit: dirty && !(required && !normalize(local)),
       unsaved,
     },
     ref,

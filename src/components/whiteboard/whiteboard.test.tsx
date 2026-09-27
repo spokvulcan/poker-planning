@@ -4,11 +4,12 @@
  * call, the way a drag, a drop, an arrow key or Delete would.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { act, cleanup, render } from "@testing-library/react";
-import type { Node, NodeChange, ReactFlowProps } from "@xyflow/react";
+import { act, cleanup, render, screen } from "@testing-library/react";
+import { ConnectionMode, type Node, type NodeChange, type ReactFlowProps } from "@xyflow/react";
 
 const flow = vi.hoisted(() => ({
   props: {} as ReactFlowProps<Node>,
+  renders: 0,
   nodes: [] as Node[],
   intersecting: [] as Node[],
   fitView: (() => Promise.resolve(true)) as (options?: unknown) => Promise<boolean>,
@@ -17,12 +18,22 @@ const flow = vi.hoisted(() => ({
 
 vi.mock("@xyflow/react", async () => {
   const actual = await vi.importActual<typeof import("@xyflow/react")>("@xyflow/react");
+  const { createElement, Fragment } = await vi.importActual<typeof import("react")>("react");
   return {
     ...actual,
+    // Draws each node with its node type, as React Flow would.
     ReactFlow: (props: ReactFlowProps<Node>) => {
       flow.props = props;
       flow.nodes = (props.nodes ?? []) as Node[];
-      return null;
+      flow.renders += 1;
+      return createElement(
+        Fragment,
+        null,
+        ...flow.nodes.map((n) => {
+          const type = props.nodeTypes?.[n.type ?? ""];
+          return type ? createElement(type, { key: n.id, id: n.id } as never) : null;
+        })
+      );
     },
     ReactFlowProvider: ({ children }: { children: React.ReactNode }) => children,
     useNodesInitialized: () => true,
@@ -40,7 +51,7 @@ vi.mock("@xyflow/react", async () => {
 vi.mock("@/components/canvas-dots-background", () => ({ CanvasDotsBackground: () => null }));
 vi.mock("@/hooks/use-mobile", () => ({ useIsMobile: () => false }));
 
-import { Whiteboard, type WhiteboardProps } from "./whiteboard";
+import { useIsDropTarget, Whiteboard, type WhiteboardProps } from "./whiteboard";
 
 const node = (id: string, x = 0): Node => ({
   id,
@@ -123,6 +134,28 @@ describe("a drop", () => {
   });
 });
 
+describe("the drop target", () => {
+  it("re-renders only the node a dragged one reaches, not the board or the other nodes", () => {
+    const rendered = vi.fn();
+    function Card({ id }: { id: string }) {
+      const isTarget = useIsDropTarget(id);
+      rendered(id);
+      return <div data-testid={id} data-target={isTarget} />;
+    }
+    renderBoard({ nodeTypes: { card: Card }, nodes: [node("a"), node("b", 200), node("c", 400)], canDropOn: () => true });
+    const [a, b] = flow.nodes;
+    const boardRenders = flow.renders;
+    rendered.mockClear();
+    flow.intersecting = [{ ...b, position: { x: 0, y: 0 } }];
+
+    act(() => flow.props.onNodeDrag?.(event, a, [a]));
+
+    expect(screen.getByTestId("b").dataset.target).toBe("true");
+    expect(flow.renders).toBe(boardRenders);
+    expect(rendered.mock.calls).toEqual([["b"]]);
+  });
+});
+
 describe("arrow-key nudges", () => {
   it("are saved together once the keys stop", () => {
     const onDrop = vi.fn();
@@ -140,6 +173,22 @@ describe("arrow-key nudges", () => {
       ["a", 10],
       ["b", 210],
     ]);
+  });
+
+  it("are saved as a drag starts, so the drop that follows has the last word", () => {
+    const onDrop = vi.fn();
+    renderBoard({ onDrop });
+    const [a] = flow.nodes;
+    const dropped = { ...a, position: { x: 400, y: 0 } };
+
+    act(() => {
+      flow.props.onNodesChange?.([{ type: "position", id: "a", position: { x: 10, y: 0 }, dragging: false }]);
+      flow.props.onNodeDragStart?.(event, a, [a]);
+      flow.props.onNodeDragStop?.(event, dropped, [dropped]);
+      vi.advanceTimersByTime(1000);
+    });
+
+    expect(onDrop.mock.calls.map(([drop]) => drop.nodes.map((n: Node) => n.position.x))).toEqual([[10], [400]]);
   });
 });
 
@@ -183,6 +232,12 @@ describe("the view", () => {
     act(() => flow.props.onPaneClick?.({ detail: 1, clientX: 10, clientY: 20 } as never));
 
     expect(onPaneDoubleClick.mock.calls).toEqual([[{ x: 20, y: 40 }]]);
+  });
+
+  it("draws an edge between any two handles it names, whichever way they point", () => {
+    renderBoard();
+
+    expect(flow.props.connectionMode).toBe(ConnectionMode.Loose);
   });
 
   it("lets nothing move, get selected or deleted when read-only", () => {

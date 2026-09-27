@@ -5,17 +5,14 @@ import schema from "./schema";
 import { withComponents } from "./components.setup";
 import { api } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
-import { type T, seedUser as seedNamedUser } from "./analytics.seeds";
+import type { T } from "./analytics.seeds";
+import { as, join, seedUser } from "./people.seeds";
 
 // The room canvas (model/canvas.ts): what each node type's life looks like,
 // told through the acts that shape the board.
 
 const modules = import.meta.glob("./**/*.*s");
 
-const seedUser = (t: T, authUserId: string) => seedNamedUser(t, authUserId, authUserId);
-const as = (t: T, subject: string) => t.withIdentity({ subject });
-const join = (t: T, roomId: Id<"rooms">, subject: string) =>
-  as(t, subject).mutation(api.users.join, { roomId, name: subject, authUserId: subject });
 const nodesOf = (t: T, roomId: Id<"rooms">) =>
   t.run((ctx) =>
     ctx.db

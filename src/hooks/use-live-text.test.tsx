@@ -15,6 +15,7 @@ function Field(props: LiveTextOptions & { onResult?: (landed: boolean) => void }
       <button onClick={() => void text.commit().then((landed) => props.onResult?.(landed))}>commit</button>
       <button onClick={text.revert}>revert</button>
       <output aria-label="state">{`${text.dirty ? "dirty" : "clean"} ${text.unsaved ? "unsaved" : "saved"}`}</output>
+      <output aria-label="can commit">{String(text.canCommit)}</output>
     </>
   );
 }
@@ -44,6 +45,7 @@ function renderField(options: LiveTextOptions & { onResult?: (landed: boolean) =
       fireEvent.change(input, { target: { value } });
     },
     commit: () => act(async () => fireEvent.click(screen.getByText("commit"))),
+    canCommit: () => screen.getByLabelText("can commit").textContent === "true",
     revert: () => act(() => fireEvent.click(screen.getByText("revert"))),
     state: () => screen.getByLabelText("state").textContent,
   };
@@ -101,15 +103,58 @@ describe("a field saved on commit (a name)", () => {
     expect(field.state()).toBe("dirty unsaved");
   });
 
-  it("saves nothing when what's typed is no change, by the field's own measure", async () => {
+  it("keeps what's typed when the save resolves to false, as runAct does on a refusal", async () => {
+    const results: boolean[] = [];
+    const field = renderField({ value: "Sprint 41", save: async () => false, onResult: (landed) => results.push(landed) });
+
+    field.type("Sprint 42");
+    await field.commit();
+
+    expect(results).toEqual([false]);
+    expect(field.input.value).toBe("Sprint 42");
+    expect(field.state()).toBe("dirty unsaved");
+  });
+});
+
+describe("a required field (a name)", () => {
+  it("counts spaces around it as no change, and saves nothing for them", async () => {
     const { saves, save } = heldSaves();
-    const field = renderField({ value: "Sprint 41", save, normalize: (v) => v.trim() });
+    const field = renderField({ value: "Sprint 41", save, required: true });
 
     field.type("Sprint 41  ");
+    expect(field.canCommit()).toBe(false);
     await field.commit();
 
     expect(saves).toEqual([]);
     expect(field.state()).toBe("clean saved");
+  });
+
+  it("saves it trimmed", async () => {
+    const { saves, save } = heldSaves();
+    const field = renderField({ value: "Sprint 41", save, required: true });
+
+    field.type("  Sprint 42 ");
+    await field.commit();
+    field.serverHas("Sprint 42");
+    await saves[0].land();
+
+    expect(saves.map((s) => s.value)).toEqual(["Sprint 42"]);
+    expect(field.input.value).toBe("Sprint 42");
+    expect(field.state()).toBe("clean saved");
+  });
+
+  it("never saves it blank: committing a blank one reverts it", async () => {
+    const { saves, save } = heldSaves();
+    const results: boolean[] = [];
+    const field = renderField({ value: "Sprint 41", save, required: true, onResult: (landed) => results.push(landed) });
+
+    field.type("   ");
+    expect(field.canCommit()).toBe(false);
+    await field.commit();
+
+    expect(saves).toEqual([]);
+    expect(results).toEqual([false]);
+    expect(field.input.value).toBe("Sprint 41");
   });
 
   it("drops what's typed on revert and shows the server's value", async () => {

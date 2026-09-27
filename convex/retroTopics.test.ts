@@ -5,6 +5,7 @@ import {
   followVotesInView,
   foldVotes,
   heirOf,
+  patched,
   remove,
   rootOf,
   stack,
@@ -29,17 +30,9 @@ function vote(_id: string, stickyId: string, voterId: string): TopicVote {
   return { _id, stickyId, voterId };
 }
 
-/** Applies a change to the stickies, the way the model writes it. */
+/** Applies a change to the stickies, the way the model and the board write it. */
 function applied(stickies: TopicSticky[], change: TopicChange): TopicSticky[] {
-  return stickies
-    .filter((s) => !change.removed.has(s._id))
-    .map((s) => {
-      const patch = change.stickies.get(s._id);
-      if (!patch) return s;
-      const { stackId: _old, ...rest } = s;
-      const stackId = patch.stackId === undefined ? s.stackId : (patch.stackId ?? undefined);
-      return { ...rest, ...(stackId ? { stackId } : {}), ...(patch.position ? { position: patch.position } : {}) };
-    });
+  return stickies.filter((s) => !change.removed.has(s._id)).map((s) => patched(s, change));
 }
 
 /** Applies the votes' side of a change, the way the model writes it. */

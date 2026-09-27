@@ -77,7 +77,8 @@ export type NoteNodeData = {
   lastUpdatedBy?: string; // User name who last edited
   lastUpdatedAt?: number;
   /** Saves the note's text; a returned promise settles once the save has landed. */
-  onUpdateContent: (content: string) => Promise<void> | void;
+  /** Resolves to `false` when the text didn't land. */
+  onUpdateContent: (content: string) => Promise<boolean | void> | void;
   onDelete?: () => void;
 };
 

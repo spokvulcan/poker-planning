@@ -7,7 +7,8 @@ import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { userRows } from "./model/accountLifecycle";
 import { presence } from "./model/presence";
-import { type T, seedUser as seedNamedUser } from "./analytics.seeds";
+import type { T } from "./analytics.seeds";
+import { as, join, seedUser } from "./people.seeds";
 
 // An account's two endings (ADR-0030): deletion and a guest signing in. Every
 // module keeping rows about a person registers how it lets go of them; these
@@ -15,11 +16,6 @@ import { type T, seedUser as seedNamedUser } from "./analytics.seeds";
 
 const modules = import.meta.glob("./**/*.*s");
 
-const seedUser = (t: T, authUserId: string, accountType?: "anonymous" | "permanent") =>
-  seedNamedUser(t, authUserId, authUserId, accountType);
-const as = (t: T, subject: string) => t.withIdentity({ subject });
-const join = (t: T, roomId: Id<"rooms">, subject: string) =>
-  as(t, subject).mutation(api.users.join, { roomId, name: subject, authUserId: subject });
 const room = (t: T, roomId: Id<"rooms">) => t.run((ctx) => ctx.db.get("rooms", roomId));
 const membership = (t: T, roomId: Id<"rooms">, userId: Id<"users">) =>
   t.run((ctx) =>
@@ -148,6 +144,44 @@ describe("deleting an account", () => {
     expect(await t.run((ctx) => ctx.db.query("integrationConnections").collect())).toEqual([]);
   });
 
+  it("stops the canvas naming it: the timer it ran and the nodes it moved (it runs while the memberships are there)", async () => {
+    const t = withComponents(convexTest(schema, modules));
+    await seedUser(t, "owner");
+    const roomId = await as(t, "owner").mutation(api.rooms.create, { name: "Planning" });
+    const leaverId = await join(t, roomId, "leaver");
+    await as(t, "leaver").mutation(api.timer.startTimer, { roomId, nodeId: "timer", userId: leaverId });
+    await as(t, "leaver").mutation(api.canvas.moveNodes, {
+      roomId,
+      userId: leaverId,
+      moves: [{ nodeId: "session-current", position: { x: 40, y: 40 } }],
+    });
+    // Someone else moves the timer last: only the room it's in leads to it.
+    const ownerId = (await room(t, roomId))!.ownerId!;
+    await as(t, "owner").mutation(api.canvas.moveNodes, {
+      roomId,
+      userId: ownerId,
+      moves: [{ nodeId: "timer", position: { x: 80, y: 80 } }],
+    });
+
+    await as(t, "leaver").mutation(api.users.deleteUser, {});
+
+    const nodes = await t.run((ctx) => ctx.db.query("canvasNodes").collect());
+    expect(nodes.filter((node) => JSON.stringify(node).includes(leaverId))).toEqual([]);
+  });
+
+  it("finishes a round it was the only one yet to vote in, so the countdown starts (ADR-0004)", async () => {
+    const t = withComponents(convexTest(schema, modules));
+    const ownerId = await seedUser(t, "owner");
+    const roomId = await as(t, "owner").mutation(api.rooms.create, { name: "Planning" });
+    await t.run((ctx) => ctx.db.patch("rooms", roomId, { autoCompleteVoting: true }));
+    await join(t, roomId, "leaver");
+    await as(t, "owner").mutation(api.votes.pickCard, { roomId, userId: ownerId, cardLabel: "5", cardValue: 5 });
+
+    await as(t, "leaver").mutation(api.users.deleteUser, {});
+
+    expect((await room(t, roomId))?.autoRevealCountdownStartedAt).toEqual(expect.any(Number));
+  });
+
   it("leaves the clocks of the rooms it was in alone: an account going is not room activity", async () => {
     const t = withComponents(convexTest(schema, modules));
     await seedUser(t, "owner");
@@ -181,6 +215,23 @@ describe("a guest signing in", () => {
     expect((await membership(t, roomId, accountId))?.role).toBe("owner");
     // So the owner can act as one: deleting their own retro goes through.
     await as(t, "account").mutation(api.retro.remove, { roomId });
+  });
+
+  it("keeps the retros the account itself made before it turned permanent", async () => {
+    const t = withComponents(convexTest(schema, modules));
+    await seedUser(t, "guest");
+    // The account's row was written before it was known to be permanent.
+    await seedUser(t, "account");
+    const roomId = await as(t, "account").mutation(api.retro.create, { name: "Made as the account" });
+    expect((await room(t, roomId))?.retained).toBe(false);
+
+    await t.mutation(internal.users.linkAnonymousAccount, {
+      oldAuthUserId: "guest",
+      newAuthUserId: "account",
+      email: "a@example.com",
+    });
+
+    expect((await room(t, roomId))?.retained).toBe(true);
   });
 
   it("keeps a facilitator role the guest held in a room the account had joined", async () => {

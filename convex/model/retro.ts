@@ -8,6 +8,7 @@ import { openRoom, updateRoomActivity } from "./rooms";
 import { scheduleRoomDeletion } from "./roomAggregate";
 import type { UserRows } from "./userRows";
 import { ceremonyOf } from "../ceremony";
+import { RESOLVED_ALLOWED } from "../permissions";
 import {
   columnsFromTemplate,
   DEFAULT_VOTES_PER_PERSON,
@@ -29,11 +30,13 @@ import * as Topics from "../retroTopics";
 import {
   discussionOrder,
   spotlightStepChange,
+  stepped,
   stepAllows,
   stepChange,
   stickyActAllowed,
   stickyEditDecision,
   walk,
+  withSpotlight,
   type RetroDecision,
   type StepChange,
 } from "../retroSteps";
@@ -229,9 +232,7 @@ export async function getBoard(
   ]);
 
   const totals = Topics.voteTotals(stickies, votes);
-  const rootById = new Map(stickies.map((s) => [s._id as string, Topics.rootOf(s)]));
-  const myTopics = new Set(votes.filter((v) => v.voterId === viewerId).map((v) => rootById.get(v.stickyId)));
-  myTopics.delete(undefined);
+  const myTopics = new Set(Topics.voteTotals(stickies, votes.filter((v) => v.voterId === viewerId)).keys());
 
   const authorNames = new Map<string, string>();
   if (retro.showAuthors && !hideOthers) {
@@ -272,12 +273,13 @@ export async function getBoard(
   };
 }
 
-/** How many votes everyone has cast, one per person per topic, for the Vote step's progress. */
+/**
+ * How many votes everyone has cast, for the Vote step's progress. Every write
+ * keeps one vote per person per topic (ADR-0028), so it reads only the votes:
+ * a sticky moving mid-vote doesn't re-run it for everyone.
+ */
 export async function countVotes(ctx: QueryCtx, roomId: Id<"rooms">): Promise<number> {
-  const [stickies, votes] = await Promise.all([stickiesOf(ctx, roomId), votesOf(ctx, roomId)]);
-  let cast = 0;
-  for (const count of Topics.voteTotals(stickies, votes).values()) cast += count;
-  return cast;
+  return (await votesOf(ctx, roomId)).length;
 }
 
 export interface ActionItemView {
@@ -356,12 +358,6 @@ export async function listRetrosOf(ctx: QueryCtx, userId: Id<"users">): Promise<
 
 // --- Steps and the discussion ----------------------------------------------------
 
-/** The state with the spotlight set or cleared (an optional field is dropped, not set to undefined). */
-function withSpotlight(retro: RetroState, spotlight: StickyId | undefined): RetroState {
-  const { focusStickyId: _dropped, ...rest } = retro;
-  return spotlight ? { ...rest, focusStickyId: spotlight } : rest;
-}
-
 async function orderOf(ctx: QueryCtx, roomId: Id<"rooms">, columns: readonly RetroColumn[]): Promise<StickyId[]> {
   const [stickies, votes] = await Promise.all([stickiesOf(ctx, roomId), votesOf(ctx, roomId)]);
   return discussionOrder(stickies, Topics.voteTotals(stickies, votes), columns);
@@ -380,11 +376,11 @@ async function applyStepChange(
   change: StepChange | null,
   spotlight?: StickyId
 ): Promise<void> {
-  let next = retro.focusStickyId;
-  if (spotlight) next = spotlight;
-  else if (change?.spotlight === "clear") next = undefined;
-  else if (change?.spotlight === "first") next = (await orderOf(ctx, room._id, retro.columns))[0];
-  await ctx.db.patch("rooms", room._id, { retro: withSpotlight({ ...retro, step: change?.to ?? retro.step }, next) });
+  let next = stepped(retro, change, spotlight);
+  if (!spotlight && change?.spotlight === "first") {
+    next = withSpotlight(next, (await orderOf(ctx, room._id, retro.columns))[0]);
+  }
+  await ctx.db.patch("rooms", room._id, { retro: next });
   if (change?.reveal) await settleRevealed(ctx, room._id);
   await updateRoomActivity(ctx, room);
 }
@@ -547,14 +543,6 @@ function validateGif(gif: Gif): Gif {
   };
 }
 
-function validatePosition(position: Position): Position {
-  if (!Number.isFinite(position.x) || !Number.isFinite(position.y)) {
-    throw refusal("forbidden", "That spot is off the board.");
-  }
-  const clamp = (n: number) => Math.min(Math.max(n, -100_000), 100_000);
-  return { x: clamp(position.x), y: clamp(position.y) };
-}
-
 /** Taller than 500 lines of text under a GIF, so only a made-up height is cut. */
 const MAX_STICKY_HEIGHT = 20_000;
 
@@ -581,11 +569,10 @@ async function requireStickyEditor(
   membership: Doc<"roomMemberships">
 ): Promise<void> {
   const mine = sticky.authorId === membership.userId;
-  const byStep = stickyActAllowed(retro.step, "edit", mine);
-  requireAllowed(byStep);
-  if (mine) return;
-  const { decision } = await resolveRoomAction(ctx, membership, room, { kind: "category", category: "cardManagement" });
-  requireAllowed(stickyEditDecision(retro.step, mine, decision));
+  const cardManagement = mine
+    ? RESOLVED_ALLOWED
+    : (await resolveRoomAction(ctx, membership, room, { kind: "category", category: "cardManagement" })).decision;
+  requireAllowed(stickyEditDecision(retro.step, mine, cardManagement));
 }
 
 export interface AddStickyArgs {
@@ -623,7 +610,7 @@ export async function addSticky(
     text,
     ...(gif ? { gif } : {}),
     authorId: author._id,
-    position: validatePosition(args.position),
+    position: Canvas.validPosition(args.position),
     createdAt: Date.now(),
   });
   await updateRoomActivity(ctx, room);
@@ -663,13 +650,13 @@ export async function moveStickies(
   moves: readonly { stickyId: StickyId; position: Position }[]
 ): Promise<void> {
   retroOf(room);
-  if (moves.length > 200) throw refusal("forbidden", "Too many stickies at once.");
+  if (moves.length > Canvas.MAX_MOVES) throw refusal("forbidden", "Too many stickies at once.");
   await Promise.all(
     moves.map(async (move) => {
       const sticky = await ctx.db.get("retroStickies", move.stickyId);
       // A sticky deleted mid-drag is simply skipped.
       if (!sticky || sticky.roomId !== room._id) return;
-      await ctx.db.patch("retroStickies", sticky._id, { position: validatePosition(move.position) });
+      await ctx.db.patch("retroStickies", sticky._id, { position: Canvas.validPosition(move.position) });
     })
   );
   await updateRoomActivity(ctx, room);
@@ -715,17 +702,19 @@ async function topicsAround(
   stickies: readonly Doc<"retroStickies">[]
 ): Promise<Doc<"retroStickies">[]> {
   const byId = new Map(stickies.map((s) => [s._id, s]));
-  for (const root of new Set(stickies.map((s) => Topics.rootOf(s)))) {
-    if (!byId.has(root)) {
-      const sticky = await ctx.db.get("retroStickies", root);
-      if (sticky && sticky.roomId === roomId) byId.set(sticky._id, sticky);
-    }
-    const members = await ctx.db
-      .query("retroStickies")
-      .withIndex("by_stack", (q) => q.eq("stackId", root))
-      .take(MAX_STICKIES_PER_ROOM);
-    for (const member of members) byId.set(member._id, member);
-  }
+  const topics = await Promise.all(
+    [...new Set(stickies.map((s) => Topics.rootOf(s)))].map(async (root) => {
+      const [top, members] = await Promise.all([
+        byId.has(root) ? null : ctx.db.get("retroStickies", root),
+        ctx.db
+          .query("retroStickies")
+          .withIndex("by_stack", (q) => q.eq("stackId", root))
+          .take(MAX_STICKIES_PER_ROOM),
+      ]);
+      return top && top.roomId === roomId ? [top, ...members] : members;
+    })
+  );
+  for (const sticky of topics.flat()) byId.set(sticky._id, sticky);
   return [...byId.values()];
 }
 
@@ -763,16 +752,9 @@ async function applyTopicChange(
   );
 
   await Promise.all([
-    ...[...change.stickies].map(([id, patch]) => {
+    ...[...change.stickies.keys()].map((id) => {
       const sticky = byId.get(id);
-      if (!sticky) return Promise.resolve();
-      const { stackId: current, ...rest } = sticky;
-      const stackId = patch.stackId === undefined ? current : (patch.stackId ?? undefined);
-      return ctx.db.replace("retroStickies", id, {
-        ...rest,
-        ...(stackId ? { stackId } : {}),
-        ...(patch.position ? { position: validatePosition(patch.position) } : {}),
-      });
+      return sticky ? ctx.db.replace("retroStickies", id, Topics.patched(sticky, change)) : Promise.resolve();
     }),
     ...[...change.removed].map((id) => ctx.db.delete("retroStickies", id)),
     ...[...refund].map((id) => ctx.db.delete("retroStickyVotes", id)),
@@ -817,11 +799,12 @@ export async function stackSticky(
 ): Promise<void> {
   const retro = retroOf(room);
   const onto = await stickyInRoom(ctx, room._id, ontoId);
+  // Already one topic: nothing to refuse, or to read.
+  if (Topics.rootOf(sticky) === Topics.rootOf(onto)) return;
+  requireAllowed(stickyActAllowed(retro.step, "stack", sticky.authorId === user._id && onto.authorId === user._id));
   const around = await topicsAround(ctx, room._id, [sticky, onto]);
   const change = Topics.stack(around, sticky._id, onto._id);
-  if (!change) return;
-  requireAllowed(stickyActAllowed(retro.step, "stack", sticky.authorId === user._id && onto.authorId === user._id));
-  await applyTopicChange(ctx, room, retro, around, change);
+  if (change) await applyTopicChange(ctx, room, retro, around, change);
 }
 
 /**
@@ -836,11 +819,12 @@ export async function unstackSticky(
   position: Position
 ): Promise<void> {
   const retro = retroOf(room);
-  const around = await topicsAround(ctx, room._id, [sticky]);
-  const change = Topics.unstack(around, sticky._id, validatePosition(position));
-  if (!change) return;
+  // Not in a stack: nothing to refuse, or to read.
+  if (sticky.stackId === undefined) return;
   requireAllowed(stickyActAllowed(retro.step, "unstack", sticky.authorId === user._id));
-  await applyTopicChange(ctx, room, retro, around, change);
+  const around = await topicsAround(ctx, room._id, [sticky]);
+  const change = Topics.unstack(around, sticky._id, Canvas.validPosition(position));
+  if (change) await applyTopicChange(ctx, room, retro, around, change);
 }
 
 /** The voter's votes in a retro, each with the topic it counts for. */

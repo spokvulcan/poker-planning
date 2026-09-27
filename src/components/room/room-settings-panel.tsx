@@ -46,7 +46,6 @@ interface RoomSettingsPanelProps {
   onClose: () => void;
 }
 
-const trimmed = (value: string) => value.trim();
 
 const PERMISSION_CONFIG: Record<PokerPermissionCategory, { label: string; description: string }> = {
   revealCards: { label: "Reveal cards", description: "Reveal votes, cancel auto-reveal" },
@@ -73,12 +72,12 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
   // What's typed wins until it's saved; someone else's rename comes in otherwise.
   const [roomName, roomNameField] = useLiveText<HTMLInputElement>({
     value: roomData.room.name,
-    save: (name) => settingsActions.rename(name.trim()),
-    normalize: trimmed,
+    save: (name) => settingsActions.rename(name),
+    required: true,
   });
 
   const handleSaveRoomName = async () => {
-    if (!roomName.value.trim() || !roomName.dirty) return;
+    if (!roomName.canCommit) return;
     if (await roomName.commit()) {
       toast.success("Room renamed", {
         description: `Room is now called "${roomName.value.trim()}"`,
@@ -179,7 +178,7 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
                   <Button
                     size="default"
                     onClick={handleSaveRoomName}
-                    disabled={!roomName.value.trim() || !roomName.dirty}
+                    disabled={!roomName.canCommit}
                     className="h-10 px-4 whitespace-nowrap"
                     {...permissionProps(perms.roomSettings)}
                   >

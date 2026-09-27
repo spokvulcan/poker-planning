@@ -2,6 +2,7 @@
 
 import { useReactFlow, useStore, type NodeTypes, type ReactFlowState, type XYPosition } from "@xyflow/react";
 import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
+import { isEqual } from "lodash";
 import { useRouter } from "next/navigation";
 import { useQuery } from "convex/react";
 import { ClipboardCopy, Download } from "lucide-react";
@@ -57,15 +58,13 @@ type Draft = {
   position: { x: number; y: number };
 };
 
-/** The viewer's stickies as React Flow measured them, one string, so it changes only when one does. */
-function measuredKey(state: ReactFlowState): string {
-  return (state.nodes as RetroFlowNode[])
-    .flatMap((node) => {
-      if (node.type !== "sticky" || !node.data.sticky?.mine || isOptimistic(node.data.sticky._id)) return [];
-      const open = node.data.editing || node.data.expanded;
-      return [`${node.data.sticky._id}:${Math.round(node.measured?.height ?? 0)}:${open ? 1 : 0}`];
-    })
-    .join("|");
+/** The viewer's stickies as React Flow measured them. */
+function measuredStickies(state: ReactFlowState): MeasuredSticky[] {
+  return (state.nodes as RetroFlowNode[]).flatMap((node) => {
+    if (node.type !== "sticky" || !node.data.sticky?.mine || isOptimistic(node.data.sticky._id)) return [];
+    const open = Boolean(node.data.editing || node.data.expanded);
+    return [{ stickyId: node.data.sticky._id, height: Math.round(node.measured?.height ?? 0), open }];
+  });
 }
 
 /**
@@ -74,18 +73,15 @@ function measuredKey(state: ReactFlowState): string {
  * stickies clear of the ones that turn out taller (ADR-0027).
  */
 function StickyHeights({ onHeights }: { onHeights: (heights: { stickyId: Id<"retroStickies">; height: number }[]) => void }) {
-  const key = useStore(measuredKey);
+  // Compared by value, so it changes only when a measurement does.
+  const measured = useStore(measuredStickies, isEqual);
   const seen = useRef(new Map<string, number>());
   const sent = useRef(new Map<string, number>());
   useEffect(() => {
-    if (!key) return;
-    const measured = key.split("|").map((entry): MeasuredSticky => {
-      const [stickyId, height, open] = entry.split(":");
-      return { stickyId: stickyId as Id<"retroStickies">, height: Number(height), open: open === "1" };
-    });
+    if (measured.length === 0) return;
     const heights = freshHeights(measured, seen.current, sent.current);
     if (heights.length > 0) onHeights(heights);
-  }, [key, onHeights]);
+  }, [measured, onHeights]);
   return null;
 }
 
@@ -236,7 +232,7 @@ function RetroCanvasInner({ roomData, currentUserId }: RetroCanvasProps): ReactE
       }
     },
     copySummary: () => void copySummary(),
-    renameColumn: (columnId, title) => void runAct(m.updateColumn({ roomId, columnId, title }), FAILED),
+    renameColumn: (columnId, title) => runAct(m.updateColumn({ roomId, columnId, title }), FAILED),
     addActionItem: (text) => void runAct(m.addActionItem({ roomId, text }), "That action item didn't save."),
     // A pending item offers nothing to click (see ActionRow), so these only see saved ones.
     updateActionItem: (itemId, patch) => void runAct(m.updateActionItem({ itemId, ...patch }), FAILED),
@@ -351,7 +347,6 @@ function RetroCanvasInner({ roomData, currentUserId }: RetroCanvasProps): ReactE
       followNodeId={spotlit}
       className="bg-white dark:bg-surface-1"
       testId="retro-board"
-      dataStep={retro.step}
       navigation={
         <CanvasNavigation
           roomData={roomData}

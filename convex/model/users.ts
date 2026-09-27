@@ -31,13 +31,6 @@ export interface EditUserArgs {
   isSpectator?: boolean;
 }
 
-async function byAuthUserId(ctx: QueryCtx, authUserId: string): Promise<Doc<"users"> | null> {
-  return await ctx.db
-    .query("users")
-    .withIndex("by_auth_user", (q) => q.eq("authUserId", authUserId))
-    .first();
-}
-
 /**
  * Finds or creates a global user by authUserId
  */
@@ -45,7 +38,7 @@ export async function findOrCreateGlobalUser(
   ctx: MutationCtx,
   args: { authUserId: string; name: string; allowRename?: boolean }
 ): Promise<Id<"users">> {
-  const existingUser = await byAuthUserId(ctx, args.authUserId);
+  const existingUser = await getGlobalUserByAuthUserId(ctx, args.authUserId);
   if (existingUser) {
     // Update name if changed (unless the caller's identity is unverified)
     if (args.allowRename !== false && existingUser.name !== args.name) {
@@ -71,7 +64,10 @@ export async function getGlobalUserByAuthUserId(
   ctx: QueryCtx,
   authUserId: string
 ): Promise<Doc<"users"> | null> {
-  return await byAuthUserId(ctx, authUserId);
+  return await ctx.db
+    .query("users")
+    .withIndex("by_auth_user", (q) => q.eq("authUserId", authUserId))
+    .first();
 }
 
 /**
@@ -83,7 +79,7 @@ export async function getMembershipByAuthUserId(
   roomId: Id<"rooms">,
   authUserId: string
 ): Promise<{ user: Doc<"users">; membership: Doc<"roomMemberships"> } | null> {
-  const user = await byAuthUserId(ctx, authUserId);
+  const user = await getGlobalUserByAuthUserId(ctx, authUserId);
   if (!user) return null;
   const membership = await Memberships.getMembership(ctx, roomId, user._id);
   if (!membership) return null;
@@ -143,7 +139,7 @@ export async function updateGlobalUserName(
   authUserId: string,
   name: string
 ): Promise<void> {
-  const user = await byAuthUserId(ctx, authUserId);
+  const user = await getGlobalUserByAuthUserId(ctx, authUserId);
   if (!user) {
     throw new Error("User not found");
   }
@@ -165,7 +161,7 @@ export async function ensureGlobalUserFromAuth(
     avatarUrl?: string;
   }
 ): Promise<void> {
-  const existingUser = await byAuthUserId(ctx, args.authUserId);
+  const existingUser = await getGlobalUserByAuthUserId(ctx, args.authUserId);
 
   if (existingUser) {
     // User already exists (e.g., created by a race with joinRoom).
@@ -196,7 +192,7 @@ export async function syncGlobalUserAvatar(
   authUserId: string,
   avatarUrl: string
 ): Promise<void> {
-  const user = await byAuthUserId(ctx, authUserId);
+  const user = await getGlobalUserByAuthUserId(ctx, authUserId);
   if (user && user.avatarUrl !== avatarUrl) {
     await ctx.db.patch("users", user._id, { avatarUrl });
   }
@@ -206,7 +202,7 @@ export async function syncGlobalUserAvatar(
  * Deletes a person's account (on "Delete account", and on a guest's sign-out).
  */
 export async function deleteUserByAuthUserId(ctx: MutationCtx, authUserId: string): Promise<void> {
-  const user = await byAuthUserId(ctx, authUserId);
+  const user = await getGlobalUserByAuthUserId(ctx, authUserId);
   if (user) await AccountLifecycle.deleteAccount(ctx, user);
 }
 
@@ -225,13 +221,8 @@ export async function linkAnonymousToPermanent(
     avatarUrl?: string;
   }
 ): Promise<void> {
-  const guest = await byAuthUserId(ctx, args.oldAuthUserId);
+  const guest = await getGlobalUserByAuthUserId(ctx, args.oldAuthUserId);
   if (!guest) return;
-  const account = await byAuthUserId(ctx, args.newAuthUserId);
-  await AccountLifecycle.linkAccount(ctx, guest, account, {
-    newAuthUserId: args.newAuthUserId,
-    email: args.email,
-    name: args.name,
-    avatarUrl: args.avatarUrl,
-  });
+  const account = await getGlobalUserByAuthUserId(ctx, args.newAuthUserId);
+  await AccountLifecycle.linkAccount(ctx, guest, account, args);
 }

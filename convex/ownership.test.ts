@@ -5,7 +5,8 @@ import schema from "./schema";
 import { withComponents } from "./components.setup";
 import { api } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
-import { type T, seedUser as seedNamedUser } from "./analytics.seeds";
+import type { T } from "./analytics.seeds";
+import { as, join, seedUser } from "./people.seeds";
 
 // Room ownership (ADR-0029): who owns a room is three stored facts that must
 // agree, the room's owner, that person's owner role, and whether the room is
@@ -15,11 +16,6 @@ import { type T, seedUser as seedNamedUser } from "./analytics.seeds";
 
 const modules = import.meta.glob("./**/*.*s");
 
-const seedUser = (t: T, authUserId: string, accountType?: "anonymous" | "permanent") =>
-  seedNamedUser(t, authUserId, authUserId, accountType);
-const as = (t: T, subject: string) => t.withIdentity({ subject });
-const join = (t: T, roomId: Id<"rooms">, subject: string) =>
-  as(t, subject).mutation(api.users.join, { roomId, name: subject, authUserId: subject });
 
 /** The three facts, read together. */
 async function ownershipOf(t: T, roomId: Id<"rooms">) {

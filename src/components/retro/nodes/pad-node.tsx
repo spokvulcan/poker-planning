@@ -11,7 +11,6 @@ import { STICKY_TONES } from "../sticky-colors";
 import { stickiesLabel } from "../retro-summary";
 import type { PadNodeData } from "../types";
 
-const trimmed = (value: string) => value.trim();
 
 /**
  * A column's sticky pad: the prompt, its emoji and colour, and a stack of
@@ -26,16 +25,15 @@ export const PadNode = memo(({ data, selected }: NodeProps<Node<PadNodeData, "pa
   // What's typed wins until it's saved; someone else's rename comes in otherwise.
   const [title, titleField] = useLiveText<HTMLInputElement>({
     value: column.title,
-    save: (next) => actions.renameColumn(column.id, next.trim()),
-    normalize: trimmed,
+    save: (next) => actions.renameColumn(column.id, next),
+    required: true,
   });
   // A drag that ends over the pad is not a click on it.
   const pressedAt = useRef<{ x: number; y: number } | null>(null);
 
   const finishRename = () => {
     setRenaming(false);
-    if (title.value.trim()) void title.commit();
-    else title.revert();
+    void title.commit();
   };
 
   return (

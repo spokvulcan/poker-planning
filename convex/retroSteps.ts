@@ -31,7 +31,7 @@ export type StepAct =
   | "walk";
 
 /** Why a retro act is refused: the step (`stage`) or the person's permission (`forbidden`). */
-export type RetroRefusalCode = "stage" | "forbidden";
+type RetroRefusalCode = "stage" | "forbidden";
 
 export type RetroDecision =
   | { allowed: true; code?: never; message?: never }
@@ -87,7 +87,6 @@ export function stickyEditDecision(
 
 /** What moving the retro from one step to another does. */
 export interface StepChange {
-  from: RetroStep;
   to: RetroStep;
   /** The spotlight: off the board's topics, kept where it is, or on the discussion's first topic. */
   spotlight: "clear" | "keep" | "first";
@@ -103,7 +102,30 @@ export function stepChange(from: RetroStep, to: RetroStep): StepChange | null {
   if (from === to) return null;
   const spotlight =
     to === "write" || to === "vote" ? "clear" : to === "discuss" && (from === "write" || from === "vote") ? "first" : "keep";
-  return { from, to, spotlight, reveal: from === "write" };
+  return { to, spotlight, reveal: from === "write" };
+}
+
+/** The retro's state with the spotlight on `topic`, or off (the optional field is dropped, not set to undefined). */
+export function withSpotlight<S extends string, R extends { focusStickyId?: S }>(retro: R, topic: S | undefined): R {
+  if (topic === retro.focusStickyId) return retro;
+  const { focusStickyId: _dropped, ...rest } = retro;
+  return (topic ? { ...rest, focusStickyId: topic } : rest) as R;
+}
+
+/**
+ * The retro after a step change: at its new step, with the spotlight on the
+ * topic a person picked, or off or kept as the change says. A change to the
+ * discussion's first topic keeps it where it is here: naming that topic takes
+ * everyone's votes, so the server puts it there.
+ */
+export function stepped<S extends string, R extends { step: RetroStep; focusStickyId?: S }>(
+  retro: R,
+  change: StepChange | null,
+  picked?: S
+): R {
+  const next = change ? { ...retro, step: change.to } : retro;
+  if (picked) return withSpotlight(next, picked);
+  return change?.spotlight === "clear" ? withSpotlight(next, undefined) : next;
 }
 
 /**

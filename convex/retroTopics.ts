@@ -45,7 +45,7 @@ export function heirOf<T extends { createdAt: number }>(members: readonly T[]): 
 }
 
 /** The stickies stacked under a root, oldest first. */
-export function membersOf<T extends TopicSticky>(stickies: readonly T[], root: string): T[] {
+function membersOf<T extends TopicSticky>(stickies: readonly T[], root: string): T[] {
   return stickies.filter((s) => s.stackId === root).sort((a, b) => a.createdAt - b.createdAt);
 }
 
@@ -61,6 +61,15 @@ export interface TopicChange<S extends string = string> {
   removed: ReadonlySet<S>;
   /** Topics now under another root (merged, or handed to an heir), or off the board (`null`). */
   topics: ReadonlyMap<S, S | null>;
+}
+
+/** A sticky as a change leaves it: joined to a stack, taken off one or left, and moved where the change says. */
+export function patched<S extends string, T extends TopicSticky<S>>(sticky: T, change: TopicChange<S>): T {
+  const patch = change.stickies.get(sticky._id);
+  if (!patch) return sticky;
+  const { stackId: current, ...rest } = sticky;
+  const stackId = patch.stackId === undefined ? current : (patch.stackId ?? undefined);
+  return { ...rest, ...(stackId ? { stackId } : {}), ...(patch.position ? { position: patch.position } : {}) } as T;
 }
 
 function indexOf<T extends TopicSticky>(stickies: readonly T[]): Map<string, T> {
@@ -142,7 +151,7 @@ export function remove<S extends string>(stickies: readonly TopicSticky<S>[], st
 }
 
 /** Where a topic ends up after a change: itself, another root, or off the board (`null`). */
-export function followTopic<S extends string>(topic: S, change: TopicChange<S>): S | null {
+function followTopic<S extends string>(topic: S, change: TopicChange<S>): S | null {
   return change.topics.has(topic) ? change.topics.get(topic)! : topic;
 }
 
@@ -212,7 +221,7 @@ export function voteTotals<S extends string>(
   return totals;
 }
 
-export const OUT_OF_VOTES = "You're out of votes. Take one back to vote again.";
+const OUT_OF_VOTES = "You're out of votes. Take one back to vote again.";
 
 /** What a click on a topic's vote button does. */
 export type VoteToggle<S extends string = string, V extends string = string> =

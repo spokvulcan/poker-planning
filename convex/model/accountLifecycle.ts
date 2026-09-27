@@ -20,11 +20,10 @@ import type { UserRows } from "./userRows";
  */
 
 /**
- * Every module that keeps rows about a person. The order is load-bearing for
- * deletion: rooms are handed off, and the canvas lets go of the person's
- * nodes, while their memberships still say where they were; the memberships
- * go before the voting round drops their votes, so a round re-checks
- * completion against the smaller roster (ADR-0004).
+ * Every module that keeps rows about a person. The order is load-bearing:
+ * rooms are handed off, and the canvas lets go of the person's nodes, while
+ * their memberships still say where they were; the memberships go before
+ * the voting round, so a guest's vote folds onto the account's seat.
  */
 export function userRows(): readonly UserRows[] {
   // A function, not a constant: the modules import each other, and a list
@@ -52,12 +51,6 @@ export async function deleteAccount(ctx: MutationCtx, user: Doc<"users">): Promi
   await ctx.db.delete("users", user._id);
 }
 
-export interface AccountDetails {
-  email: string;
-  name?: string;
-  avatarUrl?: string;
-}
-
 /**
  * A guest signs in to a permanent account. When the account has no user row
  * yet, the guest's row becomes the account's. When it has one (the auth hook
@@ -70,9 +63,17 @@ export async function linkAccount(
   ctx: MutationCtx,
   guest: Doc<"users">,
   account: Doc<"users"> | null,
-  details: AccountDetails & { newAuthUserId: string }
+  details: { newAuthUserId: string; email: string; name?: string; avatarUrl?: string }
 ): Promise<void> {
-  if (!account) {
+  if (account) {
+    await ctx.db.patch("users", account._id, {
+      email: details.email,
+      accountType: "permanent",
+      avatarUrl: details.avatarUrl,
+    });
+    for (const rows of userRows()) await rows.fold(ctx, guest._id, account._id);
+    await ctx.db.delete("users", guest._id);
+  } else {
     await ctx.db.patch("users", guest._id, {
       authUserId: details.newAuthUserId,
       email: details.email,
@@ -81,15 +82,6 @@ export async function linkAccount(
       // The name the person chose as a guest wins over the provider's.
       ...(details.name && !guest.name ? { name: details.name } : {}),
     });
-    await Ownership.ownerTurnedPermanent(ctx, guest._id);
-    return;
   }
-
-  await ctx.db.patch("users", account._id, {
-    email: details.email,
-    accountType: "permanent",
-    avatarUrl: details.avatarUrl,
-  });
-  for (const rows of userRows()) await rows.fold(ctx, guest._id, account._id);
-  await ctx.db.delete("users", guest._id);
+  await Ownership.ownerTurnedPermanent(ctx, (account ?? guest)._id);
 }

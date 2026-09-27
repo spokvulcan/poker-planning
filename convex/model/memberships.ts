@@ -41,6 +41,14 @@ export async function getMembership(
     .first();
 }
 
+/** Every room a person is in, as their memberships. */
+export async function membershipsOf(ctx: QueryCtx, userId: Id<"users">): Promise<Doc<"roomMemberships">[]> {
+  return await ctx.db
+    .query("roomMemberships")
+    .withIndex("by_user", (q) => q.eq("userId", userId))
+    .collect();
+}
+
 /** Everyone in a room, as the roster shows them. */
 export async function getRoomUsers(ctx: QueryCtx, roomId: Id<"rooms">): Promise<RoomUserData[]> {
   const memberships = await ctx.db
@@ -73,21 +81,20 @@ export async function join(
   room: Doc<"rooms">,
   user: Doc<"users">,
   options: { isSpectator?: boolean } = {}
-): Promise<Doc<"roomMemberships">> {
+): Promise<void> {
   await Rooms.updateRoomActivity(ctx, room);
   const existing = await getMembership(ctx, room._id, user._id);
-  const membershipId =
-    existing?._id ??
-    (await ctx.db.insert("roomMemberships", {
+  if (!existing) {
+    await ctx.db.insert("roomMemberships", {
       roomId: room._id,
       userId: user._id,
       // The bit stays on the row where a ceremony has no spectators, always false.
       isSpectator: rulesOf(room).spectators ? (options.isSpectator ?? false) : false,
       joinedAt: Date.now(),
-    }));
+    });
+  }
   await Ownership.memberJoined(ctx, room, user._id);
   if (!existing) await Canvas.memberJoined(ctx, room, user._id);
-  return (await ctx.db.get("roomMemberships", membershipId))!;
 }
 
 /**
@@ -119,27 +126,31 @@ export async function setSpectator(
 export async function leave(ctx: MutationCtx, room: Doc<"rooms">, userId: Id<"users">): Promise<void> {
   const membership = await getMembership(ctx, room._id, userId);
   if (!membership) return;
-  await ctx.db.delete("roomMemberships", membership._id);
-  await Canvas.memberLeft(ctx, room, userId);
-  await VotingRound.dropVoter(ctx, room._id, userId);
+  await takeOut(ctx, room, membership);
   await Rooms.updateRoomActivity(ctx, room);
+}
+
+/** Leaving, the room's clock aside: the canvas and the round let the member go. */
+async function takeOut(ctx: MutationCtx, room: Doc<"rooms">, membership: Doc<"roomMemberships">): Promise<void> {
+  await ctx.db.delete("roomMemberships", membership._id);
+  await Canvas.memberLeft(ctx, room, membership.userId);
+  await VotingRound.dropVoter(ctx, room._id, membership.userId);
 }
 
 /** Who is in which room. An account going is not room activity, so no clock moves. */
 export const membershipUserRows: UserRows = {
   fields: ["roomMemberships.userId"],
 
-  // Their votes are the round's to drop, once the memberships are gone (votingRoundUserRows).
+  // The account leaves each room as a person does, so a round it was the last
+  // one yet to vote in finishes without it (ADR-0004).
   async forget(ctx, userId) {
-    const memberships = await ctx.db
-      .query("roomMemberships")
-      .withIndex("by_user", (q) => q.eq("userId", userId))
-      .collect();
-    for (const membership of memberships) {
-      await ctx.db.delete("roomMemberships", membership._id);
-      const room = await ctx.db.get("rooms", membership.roomId);
-      if (room) await Canvas.memberLeft(ctx, room, userId);
-    }
+    await Promise.all(
+      (await membershipsOf(ctx, userId)).map(async (membership) => {
+        const room = await ctx.db.get("rooms", membership.roomId);
+        if (room) await takeOut(ctx, room, membership);
+        else await ctx.db.delete("roomMemberships", membership._id);
+      })
+    );
   },
 
   // In a room both were in, the account keeps its seat, and a guest's facilitator
@@ -147,11 +158,7 @@ export const membershipUserRows: UserRows = {
   // owned (ownershipUserRows.fold), and where the guest's seat brings the
   // account back into a room it owns (Ownership.memberJoined).
   async fold(ctx, from, into) {
-    const memberships = await ctx.db
-      .query("roomMemberships")
-      .withIndex("by_user", (q) => q.eq("userId", from))
-      .collect();
-    for (const guest of memberships) {
+    for (const guest of await membershipsOf(ctx, from)) {
       const account = await getMembership(ctx, guest.roomId, into);
       if (account) {
         if (getEffectiveRole(guest) === "facilitator" && getEffectiveRole(account) === "participant") {

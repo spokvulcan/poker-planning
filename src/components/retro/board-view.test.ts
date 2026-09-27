@@ -2,8 +2,7 @@ import { describe, it, expect } from "vitest";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { BoardView, RetroState, StickyView } from "@/convex/model/retro";
 import { remove, stack, unstack } from "@/convex/retroTopics";
-import { stepChange, spotlightStepChange } from "@/convex/retroSteps";
-import { applyStepChange, applyTopicChange, applyVoteToggle, applyWalk, topicOrder } from "./board-view";
+import { applyTopicChange, applyVoteToggle, applyWalk, topicOrder } from "./board-view";
 
 // The board a browser sees, moved by the same topic and step rules the
 // server applies: what the optimistic updates show before the answer comes.
@@ -92,22 +91,7 @@ describe("applyVoteToggle", () => {
   });
 });
 
-describe("step changes", () => {
-  it("clears the spotlight going back to Vote, and leaves the discussion's first topic to the server", () => {
-    const discussing = { ...retro, step: "discuss" as const, focusStickyId: id("a") };
-
-    expect(applyStepChange(discussing, stepChange("discuss", "vote"))).toEqual({ ...retro, step: "vote" });
-    expect(applyStepChange(retro, stepChange("vote", "discuss"))).toEqual({ ...retro, step: "discuss" });
-  });
-
-  it("puts a picked topic in the spotlight, moving the retro to the discussion", () => {
-    expect(applyStepChange(retro, spotlightStepChange("vote"), id("b"))).toEqual({
-      ...retro,
-      step: "discuss",
-      focusStickyId: id("b"),
-    });
-  });
-
+describe("the discussion", () => {
   it("walks the topics in the order the totals give", () => {
     const shown = board([sticky("low", 1, { votes: 1 }), sticky("high", 2, { votes: 5 })]);
     const discussing = { ...retro, step: "discuss" as const, focusStickyId: id("high") };

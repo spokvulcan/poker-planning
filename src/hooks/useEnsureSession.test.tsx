@@ -53,7 +53,7 @@ describe("useEnsureSession", () => {
 
     let pending!: Promise<void>;
     await act(async () => {
-      pending = result.current({ createGlobalUser: true }).then((id) => {
+      pending = result.current().then((id) => {
         answered = id;
       });
     });

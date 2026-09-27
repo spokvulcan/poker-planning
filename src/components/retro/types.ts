@@ -26,7 +26,8 @@ export interface RetroBoardActions {
   stepDiscussion: (direction: "next" | "previous") => void;
   startNext: () => void;
   copySummary: () => void;
-  renameColumn: (columnId: string, title: string) => void;
+  /** Resolves to whether the rename landed. */
+  renameColumn: (columnId: string, title: string) => Promise<boolean>;
   addActionItem: (text: string) => void;
   updateActionItem: (
     itemId: Id<"retroActionItems">,

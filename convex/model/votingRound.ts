@@ -5,6 +5,7 @@ import * as Rooms from "./rooms";
 import * as Canvas from "./canvas";
 import * as Votes from "./votes";
 import * as Analytics from "./analytics";
+import { getMembership } from "./memberships";
 import { cardNumericValue, computeVoterAlignment } from "./alignment";
 import { summarize, VoteStatsSummary } from "../summarize";
 import { DEFAULT_SCALE, VotingScale } from "../scales";
@@ -629,6 +630,8 @@ export async function autoReveal(
 export const votingRoundUserRows: UserRows = {
   fields: ["votes.userId"],
 
+  // Leaving each room dropped the votes there (membershipUserRows); any vote
+  // left is in a room the person no longer sits in.
   async forget(ctx, userId) {
     const votes = await ctx.db
       .query("votes")
@@ -654,10 +657,7 @@ export const votingRoundUserRows: UserRows = {
           .query("votes")
           .withIndex("by_room_user", (q) => q.eq("roomId", vote.roomId).eq("userId", into))
           .first(),
-        ctx.db
-          .query("roomMemberships")
-          .withIndex("by_room_user", (q) => q.eq("roomId", vote.roomId).eq("userId", into))
-          .first(),
+        getMembership(ctx, vote.roomId, into),
       ]);
       if (own || seat?.isSpectator) await ctx.db.delete("votes", vote._id);
       else await ctx.db.patch("votes", vote._id, { userId: into });

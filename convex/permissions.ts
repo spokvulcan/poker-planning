@@ -53,6 +53,11 @@ export type EffectivePermissions =
 
 // --- Defaults ---
 
+/** Whether a set of permissions is a retro's, by its own categories, rather than a poker room's. */
+export function isRetroPermissions(permissions: RoomPermissions | RetroPermissions): permissions is RetroPermissions {
+  return "stageFlow" in permissions;
+}
+
 export const DEFAULT_PERMISSIONS: RoomPermissions = {
   revealCards: "everyone",
   gameFlow: "everyone",
@@ -313,14 +318,12 @@ export function getEffectivePermissions(
   if (ceremonyOf(room) === "retro") {
     return {
       ceremony: "retro",
-      permissions:
-        stored && "stageFlow" in stored ? stored : DEFAULT_RETRO_PERMISSIONS,
+      permissions: stored && isRetroPermissions(stored) ? stored : DEFAULT_RETRO_PERMISSIONS,
     };
   }
   return {
     ceremony: "poker",
-    permissions:
-      stored && "revealCards" in stored ? stored : DEFAULT_PERMISSIONS,
+    permissions: stored && !isRetroPermissions(stored) ? stored : DEFAULT_PERMISSIONS,
   };
 }
 

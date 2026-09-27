@@ -44,7 +44,7 @@ export interface CanvasNodeCallbacks {
   onToggleAutoComplete?: () => void;
   onCancelAutoReveal?: () => void;
   onOpenIssuesPanel?: () => void;
-  onUpdateNoteContent?: (nodeId: string, content: string) => Promise<void> | void;
+  onUpdateNoteContent?: (nodeId: string, content: string) => Promise<boolean | void> | void;
   onDeleteNote?: (nodeId: string, hasContent: boolean) => void;
 }
 

@@ -30,14 +30,14 @@ function convexHasSession(authenticated: RefObject<boolean>, waiting: RefObject<
 }
 
 /**
- * The one anonymous-session bootstrap: returns the caller's authUserId once
- * Convex has the session, signing in anonymously first when there is none.
- * A fresh session reaches BetterAuth before Convex, and a mutation that
+ * The session for creating a room or a retro: returns the caller's authUserId
+ * once Convex has the session, signing in anonymously first when there is
+ * none. A fresh session reaches BetterAuth before Convex, and a mutation that
  * needs an identity sent in between fails as unauthenticated, so this waits
- * for Convex to take the session's token. With `createGlobalUser`, the fresh
- * guest also gets a users row with a guest name (a creator needs one before
- * the mutation that makes them owner; a joiner's row is written by the join
- * itself). Throws with a user-facing message on failure.
+ * for Convex to take the session's token. A fresh guest also gets a users row
+ * with a guest name, which a creator needs before the mutation that makes
+ * them owner. (Joining signs in on its own: the join carries the session's
+ * id and writes the row itself.) Throws with a user-facing message on failure.
  *
  * Callers must wait for `useAuth().isLoading` to clear before calling:
  * signing in anonymously over a live session is a BetterAuth 400.
@@ -56,7 +56,7 @@ export function useEnsureSession() {
   }, [isAuthenticated]);
 
   return useCallback(
-    async (options: { createGlobalUser?: boolean } = {}): Promise<string> => {
+    async (): Promise<string> => {
       let sessionUserId = authUserId;
       if (!sessionUserId) {
         const result = await authClient.signIn.anonymous();
@@ -65,10 +65,8 @@ export function useEnsureSession() {
           throw new Error(result.error?.message || SESSION_FAILED);
         }
         sessionUserId = newAuthUserId;
-        if (options.createGlobalUser) {
-          // Runs before Convex has the token: the mutation takes the id instead.
-          await ensureGlobalUser({ authUserId: sessionUserId, name: generateGuestName() });
-        }
+        // Runs before Convex has the token: the mutation takes the id instead.
+        await ensureGlobalUser({ authUserId: sessionUserId, name: generateGuestName() });
       }
       await convexHasSession(authenticated, waiting);
       return sessionUserId;

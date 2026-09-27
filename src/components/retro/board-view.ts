@@ -11,7 +11,7 @@ import type { Id } from "@/convex/_generated/dataModel";
 import type { BoardView, RetroState, StickyView } from "@/convex/model/retro";
 import type { RetroColumn } from "@/convex/retroTemplates";
 import * as Topics from "@/convex/retroTopics";
-import { discussionOrder, walk, type StepChange } from "@/convex/retroSteps";
+import { discussionOrder, walk, withSpotlight } from "@/convex/retroSteps";
 
 type StickyId = Id<"retroStickies">;
 
@@ -20,13 +20,6 @@ export function topicOrder(board: BoardView | undefined, columns: readonly Retro
   if (!board) return [];
   const totals = new Map(board.stickies.map((s) => [s._id as string, s.votes ?? 0]));
   return discussionOrder(board.stickies, totals, columns);
-}
-
-/** The state with the spotlight moved (an optional field is dropped, not set to undefined). */
-export function withSpotlight(retro: RetroState, spotlight: StickyId | undefined): RetroState {
-  if (spotlight === retro.focusStickyId) return retro;
-  const { focusStickyId: _dropped, ...rest } = retro;
-  return spotlight ? { ...rest, focusStickyId: spotlight } : rest;
 }
 
 /**
@@ -43,11 +36,8 @@ export function applyTopicChange(board: BoardView, change: Topics.TopicChange<St
   const stickies = board.stickies
     .filter((sticky) => !change.removed.has(sticky._id))
     .map((sticky): StickyView => {
-      const patch = change.stickies.get(sticky._id);
-      const { stackId: current, myVote: _myVote, votes: _votes, ...rest } = sticky;
-      const stackId = patch?.stackId === undefined ? current : (patch.stackId ?? undefined);
-      const moved = { ...rest, ...(stackId ? { stackId } : {}), ...(patch?.position ? { position: patch.position } : {}) };
-      if (stackId) return moved;
+      const { myVote: _myVote, votes: _votes, ...moved } = Topics.patched(sticky, change);
+      if (moved.stackId) return moved;
       // Only a topic carries its votes.
       return {
         ...moved,
@@ -83,18 +73,6 @@ export function applyVoteToggle(
     },
     cast: voting ? 1 : -1,
   };
-}
-
-/**
- * A step change on the state a browser sees: the step, and the spotlight
- * cleared or kept, or put on a topic a person picked. The discussion's first
- * topic is the server's to name, as its totals aren't shown before Discuss.
- */
-export function applyStepChange(retro: RetroState, change: StepChange | null, spotlight?: StickyId): RetroState {
-  const next = change ? { ...retro, step: change.to } : retro;
-  if (spotlight) return withSpotlight(next, spotlight);
-  if (change?.spotlight === "clear") return withSpotlight(next, undefined);
-  return next;
 }
 
 /** The discussion one topic on or back, on the state a browser sees. */

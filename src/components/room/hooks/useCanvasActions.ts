@@ -21,7 +21,8 @@ export interface CanvasActions {
   /** Sets the local highlight, writes the vote, rolls the highlight back on failure. */
   selectCard: (cardValue: string) => void;
   /** Resolves once the write has landed (or failed), so a note knows when its text is saved. */
-  updateNoteContent: (nodeId: string, content: string) => Promise<void>;
+  /** Resolves to whether the note's text landed, for the field to keep it until it has. */
+  updateNoteContent: (nodeId: string, content: string) => Promise<boolean>;
   createNote: (issueId: Id<"issues">) => void;
   deleteNote: (nodeId: string) => void;
   /** Saves where a drop (or an arrow-key nudge) left nodes, in one write. */
@@ -123,11 +124,13 @@ export function useCanvasActions({
       }
     },
     updateNoteContent: async (nodeId: string, content: string) => {
-      if (isDemo || !currentUserId) return;
+      if (isDemo || !currentUserId) return true;
       try {
         await updateNoteContentMutation({ roomId, nodeId, content, userId: currentUserId });
+        return true;
       } catch (error) {
         console.error("Failed to update note content:", error);
+        return false;
       }
     },
     createNote: async (issueId: Id<"issues">) => {

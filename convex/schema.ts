@@ -75,6 +75,9 @@ export const retroStateValidator = v.object({
   nextRoomId: v.optional(v.id("rooms")),
 });
 
+/** Where something sits on the board. */
+export const positionValidator = v.object({ x: v.number(), y: v.number() });
+
 /** A GIF on a sticky: a media link from an allowed host and its size. */
 export const gifValidator = v.object({
   url: v.string(),
@@ -179,7 +182,7 @@ export default defineSchema({
     text: v.string(),
     gif: v.optional(gifValidator),
     authorId: v.id("users"),
-    position: v.object({ x: v.number(), y: v.number() }),
+    position: positionValidator,
     // How tall its author's browser draws it face-up. Never sent to anyone;
     // only the reveal reads it, to move stickies clear of it (ADR-0027).
     height: v.optional(v.number()),
@@ -271,7 +274,7 @@ export default defineSchema({
       v.literal("pad"),
       v.literal("actions")
     ),
-    position: v.object({ x: v.number(), y: v.number() }),
+    position: positionValidator,
     data: v.any(), // Node-specific data
     isLocked: v.optional(v.boolean()), // Prevent accidental moves
     lastUpdatedBy: v.optional(v.id("users")),

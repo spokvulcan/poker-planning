@@ -4,10 +4,10 @@ import { describe, it, expect } from "vitest";
 import schema from "./schema";
 import { withComponents } from "./components.setup";
 import { api } from "./_generated/api";
-import type { Id } from "./_generated/dataModel";
 import { CEREMONY_RULES, ceremonyOf, rulesOf } from "./ceremony";
 import { DEFAULT_PERMISSIONS } from "./permissions";
-import { type T, seedUser } from "./analytics.seeds";
+import type { T } from "./analytics.seeds";
+import { as, join, seedUser } from "./people.seeds";
 
 // A room's ceremony is named by its roomType, and a legacy row without one
 // is planning poker: one definition, everywhere.
@@ -52,12 +52,9 @@ describe("rulesOf", () => {
 // --- Every writer asks the same rules --------------------------------------------
 
 const modules = import.meta.glob("./**/*.*s");
-const as = (t: T, subject: string) => t.withIdentity({ subject });
-const join = (t: T, roomId: Id<"rooms">, subject: string) =>
-  as(t, subject).mutation(api.users.join, { roomId, name: subject, authUserId: subject });
 
 async function retroWithAnn(t: T) {
-  await seedUser(t, "owner", "owner");
+  await seedUser(t, "owner");
   const roomId = await as(t, "owner").mutation(api.retro.create, { name: "Sprint 41 retro" });
   const annId = await join(t, roomId, "ann");
   return { roomId, annId };

@@ -4,8 +4,7 @@ import type { MutationCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import * as Canvas from "./model/canvas";
 import { requireRoomReader, requireActingUser } from "./model/auth";
-
-const positionValidator = v.object({ x: v.number(), y: v.number() });
+import { positionValidator } from "./schema";
 
 /** The room a canvas write lands in and the member making it, after the acting-user guard. */
 async function actingIn(

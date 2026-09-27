@@ -1,7 +1,7 @@
 import { MutationCtx } from "../_generated/server";
 import { Id } from "../_generated/dataModel";
 import { ceremonyOf, NOT_THIS_CEREMONY } from "../ceremony";
-import type { RetroPermissions, RoomPermissions } from "../permissions";
+import { isRetroPermissions, type RetroPermissions, type RoomPermissions } from "../permissions";
 import { requireCan } from "./auth";
 import * as Ownership from "./ownership";
 import * as Rooms from "./rooms";
@@ -81,8 +81,7 @@ export async function updatePermissions(
   args: { roomId: Id<"rooms">; permissions: RoomPermissions | RetroPermissions }
 ): Promise<void> {
   const { room } = await requireCan(ctx, args.roomId, { kind: "relationship", verb: "changePerms" });
-  const shape = "stageFlow" in args.permissions ? "retro" : "poker";
-  if (shape !== ceremonyOf(room)) throw new Error(NOT_THIS_CEREMONY);
+  if (isRetroPermissions(args.permissions) !== (ceremonyOf(room) === "retro")) throw new Error(NOT_THIS_CEREMONY);
   await ctx.db.patch("rooms", room._id, { permissions: args.permissions });
   await Rooms.updateRoomActivity(ctx, room);
 }

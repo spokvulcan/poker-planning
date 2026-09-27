@@ -53,13 +53,6 @@ const PERMISSION_CONFIG: Record<RetroPermissionCategory, { label: string; descri
 
 const FAILED = "That didn't save. Try again.";
 
-const trimmed = (value: string) => value.trim();
-
-/** Saves through runAct (which shows the refusal), rejecting when it didn't land so the field keeps the text. */
-async function landed(act: Promise<unknown>): Promise<void> {
-  if (!(await runAct(act, FAILED))) throw new Error("Not saved");
-}
-
 function SectionTitle({ children }: { children: string }) {
   return (
     <h3 className="text-sm font-medium tracking-wider text-gray-500 uppercase dark:text-gray-400">{children}</h3>
@@ -84,13 +77,13 @@ function ColumnRow({
   // What's typed wins until it's saved; someone else's rename comes in otherwise.
   const [title, titleField] = useLiveText<HTMLInputElement>({
     value: column.title,
-    save: (next) => landed(updateColumn({ roomId, columnId: column.id, title: next })),
-    normalize: trimmed,
+    save: (next) => runAct(updateColumn({ roomId, columnId: column.id, title: next }), FAILED),
+    required: true,
   });
   const [emoji, emojiField] = useLiveText<HTMLInputElement>({
     value: column.emoji,
-    save: (next) => landed(updateColumn({ roomId, columnId: column.id, emoji: next })),
-    normalize: trimmed,
+    save: (next) => runAct(updateColumn({ roomId, columnId: column.id, emoji: next }), FAILED),
+    required: true,
   });
 
   const save = (patch: { color: StickyColor }) =>
@@ -103,7 +96,7 @@ function ColumnRow({
           ref={emojiField}
           value={emoji.value}
           onChange={(e) => emoji.setValue(e.target.value)}
-          onBlur={() => (emoji.value.trim() ? void emoji.commit() : emoji.revert())}
+          onBlur={() => void emoji.commit()}
           aria-label={`${column.title} emoji`}
           className="h-9 w-12 px-0 text-center text-lg"
           disabled={!canEdit}
@@ -113,7 +106,7 @@ function ColumnRow({
           value={title.value}
           maxLength={MAX_COLUMN_TITLE_LENGTH}
           onChange={(e) => title.setValue(e.target.value)}
-          onBlur={() => (title.value.trim() ? void title.commit() : title.revert())}
+          onBlur={() => void title.commit()}
           onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
           aria-label={`${column.title} title`}
           className="h-9 flex-1 text-sm"
@@ -198,8 +191,8 @@ export const RetroSettingsPanel = memo(function RetroSettingsPanel({
   // What's typed wins until it's saved; someone else's rename comes in otherwise.
   const [name, nameField] = useLiveText<HTMLInputElement>({
     value: room.name,
-    save: (next) => landed(rename({ roomId: room._id, name: next.trim() })),
-    normalize: trimmed,
+    save: (next) => runAct(rename({ roomId: room._id, name: next }), FAILED),
+    required: true,
   });
   const [confirmDelete, setConfirmDelete] = useState(false);
 
@@ -253,7 +246,7 @@ export const RetroSettingsPanel = memo(function RetroSettingsPanel({
                   value={name.value}
                   onChange={(e) => name.setValue(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter" && name.value.trim() && canSettings) void name.commit();
+                    if (e.key === "Enter" && name.canCommit && canSettings) void name.commit();
                   }}
                   className="h-10 bg-gray-50 text-sm dark:bg-surface-2"
                   {...permissionInputProps(perms.retroSettings)}
@@ -261,7 +254,7 @@ export const RetroSettingsPanel = memo(function RetroSettingsPanel({
                 <Button
                   className="h-10 px-4"
                   onClick={() => void name.commit()}
-                  disabled={!name.value.trim() || !name.dirty}
+                  disabled={!name.canCommit}
                   {...permissionProps(perms.retroSettings)}
                 >
                   Save

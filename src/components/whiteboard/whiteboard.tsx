@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  ConnectionMode,
   ReactFlow,
   ReactFlowProvider,
   useNodesInitialized,
@@ -21,6 +22,7 @@ import {
   useEffect,
   useRef,
   useState,
+  useSyncExternalStore,
   type MouseEvent,
   type ReactElement,
   type ReactNode,
@@ -90,18 +92,42 @@ export interface WhiteboardProps<N extends Node> {
   panels?: ReactNode;
   className?: string;
   testId?: string;
-  dataStep?: string;
 }
 
-const DropTargetContext = createContext<string | null>(null);
+/**
+ * The node a dragged one would land on, held outside React state: when it
+ * changes, only the node it leaves and the node it reaches re-render, not
+ * the board and every node on it.
+ */
+class DropTarget {
+  private id: string | null = null;
+  private readonly listeners = new Set<() => void>();
+
+  get = (): string | null => this.id;
+
+  set(id: string | null): void {
+    if (id === this.id) return;
+    this.id = id;
+    for (const listener of this.listeners) listener();
+  }
+
+  subscribe = (listener: () => void): (() => void) => {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  };
+}
+
+const DropTargetContext = createContext(new DropTarget());
 
 /** Whether a node is where a dragged node would land: for the node to draw itself as a target. */
 export function useIsDropTarget(nodeId: string): boolean {
-  return useContext(DropTargetContext) === nodeId;
+  const target = useContext(DropTargetContext);
+  const isTarget = () => target.get() === nodeId;
+  return useSyncExternalStore(target.subscribe, isTarget, isTarget);
 }
 
 /** A node's box, at its measured size or the size it was drawn with. */
-export function boxOf(node: Node): Box {
+function boxOf(node: Node): Box {
   return {
     x: node.position.x,
     y: node.position.y,
@@ -126,7 +152,7 @@ export function Whiteboard<N extends Node>(props: WhiteboardProps<N>): ReactElem
   const flow = useReactFlow<N>();
   const isMobile = useIsMobile();
   const [buffer, setBuffer, applyChanges] = useNodesState<N>([]);
-  const [dropTargetId, setDropTargetId] = useState<string | null>(null);
+  const [dropTarget] = useState(() => new DropTarget());
   const dragging = useRef(false);
   const nudged = useRef(new Map<string, XYPosition>());
   const nudgeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -153,6 +179,18 @@ export function Whiteboard<N extends Node>(props: WhiteboardProps<N>): ReactElem
     return dropTargetAt(boxOf(node), candidates)?.node;
   };
 
+  /** Saves the nodes arrow keys moved, where the keys left them. */
+  const saveNudges = () => {
+    if (nudgeTimer.current) clearTimeout(nudgeTimer.current);
+    nudgeTimer.current = null;
+    const moved = [...nudged.current].flatMap(([id, position]) => {
+      const node = flow.getNode(id);
+      return node ? [{ ...node, position }] : [];
+    });
+    nudged.current.clear();
+    if (moved.length > 0) props.onDrop?.({ nodes: moved });
+  };
+
   const handlers = useStableActions({
     onNodesChange: (changes: NodeChange<N>[]) => {
       const removed = changes.flatMap((change) => {
@@ -173,25 +211,19 @@ export function Whiteboard<N extends Node>(props: WhiteboardProps<N>): ReactElem
       }
       if (nudged.current.size === 0) return;
       if (nudgeTimer.current) clearTimeout(nudgeTimer.current);
-      nudgeTimer.current = setTimeout(() => {
-        nudgeTimer.current = null;
-        const moved = [...nudged.current].flatMap(([id, position]) => {
-          const node = flow.getNode(id);
-          return node ? [{ ...node, position }] : [];
-        });
-        nudged.current.clear();
-        if (moved.length > 0) props.onDrop?.({ nodes: moved });
-      }, NUDGE_SETTLE_MS);
+      nudgeTimer.current = setTimeout(saveNudges, NUDGE_SETTLE_MS);
     },
+    // A nudge still settling is saved first, so the drop has the last word.
     onNodeDragStart: () => {
       dragging.current = true;
+      saveNudges();
     },
     onNodeDrag: ((_event, node, dragged) => {
-      setDropTargetId(targetFor(node, dragged)?.id ?? null);
+      dropTarget.set(targetFor(node, dragged)?.id ?? null);
     }) as OnNodeDrag<N>,
     onNodeDragStop: ((_event, node, dragged) => {
       dragging.current = false;
-      setDropTargetId(null);
+      dropTarget.set(null);
       if (dragged.length > 0) props.onDrop?.({ nodes: dragged, target: targetFor(node, dragged) });
     }) as OnNodeDrag<N>,
     onPaneClick: (event: MouseEvent) => {
@@ -220,11 +252,10 @@ export function Whiteboard<N extends Node>(props: WhiteboardProps<N>): ReactElem
     <div
       className={cn("flex h-screen w-full overflow-hidden", props.className)}
       data-testid={props.testId}
-      data-step={props.dataStep}
     >
       <div className="relative h-full min-w-0 flex-1">
         {props.navigation}
-        <DropTargetContext.Provider value={dropTargetId}>
+        <DropTargetContext.Provider value={dropTarget}>
           <ReactFlow
             nodes={buffer}
             edges={edges}
@@ -241,6 +272,8 @@ export function Whiteboard<N extends Node>(props: WhiteboardProps<N>): ReactElem
             nodesDraggable={!readOnly}
             elementsSelectable={!readOnly}
             nodesConnectable={false}
+            // An edge joins handles by id, whichever way they point: the poker board joins two source handles.
+            connectionMode={ConnectionMode.Loose}
             edgesFocusable={false}
             zoomOnDoubleClick={false}
             snapToGrid

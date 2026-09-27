@@ -9,7 +9,8 @@ import type { Id } from "./_generated/dataModel";
 import { DEFAULT_RETRO_PERMISSIONS } from "./permissions";
 import { columnsFromTemplate } from "./retroTemplates";
 import { FACE_DOWN_HEIGHT, nextPadPosition, nextStickyPosition, padPositions } from "./retroLayout";
-import { type T, seedUser as seedNamedUser } from "./analytics.seeds";
+import type { T } from "./analytics.seeds";
+import { as, join, seedUser } from "./people.seeds";
 
 // The whiteboard retro through its API (convex/retro.ts): what a new retro
 // holds, who sees what on the board in each step, stickies and stacks,
@@ -20,15 +21,6 @@ import { type T, seedUser as seedNamedUser } from "./analytics.seeds";
 
 const modules = import.meta.glob("./**/*.*s");
 
-const as = (t: T, subject: string) => t.withIdentity({ subject });
-
-/** A user row whose name doubles as its auth subject. */
-const seedUser = (t: T, subject: string, accountType?: "anonymous" | "permanent") =>
-  seedNamedUser(t, subject, subject, accountType);
-
-/** Joins a room the way the app does; the first join creates a guest's user row. */
-const join = (t: T, roomId: Id<"rooms">, subject: string) =>
-  as(t, subject).mutation(api.users.join, { roomId, name: subject, authUserId: subject });
 
 /**
  * "Sprint 41 retro", opened by "owner" (a permanent account), who joins it

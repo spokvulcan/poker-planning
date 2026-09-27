@@ -6,9 +6,16 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { ActionItemView, BoardView, RetroState } from "@/convex/model/retro";
 import * as Topics from "@/convex/retroTopics";
-import { spotlightStepChange, stepAllows, stepChange, stickyActAllowed } from "@/convex/retroSteps";
+import {
+  spotlightStepChange,
+  stepAllows,
+  stepChange,
+  stepped,
+  stickyActAllowed,
+  withSpotlight,
+} from "@/convex/retroSteps";
 import { useMoveCanvasNodes } from "@/components/whiteboard/use-move-canvas-nodes";
-import { applyStepChange, applyTopicChange, applyVoteToggle, applyWalk, withSpotlight } from "./board-view";
+import { applyTopicChange, applyVoteToggle, applyWalk } from "./board-view";
 import { OPTIMISTIC_PREFIX } from "./optimistic";
 
 /**
@@ -132,7 +139,7 @@ export function useRetroMutations(roomId: Id<"rooms">) {
   });
 
   const setStep = useMutation(api.retro.setStep).withOptimisticUpdate((store, args) => {
-    patchRetro(store, (retro) => applyStepChange(retro, stepChange(retro.step, args.step)));
+    patchRetro(store, (retro) => stepped(retro, stepChange(retro.step, args.step)));
   });
 
   const stepDiscussion = useMutation(api.retro.stepDiscussion).withOptimisticUpdate((store, args) => {
@@ -148,7 +155,7 @@ export function useRetroMutations(roomId: Id<"rooms">) {
     if (!sticky) return;
     patchRetro(store, (retro) =>
       stepAllows(retro.step, "spotlight").allowed
-        ? applyStepChange(retro, spotlightStepChange(retro.step), Topics.rootOf(sticky))
+        ? stepped(retro, spotlightStepChange(retro.step), Topics.rootOf(sticky))
         : retro
     );
   });

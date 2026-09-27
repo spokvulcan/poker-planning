@@ -10,12 +10,16 @@ import {
   requireRoomMember,
   requireRoomReader,
 } from "./model/auth";
-import { gifValidator, retroPermissionsValidator, retroStepValidator, stickyColorValidator } from "./schema";
+import {
+  gifValidator,
+  positionValidator,
+  retroPermissionsValidator,
+  retroStepValidator,
+  stickyColorValidator,
+} from "./schema";
 import { refusal } from "./model/refusal";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
-
-const positionValidator = v.object({ x: v.number(), y: v.number() });
 
 type MemberRoom = { user: Doc<"users">; membership: Doc<"roomMemberships">; room: Doc<"rooms"> };
 

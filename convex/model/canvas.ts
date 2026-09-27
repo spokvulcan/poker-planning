@@ -1,6 +1,7 @@
 import { QueryCtx, MutationCtx } from "../_generated/server";
 import { Doc, Id } from "../_generated/dataModel";
 import * as Rooms from "./rooms";
+import { membershipsOf } from "./memberships";
 import { refusal } from "./refusal";
 import { rulesOf, ceremonyOf, NOT_THIS_CEREMONY } from "../ceremony";
 import {
@@ -72,7 +73,7 @@ type DataOf<T extends NodeType> = Extract<CanvasNodeData, { type: T }>["data"];
 /** Longest note a discussion can take. */
 const MAX_NOTE_CONTENT_LENGTH = 10000;
 /** Most nodes one drop can move. */
-const MAX_MOVES = 200;
+export const MAX_MOVES = 200;
 
 const SESSION_NODE_ID = "session-current";
 const RESULTS_NODE_ID = "results";
@@ -117,13 +118,14 @@ async function insertNode<T extends NodeType>(
   });
 }
 
-/** A node's stored data, typed by its type: the one place the `v.any()` column is cast. */
+/** A node's stored data (the `v.any()` column), typed by the type the caller expects it to be. */
 function dataOf<T extends NodeType>(node: Doc<"canvasNodes">, type: T): DataOf<T> {
   if (node.type !== type) throw new Error(`Expected a ${type} node, found ${node.type}`);
   return node.data as DataOf<T>;
 }
 
-function validPosition(position: Position): Position {
+/** A spot on the board: refused when it isn't a number, and kept within the board's bounds. */
+export function validPosition(position: Position): Position {
   if (!Number.isFinite(position.x) || !Number.isFinite(position.y)) {
     throw refusal("forbidden", "That spot is off the board.");
   }
@@ -160,8 +162,6 @@ export async function noteContents(ctx: QueryCtx, roomId: Id<"rooms">): Promise<
  * retro's retro node, timer, action items and one pad per column.
  */
 export async function openBoard(ctx: MutationCtx, room: Doc<"rooms">): Promise<void> {
-  if (await ctx.db.query("canvasNodes").withIndex("by_room", (q) => q.eq("roomId", room._id)).first()) return;
-
   if (ceremonyOf(room) === "poker") {
     await Promise.all([
       insertNode(ctx, room._id, { nodeId: TIMER_NODE_ID, type: "timer", position: TIMER_POSITION, data: { ...IDLE_TIMER } }),
@@ -381,10 +381,7 @@ async function nodesNaming(ctx: QueryCtx, userId: Id<"users">): Promise<Doc<"can
       .query("canvasNodes")
       .withIndex("by_last_updated_by", (q) => q.eq("lastUpdatedBy", userId))
       .collect(),
-    ctx.db
-      .query("roomMemberships")
-      .withIndex("by_user", (q) => q.eq("userId", userId))
-      .collect(),
+    membershipsOf(ctx, userId),
   ]);
   const timers = await Promise.all(
     memberships.map(({ roomId }) =>
@@ -423,18 +420,17 @@ export const canvasUserRows: UserRows = {
 
   // Player nodes go with the memberships (memberLeft); the rest stop naming the person.
   async forget(ctx, userId) {
+    const own = playerNodeId(userId);
     await Promise.all(
-      (await nodesNaming(ctx, userId)).map((node) => ctx.db.replace("canvasNodes", node._id, renamed(node, userId, null)))
+      (await nodesNaming(ctx, userId))
+        .filter((node) => node.nodeId !== own)
+        .map((node) => ctx.db.replace("canvasNodes", node._id, renamed(node, userId, null)))
     );
   },
 
   // A guest's player node becomes the account's, unless the account has one in that room already.
   async fold(ctx, from, into) {
-    const memberships = await ctx.db
-      .query("roomMemberships")
-      .withIndex("by_user", (q) => q.eq("userId", from))
-      .collect();
-    for (const { roomId } of memberships) {
+    for (const { roomId } of await membershipsOf(ctx, from)) {
       const guestNode = await nodeById(ctx, roomId, playerNodeId(from));
       if (!guestNode) continue;
       if (await nodeById(ctx, roomId, playerNodeId(into))) {

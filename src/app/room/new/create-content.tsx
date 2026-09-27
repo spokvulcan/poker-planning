@@ -112,7 +112,7 @@ export function CreateContent() {
 
     // A guest session, ready in Convex before the create that needs it.
     try {
-      await ensureSession({ createGlobalUser: true });
+      await ensureSession();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : SESSION_FAILED);
       setIsCreating(false);

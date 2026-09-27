@@ -44,7 +44,7 @@ export function CreateRetroContent() {
   const handleCreate = async () => {
     setIsCreating(true);
     try {
-      await ensureSession({ createGlobalUser: true });
+      await ensureSession();
       const roomId = await createRetro({ name: name.trim() || defaultRetroName(), templateId });
       trackConversion("create_retro");
       router.push(`/room/${roomId}`);

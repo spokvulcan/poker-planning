@@ -6,6 +6,7 @@ import {
   spotlightStepChange,
   stepAllows,
   stepChange,
+  stepped,
   stickyActAllowed,
   stickyEditDecision,
   walk,
@@ -101,6 +102,27 @@ describe("stepChange", () => {
   it("takes the spotlight off when going back to Write or Vote", () => {
     expect(stepChange("discuss", "vote")!.spotlight).toBe("clear");
     expect(stepChange("done", "write")!.spotlight).toBe("clear");
+  });
+});
+
+describe("stepped", () => {
+  const retro = { step: "vote" as RetroStep, votesPerPerson: 3 };
+
+  it("clears the spotlight going back to Vote, and leaves the discussion's first topic to the server", () => {
+    const discussing = { ...retro, step: "discuss" as RetroStep, focusStickyId: "a" };
+
+    expect(stepped(discussing, stepChange("discuss", "vote"))).toEqual({ ...retro, step: "vote" });
+    expect(stepped(retro, stepChange("vote", "discuss"))).toEqual({ ...retro, step: "discuss" });
+  });
+
+  it("puts a picked topic in the spotlight, moving the retro to the discussion", () => {
+    expect(stepped(retro, spotlightStepChange("vote"), "b")).toEqual({ ...retro, step: "discuss", focusStickyId: "b" });
+  });
+
+  it("leaves the state as it was when nothing changes", () => {
+    const discussing = { ...retro, step: "discuss" as RetroStep, focusStickyId: "a" };
+
+    expect(stepped(discussing, null, discussing.focusStickyId)).toBe(discussing);
   });
 });
 
