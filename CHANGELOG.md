@@ -1,5 +1,27 @@
 # Changelog
 
+## [2.10.2](https://github.com/spokvulcan/poker-planning/compare/agilekit-v2.10.1...agilekit-v2.10.2) (2026-09-27)
+
+
+### Bug Fixes
+
+* backfill the owner role for owners an account merge left without it ([#345](https://github.com/spokvulcan/poker-planning/issues/345)) ([7acd132](https://github.com/spokvulcan/poker-planning/commit/7acd132695a8015fd08ed1a16d237059566ac1ba))
+* disconnect Jira when an account is deleted ([#343](https://github.com/spokvulcan/poker-planning/issues/343)) ([90f9dfd](https://github.com/spokvulcan/poker-planning/commit/90f9dfdc12048c9ffa8bd9fe99e65064948ad35f))
+* give a vote back when stacking two topics the same person voted for ([712d645](https://github.com/spokvulcan/poker-planning/commit/712d645f7a746c65b68d577023bfead63fbe4f4c))
+* hand a deleted owner's poker rooms to the next member ([712d645](https://github.com/spokvulcan/poker-planning/commit/712d645f7a746c65b68d577023bfead63fbe4f4c))
+* keep a guest's retro votes when they sign in to an account that voted too ([712d645](https://github.com/spokvulcan/poker-planning/commit/712d645f7a746c65b68d577023bfead63fbe4f4c))
+* keep the owner role when a guest merges into a permanent account ([#341](https://github.com/spokvulcan/poker-planning/issues/341)) ([8f64697](https://github.com/spokvulcan/poker-planning/commit/8f646970e2c3b40bc7dec93a2d6986f4bc9e10c3))
+* never overwrite a shared text field while someone is typing in it ([712d645](https://github.com/spokvulcan/poker-planning/commit/712d645f7a746c65b68d577023bfead63fbe4f4c))
+* re-fit the poker board only when people join or leave ([712d645](https://github.com/spokvulcan/poker-planning/commit/712d645f7a746c65b68d577023bfead63fbe4f4c))
+* refuse another room's issue when creating a note or starting a vote ([#342](https://github.com/spokvulcan/poker-planning/issues/342)) ([89adecd](https://github.com/spokvulcan/poker-planning/commit/89adecdacacbce6f988d37216a138a272ccf7db8))
+* save every node of a multi-node drag, and retro arrow-key nudges ([712d645](https://github.com/spokvulcan/poker-planning/commit/712d645f7a746c65b68d577023bfead63fbe4f4c))
+* show Room Not Found for a deleted room ([712d645](https://github.com/spokvulcan/poker-planning/commit/712d645f7a746c65b68d577023bfead63fbe4f4c))
+
+
+### Code Refactoring
+
+* give rooms, retros, accounts and the canvas one module per concern ([712d645](https://github.com/spokvulcan/poker-planning/commit/712d645f7a746c65b68d577023bfead63fbe4f4c))
+
 ## [2.10.1](https://github.com/spokvulcan/poker-planning/compare/agilekit-v2.10.0...agilekit-v2.10.1) (2026-09-24)
 
 
