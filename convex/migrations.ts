@@ -142,3 +142,57 @@ export const backfillOwnerRoles = internalMutation({
     return { ...totals, done: isDone };
   },
 });
+
+/** How many canvas nodes one step of `clearTimerRunners` checks. */
+const TIMER_RUNNER_BATCH = 500;
+
+/**
+ * Clears who last ran each timer from its saved state. Timers stopped saving
+ * it (the node's own `lastUpdatedBy` records whoever last touched it), and an
+ * id left there could outlive the account it names: letting go of a person
+ * finds a node by that field alone (model/canvas.ts, ADR-0030).
+ *
+ * Pages through every canvas node, rescheduling itself until done, so no step
+ * outgrows a transaction. Each step returns the running totals, and the last
+ * one also logs them.
+ */
+export const clearTimerRunners = internalMutation({
+  args: {
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+    nodesChecked: v.optional(v.number()),
+    timersCleared: v.optional(v.number()),
+  },
+  handler: async (
+    ctx,
+    args
+  ): Promise<{ nodesChecked: number; timersCleared: number; done: boolean }> => {
+    const batchSize = args.batchSize ?? TIMER_RUNNER_BATCH;
+    const { page, isDone, continueCursor } = await ctx.db
+      .query("canvasNodes")
+      .paginate({ numItems: batchSize, cursor: args.cursor ?? null });
+
+    const timers = page.filter((node) => node.type === "timer" && node.data && "lastUpdatedBy" in node.data);
+    await Promise.all(
+      timers.map((node) => {
+        const { lastUpdatedBy: _, ...data } = node.data;
+        return ctx.db.patch("canvasNodes", node._id, { data });
+      })
+    );
+
+    const totals = {
+      nodesChecked: (args.nodesChecked ?? 0) + page.length,
+      timersCleared: (args.timersCleared ?? 0) + timers.length,
+    };
+    if (isDone) {
+      console.log("Timer runner cleanup complete:", totals);
+    } else {
+      await ctx.scheduler.runAfter(0, internal.migrations.clearTimerRunners, {
+        cursor: continueCursor,
+        batchSize,
+        ...totals,
+      });
+    }
+    return { ...totals, done: isDone };
+  },
+});

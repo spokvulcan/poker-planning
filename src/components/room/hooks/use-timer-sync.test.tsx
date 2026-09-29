@@ -41,7 +41,6 @@ const STOPPED_TIMER_STATE: TimerState = {
   pausedAt: null,
   elapsedSeconds: 0,
   isRunning: false,
-  lastUpdatedBy: null,
   lastAction: null,
 };
 

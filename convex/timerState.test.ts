@@ -23,7 +23,6 @@ function stopped(overrides: Partial<TimerState> = {}): TimerState {
     pausedAt: null,
     elapsedSeconds: 0,
     isRunning: false,
-    lastUpdatedBy: null,
     lastAction: null,
     ...overrides,
   };
@@ -220,7 +219,6 @@ describe("Timer.updateTimerState", () => {
       pausedAt: null,
       elapsedSeconds: 0,
       isRunning: true,
-      lastUpdatedBy: userId,
       lastAction: "start",
     });
   });
@@ -260,7 +258,6 @@ describe("Timer.updateTimerState", () => {
       pausedAt: NOW + 90_500,
       elapsedSeconds: 90, // floored from 90.5
       isRunning: false,
-      lastUpdatedBy: userId,
       lastAction: "pause",
     });
   });
@@ -299,7 +296,6 @@ describe("Timer.updateTimerState", () => {
       pausedAt: NOW + 180_000,
       elapsedSeconds: 90, // 60s first segment + 30s second segment
       isRunning: false,
-      lastUpdatedBy: userId,
       lastAction: "pause",
     });
     // And the reading matches the accumulated state.
@@ -338,7 +334,6 @@ describe("Timer.updateTimerState", () => {
       pausedAt: null,
       elapsedSeconds: 0,
       isRunning: false,
-      lastUpdatedBy: userId,
       lastAction: "reset",
     });
   });

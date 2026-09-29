@@ -139,7 +139,6 @@ const STOPPED_TIMER_STATE = {
   pausedAt: null,
   elapsedSeconds: 0,
   isRunning: false,
-  lastUpdatedBy: null,
   lastAction: null,
 };
 

@@ -470,7 +470,6 @@ describe("removeInactiveRooms", () => {
           startedAt: null,
           pausedAt: null,
           elapsedSeconds: 0,
-          lastUpdatedBy: null,
           lastAction: null,
         },
         lastUpdatedAt: Date.now(),

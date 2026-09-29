@@ -156,7 +156,8 @@ export const membershipUserRows: UserRows = {
   // In a room both were in, the account keeps its seat, and a guest's facilitator
   // role with it. The owner role is ownership's to seat: in the rooms the guest
   // owned (ownershipUserRows.fold), and where the guest's seat brings the
-  // account back into a room it owns (Ownership.memberJoined).
+  // account back into a room it owns (Ownership.memberJoined). The guest's
+  // player node is the canvas's to hand over (Canvas.seatFolded).
   async fold(ctx, from, into) {
     for (const guest of await membershipsOf(ctx, from)) {
       const account = await getMembership(ctx, guest.roomId, into);
@@ -170,6 +171,7 @@ export const membershipUserRows: UserRows = {
         const room = await ctx.db.get("rooms", guest.roomId);
         if (room) await Ownership.memberJoined(ctx, room, into);
       }
+      await Canvas.seatFolded(ctx, guest.roomId, from, into);
     }
   },
 };
