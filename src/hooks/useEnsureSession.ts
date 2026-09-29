@@ -21,9 +21,9 @@ function until(whenAuth: WhenAuth, ready: (state: AuthSnapshot) => boolean): Pro
 
 export interface EnsureSessionOptions {
   /**
-   * Whether a fresh guest gets a users row with a guest name (default true).
-   * Joining a room passes false: the join writes the row with the name the
-   * person typed.
+   * Whether to make sure the caller has a users row, with a guest name when
+   * there was none (default true). Joining a room passes false: the join
+   * writes the row with the name the person typed.
    */
   createUser?: boolean;
 }
@@ -34,11 +34,12 @@ export interface EnsureSessionOptions {
  * there is none. It waits for the auth provider's first load before deciding
  * (signing in anonymously over a live session is a BetterAuth 400), and a
  * fresh session reaches BetterAuth before Convex, so it waits for Convex to
- * take the token before anything writes. Only then does a fresh guest get
- * its users row, since the server takes no write from a caller it can't
- * identify. The waits are the auth provider's, so they finish even when the
- * page unmounts the caller meanwhile. Throws with a user-facing message on
- * failure.
+ * take the token before anything writes. Only then does the caller get a
+ * users row if they have none, since the server takes no write from a caller
+ * it can't identify. Checking every time covers a session whose first row
+ * write (or join) failed: creating a room needs the row. The waits are the
+ * auth provider's, so they finish even when the page unmounts the caller
+ * meanwhile. Throws with a user-facing message on failure.
  */
 export function useEnsureSession() {
   const { whenAuth } = useAuth();
@@ -49,7 +50,6 @@ export function useEnsureSession() {
       const loaded = await until(whenAuth, (s) => !s.isLoading);
 
       let sessionUserId = loaded.authUserId;
-      const fresh = !sessionUserId;
       if (!sessionUserId) {
         const result = await authClient.signIn.anonymous();
         const newAuthUserId = result.data?.user?.id;
@@ -61,7 +61,7 @@ export function useEnsureSession() {
 
       await until(whenAuth, (s) => s.isAuthenticated);
 
-      if (fresh && createUser) {
+      if (createUser) {
         await ensureGlobalUser({ authUserId: sessionUserId, name: generateGuestName() });
       }
       return sessionUserId;

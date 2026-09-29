@@ -175,7 +175,9 @@ export const syncAvatarFromAuth = internalMutation({
   },
 });
 
-// Ensure a global user exists (for a guest's first sign-in)
+// Ensure the caller has a global user, making one with `name` when they have
+// none. An existing row keeps its name: the session bootstrap calls this on
+// every create, with a fresh guest name each time.
 export const ensureGlobalUser = mutation({
   args: {
     authUserId: v.string(), // The caller's own id; older browsers still send it
@@ -184,6 +186,7 @@ export const ensureGlobalUser = mutation({
   handler: async (ctx, args) => {
     await requireAuthAs(ctx, args.authUserId);
 
+    if (await Users.getGlobalUserByAuthUserId(ctx, args.authUserId)) return;
     await Users.findOrCreateGlobalUser(ctx, {
       authUserId: args.authUserId,
       name: validateName(args.name),

@@ -116,18 +116,29 @@ describe("useEnsureSession", () => {
     await act(async () => authChanged());
 
     await expect(pending).resolves.toBe("user-1");
-    expect(auth.calls).toEqual([]);
+    expect(auth.calls).toEqual(["ensureGlobalUser"]);
   });
 
-  it("answers at once for a session Convex already has", async () => {
+  it("answers at once for a session Convex already has, making sure it has a user row", async () => {
     auth.authUserId = "user-1";
     auth.isAuthenticated = true;
     authChanged();
     const { result } = renderHook(() => useEnsureSession());
 
     await expect(result.current()).resolves.toBe("user-1");
+    expect(auth.calls).toEqual(["ensureGlobalUser"]);
+  });
+
+  it("writes nothing for a join over a session Convex already has", async () => {
+    auth.authUserId = "user-1";
+    auth.isAuthenticated = true;
+    authChanged();
+    const { result } = renderHook(() => useEnsureSession());
+
+    await expect(result.current({ createUser: false })).resolves.toBe("user-1");
     expect(auth.calls).toEqual([]);
   });
+
 
   it("gives up with the session message when Convex never takes the session", async () => {
     const { result } = renderHook(() => useEnsureSession());

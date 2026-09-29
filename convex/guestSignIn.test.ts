@@ -29,6 +29,13 @@ describe("ensureGlobalUser", () => {
     expect((await userRow(t, "guest"))?.name).toBe("Otter");
   });
 
+  it("leaves an existing row's name alone", async () => {
+    const t = convexTest(schema, modules);
+    await seedUser(t, "guest", "Ada");
+    await as(t, "guest").mutation(api.users.ensureGlobalUser, { authUserId: "guest", name: "Otter" });
+    expect((await userRow(t, "guest"))?.name).toBe("Ada");
+  });
+
   it("refuses a caller with no identity, even for a row that doesn't exist yet", async () => {
     const t = convexTest(schema, modules);
     await expect(
