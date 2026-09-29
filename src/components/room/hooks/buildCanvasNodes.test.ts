@@ -465,7 +465,6 @@ describe("buildCanvasNodes — timer node", () => {
         startedAt: 111,
         pausedAt: null,
         elapsedSeconds: 42,
-        lastUpdatedBy: "u1" as Id<"users">,
         lastAction: "start",
       },
     };
@@ -482,7 +481,6 @@ describe("buildCanvasNodes — timer node", () => {
         pausedAt: null,
         elapsedSeconds: 42,
         isRunning: false,
-        lastUpdatedBy: "u1",
         lastAction: "start",
         roomId: ROOM_ID,
         userId: "u2",

@@ -1,5 +1,3 @@
-import type { Id } from "./_generated/dataModel";
-
 /**
  * timerState — the ONE declaration of the canvas timer node's persisted state
  * and its time math, kept at the Convex root (alongside `summarize`, `phase`,
@@ -22,7 +20,6 @@ export type TimerState = {
   pausedAt: number | null; // server timestamp of the last pause
   elapsedSeconds: number; // accumulated seconds, excluding the current run
   isRunning?: boolean;
-  lastUpdatedBy: Id<"users"> | null;
   lastAction: TimerAction | null;
 };
 
@@ -31,7 +28,6 @@ export const IDLE_TIMER: TimerState = {
   startedAt: null,
   pausedAt: null,
   elapsedSeconds: 0,
-  lastUpdatedBy: null,
   lastAction: null,
 };
 

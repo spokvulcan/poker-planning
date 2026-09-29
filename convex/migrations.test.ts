@@ -113,3 +113,43 @@ describe("backfillOwnerRoles", () => {
     expect(log).toHaveBeenCalledWith("Owner role backfill complete:", { roomsChecked: 3, membershipsRepaired: 3 });
   });
 });
+
+describe("clearTimerRunners", () => {
+  it("clears who last ran each timer, and leaves the rest of the board alone", async () => {
+    const t = withComponents(convexTest(schema, modules));
+    const userId = await seedUser(t, "auth-runner");
+    const roomId = await seedOwnedRoom(t, userId);
+    const running = { startedAt: 1, pausedAt: null, elapsedSeconds: 0, isRunning: true, lastAction: "start" };
+    await t.run(async (ctx) => {
+      await ctx.db.insert("canvasNodes", {
+        roomId,
+        nodeId: "timer",
+        type: "timer",
+        position: { x: 0, y: 0 },
+        data: { ...running, lastUpdatedBy: userId },
+        lastUpdatedBy: userId,
+        lastUpdatedAt: 1,
+      });
+      await ctx.db.insert("canvasNodes", {
+        roomId,
+        nodeId: `player-${userId}`,
+        type: "player",
+        position: { x: 0, y: 0 },
+        data: { userId },
+        lastUpdatedAt: 1,
+      });
+    });
+    const before = await t.run((ctx) => ctx.db.query("canvasNodes").collect());
+
+    expect(await t.mutation(internal.migrations.clearTimerRunners, {})).toEqual({
+      nodesChecked: 2,
+      timersCleared: 1,
+      done: true,
+    });
+
+    const after = await t.run((ctx) => ctx.db.query("canvasNodes").collect());
+    expect(after).toEqual(before.map((node) => (node.type === "timer" ? { ...node, data: running } : node)));
+    // A second run finds nothing left to clear.
+    expect(await t.mutation(internal.migrations.clearTimerRunners, {})).toMatchObject({ timersCleared: 0 });
+  });
+});

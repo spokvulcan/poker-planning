@@ -144,7 +144,7 @@ describe("deleting an account", () => {
     expect(await t.run((ctx) => ctx.db.query("integrationConnections").collect())).toEqual([]);
   });
 
-  it("stops the canvas naming it: the timer it ran and the nodes it moved (it runs while the memberships are there)", async () => {
+  it("stops the canvas naming it, in a room it has already left: the timer it ran and the nodes it moved", async () => {
     const t = withComponents(convexTest(schema, modules));
     await seedUser(t, "owner");
     const roomId = await as(t, "owner").mutation(api.rooms.create, { name: "Planning" });
@@ -155,13 +155,14 @@ describe("deleting an account", () => {
       userId: leaverId,
       moves: [{ nodeId: "session-current", position: { x: 40, y: 40 } }],
     });
-    // Someone else moves the timer last: only the room it's in leads to it.
+    // Someone else moves the timer last, and the leaver leaves: no membership leads back to the room.
     const ownerId = (await room(t, roomId))!.ownerId!;
     await as(t, "owner").mutation(api.canvas.moveNodes, {
       roomId,
       userId: ownerId,
       moves: [{ nodeId: "timer", position: { x: 80, y: 80 } }],
     });
+    await as(t, "leaver").mutation(api.users.leave, { roomId, userId: leaverId });
 
     await as(t, "leaver").mutation(api.users.deleteUser, {});
 
@@ -290,6 +291,29 @@ describe("a guest signing in", () => {
       { userId: accountId },
     ]);
     expect(await t.run((ctx) => ctx.db.get("users", guestId))).toBeNull();
+  });
+
+  it("drops the guest's player node in a room the account had joined, keeping the account's", async () => {
+    const t = withComponents(convexTest(schema, modules));
+    await seedUser(t, "owner");
+    const roomId = await as(t, "owner").mutation(api.rooms.create, { name: "Planning" });
+    await join(t, roomId, "guest");
+    const accountId = await seedUser(t, "account", "permanent");
+    await join(t, roomId, "account");
+
+    await t.mutation(internal.users.linkAnonymousAccount, {
+      oldAuthUserId: "guest",
+      newAuthUserId: "account",
+      email: "a@example.com",
+    });
+
+    const players = await t.run((ctx) =>
+      ctx.db
+        .query("canvasNodes")
+        .withIndex("by_room_type", (q) => q.eq("roomId", roomId).eq("type", "player"))
+        .collect()
+    );
+    expect(players.map((node) => node.data.userId).sort()).toEqual([accountId, (await room(t, roomId))!.ownerId].sort());
   });
 
   it("clears the guest's presence: the browser heartbeats as the account from then on", async () => {

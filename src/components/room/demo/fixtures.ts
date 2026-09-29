@@ -129,7 +129,6 @@ function buildDemoCanvasNodes(): CanvasNode[] {
         startedAt: null,
         pausedAt: null,
         elapsedSeconds: 0,
-        lastUpdatedBy: null,
         lastAction: null,
       },
       lastUpdatedAt: 0,

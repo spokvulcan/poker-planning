@@ -1,7 +1,6 @@
 import { QueryCtx, MutationCtx } from "../_generated/server";
 import { Doc, Id } from "../_generated/dataModel";
 import * as Rooms from "./rooms";
-import { membershipsOf } from "./memberships";
 import { refusal } from "./refusal";
 import { rulesOf, ceremonyOf, NOT_THIS_CEREMONY } from "../ceremony";
 import {
@@ -371,76 +370,56 @@ export async function updateTimer(
 // --- Accounts -------------------------------------------------------------------
 
 /**
- * The nodes that name a person: every node they last moved, and the timers
- * of the rooms they are in, which name whoever last ran them. Runs while the
- * person's memberships are still there.
+ * A guest's seat in a room became the account's (model/memberships.ts, as a
+ * guest signs in): the guest's player node becomes the account's, or goes
+ * when the account has one in that room already.
  */
-async function nodesNaming(ctx: QueryCtx, userId: Id<"users">): Promise<Doc<"canvasNodes">[]> {
-  const [moved, memberships] = await Promise.all([
-    ctx.db
-      .query("canvasNodes")
-      .withIndex("by_last_updated_by", (q) => q.eq("lastUpdatedBy", userId))
-      .collect(),
-    membershipsOf(ctx, userId),
-  ]);
-  const timers = await Promise.all(
-    memberships.map(({ roomId }) =>
-      ctx.db
-        .query("canvasNodes")
-        .withIndex("by_room_type", (q) => q.eq("roomId", roomId).eq("type", "timer"))
-        .collect()
-    )
-  );
-  const byId = new Map(moved.map((node) => [node._id, node]));
-  for (const timer of timers.flat()) {
-    if (dataOf(timer, "timer").lastUpdatedBy === userId) byId.set(timer._id, timer);
+export async function seatFolded(
+  ctx: MutationCtx,
+  roomId: Id<"rooms">,
+  from: Id<"users">,
+  into: Id<"users">
+): Promise<void> {
+  const guestNode = await nodeById(ctx, roomId, playerNodeId(from));
+  if (!guestNode) return;
+  if (await nodeById(ctx, roomId, playerNodeId(into))) {
+    await ctx.db.delete("canvasNodes", guestNode._id);
+    await relayoutPlayers(ctx, roomId);
+  } else {
+    await ctx.db.patch("canvasNodes", guestNode._id, { nodeId: playerNodeId(into), data: { userId: into } });
   }
-  return [...byId.values()];
 }
 
-/** A node with `from` replaced by `into`, or dropped (`null`), wherever it names them. */
-function renamed(node: Doc<"canvasNodes">, from: Id<"users">, into: Id<"users"> | null): Doc<"canvasNodes"> {
-  const { lastUpdatedBy, ...rest } = node;
-  const by = lastUpdatedBy === from ? into : lastUpdatedBy;
-  const timer = node.type === "timer" ? dataOf(node, "timer") : undefined;
-  return {
-    ...rest,
-    ...(by ? { lastUpdatedBy: by } : {}),
-    ...(timer && timer.lastUpdatedBy === from ? { data: { ...timer, lastUpdatedBy: into } } : {}),
-  };
+/** The nodes a person moved or ran last, found by the canvas's own index. */
+async function nodesLastUpdatedBy(ctx: QueryCtx, userId: Id<"users">): Promise<Doc<"canvasNodes">[]> {
+  return await ctx.db
+    .query("canvasNodes")
+    .withIndex("by_last_updated_by", (q) => q.eq("lastUpdatedBy", userId))
+    .collect();
 }
 
 /**
  * What the canvas keeps about a person: their player nodes, and who last
- * moved a node or ran a timer. Account deletion runs `forget` before the
- * memberships go, account linking runs `fold` while the guest's are there.
+ * touched a node. Player nodes follow the person's seats, which the
+ * memberships module walks room by room (memberLeft, seatFolded); the rest
+ * the canvas finds itself, so it can run anywhere in the lifecycle's order.
  */
 export const canvasUserRows: UserRows = {
   fields: ["canvasNodes.lastUpdatedBy", "canvasNodes.data"],
 
-  // Player nodes go with the memberships (memberLeft); the rest stop naming the person.
   async forget(ctx, userId) {
-    const own = playerNodeId(userId);
     await Promise.all(
-      (await nodesNaming(ctx, userId))
-        .filter((node) => node.nodeId !== own)
-        .map((node) => ctx.db.replace("canvasNodes", node._id, renamed(node, userId, null)))
+      (await nodesLastUpdatedBy(ctx, userId)).map((node) =>
+        ctx.db.patch("canvasNodes", node._id, { lastUpdatedBy: undefined })
+      )
     );
   },
 
-  // A guest's player node becomes the account's, unless the account has one in that room already.
   async fold(ctx, from, into) {
-    for (const { roomId } of await membershipsOf(ctx, from)) {
-      const guestNode = await nodeById(ctx, roomId, playerNodeId(from));
-      if (!guestNode) continue;
-      if (await nodeById(ctx, roomId, playerNodeId(into))) {
-        await ctx.db.delete("canvasNodes", guestNode._id);
-      } else {
-        await ctx.db.patch("canvasNodes", guestNode._id, { nodeId: playerNodeId(into), data: { userId: into } });
-      }
-    }
     await Promise.all(
-      (await nodesNaming(ctx, from)).map((node) => ctx.db.replace("canvasNodes", node._id, renamed(node, from, into)))
+      (await nodesLastUpdatedBy(ctx, from)).map((node) =>
+        ctx.db.patch("canvasNodes", node._id, { lastUpdatedBy: into })
+      )
     );
   },
 };

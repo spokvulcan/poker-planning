@@ -17,10 +17,10 @@ export interface UpdateTimerStateArgs {
 }
 
 /** What a timer action does to a timer's state at `now`. */
-function transition(state: TimerState, action: TimerAction, now: number, userId: Id<"users">): TimerState {
+function transition(state: TimerState, action: TimerAction, now: number): TimerState {
   switch (action) {
     case "start":
-      return { ...state, isRunning: true, startedAt: now, pausedAt: null, lastUpdatedBy: userId, lastAction: "start" };
+      return { ...state, isRunning: true, startedAt: now, pausedAt: null, lastAction: "start" };
     case "pause":
       return {
         ...state,
@@ -28,11 +28,10 @@ function transition(state: TimerState, action: TimerAction, now: number, userId:
         startedAt: null,
         pausedAt: now,
         elapsedSeconds: calculateCurrentTime(state, now).currentSeconds,
-        lastUpdatedBy: userId,
         lastAction: "pause",
       };
     case "reset":
-      return { ...state, isRunning: false, startedAt: null, pausedAt: null, elapsedSeconds: 0, lastUpdatedBy: userId, lastAction: "reset" };
+      return { ...state, isRunning: false, startedAt: null, pausedAt: null, elapsedSeconds: 0, lastAction: "reset" };
   }
 }
 
@@ -44,7 +43,7 @@ export async function updateTimerState(ctx: MutationCtx, args: UpdateTimerStateA
   const now = Date.now();
   await Canvas.updateTimer(ctx, args.roomId, args.nodeId, args.userId, (state) => {
     validateTimerAction(state, args.action);
-    return transition(state, args.action, now, args.userId);
+    return transition(state, args.action, now);
   });
   // A timer action is room activity — a room driven only by its timer must not
   // read as abandoned to the cleanup cascade.

@@ -21,9 +21,10 @@ import type { UserRows } from "./userRows";
 
 /**
  * Every module that keeps rows about a person. The order is load-bearing:
- * rooms are handed off, and the canvas lets go of the person's nodes, while
- * their memberships still say where they were; the memberships go before
- * the voting round, so a guest's vote folds onto the account's seat.
+ * rooms are handed off while the person's memberships still say who else is
+ * in them, and the memberships go before the voting round, so a guest's vote
+ * folds onto the account's seat. Only the memberships walk the person's rooms;
+ * what follows their seats (player nodes, votes) goes room by room with them.
  */
 export function userRows(): readonly UserRows[] {
   // A function, not a constant: the modules import each other, and a list
