@@ -6,8 +6,7 @@ import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { rulesOf } from "@/convex/ceremony";
 import { Doc, Id } from "@/convex/_generated/dataModel";
-import { useAuth } from "@/components/auth/auth-provider";
-import { authClient } from "@/lib/auth-client";
+import { SESSION_FAILED, useEnsureSession } from "@/hooks/useEnsureSession";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -23,7 +22,7 @@ interface JoinRoomDialogProps {
 export function JoinRoomDialog({ roomId, roomName, roomType }: JoinRoomDialogProps) {
   // A retro has no spectators: everyone at the board writes.
   const { noun, spectators: allowSpectator } = rulesOf({ roomType });
-  const { authUserId } = useAuth();
+  const ensureSession = useEnsureSession();
   const joinRoom = useMutation(api.users.join);
 
   // Start with empty name for first-time users
@@ -39,26 +38,21 @@ export function JoinRoomDialog({ roomId, roomName, roomType }: JoinRoomDialogPro
 
     setIsJoining(true);
     try {
-      // Create anonymous session if one doesn't exist
-      let currentAuthUserId = authUserId;
-      if (!currentAuthUserId) {
-        const result = await authClient.signIn.anonymous();
-        if (result.error) {
-          toast.error(result.error.message || "Failed to create session. Please try again.");
-          return;
-        }
-        if (!result.data?.user?.id) {
-          toast.error("Failed to create session. Please try again.");
-          return;
-        }
-        currentAuthUserId = result.data.user.id;
+      // A guest session Convex already has. The join writes the user row
+      // with the typed name, so the session doesn't write one first.
+      let authUserId: string;
+      try {
+        authUserId = await ensureSession({ createUser: false });
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : SESSION_FAILED);
+        return;
       }
 
       await joinRoom({
         roomId,
         name: userName,
         isSpectator,
-        authUserId: currentAuthUserId,
+        authUserId,
       });
 
       // No need to set state - existingMembership query will auto-update

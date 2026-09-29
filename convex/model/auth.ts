@@ -40,6 +40,22 @@ export async function requireAuth(
 }
 
 /**
+ * Returns the caller's identity, or throws unless they are signed in as
+ * `authUserId`. For mutations that still take the caller's authUserId as an
+ * argument (older browsers send it): the argument must name the caller.
+ */
+export async function requireAuthAs(
+  ctx: QueryCtx | MutationCtx,
+  authUserId: string
+): Promise<AuthIdentity> {
+  const identity = await requireAuth(ctx);
+  if (identity.subject !== authUserId) {
+    throw new Error("Auth identity mismatch");
+  }
+  return identity;
+}
+
+/**
  * Returns the authenticated user's app-level record, or throws.
  * Use for mutations that require a known user.
  */

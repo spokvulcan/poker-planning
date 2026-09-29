@@ -1,63 +1,55 @@
 "use client";
 
-import { useCallback, useEffect, useRef, type RefObject } from "react";
+import { useCallback } from "react";
 import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { useAuth } from "@/components/auth/auth-provider";
+import { useAuth, type AuthSnapshot, type WhenAuth } from "@/components/auth/auth-provider";
 import { authClient } from "@/lib/auth-client";
 import { generateGuestName } from "@/lib/guest-names";
-import { useLatest } from "./use-latest";
 
 export const SESSION_FAILED = "Failed to create session. Please try again.";
 
-/** How long a fresh session may take to reach Convex before the bootstrap gives up. */
+/** How long the auth state may take to get where the bootstrap needs it before it gives up. */
 const CONVEX_AUTH_TIMEOUT_MS = 10_000;
 
-/** Resolves once Convex is authenticated: at once if it is, else when `waiting` is resumed. */
-function convexHasSession(authenticated: RefObject<boolean>, waiting: RefObject<Set<() => void>>): Promise<void> {
-  if (authenticated.current) return Promise.resolve();
-  return new Promise<void>((resolve, reject) => {
-    const resume = () => {
-      clearTimeout(timer);
-      resolve();
-    };
-    const timer = setTimeout(() => {
-      waiting.current.delete(resume);
-      reject(new Error(SESSION_FAILED));
-    }, CONVEX_AUTH_TIMEOUT_MS);
-    waiting.current.add(resume);
+/** The auth state once `ready` holds, or the session message when it doesn't in time. */
+function until(whenAuth: WhenAuth, ready: (state: AuthSnapshot) => boolean): Promise<AuthSnapshot> {
+  return whenAuth(ready, CONVEX_AUTH_TIMEOUT_MS).catch(() => {
+    throw new Error(SESSION_FAILED);
   });
 }
 
+export interface EnsureSessionOptions {
+  /**
+   * Whether a fresh guest gets a users row with a guest name (default true).
+   * Joining a room passes false: the join writes the row with the name the
+   * person typed.
+   */
+  createUser?: boolean;
+}
+
 /**
- * The session for creating a room or a retro: returns the caller's authUserId
- * once Convex has the session, signing in anonymously first when there is
- * none. A fresh session reaches BetterAuth before Convex, and a mutation that
- * needs an identity sent in between fails as unauthenticated, so this waits
- * for Convex to take the session's token. A fresh guest also gets a users row
- * with a guest name, which a creator needs before the mutation that makes
- * them owner. (Joining signs in on its own: the join carries the session's
- * id and writes the row itself.) Throws with a user-facing message on failure.
- *
- * Callers must wait for `useAuth().isLoading` to clear before calling:
- * signing in anonymously over a live session is a BetterAuth 400.
+ * The session every guest way in goes through: returns the caller's
+ * authUserId once Convex has the session, signing in anonymously first when
+ * there is none. It waits for the auth provider's first load before deciding
+ * (signing in anonymously over a live session is a BetterAuth 400), and a
+ * fresh session reaches BetterAuth before Convex, so it waits for Convex to
+ * take the token before anything writes. Only then does a fresh guest get
+ * its users row, since the server takes no write from a caller it can't
+ * identify. The waits are the auth provider's, so they finish even when the
+ * page unmounts the caller meanwhile. Throws with a user-facing message on
+ * failure.
  */
 export function useEnsureSession() {
-  const { authUserId, isAuthenticated } = useAuth();
+  const { whenAuth } = useAuth();
   const ensureGlobalUser = useMutation(api.users.ensureGlobalUser);
-  const authenticated = useLatest(isAuthenticated);
-  const waiting = useRef(new Set<() => void>());
-
-  // Convex took the token: everyone waiting for it goes on.
-  useEffect(() => {
-    if (!isAuthenticated) return;
-    for (const resume of waiting.current) resume();
-    waiting.current.clear();
-  }, [isAuthenticated]);
 
   return useCallback(
-    async (): Promise<string> => {
-      let sessionUserId = authUserId;
+    async ({ createUser = true }: EnsureSessionOptions = {}): Promise<string> => {
+      const loaded = await until(whenAuth, (s) => !s.isLoading);
+
+      let sessionUserId = loaded.authUserId;
+      const fresh = !sessionUserId;
       if (!sessionUserId) {
         const result = await authClient.signIn.anonymous();
         const newAuthUserId = result.data?.user?.id;
@@ -65,12 +57,15 @@ export function useEnsureSession() {
           throw new Error(result.error?.message || SESSION_FAILED);
         }
         sessionUserId = newAuthUserId;
-        // Runs before Convex has the token: the mutation takes the id instead.
+      }
+
+      await until(whenAuth, (s) => s.isAuthenticated);
+
+      if (fresh && createUser) {
         await ensureGlobalUser({ authUserId: sessionUserId, name: generateGuestName() });
       }
-      await convexHasSession(authenticated, waiting);
       return sessionUserId;
     },
-    [authUserId, ensureGlobalUser, authenticated]
+    [whenAuth, ensureGlobalUser]
   );
 }

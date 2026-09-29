@@ -6,7 +6,6 @@ import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { ArrowRight } from "lucide-react";
 
-import { useAuth } from "@/components/auth/auth-provider";
 import { SESSION_FAILED, useEnsureSession } from "@/hooks/useEnsureSession";
 import { Navbar } from "@/components/navbar";
 import { Footer } from "@/components/footer";
@@ -67,7 +66,6 @@ export function CreateContent() {
   const [isCreating, setIsCreating] = useState(false);
 
   const router = useRouter();
-  const { isLoading: authLoading } = useAuth();
   const createRoom = useMutation(api.rooms.create);
   const ensureSession = useEnsureSession();
   const { copyRoomUrlToClipboard } = useCopyRoomUrlToClipboard();
@@ -159,10 +157,6 @@ export function CreateContent() {
 
   const isCreateDisabled =
     isCreating ||
-    // Wait until the auth state is known. Creating while `isAuthenticated` is
-    // still resolving would wrongly trigger a second anonymous sign-in for a
-    // user who already has a session (BetterAuth rejects it with a 400).
-    authLoading ||
     (selectedScale === "custom" && (!!customError || !customCards.trim()));
 
   return (

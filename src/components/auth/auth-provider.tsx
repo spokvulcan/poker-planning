@@ -1,13 +1,27 @@
 "use client";
 
-import { createContext, useContext, useMemo, ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useState, ReactNode } from "react";
 import { usePathname } from "next/navigation";
 import { useConvexAuth, useQuery } from "convex/react";
 import { authClient } from "@/lib/auth-client";
 import { api } from "@/convex/_generated/api";
+import { createAuthWaiters } from "@/lib/auth-waiters";
+
+/** The auth state a sign-in waits on. */
+export interface AuthSnapshot {
+  authUserId: string | null;
+  isLoading: boolean;
+  isAuthenticated: boolean;
+}
+
+/**
+ * Resolves with the first auth state `ready` accepts; rejects after
+ * `timeoutMs`. Outlives the caller's component.
+ */
+export type WhenAuth = (ready: (state: AuthSnapshot) => boolean, timeoutMs: number) => Promise<AuthSnapshot>;
 
 interface AuthContextType {
-  // BetterAuth user ID (needed for join/ensureGlobalUser race condition)
+  // BetterAuth user ID (sent to join/ensureGlobalUser, which check it names the caller)
   authUserId: string | null;
   // Whether the user is anonymous (from BetterAuth session)
   isAnonymous: boolean;
@@ -19,6 +33,8 @@ interface AuthContextType {
   email: string | null;
   // Whether this is a guest or permanent account
   accountType: "anonymous" | "permanent" | null;
+  // Waits for the auth state to reach a condition (see useEnsureSession)
+  whenAuth: WhenAuth;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -28,6 +44,7 @@ const AuthContext = createContext<AuthContextType>({
   isAuthenticated: false,
   email: null,
   accountType: null,
+  whenAuth: () => Promise.reject(new Error("No AuthProvider")),
 });
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -48,6 +65,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const isDemoRoute = pathname === "/demo" || pathname.startsWith("/demo/");
 
+  const [waiters] = useState(() =>
+    createAuthWaiters<AuthSnapshot>({ authUserId: null, isLoading: true, isAuthenticated: false })
+  );
+  useEffect(() => {
+    waiters.update({ authUserId: authUserId ?? null, isLoading: convexAuthLoading, isAuthenticated });
+  }, [waiters, authUserId, convexAuthLoading, isAuthenticated]);
+
   const globalUser = useQuery(
     api.users.getGlobalUser,
     isAuthenticated && !isDemoRoute ? {} : "skip"
@@ -65,8 +89,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Anonymous users get a fake temp@xxx.com email from BetterAuth — never expose it.
       email: globalUser?.email ?? (session?.user?.isAnonymous ? null : session?.user?.email ?? null),
       accountType: globalUser?.accountType ?? (session?.user?.isAnonymous === false ? "permanent" : null),
+      whenAuth: waiters.when,
     }),
-    [session, convexAuthLoading, isAuthenticated, globalUser, authUserId],
+    [session, convexAuthLoading, isAuthenticated, globalUser, authUserId, waiters],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

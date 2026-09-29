@@ -16,12 +16,6 @@ export interface JoinRoomArgs {
   name: string;
   isSpectator?: boolean;
   authUserId: string;
-  /**
-   * When false, an existing user's display name is left untouched. The
-   * unauthenticated post-sign-in race path passes false so that a caller
-   * without a verified identity can never rename someone else's account.
-   */
-  allowRename?: boolean;
 }
 
 export interface EditUserArgs {
@@ -36,12 +30,12 @@ export interface EditUserArgs {
  */
 export async function findOrCreateGlobalUser(
   ctx: MutationCtx,
-  args: { authUserId: string; name: string; allowRename?: boolean }
+  args: { authUserId: string; name: string }
 ): Promise<Id<"users">> {
   const existingUser = await getGlobalUserByAuthUserId(ctx, args.authUserId);
   if (existingUser) {
-    // Update name if changed (unless the caller's identity is unverified)
-    if (args.allowRename !== false && existingUser.name !== args.name) {
+    // Update name if changed
+    if (existingUser.name !== args.name) {
       await ctx.db.patch("users", existingUser._id, { name: args.name });
     }
     return existingUser._id;
@@ -96,7 +90,6 @@ export async function joinRoom(ctx: MutationCtx, args: JoinRoomArgs): Promise<Id
   const userId = await findOrCreateGlobalUser(ctx, {
     authUserId: args.authUserId,
     name: args.name,
-    allowRename: args.allowRename,
   });
   const user = (await ctx.db.get("users", userId))!;
   await Memberships.join(ctx, room, user, { isSpectator: args.isSpectator });
