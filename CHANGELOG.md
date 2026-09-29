@@ -1,5 +1,29 @@
 # Changelog
 
+## [2.10.3](https://github.com/spokvulcan/poker-planning/compare/agilekit-v2.10.2...agilekit-v2.10.3) (2026-09-29)
+
+
+### Bug Fixes
+
+* every guest sign-in waits for Convex before its first write ([#353](https://github.com/spokvulcan/poker-planning/issues/353)) ([a16facf](https://github.com/spokvulcan/poker-planning/commit/a16facf9f342b9dc2f9787ba1a05814638f0c747))
+* let go of a deleted account's timers in rooms it had already left ([#352](https://github.com/spokvulcan/poker-planning/issues/352)) ([a5e57a7](https://github.com/spokvulcan/poker-planning/commit/a5e57a7e371cfe45ad5408667627f2452571695c)), closes [#348](https://github.com/spokvulcan/poker-planning/issues/348)
+
+
+### Documentation
+
+* shorten the README and correct what had gone stale ([f39750a](https://github.com/spokvulcan/poker-planning/commit/f39750a14df03fcac5d840b546651fcb7d6d95b4))
+
+
+### Miscellaneous
+
+* **deps:** bump ip-address from 10.3.1 to 10.7.2 ([#351](https://github.com/spokvulcan/poker-planning/issues/351)) ([cbcecf9](https://github.com/spokvulcan/poker-planning/commit/cbcecf97734c2f9175683c384c690bc7dcec29a4))
+* **deps:** bump undici from 7.29.0 to 7.30.0 ([#350](https://github.com/spokvulcan/poker-planning/issues/350)) ([ebe0ecc](https://github.com/spokvulcan/poker-planning/commit/ebe0eccc83bbeff40225ce008abd6c5b41abc1eb))
+
+
+### CI/CD
+
+* review pull requests with Anthropic's code-review plugin ([#354](https://github.com/spokvulcan/poker-planning/issues/354)) ([ecb21c9](https://github.com/spokvulcan/poker-planning/commit/ecb21c93687d4d75137c1a0363ba2e7395022b3f))
+
 ## [2.10.2](https://github.com/spokvulcan/poker-planning/compare/agilekit-v2.10.1...agilekit-v2.10.2) (2026-09-27)
 
 
