@@ -1,9 +1,9 @@
 import { mutation, query, internalMutation } from "./_generated/server";
 import { v } from "convex/values";
-import * as Memberships from "./model/memberships";
 import * as Users from "./model/users";
 import {
   requireAuth,
+  requireAuthAs,
   requireActingUser,
   requireCan,
   getOptionalAuthUser,
@@ -62,44 +62,16 @@ export const join = mutation({
     roomId: v.id("rooms"),
     name: v.string(),
     isSpectator: v.optional(v.boolean()),
-    authUserId: v.string(), // Kept for post-sign-in race condition
+    authUserId: v.string(), // The caller's own id; older browsers still send it
   },
   handler: async (ctx, args) => {
-    // Verify the caller owns this authUserId. When the session token hasn't
-    // propagated to Convex yet (post-sign-in race), an unauthenticated caller
-    // may only create a brand-new user record or rejoin a room they already
-    // belong to — anything else would let someone rename another user's
-    // account or forge a membership in their name.
-    const identity = await ctx.auth.getUserIdentity();
-    let allowRename = true;
-    if (identity) {
-      if (identity.subject !== args.authUserId) {
-        throw new Error("Auth identity mismatch");
-      }
-    } else {
-      allowRename = false;
-      const existingUser = await Users.getGlobalUserByAuthUserId(
-        ctx,
-        args.authUserId
-      );
-      if (existingUser) {
-        const membership = await Memberships.getMembership(
-          ctx,
-          args.roomId,
-          existingUser._id
-        );
-        if (!membership) {
-          throw new Error("Authentication required");
-        }
-      }
-    }
+    await requireAuthAs(ctx, args.authUserId);
 
     return await Users.joinRoom(ctx, {
       roomId: args.roomId,
       name: validateName(args.name),
       isSpectator: args.isSpectator,
       authUserId: args.authUserId,
-      allowRename,
     });
   },
 });
@@ -203,33 +175,18 @@ export const syncAvatarFromAuth = internalMutation({
   },
 });
 
-// Ensure a global user exists (for guest sign-in from auth page)
+// Ensure the caller has a global user, making one with `name` when they have
+// none. An existing row keeps its name: the session bootstrap calls this on
+// every create, with a fresh guest name each time.
 export const ensureGlobalUser = mutation({
   args: {
-    authUserId: v.string(), // Kept for post-sign-in race condition
+    authUserId: v.string(), // The caller's own id; older browsers still send it
     name: v.string(),
   },
   handler: async (ctx, args) => {
-    // Verify the caller owns this authUserId. When the session token hasn't
-    // propagated to Convex yet (post-sign-in race), an unauthenticated caller
-    // may only create a brand-new user record — never rename an existing one.
-    const identity = await ctx.auth.getUserIdentity();
-    if (identity) {
-      if (identity.subject !== args.authUserId) {
-        throw new Error("Auth identity mismatch");
-      }
-    } else {
-      const existingUser = await Users.getGlobalUserByAuthUserId(
-        ctx,
-        args.authUserId
-      );
-      if (existingUser) {
-        // Record already exists and there's no identity to prove ownership:
-        // no-op rather than apply an unverified name change.
-        return;
-      }
-    }
+    await requireAuthAs(ctx, args.authUserId);
 
+    if (await Users.getGlobalUserByAuthUserId(ctx, args.authUserId)) return;
     await Users.findOrCreateGlobalUser(ctx, {
       authUserId: args.authUserId,
       name: validateName(args.name),

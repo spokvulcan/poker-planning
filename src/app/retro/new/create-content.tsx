@@ -33,7 +33,7 @@ function defaultRetroName(): string {
  */
 export function CreateRetroContent() {
   const router = useRouter();
-  const { isLoading: authLoading, accountType } = useAuth();
+  const { accountType } = useAuth();
   const ensureSession = useEnsureSession();
   const createRetro = useMutation(api.retro.create);
   const { copyRoomUrlToClipboard } = useCopyRoomUrlToClipboard();
@@ -96,7 +96,7 @@ export function CreateRetroContent() {
                       placeholder="e.g., Sprint 42 Retro"
                       value={name}
                       onChange={(e) => setName(e.target.value)}
-                      onKeyDown={(e) => e.key === "Enter" && !isCreating && !authLoading && void handleCreate()}
+                      onKeyDown={(e) => e.key === "Enter" && !isCreating && void handleCreate()}
                     />
                     <FieldDescription>Leave empty for a dated name</FieldDescription>
                   </Field>
@@ -166,7 +166,7 @@ export function CreateRetroContent() {
                 <Button variant="outline" className="flex-1" onClick={() => router.push("/")}>
                   Cancel
                 </Button>
-                <Button className="flex-1" onClick={() => void handleCreate()} disabled={isCreating || authLoading}>
+                <Button className="flex-1" onClick={() => void handleCreate()} disabled={isCreating}>
                   {isCreating ? "Creating..." : "Start Retro"}
                   {!isCreating && <ArrowRight className="ml-2 size-4" />}
                 </Button>
