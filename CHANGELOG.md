@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.10.4](https://github.com/spokvulcan/poker-planning/compare/agilekit-v2.10.3...agilekit-v2.10.4) (2026-10-03)
+
+
+### Bug Fixes
+
+* Delete on several players asks to remove all of them ([#356](https://github.com/spokvulcan/poker-planning/issues/356)) ([f373fc5](https://github.com/spokvulcan/poker-planning/commit/f373fc56baee4ae48391b79f977a6a2e18fafe36))
+
+
+### Documentation
+
+* bring authentication.md up to date with the guards and guest sign-in ([#355](https://github.com/spokvulcan/poker-planning/issues/355)) ([b2ae93e](https://github.com/spokvulcan/poker-planning/commit/b2ae93e0f6224895a2e779f38a57ab68bff36dd2))
+
 ## [2.10.3](https://github.com/spokvulcan/poker-planning/compare/agilekit-v2.10.2...agilekit-v2.10.3) (2026-09-29)
 
 
