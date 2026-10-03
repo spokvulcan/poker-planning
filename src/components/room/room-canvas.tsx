@@ -12,7 +12,7 @@ import { useCanvasNodes } from "./hooks/useCanvasNodes";
 import { useCanvasActions } from "./hooks/useCanvasActions";
 import { useCardSelection } from "./hooks/useCardSelection";
 import { usePanelState } from "./hooks/usePanelState";
-import { useDeleteConfirmation } from "./hooks/useDeleteConfirmation";
+import { useDeleteConfirmation, type PlayerRemovalRequest } from "./hooks/useDeleteConfirmation";
 import { NodePickerToolbar } from "./node-picker-toolbar";
 import { Id } from "@/convex/_generated/dataModel";
 import {
@@ -55,6 +55,9 @@ const nodeTypes: NodeTypes = {
   timer: TimerNode,
 } as const;
 
+// "Ada, Bob, and Cy", for a dialog that names everyone it will remove.
+const playerNames = new Intl.ListFormat("en", { type: "conjunction" });
+
 /**
  * The poker room's adapter onto the whiteboard: its nodes, what a drop and a
  * Delete mean here (a move, and a confirmation before a note or a player
@@ -95,13 +98,13 @@ function RoomCanvasInner({ roomData, currentUserId, isEmbedded = false }: RoomCa
   // Destructive-flow branching, built on the actions primitives.
   const {
     pendingNote,
-    pendingPlayer,
+    pendingPlayers,
     requestDeleteNote,
-    requestDeletePlayer,
+    requestRemovePlayers,
     confirmNote,
-    confirmPlayer,
+    confirmPlayers,
     dismissNote,
-    dismissPlayer,
+    dismissPlayers,
   } = useDeleteConfirmation({
     deleteNote: actions.deleteNote,
     removeUser: actions.removeUser,
@@ -131,22 +134,25 @@ function RoomCanvasInner({ roomData, currentUserId, isEmbedded = false }: RoomCa
   const board = useStableActions({
     onDrop: ({ nodes: moved }: WhiteboardDrop<CustomNodeType>) =>
       actions.moveNodes(moved.map((node) => ({ nodeId: node.id, position: node.position }))),
-    // Delete goes through a confirmation: a note with words in it, and a player
-    // the viewer may remove. Nothing else on this board can be deleted.
+    // Delete goes through a confirmation: a note with words in it, and the
+    // players the viewer may remove, all of them in one dialog. Nothing else on
+    // this board can be deleted.
     onDeleteNodes: (doomed: CustomNodeType[]) => {
+      const players: PlayerRemovalRequest[] = [];
       for (const node of doomed) {
         if (node.type === "note") {
           requestDeleteNote(node.id, !!node.data.content);
         } else if (node.type === "player") {
           const player = node.data as PlayerNodeData;
-          requestDeletePlayer(
-            player.user._id,
-            player.user.name,
-            player.isCurrentUser,
-            permissions.removeTarget(player.role),
-          );
+          players.push({
+            id: player.user._id,
+            name: player.user.name,
+            isSelf: player.isCurrentUser,
+            removeDecision: permissions.removeTarget(player.role),
+          });
         }
       }
+      requestRemovePlayers(players);
     },
   });
 
@@ -214,18 +220,24 @@ function RoomCanvasInner({ roomData, currentUserId, isEmbedded = false }: RoomCa
             </AlertDialogContent>
           </AlertDialog>
 
-          {/* Remove user confirmation dialog */}
-          <AlertDialog open={!!pendingPlayer} onOpenChange={(open) => !open && dismissPlayer()}>
+          {/* Remove users confirmation dialog */}
+          <AlertDialog open={pendingPlayers.length > 0} onOpenChange={(open) => !open && dismissPlayers()}>
             <AlertDialogContent size="sm">
               <AlertDialogHeader>
-                <AlertDialogTitle>Remove {pendingPlayer?.name}?</AlertDialogTitle>
+                <AlertDialogTitle>
+                  {pendingPlayers.length === 1
+                    ? `Remove ${pendingPlayers[0].name}?`
+                    : `Remove ${pendingPlayers.length} players?`}
+                </AlertDialogTitle>
                 <AlertDialogDescription>
-                  This will remove the user from the room. They can rejoin using the room link.
+                  {pendingPlayers.length === 1
+                    ? "This will remove the user from the room. They can rejoin using the room link."
+                    : `This will remove ${playerNames.format(pendingPlayers.map((player) => player.name))} from the room. They can rejoin using the room link.`}
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
                 <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction variant="destructive" onClick={confirmPlayer}>
+                <AlertDialogAction variant="destructive" onClick={confirmPlayers}>
                   Remove
                 </AlertDialogAction>
               </AlertDialogFooter>

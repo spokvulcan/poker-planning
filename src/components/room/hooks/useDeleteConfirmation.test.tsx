@@ -8,9 +8,11 @@ import { describe, it, expect, vi } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { ResolvedDecision } from "@/convex/permissions";
-import { useDeleteConfirmation } from "./useDeleteConfirmation";
+import { useDeleteConfirmation, type PlayerRemovalRequest } from "./useDeleteConfirmation";
 
 const USER_ID = "user-1" as Id<"users">;
+const BOB_ID = "user-2" as Id<"users">;
+const SELF_ID = "user-3" as Id<"users">;
 const ALLOWED: ResolvedDecision = { allowed: true };
 const DENIED: ResolvedDecision = {
   allowed: false,
@@ -67,50 +69,88 @@ describe("useDeleteConfirmation — note branch", () => {
 });
 
 describe("useDeleteConfirmation — player branch", () => {
+  const ada = (overrides: Partial<PlayerRemovalRequest> = {}): PlayerRemovalRequest => ({
+    id: USER_ID,
+    name: "Ada",
+    isSelf: false,
+    removeDecision: ALLOWED,
+    ...overrides,
+  });
+  const bob = (overrides: Partial<PlayerRemovalRequest> = {}): PlayerRemovalRequest => ({
+    id: BOB_ID,
+    name: "Bob",
+    isSelf: false,
+    removeDecision: ALLOWED,
+    ...overrides,
+  });
+
   it("opens the dialog for another player without removing", () => {
     const { removeUser, result } = setup();
 
-    act(() => result.current.requestDeletePlayer(USER_ID, "Ada", false, ALLOWED));
+    act(() => result.current.requestRemovePlayers([ada()]));
 
     expect(removeUser).not.toHaveBeenCalled();
-    expect(result.current.pendingPlayer).toEqual({ id: USER_ID, name: "Ada" });
+    expect(result.current.pendingPlayers).toEqual([{ id: USER_ID, name: "Ada" }]);
+  });
+
+  it("asks once about every player one Delete selected", () => {
+    const { removeUser, result } = setup();
+
+    act(() => result.current.requestRemovePlayers([ada(), bob()]));
+
+    expect(removeUser).not.toHaveBeenCalled();
+    expect(result.current.pendingPlayers).toEqual([
+      { id: USER_ID, name: "Ada" },
+      { id: BOB_ID, name: "Bob" },
+    ]);
   });
 
   it("is a no-op for self-removal", () => {
     const { removeUser, result } = setup();
 
-    act(() => result.current.requestDeletePlayer(USER_ID, "Ada", true, ALLOWED));
+    act(() => result.current.requestRemovePlayers([ada({ isSelf: true })]));
 
     expect(removeUser).not.toHaveBeenCalled();
-    expect(result.current.pendingPlayer).toBeNull();
+    expect(result.current.pendingPlayers).toEqual([]);
   });
 
   it("refuses removal when the remove decision is denied", () => {
     const { removeUser, result } = setup();
 
-    act(() => result.current.requestDeletePlayer(USER_ID, "Ada", false, DENIED));
+    act(() => result.current.requestRemovePlayers([ada({ removeDecision: DENIED })]));
 
     expect(removeUser).not.toHaveBeenCalled();
-    expect(result.current.pendingPlayer).toBeNull();
+    expect(result.current.pendingPlayers).toEqual([]);
   });
 
-  it("confirmPlayer removes the pending player and clears it", () => {
-    const { removeUser, result } = setup();
-    act(() => result.current.requestDeletePlayer(USER_ID, "Ada", false, ALLOWED));
+  it("asks only about the players the viewer may remove, never themselves", () => {
+    const { result } = setup();
+    const self = { id: SELF_ID, name: "Me", isSelf: true, removeDecision: ALLOWED };
 
-    act(() => result.current.confirmPlayer());
+    act(() =>
+      result.current.requestRemovePlayers([ada({ removeDecision: DENIED }), self, bob()]),
+    );
 
-    expect(removeUser).toHaveBeenCalledWith(USER_ID);
-    expect(result.current.pendingPlayer).toBeNull();
+    expect(result.current.pendingPlayers).toEqual([{ id: BOB_ID, name: "Bob" }]);
   });
 
-  it("dismissPlayer clears pending state without removing", () => {
+  it("confirmPlayers removes every pending player and clears them", () => {
     const { removeUser, result } = setup();
-    act(() => result.current.requestDeletePlayer(USER_ID, "Ada", false, ALLOWED));
+    act(() => result.current.requestRemovePlayers([ada(), bob()]));
 
-    act(() => result.current.dismissPlayer());
+    act(() => result.current.confirmPlayers());
+
+    expect(removeUser.mock.calls).toEqual([[USER_ID], [BOB_ID]]);
+    expect(result.current.pendingPlayers).toEqual([]);
+  });
+
+  it("dismissPlayers clears pending state without removing", () => {
+    const { removeUser, result } = setup();
+    act(() => result.current.requestRemovePlayers([ada(), bob()]));
+
+    act(() => result.current.dismissPlayers());
 
     expect(removeUser).not.toHaveBeenCalled();
-    expect(result.current.pendingPlayer).toBeNull();
+    expect(result.current.pendingPlayers).toEqual([]);
   });
 });

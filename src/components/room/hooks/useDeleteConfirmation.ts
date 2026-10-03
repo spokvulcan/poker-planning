@@ -9,6 +9,14 @@ interface PendingPlayer {
   name: string;
 }
 
+/** One player a Delete asked to remove, with what the viewer may do to them. */
+export interface PlayerRemovalRequest {
+  id: Id<"users">;
+  name: string;
+  isSelf: boolean;
+  removeDecision: ResolvedDecision;
+}
+
 interface UseDeleteConfirmationProps {
   /** The canvas-actions delete primitive — deletes a note unconditionally. */
   deleteNote: (nodeId: string) => void;
@@ -18,28 +26,27 @@ interface UseDeleteConfirmationProps {
 
 interface UseDeleteConfirmationReturn {
   pendingNote: string | null;
-  pendingPlayer: PendingPlayer | null;
+  /** The players awaiting confirmation; empty when no dialog is open. */
+  pendingPlayers: PendingPlayer[];
   requestDeleteNote: (nodeId: string, hasContent: boolean) => void;
-  requestDeletePlayer: (
-    userId: Id<"users">,
-    name: string,
-    isSelf: boolean,
-    removeDecision: ResolvedDecision,
-  ) => void;
+  requestRemovePlayers: (players: PlayerRemovalRequest[]) => void;
   confirmNote: () => void;
-  confirmPlayer: () => void;
+  confirmPlayers: () => void;
   dismissNote: () => void;
-  dismissPlayer: () => void;
+  dismissPlayers: () => void;
 }
+
+const NO_PLAYERS: PendingPlayer[] = [];
 
 /**
  * The destructive-flow branching, isolated so it can be tested without rendering
  * the canvas (user stories 3/15/20). Built on the canvas-actions primitives:
  * an empty note is deleted immediately; a note with content opens a confirm
- * dialog; removing another player always confirms first; self-removal is a no-op.
+ * dialog; removing other players always confirms first, once for everyone a
+ * single Delete selected; self-removal is skipped.
  *
  * The player-removal gate consumes the full resolved decision (the same shape
- * every permission-gated control uses) and refuses when it is denied, so the
+ * every permission-gated control uses) and skips a player it denies, so the
  * canvas and the settings-panel roster never disagree about who can be removed.
  */
 export function useDeleteConfirmation({
@@ -47,7 +54,7 @@ export function useDeleteConfirmation({
   removeUser,
 }: UseDeleteConfirmationProps): UseDeleteConfirmationReturn {
   const [pendingNote, setPendingNote] = useState<string | null>(null);
-  const [pendingPlayer, setPendingPlayer] = useState<PendingPlayer | null>(null);
+  const [pendingPlayers, setPendingPlayers] = useState<PendingPlayer[]>(NO_PLAYERS);
 
   const requestDeleteNote = useCallback(
     (nodeId: string, hasContent: boolean) => {
@@ -60,18 +67,12 @@ export function useDeleteConfirmation({
     [deleteNote],
   );
 
-  const requestDeletePlayer = useCallback(
-    (
-      userId: Id<"users">,
-      name: string,
-      isSelf: boolean,
-      removeDecision: ResolvedDecision,
-    ) => {
-      if (isSelf || !removeDecision.allowed) return;
-      setPendingPlayer({ id: userId, name });
-    },
-    [],
-  );
+  const requestRemovePlayers = useCallback((players: PlayerRemovalRequest[]) => {
+    const removable = players
+      .filter((player) => !player.isSelf && player.removeDecision.allowed)
+      .map(({ id, name }) => ({ id, name }));
+    if (removable.length > 0) setPendingPlayers(removable);
+  }, []);
 
   // State updaters must stay pure, so fire the mutation here (not inside a
   // setState updater) then clear the pending value.
@@ -80,22 +81,22 @@ export function useDeleteConfirmation({
     setPendingNote(null);
   }, [pendingNote, deleteNote]);
 
-  const confirmPlayer = useCallback(() => {
-    if (pendingPlayer) removeUser(pendingPlayer.id);
-    setPendingPlayer(null);
-  }, [pendingPlayer, removeUser]);
+  const confirmPlayers = useCallback(() => {
+    for (const player of pendingPlayers) removeUser(player.id);
+    setPendingPlayers(NO_PLAYERS);
+  }, [pendingPlayers, removeUser]);
 
   const dismissNote = useCallback(() => setPendingNote(null), []);
-  const dismissPlayer = useCallback(() => setPendingPlayer(null), []);
+  const dismissPlayers = useCallback(() => setPendingPlayers(NO_PLAYERS), []);
 
   return {
     pendingNote,
-    pendingPlayer,
+    pendingPlayers,
     requestDeleteNote,
-    requestDeletePlayer,
+    requestRemovePlayers,
     confirmNote,
-    confirmPlayer,
+    confirmPlayers,
     dismissNote,
-    dismissPlayer,
+    dismissPlayers,
   };
 }
