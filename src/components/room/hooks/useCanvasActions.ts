@@ -99,7 +99,7 @@ export function useCanvasActions({
     },
     selectCard: async (cardLabel: string) => {
       if (isDemo || !currentUserId) return;
-      await runAct(pickCard({ roomId, userId: currentUserId, cardLabel }), VOTE_FAILED);
+      await runAct(pickCard({ roomId, cardLabel }), VOTE_FAILED);
     },
     updateNoteContent: async (nodeId: string, content: string) => {
       if (isDemo || !currentUserId) return true;

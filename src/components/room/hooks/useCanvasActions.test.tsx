@@ -135,12 +135,12 @@ describe("useCanvasActions — identity stability", () => {
     // After a user arrives, the same stable method runs the latest closure.
     rerender({ userId: USER_ID });
     await act(async () => result.current.selectCard("8"));
-    expect(writes.calls).toEqual([{ args: { roomId: ROOM_ID, userId: USER_ID, cardLabel: "8" } }]);
+    expect(writes.calls).toEqual([{ args: { roomId: ROOM_ID, cardLabel: "8" } }]);
   });
 });
 
 describe("useCanvasActions — selectCard value handling", () => {
-  it("picks a card by its label alone: the server reads its value from the deck", async () => {
+  it("picks a card by its label alone: the server reads its value from the deck, its voter from the session", async () => {
     const { result } = renderHook(() =>
       useCanvasActions({
         roomId: ROOM_ID,
@@ -153,7 +153,6 @@ describe("useCanvasActions — selectCard value handling", () => {
     expect(writes.calls).toHaveLength(1);
     expect(writes.calls[0].args).toEqual({
       roomId: ROOM_ID,
-      userId: USER_ID,
       cardLabel: "0.5",
     });
   });
