@@ -10,8 +10,8 @@ export function FAQ() {
   return (
     <section id="faq" className="bg-gray-50/50 dark:bg-zinc-900/10 py-24 sm:py-32">
       <div className="mx-auto max-w-[90rem] px-6 lg:px-8">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-16 lg:gap-24">
-          <div className="lg:col-span-5">
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] gap-16 xl:gap-24">
+          <div>
             <h2 className="text-sm font-bold tracking-widest text-primary uppercase mb-4">
               {COPY.eyebrow}
             </h2>
@@ -30,7 +30,7 @@ export function FAQ() {
             </div>
           </div>
 
-          <div className="lg:col-span-7">
+          <div>
             <div className="bg-white dark:bg-black rounded-3xl p-4 sm:p-8 border border-gray-200/50 dark:border-zinc-800/50">
               <Accordion className="w-full">
                 {COPY.items.map((faq, index) => (
