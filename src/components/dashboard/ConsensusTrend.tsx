@@ -22,6 +22,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { formatChartDay } from "./chart-day";
 
 interface TrendDataPoint {
   date: string;
@@ -40,11 +41,6 @@ const chartConfig = {
     color: "var(--chart-1)",
   },
 } satisfies ChartConfig;
-
-function formatDate(dateStr: string): string {
-  const date = new Date(dateStr);
-  return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-}
 
 function formatSeconds(sec: number): string {
   const minutes = Math.floor(sec / 60);
@@ -165,7 +161,7 @@ export function ConsensusTrend({ data, isLoading }: ConsensusTrendProps) {
               dataKey="date"
               tickLine={false}
               axisLine={false}
-              tickFormatter={formatDate}
+              tickFormatter={formatChartDay}
               tickMargin={8}
             />
             <YAxis
@@ -176,7 +172,7 @@ export function ConsensusTrend({ data, isLoading }: ConsensusTrendProps) {
             <ChartTooltip
               content={
                 <ChartTooltipContent
-                  labelFormatter={(label) => formatDate(label as string)}
+                  labelFormatter={(label) => formatChartDay(label as string)}
                   formatter={(value) => [
                     formatSeconds(value as number),
                     "Avg Time",
