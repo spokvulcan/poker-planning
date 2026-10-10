@@ -41,20 +41,27 @@ export async function requireRoomMember(
   room: Doc<"rooms">;
 }> {
   const { identity, user } = await requireUser(ctx);
-  const membership = await ctx.db
-    .query("roomMemberships")
-    .withIndex("by_room_user", (q) =>
-      q.eq("roomId", roomId).eq("userId", user._id)
-    )
-    .first();
-  if (!membership) {
-    throw refusal("forbidden", "Not a member of this room");
-  }
+  return { identity, user, ...(await seatIn(ctx, roomId, user)) };
+}
+
+/** How every guard refuses a caller who isn't in the room (ADR-0031). */
+function notAMember() {
+  return refusal("forbidden", "Not a member of this room");
+}
+
+/** The user's seat in a room, and the room: refused without a membership. */
+async function seatIn(
+  ctx: QueryCtx | MutationCtx,
+  roomId: Id<"rooms">,
+  user: Doc<"users">
+): Promise<{ membership: Doc<"roomMemberships">; room: Doc<"rooms"> }> {
+  const membership = await getMembership(ctx, roomId, user._id);
+  if (!membership) throw notAMember();
   const room = await ctx.db.get("rooms", roomId);
   if (!room) {
     throw new Error("Room not found");
   }
-  return { identity, user, membership, room };
+  return { membership, room };
 }
 
 /**
@@ -75,10 +82,7 @@ export async function requireRoomReader(
   user: Doc<"users">;
 }> {
   const { identity, user } = await requireUser(ctx);
-  const membership = await getMembership(ctx, roomId, user._id);
-  if (!membership) {
-    throw refusal("forbidden", "Not a member of this room");
-  }
+  if (!(await getMembership(ctx, roomId, user._id))) throw notAMember();
   return { identity, user };
 }
 
@@ -126,19 +130,7 @@ export async function requireCanForUser(
   spec: RequireCanSpec,
   targetUserId?: Id<"users">
 ): Promise<GuardBundle> {
-  const membership = await ctx.db
-    .query("roomMemberships")
-    .withIndex("by_room_user", (q) =>
-      q.eq("roomId", roomId).eq("userId", user._id)
-    )
-    .first();
-  if (!membership) {
-    throw refusal("forbidden", "Not a member of this room");
-  }
-  const room = await ctx.db.get("rooms", roomId);
-  if (!room) {
-    throw new Error("Room not found");
-  }
+  const { membership, room } = await seatIn(ctx, roomId, user);
   return guardRoomAction(ctx, user, membership, room, spec, targetUserId);
 }
 
@@ -277,13 +269,7 @@ export async function resolveRoomAction(
     // Relationship verb. Fetch the target membership whenever a target is
     // supplied; fill targetRole only for the target-constrained verbs.
     if (targetUserId !== undefined) {
-      target =
-        (await ctx.db
-          .query("roomMemberships")
-          .withIndex("by_room_user", (q) =>
-            q.eq("roomId", roomId).eq("userId", targetUserId)
-          )
-          .first()) ?? undefined;
+      target = (await getMembership(ctx, roomId, targetUserId)) ?? undefined;
       if (!target) {
         throw new Error("Target user is not a member of this room");
       }
