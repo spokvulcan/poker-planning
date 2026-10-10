@@ -11,6 +11,7 @@ import { summarize, VoteStatsSummary } from "../summarize";
 import { DEFAULT_SCALE, VotingScale } from "../scales";
 import { COUNTDOWN_DURATION_MS } from "../constants";
 import { NOT_THIS_CEREMONY, rulesOf } from "../ceremony";
+import { phaseAllows, phaseOf, startAllowed } from "../phase";
 import type { UserRows } from "./userRows";
 
 /**
@@ -20,6 +21,8 @@ import type { UserRows } from "./userRows";
  * `votingTimestamps` (the `completed` transition and the one canonical
  * timestamp-close path live here, not in the issues module). Owns the
  * transitions (start, reveal, reset, abandon) and the auto-reveal countdown.
+ * A start, a reveal and a vote first ask the phase what it allows
+ * (`../phase.ts`) and change nothing when it refuses.
  */
 
 /**
@@ -40,6 +43,9 @@ export async function start(
   if (args.issueId) {
     const issue = await ctx.db.get("issues", args.issueId);
     if (!issue || issue.roomId !== args.roomId) throw new Error("Issue not found");
+    // A second start of the issue already being voted on (two facilitators at
+    // once) changes nothing: its votes stay, and so does its one timed round.
+    if (!startAllowed(issue)) return;
   }
 
   // Revert a different previous issue target back to pending, closing its round.
@@ -114,6 +120,9 @@ export async function reset(ctx: MutationCtx, roomId: Id<"rooms">): Promise<void
 export async function reveal(ctx: MutationCtx, roomId: Id<"rooms">): Promise<void> {
   const room = await ctx.db.get("rooms", roomId);
   if (!room) throw new Error("Room not found");
+  // A round reveals once: a second reveal changes nothing, so the issue isn't
+  // re-stamped and its estimate isn't pushed again.
+  if (!phaseAllows(phaseOf(room), "reveal")) return;
 
   // Cancel the countdown as one unit, then settle to `revealed`.
   await cancel(ctx, roomId);
@@ -524,6 +533,10 @@ export async function castVote(ctx: MutationCtx, args: CastVoteArgs): Promise<vo
     ? (cardNumericValue(args.cardLabel) ?? 0)
     : 0;
 
+  // Votes close at the reveal: a card that lands after it (picked as the
+  // countdown ran out) changes nothing, so the cards keep matching the results.
+  if (!phaseAllows(phaseOf(room), "vote")) return;
+
   await Rooms.updateRoomActivity(ctx, args.roomId);
 
   const existing = await ctx.db
@@ -561,6 +574,11 @@ export async function retractVote(
   ctx: MutationCtx,
   args: { roomId: Id<"rooms">; userId: Id<"users"> }
 ): Promise<void> {
+  // Votes close at the reveal: a card taken back after it stays on the table.
+  const room = await ctx.db.get("rooms", args.roomId);
+  if (!room) throw new Error("Room not found");
+  if (!phaseAllows(phaseOf(room), "vote")) return;
+
   await Rooms.updateRoomActivity(ctx, args.roomId);
 
   const vote = await ctx.db

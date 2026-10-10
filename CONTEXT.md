@@ -193,7 +193,7 @@ A round's derived lifecycle state — `voting`, `countingDown` (auto-reveal arme
 _Avoid_: game state, mode, idle; do not conflate with issue **status**, nor with a retro **step** (stored, and moved by a person)
 
 **Transition**:
-A control action that moves the **phase**: **start** (begin a round on a target), **reveal** (settle and compute results), **reset** (begin a fresh round on the same target), **abandon** (drop the issue target, falling back to a target-less **Quick Vote**, still `voting`). Gated by the **game flow** / **reveal cards** permission categories. Casting or retracting a vote is a participant action, not a transition, though it may arm or cancel the countdown.
+A control action that moves the **phase**: **start** (begin a round on a target), **reveal** (settle and compute results), **reset** (begin a fresh round on the same target), **abandon** (drop the issue target, falling back to a target-less **Quick Vote**, still `voting`). Gated by the **game flow** / **reveal cards** permission categories. Casting or retracting a vote is a participant action, not a transition, though it may arm or cancel the countdown. The **phase** says which can happen at all (`convex/phase.ts`), as a retro **step** does: a round reveals once, and its votes close at the reveal. A start reads its target's **status** instead, so the issue already being voted on isn't started again. Reset and abandon are open in every phase. The round refuses quietly, changing nothing, the way a stale scheduled reveal reveals nothing.
 _Avoid_: event, command
 
 **Auto-reveal countdown**:
