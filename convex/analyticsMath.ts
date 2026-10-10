@@ -652,6 +652,23 @@ export function sessionIssueStats(issues: HistoryIssue[]): SessionIssueStats {
 }
 
 // ---------------------------------------------------------------------------
+// Formatting
+// ---------------------------------------------------------------------------
+
+/**
+ * How a duration reads, on the dashboard and in the issue export: to the
+ * nearest second, with minutes from the first one ("2m 34s").
+ */
+export function formatDuration(ms: number): string {
+  const totalSeconds = Math.round(ms / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+
+  if (minutes === 0) return `${seconds}s`;
+  return `${minutes}m ${seconds}s`;
+}
+
+// ---------------------------------------------------------------------------
 // The Overview
 // ---------------------------------------------------------------------------
 

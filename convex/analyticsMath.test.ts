@@ -8,6 +8,7 @@ import {
   dashboardSummary,
   sessionIssueStats,
   dashboard,
+  formatDuration,
   type HistoryIssue,
   type HistoryVote,
   type RoomIssue,
@@ -526,5 +527,14 @@ describe("dashboard", () => {
     expect(d.agreementTrend.trend).toEqual({ direction: "declining", changePct: -22 });
     expect(d.agreementTrend.trend).toEqual(d.predictability.agreementTrend);
     expect(d.agreementTrend.points.map((p) => p.agreement)).toEqual([40, 90, 90, 100]);
+  });
+});
+
+describe("formatDuration", () => {
+  it("reads to the nearest second, with minutes from the first one", () => {
+    expect(formatDuration(0)).toBe("0s");
+    expect(formatDuration(45_600)).toBe("46s");
+    expect(formatDuration(90_000)).toBe("1m 30s");
+    expect(formatDuration(154_400)).toBe("2m 34s");
   });
 });

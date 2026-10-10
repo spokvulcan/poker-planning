@@ -2,22 +2,16 @@
 
 import { Clock, TrendingDown, TrendingUp, Minus } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import type { TimeToConsensusStats } from "@/convex/analyticsMath";
+import {
+  formatDuration,
+  type TimeToConsensusStats,
+} from "@/convex/analyticsMath";
 
 interface TimeToConsensusCardProps {
   averageMs: number | null;
   medianMs: number | null;
   trend: TimeToConsensusStats["trend"];
   isLoading?: boolean;
-}
-
-function formatDuration(ms: number): string {
-  const totalSeconds = Math.round(ms / 1000);
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-
-  if (minutes === 0) return `${seconds}s`;
-  return `${minutes}m ${seconds}s`;
 }
 
 function CardSkeleton() {
