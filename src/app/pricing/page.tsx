@@ -7,7 +7,6 @@ export const metadata: Metadata = pageMetadata({
   description:
     "AgileKit core features are free today. Pro is in development, and launch pricing will be published here before checkout goes live.",
   path: "/pricing",
-  social: { title: "Pricing and Launch Status | AgileKit" },
 });
 
 export default function PricingPage() {

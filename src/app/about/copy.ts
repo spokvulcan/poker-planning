@@ -11,7 +11,6 @@ export const META = {
   description:
     "Learn about AgileKit, the free, open-source way for distributed Scrum teams to run planning poker and retrospectives on one real-time whiteboard. Built with privacy, simplicity, and real-time collaboration in mind.",
   openGraph: {
-    title: "About AgileKit - Free Open Source Planning Poker and Retros",
     description:
       "The free, open-source way for distributed Scrum teams to estimate and reflect, everyone at once, on one real-time whiteboard.",
   },

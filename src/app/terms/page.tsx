@@ -7,7 +7,6 @@ export const metadata: Metadata = pageMetadata({
   description:
     "Review AgileKit's terms of service, acceptable use rules, and billing terms for any future paid features.",
   path: "/terms",
-  social: { title: "Terms of Service | AgileKit" },
 });
 
 export default function TermsPage() {

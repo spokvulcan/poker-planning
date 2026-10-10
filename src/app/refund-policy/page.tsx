@@ -11,7 +11,6 @@ export const metadata: Metadata = pageMetadata({
   description:
     "Review AgileKit's refund policy, including the 30 calendar day money-back guarantee for self-serve paid plans.",
   path: "/refund-policy",
-  social: { title: "Refund Policy | AgileKit" },
 });
 
 const sections = [

@@ -13,7 +13,6 @@ export const META = {
   description:
     "Explore AgileKit's features: real-time planning poker with results analytics and Jira sync. Retros on the same whiteboard, with face-down sticky notes, GIFs, voting and action items.",
   openGraph: {
-    title: "Features | AgileKit",
     description:
       "Real-time planning poker with results analytics and Jira sync. Retros with sticky notes, GIFs, voting and action items. Everything a distributed Scrum team needs, free.",
   },

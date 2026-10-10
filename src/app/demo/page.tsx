@@ -1,14 +1,9 @@
 import { Metadata } from "next";
 import { Suspense } from "react";
+import { pageMetadata } from "@/lib/page-metadata";
 import { DemoContent } from "./demo-content";
 
-export const metadata: Metadata = {
-  title: "Demo",
-  robots: {
-    index: false,
-    follow: false,
-  },
-};
+export const metadata: Metadata = pageMetadata({ title: "Demo", path: "/demo" });
 
 function DemoLoading() {
   return (

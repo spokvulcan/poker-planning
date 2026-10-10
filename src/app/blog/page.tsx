@@ -17,7 +17,6 @@ const base = pageMetadata({
     "Learn about planning poker, Scrum estimation techniques, and agile best practices. Free guides and tutorials from the AgileKit team.",
   path: "/blog",
   social: {
-    title: TITLE,
     description:
       "Learn about planning poker, Scrum estimation techniques, and agile best practices.",
   },
