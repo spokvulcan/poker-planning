@@ -91,7 +91,7 @@ In every step stickies are written and moved, authors edit or delete their own, 
 | `actionManagement` | everyone | every action-item write |
 | `retroSettings` | facilitators | name, columns, votes per person, show authors |
 
-The relationship verbs are the poker room's (`promote`, `demote`, `remove`, `transfer`, `changePerms`) plus `delete`, owner-only. No category gates writing a sticky, moving or stacking stickies, changing or deleting your own, or voting within the budget; the steps' rules still apply. Every mutation requires membership (`requireRoomMember`, or `requireCan` built on it); `retro.board` and `retro.actionItems` take `requireRoomReader`, which admits members only. `rooms.get` stays unguarded and carries `rooms.retro`, which holds no sticky content.
+The relationship verbs are the poker room's (`promote`, `demote`, `remove`, `transfer`, `changePerms`) plus `delete`, owner-only. No category gates writing a sticky, moving or stacking stickies, changing or deleting your own, or voting within the budget; the steps' rules still apply. Every write to a retro starts with the room-scoped step (`requireRoomWrite`), which requires membership of the retro the write is addressed to, by the room or by the sticky or action item it acts on, and runs the permission guard where a category or verb gates the write; `retro.board` and `retro.actionItems` take `requireRoomReader`, which admits members only. `rooms.get` stays unguarded and carries `rooms.retro`, which holds no sticky content.
 
 ## 10. Retention, accounts and deletion
 
