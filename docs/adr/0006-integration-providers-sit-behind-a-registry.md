@@ -1,6 +1,6 @@
 # Integration providers sit behind a registry seam
 
-**Status:** accepted
+**Status:** accepted. Amended by [#384](https://github.com/spokvulcan/poker-planning/issues/384): a handler's webhook members (the register, deregister and disconnect references and the accessors over the mapping's webhook column) are one **webhook reconcile** per provider, which owns the mapping's webhook record (`convex/integrations/jiraWebhookReconcile.ts`).
 
 The generic integrations module (`convex/model/integrations.ts`) hard-referenced Jira: it scheduled `internal.integrations.jira.*` functions by name, filtered `provider === "jira"`, and took jira-shaped mapping arguments. The Jira orchestration also constructed its own effects inline — `fetch`, `Date.now`, `setTimeout` — so the client, token refresh, webhook endpoint, and OAuth exchange were untestable, and tests resorted to faking `setTimeout` to suppress the reveal→Jira push. GitHub (spec 07) is the prescribed second adapter, so the seam is real, not speculative.
 

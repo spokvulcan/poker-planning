@@ -29,6 +29,7 @@ import type * as integrations_jira from "../integrations/jira.js";
 import type * as integrations_jiraAuth from "../integrations/jiraAuth.js";
 import type * as integrations_jiraClient from "../integrations/jiraClient.js";
 import type * as integrations_jiraWebhook from "../integrations/jiraWebhook.js";
+import type * as integrations_jiraWebhookReconcile from "../integrations/jiraWebhookReconcile.js";
 import type * as integrations_registry from "../integrations/registry.js";
 import type * as integrations_tokenRefresh from "../integrations/tokenRefresh.js";
 import type * as issues from "../issues.js";
@@ -107,6 +108,7 @@ declare const fullApi: ApiFromModules<{
   "integrations/jiraAuth": typeof integrations_jiraAuth;
   "integrations/jiraClient": typeof integrations_jiraClient;
   "integrations/jiraWebhook": typeof integrations_jiraWebhook;
+  "integrations/jiraWebhookReconcile": typeof integrations_jiraWebhookReconcile;
   "integrations/registry": typeof integrations_registry;
   "integrations/tokenRefresh": typeof integrations_tokenRefresh;
   issues: typeof issues;
