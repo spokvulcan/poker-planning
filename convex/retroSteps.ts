@@ -9,8 +9,8 @@
  * stickies are written and moved, and a person changes, stacks and unstacks
  * their own. Before the reveal nobody touches a sticky they can't read. Votes
  * are cast only in Vote, and the discussion walks the topics only in Discuss.
- * Other people's stickies are face-down only in Write; the totals and the
- * spotlight show from Discuss on.
+ * Other people's stickies are face-down only in Write; the totals show from
+ * Discuss on, and the spotlight only in Discuss.
  * The permission decision stays separate (ADR-0013): a step says whether an
  * act can happen now at all, a permission says whether this person may.
  */
@@ -58,7 +58,8 @@ export function stepAllows(step: RetroStep, act: StepAct): RetroDecision {
     case "vote":
       return step === "vote" ? ALLOWED : refuse("Voting is closed.");
     case "spotlight":
-      return step === "write" ? refuse("Reveal the stickies first.") : ALLOWED;
+      if (step === "write") return refuse("Reveal the stickies first.");
+      return step === "done" ? refuse("The retro is complete. Go back to Discuss to discuss a topic.") : ALLOWED;
     case "walk":
       return step === "discuss" ? ALLOWED : refuse("The topics are walked in Discuss.");
   }
@@ -78,7 +79,7 @@ const SHOWS: Record<RetroStep, StepShows> = {
   write: Object.freeze({ faceDown: true, totals: false, spotlight: false }),
   vote: Object.freeze({ faceDown: false, totals: false, spotlight: false }),
   discuss: Object.freeze({ faceDown: false, totals: true, spotlight: true }),
-  done: Object.freeze({ faceDown: false, totals: true, spotlight: true }),
+  done: Object.freeze({ faceDown: false, totals: true, spotlight: false }),
 };
 
 /** What the retro's step shows: on everyone's board, and in the board read. */
@@ -124,13 +125,14 @@ export interface StepChange {
 
 /**
  * Moving the retro to a step, forward or back. Null when it is already there.
- * Every step but the discussion starts with the spotlight off, finishing
- * included. The discussion starts on its first topic or, back from Done, on
- * whatever was put in the spotlight there.
+ * Write and Vote start with the spotlight off, and the discussion on its
+ * first topic. Finishing leaves the spotlight where the walk was, undrawn, so
+ * going back from Done to Discuss resumes the walk there.
  */
 export function stepChange(from: RetroStep, to: RetroStep): StepChange | null {
   if (from === to) return null;
-  const spotlight = to !== "discuss" ? "clear" : from === "done" ? "keep" : "first";
+  const spotlight =
+    to === "write" || to === "vote" ? "clear" : to === "discuss" && from !== "done" ? "first" : "keep";
   return { to, spotlight, reveal: from === "write" };
 }
 
@@ -159,9 +161,8 @@ export function stepped<S extends string, R extends { step: RetroStep; focusStic
 
 /**
  * Where putting a topic in the spotlight takes the retro: nowhere when its
- * step draws the spotlight (Discuss, and Done, which it keeps done),
- * otherwise to the discussion. The spotlight itself goes on the chosen topic,
- * whatever `spotlight` says.
+ * step draws the spotlight (Discuss), otherwise to the discussion. The
+ * spotlight itself goes on the chosen topic, whatever `spotlight` says.
  */
 export function spotlightStepChange(from: RetroStep): StepChange | null {
   return stepShows(from).spotlight ? null : stepChange(from, "discuss");

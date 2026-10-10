@@ -689,16 +689,17 @@ describe("the discussion", () => {
     expect((await retroState(t, roomId)).focusStickyId).toBe(most);
   });
 
-  it("finishing takes the spotlight off, and a topic put back in it keeps the retro done", async () => {
+  it("going back from Done to Discuss resumes the walk where it was, and nothing takes the spotlight while done", async () => {
     const t = withComponents(convexTest(schema, modules));
-    const { roomId, some } = await seedVoted(t);
+    const { roomId, some, none } = await seedVoted(t);
     await setStep(t, roomId, "discuss");
+    await as(t, "owner").mutation(api.retro.stepDiscussion, { roomId, direction: "next" });
 
     await setStep(t, roomId, "done");
-    expect(await retroState(t, roomId)).not.toHaveProperty("focusStickyId");
+    expect(await refusalOf(focus(t, roomId, none))).toBe("stage");
 
-    await focus(t, roomId, some);
-    expect(await retroState(t, roomId)).toMatchObject({ step: "done", focusStickyId: some });
+    await setStep(t, roomId, "discuss");
+    expect(await retroState(t, roomId)).toMatchObject({ step: "discuss", focusStickyId: some });
   });
 
   it("going back to writing drops the walk, and nothing takes the spotlight while writing", async () => {
