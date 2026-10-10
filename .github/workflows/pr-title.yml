@@ -1,0 +1,40 @@
+name: PR Title
+
+# release-please builds versions and the changelog from Conventional Commit
+# subjects. A squash merge takes the PR title, or the commit's own title when
+# the PR has a single commit, so both are checked.
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+permissions:
+  pull-requests: read
+
+jobs:
+  conventional:
+    name: Conventional Commits
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check the titles
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TITLE: ${{ github.event.pull_request.title }}
+          COMMITS: ${{ github.event.pull_request.commits }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          pattern='^(feat|fix|perf|docs|chore|refactor|test|ci|blog|build|style|revert)(\([^()]+\))?!?: .+'
+          fail=0
+          check() {
+            if [[ ! "$2" =~ $pattern ]]; then
+              echo "::error::$1 \"$2\" isn't a Conventional Commit subject, like \"fix: …\" or \"feat(retro): …\". Types: feat, fix, perf, docs, chore, refactor, test, ci, blog, build, style, revert."
+              fail=1
+            fi
+          }
+          check "The PR title" "$TITLE"
+          if [ "$COMMITS" = 1 ]; then
+            subject=$(gh api "repos/$REPO/pulls/$PR/commits" --jq '.[0].commit.message' | head -n 1)
+            check "The PR's only commit, whose title a squash merge uses," "$subject"
+          fi
+          exit "$fail"
