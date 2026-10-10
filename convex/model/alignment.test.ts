@@ -1,32 +1,18 @@
 import { describe, it, expect } from "vitest";
 import type { Id } from "../_generated/dataModel";
-import { cardNumericValue, computeVoterAlignment } from "./alignment";
+import { deckOf } from "../scales";
+import { computeVoterAlignment } from "./alignment";
 
 const u = (id: string) => id as Id<"users">;
 
-const numericScale = {
-  type: "fibonacci" as const,
+const numericDeck = deckOf({
   cards: ["0", "1", "2", "3", "5", "8", "13", "21", "?", "☕"],
   isNumeric: true,
-};
+});
 
-const tshirtScale = {
-  type: "tshirt" as const,
+const tshirtDeck = deckOf({
   cards: ["XS", "S", "M", "L", "XL", "?", "☕"],
   isNumeric: false,
-};
-
-describe("cardNumericValue — the one card→numeric conversion", () => {
-  it("parses numeric labels", () => {
-    expect(cardNumericValue("5")).toBe(5);
-    expect(cardNumericValue("0.5")).toBe(0.5);
-  });
-
-  it("returns undefined for non-numeric labels instead of NaN", () => {
-    expect(cardNumericValue("?")).toBeUndefined();
-    expect(cardNumericValue("☕")).toBeUndefined();
-    expect(cardNumericValue("XS")).toBeUndefined();
-  });
 });
 
 describe("computeVoterAlignment", () => {
@@ -37,7 +23,7 @@ describe("computeVoterAlignment", () => {
         { userId: u("b"), cardLabel: "2" }, // index 2
       ],
       "3", // index 3
-      numericScale
+      numericDeck
     );
     expect(rows).toHaveLength(2);
     expect(rows[0]).toMatchObject({
@@ -60,7 +46,7 @@ describe("computeVoterAlignment", () => {
         { userId: u("d") }, // retracted / never voted
       ],
       "5",
-      numericScale
+      numericDeck
     );
     expect(rows.map((r) => r.userId)).toEqual([u("a")]);
   });
@@ -69,7 +55,7 @@ describe("computeVoterAlignment", () => {
     const rows = computeVoterAlignment(
       [{ userId: u("a"), cardLabel: "L" }],
       "M",
-      tshirtScale
+      tshirtDeck
     );
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
@@ -85,7 +71,7 @@ describe("computeVoterAlignment", () => {
     const rows = computeVoterAlignment(
       [{ userId: u("a"), cardLabel: "5" }],
       null,
-      numericScale
+      numericDeck
     );
     expect(rows[0].consensusLabel).toBeUndefined();
     expect(rows[0].consensusValue).toBeUndefined();
@@ -96,19 +82,9 @@ describe("computeVoterAlignment", () => {
     const rows = computeVoterAlignment(
       [{ userId: u("a"), cardLabel: "100" }], // not in the fibonacci deck
       "3",
-      numericScale
+      numericDeck
     );
     expect(rows[0].cardValue).toBe(100);
-    expect(rows[0].deltaSteps).toBeUndefined();
-  });
-
-  it("works without a scale (legacy rooms): values parse, steps stay undefined", () => {
-    const rows = computeVoterAlignment(
-      [{ userId: u("a"), cardLabel: "5" }],
-      "5",
-      undefined
-    );
-    expect(rows[0]).toMatchObject({ cardValue: 5, consensusLabel: "5", consensusValue: 5 });
     expect(rows[0].deltaSteps).toBeUndefined();
   });
 });
