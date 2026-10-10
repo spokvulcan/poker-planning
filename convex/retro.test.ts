@@ -17,7 +17,8 @@ import { as, join, seedUser } from "./people.seeds";
 // votes and the discussion walk, action items, the next retro, columns, and
 // who may do what at the default permissions. The pure rules are tested on
 // their own: topics and votes in retroTopics.test.ts, steps and the walk in
-// retroSteps.test.ts, GIF links in gifLinks.test.ts.
+// retroSteps.test.ts, who sees what of a sticky in retroStickyView.test.ts,
+// GIF links in gifLinks.test.ts.
 
 const modules = import.meta.glob("./**/*.*s");
 
@@ -187,6 +188,8 @@ describe("retro.create", () => {
 });
 
 describe("the board — who sees what", () => {
+  // The whole table is the sticky projection's (retroStickyView.test.ts);
+  // these prove the board read applies it to the rows it reads.
   it("while writing, someone else's sticky is face-down: its place, never its words, GIF or author", async () => {
     const t = withComponents(convexTest(schema, modules));
     const { roomId } = await seedRetro(t);
@@ -235,6 +238,8 @@ describe("the board — who sees what", () => {
 
     await as(t, "owner").mutation(api.retro.updateSettings, { roomId, showAuthors: true });
     expect((await seen(t, "bob", roomId, stickyId)).authorName).toBe("ann");
+    // Her own sticky too, as her browser shows a new one before the server answers.
+    expect((await seen(t, "ann", roomId, stickyId)).authorName).toBe("ann");
 
     // Back to writing: face-down again, and no name travels, not even to the author.
     await setStep(t, roomId, "write");
