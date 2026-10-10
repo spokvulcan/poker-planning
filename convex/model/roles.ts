@@ -7,34 +7,6 @@ import { refusal } from "./refusal";
 import * as Rooms from "./rooms";
 
 /**
- * Promotes a participant to facilitator. The handler's room-scoped step runs
- * the `promote` guard (the caller an owner or a facilitator, the target a
- * participant) and hands over the room and the target's membership.
- */
-export async function promoteFacilitator(
-  ctx: MutationCtx,
-  room: Doc<"rooms">,
-  target: Doc<"roomMemberships">
-): Promise<void> {
-  await ctx.db.patch("roomMemberships", target._id, { role: "facilitator" });
-  await Rooms.updateRoomActivity(ctx, room);
-}
-
-/**
- * Demotes a facilitator to participant. The handler's room-scoped step runs
- * the `demote` guard (the caller the owner, the target a facilitator) and
- * hands over the room and the target's membership.
- */
-export async function demoteFacilitator(
-  ctx: MutationCtx,
-  room: Doc<"rooms">,
-  target: Doc<"roomMemberships">
-): Promise<void> {
-  await ctx.db.patch("roomMemberships", target._id, { role: "participant" });
-  await Rooms.updateRoomActivity(ctx, room);
-}
-
-/**
  * Transfers ownership from the current owner to another member.
  * The old owner becomes a participant; the new owner gets the "owner" role.
  * The handler's room-scoped step runs the `transfer` guard and hands over the

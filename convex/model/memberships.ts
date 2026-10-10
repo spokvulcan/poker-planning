@@ -12,10 +12,11 @@ import type { UserRows } from "./userRows";
 /**
  * Room attendance (CONTEXT.md: Room attendance): who is in which room, and
  * as what. The one writer of `roomMemberships` rows: joining, sitting out as
- * a spectator, leaving, and folding a guest's memberships into their account.
- * The owner role is ownership's to give (model/ownership.ts); what a member
- * joining or leaving does to the canvas and the voting round, those modules
- * decide (memberJoined/memberLeft, dropVoter).
+ * a spectator, being made a facilitator or a participant again, leaving, and
+ * folding a guest's memberships into their account. The owner role is
+ * ownership's to give (model/ownership.ts); what a member joining or leaving
+ * does to the canvas and the voting round, those modules decide
+ * (memberJoined/memberLeft, dropVoter).
  */
 
 /** A member as the roster shows them: the person and their membership in one. */
@@ -116,6 +117,22 @@ export async function setSpectator(
   // The roster bit first, so the round re-checks against the new roster.
   await ctx.db.patch("roomMemberships", membership._id, { isSpectator });
   if (isSpectator) await VotingRound.dropVoter(ctx, room._id, membership.userId);
+}
+
+/**
+ * Makes a member a facilitator (a promotion) or a participant again (a
+ * demotion). The handler's room-scoped step runs the `promote` or `demote`
+ * guard, which weighs both roles, and hands over the room and the member's
+ * membership. The owner role is ownership's to give.
+ */
+export async function setRole(
+  ctx: MutationCtx,
+  room: Doc<"rooms">,
+  membership: Doc<"roomMemberships">,
+  role: "facilitator" | "participant"
+): Promise<void> {
+  await ctx.db.patch("roomMemberships", membership._id, { role });
+  await Rooms.updateRoomActivity(ctx, room);
 }
 
 /**

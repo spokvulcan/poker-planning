@@ -60,3 +60,30 @@ describe("who a member's own write is from", () => {
     expect(await seatOf(t, roomId, ownerId)).not.toBeNull();
   });
 });
+
+// The rule the memberships model keeps (CLAUDE.md): it is the one writer of
+// room memberships, but for the owner role, which ownership gives (ADR-0029).
+// Every module under convex/ as source text, but the tests, the seeds,
+// generated code and the one-off migrations.
+const sources = import.meta.glob(
+  ["./**/*.ts", "!./**/*.test.ts", "!./**/*.seeds.ts", "!./_generated/**", "!./migrations.ts"],
+  { query: "?raw", import: "default", eager: true }
+) as Record<string, string>;
+
+/** Inserts, patches, replaces or deletes a membership row, in code (not in comments). */
+function writesMemberships(source: string): boolean {
+  const code = source
+    .split("\n")
+    .filter((line) => !/^\s*(\/\/|\/\*|\*)/.test(line))
+    .map((line) => line.replace(/(^|[^:])\/\/.*$/, "$1"))
+    .join("\n");
+  return /(insert|patch|replace|delete)\(\s*["']roomMemberships["']/.test(code);
+}
+
+describe("room memberships", () => {
+  it("are written only by the memberships model, and their owner role by ownership", () => {
+    const writers = Object.keys(sources).filter((path) => writesMemberships(sources[path]));
+
+    expect(writers.sort()).toEqual(["./model/memberships.ts", "./model/ownership.ts"]);
+  });
+});
