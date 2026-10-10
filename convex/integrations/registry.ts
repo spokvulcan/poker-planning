@@ -24,8 +24,10 @@ import { jiraWebhookReconcile } from "./jiraWebhookReconcile";
 export type IntegrationProvider = Doc<"integrationConnections">["provider"];
 
 /**
- * What happened to a mapping. Each caller that changes or ends one hands its
- * own case to the provider's webhook reconcile.
+ * What the generic integrations module did to a mapping. Each of its callers
+ * that changes or ends one hands its own case to the provider's webhook
+ * reconcile. A provider's own upkeep of its webhooks (Jira's weekly renewal)
+ * stays inside its adapter.
  */
 export type MappingChange =
   /** Saved from the room's settings: the row as it was (null when new) and as it is now. */
@@ -34,8 +36,6 @@ export type MappingChange =
       before: Doc<"integrationMappings"> | null;
       after: Doc<"integrationMappings">;
     }
-  /** The weekly renewal of a mapping that stays. */
-  | { kind: "renewed"; mapping: Doc<"integrationMappings"> }
   /**
    * Deleted: removed from the room's settings, its room ended, or swept. The
    * row is gone, so its record comes as data.

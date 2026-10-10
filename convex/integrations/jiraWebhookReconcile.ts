@@ -6,9 +6,10 @@
  * with the mapping's own connection, and none otherwise. Its record says
  * which webhook is live, the connection that made it and the project it was
  * made for; only this module writes it. Every caller that changes or ends a
- * mapping hands over its case through the provider registry: saving it, the
- * weekly renewal, removing it and its room ending (reconcile), and a
- * disconnect, with all of a connection's mappings at once (disconnect).
+ * mapping hands over its case through the provider registry: saving it,
+ * removing it and its room ending (reconcile), and a disconnect, with all of
+ * a connection's mappings at once (disconnect). The weekly renewal is Jira's
+ * own and calls in directly (renewWebhook).
  * The decisions are pure (planWebhook, settleRegistration,
  * planDisconnect) and tested without Jira; the actions in jira.ts carry them
  * out and report each registration back (recordRegistration).
@@ -242,18 +243,24 @@ async function reconcile(ctx: MutationCtx, change: MappingChange): Promise<void>
       const plan = planWebhook(wantedWebhookOf(change.after), recorded, { renewal: false });
       return await carryOut(ctx, change.after, plan);
     }
-    case "renewed": {
-      const plan = planWebhook(wantedWebhookOf(change.mapping), recordedWebhookOf(change.mapping), {
-        renewal: true,
-      });
-      return await carryOut(ctx, change.mapping, plan);
-    }
     case "removed": {
       const recorded = recordedWebhookOf(change.mapping);
       if (recorded) await scheduleRemoval(ctx, recorded);
       return;
     }
   }
+}
+
+/**
+ * The weekly renewal of a mapping that stays (refreshJiraWebhooks): Jira
+ * drops a webhook 30 days after it is registered, so a wanted webhook is
+ * registered afresh, replacing the one on record or retrying a failed
+ * registration, and a recorded one nobody wants is removed. Jira's own
+ * upkeep, so it is called here rather than through the provider registry.
+ */
+export async function renewWebhook(ctx: MutationCtx, mapping: Doc<"integrationMappings">): Promise<void> {
+  const plan = planWebhook(wantedWebhookOf(mapping), recordedWebhookOf(mapping), { renewal: true });
+  await carryOut(ctx, mapping, plan);
 }
 
 /**

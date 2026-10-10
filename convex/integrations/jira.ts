@@ -25,7 +25,7 @@ import {
   query,
 } from "../_generated/server";
 import { internal } from "../_generated/api";
-import { ConvexError, v } from "convex/values";
+import { v } from "convex/values";
 import { providerValidator } from "../schema";
 import { Doc, Id } from "../_generated/dataModel";
 import { ActionCtx } from "../_generated/server";
@@ -44,9 +44,9 @@ import {
   jiraWebhookAddress,
 } from "./jiraWebhook";
 import {
-  jiraWebhookReconcile,
   recordRegistration,
   registrationValidator,
+  renewWebhook,
   wantedWebhookOf,
   type Registration,
   type WantedWebhook,
@@ -54,7 +54,7 @@ import {
 import { cardNumericValue } from "../scales";
 import * as Issues from "../model/issues";
 import * as Integrations from "../model/integrations";
-import type { Refusal } from "../model/refusal";
+import { refusalOf } from "../model/refusal";
 
 // ---------------------------------------------------------------------------
 // Action preamble — the one chain from auth identity to a ready Jira client
@@ -336,11 +336,7 @@ export interface JiraImportResult {
  * own message to give.
  */
 function refusalReason(error: unknown): string {
-  if (error instanceof ConvexError) {
-    const message = (error.data as Partial<Refusal> | undefined)?.message;
-    if (typeof message === "string" && message) return message;
-  }
-  return error instanceof Error ? error.message : "Unknown error";
+  return refusalOf(error)?.message ?? (error instanceof Error ? error.message : "Unknown error");
 }
 
 /**
@@ -710,10 +706,11 @@ const WEBHOOK_RENEWAL_BATCH = 100;
 
 /**
  * The weekly renewal (cron refresh-jira-webhooks). Jira drops a webhook 30
- * days after it is registered, so every Jira mapping goes to the reconcile as
- * renewed: a wanted webhook is registered afresh (replacing the one on
- * record, or retrying a failed registration) and a recorded one nobody wants
- * is removed. Pages through the mappings, rescheduling itself until done.
+ * days after it is registered, so every Jira mapping goes to the reconcile's
+ * renewal (renewWebhook): a wanted webhook is registered afresh (replacing
+ * the one on record, or retrying a failed registration) and a recorded one
+ * nobody wants is removed. Pages through the mappings, rescheduling itself
+ * until done.
  */
 export const refreshJiraWebhooks = internalMutation({
   args: {
@@ -728,7 +725,7 @@ export const refreshJiraWebhooks = internalMutation({
       .paginate({ numItems: batchSize, cursor: args.cursor ?? null });
 
     for (const mapping of page) {
-      await jiraWebhookReconcile.reconcile(ctx, { kind: "renewed", mapping });
+      await renewWebhook(ctx, mapping);
     }
     if (!isDone) {
       await ctx.scheduler.runAfter(0, internal.integrations.jira.refreshJiraWebhooks, {

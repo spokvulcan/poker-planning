@@ -2,12 +2,12 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { fetchAuthQuery, isAuthenticated } from "@/lib/auth-server";
 import { api } from "@/convex/_generated/api";
-import { jiraRefusalCode } from "../refusal";
+import { jiraConnectFailed, jiraRefusalCode } from "../refusal";
 
 export async function GET() {
   const authed = await isAuthenticated();
   if (!authed) {
-    redirect("/dashboard/settings?tab=integrations&error=jira_unauthorized");
+    redirect(jiraConnectFailed("jira_unauthorized"));
   }
 
   // CSRF protection: random state, kept in an httpOnly cookie below
@@ -22,11 +22,7 @@ export async function GET() {
     );
   } catch (err) {
     console.error("Failed to start connecting Jira:", err);
-    redirect(
-      `/dashboard/settings?tab=integrations&error=${
-        jiraRefusalCode(err) ?? "jira_authorize_failed"
-      }`
-    );
+    redirect(jiraConnectFailed(jiraRefusalCode(err) ?? "jira_authorize_failed"));
   }
 
   const cookieStore = await cookies();

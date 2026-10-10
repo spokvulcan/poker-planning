@@ -20,14 +20,18 @@ export function refusal(code: RefusalCode, message: string): ConvexError<Refusal
 
 /**
  * The refusal an error carries, or null for any other error: the one reader
- * of a refusal's data, on the server and in the browser, which receives the
- * ConvexError with its data intact.
+ * of a refusal's data, its code and message, on the server, in the browser
+ * and in a Next.js route, each of which receives the ConvexError with its
+ * data intact. A caller expecting codes of its own (the Jira handshake's)
+ * names them.
  */
-export function refusalOf(error: unknown): Refusal | null {
+export function refusalOf<Code extends string = RefusalCode>(
+  error: unknown
+): { code: Code; message: string } | null {
   if (!(error instanceof ConvexError)) return null;
   const data = error.data as Partial<Refusal> | null | undefined;
   return typeof data?.code === "string" && typeof data.message === "string" && data.message
-    ? { code: data.code, message: data.message }
+    ? { code: data.code as Code, message: data.message }
     : null;
 }
 

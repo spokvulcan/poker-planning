@@ -305,13 +305,13 @@ export async function disconnectConnection(
   if (!connection) return;
 
   // Every mapping of a connection shares the connection's provider, so the
-  // one reconcile takes all of them.
-  const row = await getProviderHandler(connection.provider).webhooks.disconnect(
+  // one reconcile takes all of them, and says when the connection row goes.
+  const rowGoes = await getProviderHandler(connection.provider).webhooks.disconnect(
     ctx,
     connectionId,
     mappings
   );
-  if (row === "now") await ctx.db.delete("integrationConnections", connectionId);
+  if (rowGoes === "now") await ctx.db.delete("integrationConnections", connectionId);
 }
 
 /** A person's provider connections: at most one per provider (saveConnection upserts). */
