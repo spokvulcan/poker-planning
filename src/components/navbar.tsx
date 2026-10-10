@@ -1,3 +1,4 @@
+import { CommandMenuButton } from "@/components/command-menu/command-menu";
 import { Logo } from "@/components/logo";
 import { NavMenu } from "@/components/nav-menu";
 import { NavigationSheet } from "@/components/navigation-sheet";
@@ -15,6 +16,7 @@ export function Navbar() {
         <NavMenu className="hidden md:block" />
 
         <div className="flex flex-1 items-center justify-end gap-3">
+          <CommandMenuButton />
           <NavbarActions />
 
           {/* Mobile Menu */}
