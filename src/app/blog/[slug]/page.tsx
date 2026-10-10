@@ -53,11 +53,9 @@ export async function generateMetadata({
     title: post.title,
     description: post.spoiler,
     path: `/blog/${slug}`,
-    social: { title: post.title },
     article: {
       publishedTime: post.date,
       modifiedTime: post.modifiedDate || post.date,
-      authors: [siteConfig.author.name],
     },
   });
 }
