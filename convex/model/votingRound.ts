@@ -6,11 +6,13 @@ import * as Canvas from "./canvas";
 import * as Votes from "./votes";
 import * as Analytics from "./analytics";
 import { getMembership } from "./memberships";
-import { cardNumericValue, computeVoterAlignment } from "./alignment";
+import { refusal } from "./refusal";
+import { computeVoterAlignment } from "./alignment";
 import { summarize, VoteStatsSummary } from "../summarize";
-import { DEFAULT_SCALE, VotingScale } from "../scales";
+import { type Deck, cardNumericValue, deckOf } from "../scales";
 import { COUNTDOWN_DURATION_MS } from "../constants";
 import { NOT_THIS_CEREMONY, rulesOf } from "../ceremony";
+import { phaseAllows, phaseOf, startAllowed } from "../phase";
 import type { UserRows } from "./userRows";
 
 /**
@@ -20,6 +22,8 @@ import type { UserRows } from "./userRows";
  * `votingTimestamps` (the `completed` transition and the one canonical
  * timestamp-close path live here, not in the issues module). Owns the
  * transitions (start, reveal, reset, abandon) and the auto-reveal countdown.
+ * A start, a reveal and a vote first ask the phase what it allows
+ * (`../phase.ts`) and change nothing when it refuses.
  */
 
 /**
@@ -40,6 +44,9 @@ export async function start(
   if (args.issueId) {
     const issue = await ctx.db.get("issues", args.issueId);
     if (!issue || issue.roomId !== args.roomId) throw new Error("Issue not found");
+    // A second start of the issue already being voted on (two facilitators at
+    // once) changes nothing: its votes stay, and so does its one timed round.
+    if (!startAllowed(issue)) return;
   }
 
   // Revert a different previous issue target back to pending, closing its round.
@@ -114,6 +121,9 @@ export async function reset(ctx: MutationCtx, roomId: Id<"rooms">): Promise<void
 export async function reveal(ctx: MutationCtx, roomId: Id<"rooms">): Promise<void> {
   const room = await ctx.db.get("rooms", roomId);
   if (!room) throw new Error("Room not found");
+  // A round reveals once: a second reveal changes nothing, so the issue isn't
+  // re-stamped and its estimate isn't pushed again.
+  if (!phaseAllows(phaseOf(room), "reveal")) return;
 
   // Cancel the countdown as one unit, then settle to `revealed`.
   await cancel(ctx, roomId);
@@ -127,7 +137,8 @@ export async function reveal(ctx: MutationCtx, roomId: Id<"rooms">): Promise<voi
   if (room.currentIssueId) {
     // One summary feeds the snapshot, the export, and the client panel.
     const votes = await Votes.getRoomVotes(ctx, roomId);
-    const summary = summarize(votes, room.votingScale);
+    const deck = deckOf(room.votingScale);
+    const summary = summarize(votes, deck);
 
     if (summary.consensus) {
       await completeTargetIssue(ctx, {
@@ -147,7 +158,7 @@ export async function reveal(ctx: MutationCtx, roomId: Id<"rooms">): Promise<voi
       roomId,
       issueId: room.currentIssueId,
       consensusLabel: summary.consensus,
-      votingScale: room.votingScale,
+      deck,
     });
 
     // A completed target issue changes the room's completed-issue history:
@@ -181,10 +192,10 @@ async function snapshotVoterAlignment(
     roomId: Id<"rooms">;
     issueId: Id<"issues">;
     consensusLabel: string | null;
-    votingScale: VotingScale | undefined;
+    deck: Deck;
   }
 ): Promise<void> {
-  const { roomId, issueId, consensusLabel, votingScale } = args;
+  const { roomId, issueId, consensusLabel, deck } = args;
 
   // Idempotency: delete any existing snapshots for this issue.
   const existing = await ctx.db
@@ -194,7 +205,7 @@ async function snapshotVoterAlignment(
   await Promise.all(existing.map((row) => ctx.db.delete("individualVotes", row._id)));
 
   const votes = await Votes.getRoomVotes(ctx, roomId);
-  const rows = computeVoterAlignment(votes, consensusLabel, votingScale);
+  const rows = computeVoterAlignment(votes, consensusLabel, deck);
 
   const now = Date.now();
   await Promise.all(
@@ -484,7 +495,8 @@ export interface CastVoteArgs {
   roomId: Id<"rooms">;
   userId: Id<"users">;
   cardLabel: string;
-  cardValue: number;
+  /** Ignored: the deck reads the card's value. Old browsers still send one. */
+  cardValue?: number;
   cardIcon?: string;
 }
 
@@ -509,20 +521,20 @@ export async function castVote(ctx: MutationCtx, args: CastVoteArgs): Promise<vo
     throw new Error("Spectators cannot vote");
   }
 
-  // Validate the card against the room's voting scale and re-derive its numeric
-  // value server-side. pickCard is public, so an unchecked label/value would
+  // Validate the card against the room's deck and read its value from it, never
+  // from the client. pickCard is public, so an unchecked label/value would
   // flow into vote stats, exports, and auto-pushed Jira estimates.
   const room = await ctx.db.get("rooms", args.roomId);
   if (!room) throw new Error("Room not found");
-  if (!rulesOf(room).votingRounds) throw new Error(NOT_THIS_CEREMONY);
-  const scale = room.votingScale ?? DEFAULT_SCALE;
-  const scaleCards: readonly string[] = scale.cards;
-  if (!scaleCards.includes(args.cardLabel)) {
+  if (!rulesOf(room).votingRounds) throw refusal("missing", NOT_THIS_CEREMONY);
+  if (!deckOf(room.votingScale).isLegalBallot(args.cardLabel)) {
     throw new Error("Card is not in this room's voting scale");
   }
-  const cardValue = scale.isNumeric
-    ? (cardNumericValue(args.cardLabel) ?? 0)
-    : 0;
+  const cardValue = cardNumericValue(args.cardLabel);
+
+  // Votes close at the reveal: a card that lands after it (picked as the
+  // countdown ran out) changes nothing, so the cards keep matching the results.
+  if (!phaseAllows(phaseOf(room), "vote")) return;
 
   await Rooms.updateRoomActivity(ctx, args.roomId);
 
@@ -561,6 +573,11 @@ export async function retractVote(
   ctx: MutationCtx,
   args: { roomId: Id<"rooms">; userId: Id<"users"> }
 ): Promise<void> {
+  // Votes close at the reveal: a card taken back after it stays on the table.
+  const room = await ctx.db.get("rooms", args.roomId);
+  if (!room) throw new Error("Room not found");
+  if (!phaseAllows(phaseOf(room), "vote")) return;
+
   await Rooms.updateRoomActivity(ctx, args.roomId);
 
   const vote = await ctx.db

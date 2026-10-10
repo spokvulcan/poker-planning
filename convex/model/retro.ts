@@ -33,6 +33,7 @@ import {
   stepped,
   stepAllows,
   stepChange,
+  stepShows,
   stickyActAllowed,
   stickyEditDecision,
   walk,
@@ -224,8 +225,7 @@ export async function getBoard(
   viewerId: Id<"users">
 ): Promise<BoardView> {
   const retro = retroOf(room);
-  const hideOthers = retro.step === "write";
-  const showTotals = retro.step === "discuss" || retro.step === "done";
+  const { faceDown: hideOthers, totals: showTotals } = stepShows(retro.step);
   const [stickies, votes] = await Promise.all([
     stickiesOf(ctx, room._id),
     showTotals ? votesOf(ctx, room._id) : myVotesOf(ctx, room._id, viewerId),

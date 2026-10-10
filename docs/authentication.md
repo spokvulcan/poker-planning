@@ -116,15 +116,17 @@ One module answers who is calling. It is the only code that reads the signed-in 
 | Helper | Returns | Use when... |
 |--------|---------|-------------|
 | `requireAuthAs(ctx, authUserId)` | `{ identity, user }` | The mutation still takes the caller's own `authUserId` (older browsers send it). Throws unless the caller is signed in as that id |
-| `requireRoomMember(ctx, roomId)` | `{ identity, user, membership }` | **Room attendance**: the caller is in the room. For a write open to anyone in it |
-| `requireRoomReader(ctx, roomId)` | `{ identity, user, room }` | **Room access** (ADR-0009): a read-only query on room-owned data. Passes a room member and nobody else (there are no Teams since ADR-0026); never returns a membership |
-| `requireActingUser(ctx, roomId, userId, message?)` | `{ identity, user, membership }` | **Acting-user guard**: the mutation takes a client-supplied `userId`. Authenticated, a room member, and the caller *is* `userId`; `message` is what it throws on the mismatch |
+| `requireRoomMember(ctx, roomId)` | `{ identity, user, membership, room }` | **Room attendance**: the caller is in the room. For a write open to anyone in it. Returns the room it checked, so the handler never reads it again |
+| `requireRoomReader(ctx, roomId)` | `{ identity, user }` | **Room access** (ADR-0009): a read-only query on room-owned data. Passes a room member and nobody else (there are no Teams since ADR-0026), reading only the caller and their membership; returns neither the room nor a membership |
+| `requireActingUser(ctx, roomId, userId, message?)` | `{ identity, user, membership, room }` | **Acting-user guard**: the mutation takes a client-supplied `userId`. Authenticated, a room member, and the caller *is* `userId`; `message` is what it throws on the mismatch |
 | `requireCan(ctx, roomId, spec, targetUserId?)` | `{ identity, user, membership, room, target? }` | **Permission guard**: the mutation is gated by a permission category or a relationship verb. Throws the resolved decision's message on denial |
 | `requireCanForUser(ctx, user, roomId, spec, targetUserId?)` | `{ user, membership, room, target? }` | The same permission guard for a caller that resolved the user outside `ctx.auth`, such as an action (the Jira integration) calling in through an internal query |
 
 `spec` names what the caller asks to do: `{ kind: "category", category }` (`issueManagement`, `gameFlow`, `stageFlow`, `retroSettings`, ...) or `{ kind: "relationship", verb }`, where `verb` is `remove`, `promote`, `demote`, `transfer`, `changePerms` or `delete`. `remove`, `promote` and `demote` need `targetUserId`: the guard loads the target's membership so the permission decision can weigh the target's role. A category from the other ceremony throws (ADR-0013). Identity rules (self-transfer, the authoritative `ownerId`) are not the guard's; they stay in the handler, after it.
 
 `requireCan` and `requireCanForUser` share one IO assembly, so both reach the same decision and throw the same messages. `resolveRoomAction` is that assembly returning the decision instead of throwing, for a caller whose denial depends on the target (someone else's retro sticky).
+
+A guard's refusal is a coded refusal (`refusal()` in `convex/model/refusal.ts`), a `ConvexError` whose message the browser shows as written, because production redacts a plain Error's message (ADR-0031): a denied decision is `forbidden` with the resolved decision's message, a caller outside the room is `forbidden`, and a category from the other ceremony is `missing`. Not being signed in, a missing room or target, and the acting-user mismatch still throw plain Errors: they are caller errors, not refusals.
 
 ### Which guard to use
 
@@ -133,7 +135,7 @@ One module answers who is calling. It is the only code that reads the signed-in 
 - **Room-scoped mutations open to everyone in the room** (writing and moving retro stickies): `requireRoomMember`.
 - **Mutations that take the caller's own `authUserId`** (`users.join`, `users.ensureGlobalUser`): `requireAuthAs`.
 - **Global mutations acting on own data** (`editGlobalUser`, `deleteUser`): `requireCaller` or `requireUser`.
-- **Read-only queries on room-owned data** (canvas nodes, issue exports, the retro board and its action items): Use `requireRoomReader`. It answers "may you read this room?" rather than "are you in it?"; today both admit exactly the room's members, but the reader guard's return type carries no membership, so a read never leans on attendance (ADR-0009). Every new query on room contents picks `requireRoomReader` or `requireRoomMember` deliberately; one that takes neither is a bug.
+- **Read-only queries on room-owned data** (canvas nodes, issue exports, the Jira mapping and issue links, the retro board and its action items): Use `requireRoomReader`. It answers "may you read this room?" rather than "are you in it?"; today both admit exactly the room's members, but the reader guard's return type carries no membership, so a read never leans on attendance (ADR-0009). Nor does it carry the room: a guard's reads join the read set of every query that takes it, so a query that needs the room reads it itself (the retro board), and a room patch, such as the activity clock every poker vote moves, re-runs only those. Every new query on room contents picks `requireRoomReader` or `requireRoomMember` deliberately; one that takes neither is a bug.
 - **Queries**: Use `getCaller` for graceful degradation. It derives the caller server-side, never from a client-supplied id (see `rooms.get` for the pattern).
 
 ### Example: room-scoped mutation with userId (acting-user guard)
@@ -163,7 +165,8 @@ export const create = mutation({
   args: { roomId: v.id("rooms"), title: v.string() },
   handler: async (ctx, args) => {
     await requireCan(ctx, args.roomId, { kind: "category", category: "issueManagement" });
-    return await Issues.createIssue(ctx, args);
+    const admission = await Issues.admitIssue(ctx, args);
+    return admission.issueId;
   },
 });
 ```
@@ -254,7 +257,7 @@ Use this for pages that require authentication (e.g., dashboard). Client-side re
 2. The auth provider's isAuthenticated (Convex's, from useConvexAuth) is false → JoinRoomDialog shown
 3. User enters a name and clicks Join
 4. JoinRoomDialog calls ensureSession({ createUser: false }) (useEnsureSession):
-   a. Waits for the auth provider's first load (isLoading false)
+   a. Waits until BetterAuth's session and Convex's auth state have both loaded (isSessionPending and isLoading false)
    b. No session → authClient.signIn.anonymous() creates the guest's session (cookie set)
    c. Waits until Convex has the session's token (isAuthenticated true)
    d. Writes no users row: the join writes it with the typed name
@@ -267,7 +270,7 @@ Use this for pages that require authentication (e.g., dashboard). Client-side re
 
 Every guest way in goes through `useEnsureSession` (`src/hooks/useEnsureSession.ts`): joining a room from its link (above), "Continue as guest" on the sign-in page, and creating a poker room or a retro. It works in this order:
 
-- **It waits for the auth provider's first load** before deciding whether there is a session, since signing in anonymously over a live session is a BetterAuth 400.
+- **It waits until BetterAuth's session and Convex's auth state have both loaded** before deciding whether there is a session. With the server-rendered token (`initialToken` in `src/app/layout.tsx`) Convex can load while BetterAuth's session is still on its way, and signing in anonymously over a live session is a BetterAuth 400 for a guest and a new guest for a permanent account.
 - **It waits until Convex has the token** after signing in. A fresh session reaches BetterAuth before Convex, and the server takes no write from a caller it can't identify: `users.join` and `users.ensureGlobalUser` both take `requireAuthAs`.
 - **Only then does it write the users row.** Every caller but the join passes the default `createUser: true`, and the hook calls `users.ensureGlobalUser` with a generated guest name. That makes a row only when the caller has none; an existing row keeps its name. It runs on every call, not only for a fresh session, so a guest whose first row write (or join) failed still gets a row, which creating a room needs.
 - **The waits are the auth provider's** (`whenAuth`, see [Auth Provider Context](#auth-provider-context)), not the calling component's, so they finish even when the page unmounts the caller meanwhile. The room page swaps out the join dialog while Convex takes the new session.
@@ -318,9 +321,10 @@ interface AuthContextType {
 }
 
 interface AuthSnapshot {
-  authUserId: string | null;
-  isLoading: boolean;
-  isAuthenticated: boolean;
+  authUserId: string | null;    // From BetterAuth's session: null means no session only once it has loaded
+  isSessionPending: boolean;    // Whether BetterAuth's session is still loading
+  isLoading: boolean;           // From Convex, as in AuthContextType
+  isAuthenticated: boolean;     // From Convex, as in AuthContextType
 }
 
 type WhenAuth = (ready: (state: AuthSnapshot) => boolean, timeoutMs: number) => Promise<AuthSnapshot>;
@@ -328,7 +332,7 @@ type WhenAuth = (ready: (state: AuthSnapshot) => boolean, timeoutMs: number) => 
 
 `accountType` is the users row's, falling back to `"permanent"` when the session isn't anonymous. A guest's row leaves it unset, so for a guest it is `null`; tell a guest by `isAnonymous`.
 
-`whenAuth(ready, timeoutMs)` resolves with the first auth state `ready` accepts (at once if the current one does, else on the update that makes it hold) and rejects after `timeoutMs`. The provider holds the waiters (`createAuthWaiters` in `src/lib/auth-waiters.ts`) and feeds them every change of `authUserId`, `isLoading` and `isAuthenticated`. It sits at the root, so a wait outlives the component that started it. Outside an `AuthProvider`, `whenAuth` rejects.
+`whenAuth(ready, timeoutMs)` resolves with the first auth state `ready` accepts (at once if the current one does, else on the update that makes it hold) and rejects after `timeoutMs`. The provider holds the waiters (`createAuthWaiters` in `src/lib/auth-waiters.ts`) and feeds them every change of `authUserId`, `isSessionPending`, `isLoading` and `isAuthenticated`. It sits at the root, so a wait outlives the component that started it. Outside an `AuthProvider`, `whenAuth` rejects.
 
 ## Environment Variables
 

@@ -1,13 +1,16 @@
 /**
  * The retro's steps (CONTEXT.md: Step, Reveal, Discussion, Spotlight): what
- * each step allows, and what moving from one step to another does. The
- * model's refusals and the board's controls both read these, so the server
- * and the board can't disagree about a step. Pure: no IO, no Convex runtime.
+ * each step allows, what it shows, and what moving from one step to another
+ * does. The model's refusals, the board read and the board itself all read
+ * these, so the server and the board can't disagree about a step. Pure: no
+ * IO, no Convex runtime.
  *
  * Steps are soft for writing and strict for voting (ADR-0026). In every step
  * stickies are written and moved, and a person changes, stacks and unstacks
  * their own. Before the reveal nobody touches a sticky they can't read. Votes
  * are cast only in Vote, and the discussion walks the topics only in Discuss.
+ * Other people's stickies are face-down only in Write; the totals and the
+ * spotlight show from Discuss on.
  * The permission decision stays separate (ADR-0013): a step says whether an
  * act can happen now at all, a permission says whether this person may.
  */
@@ -61,6 +64,28 @@ export function stepAllows(step: RetroStep, act: StepAct): RetroDecision {
   }
 }
 
+/** What a step shows, the same to everyone: read from the room's step, never the viewer's. */
+export interface StepShows {
+  /** Someone else's sticky reaches a viewer face-down: its place and colour, nothing it says. */
+  faceDown: boolean;
+  /** Each topic's vote total, and so the discussion's order. */
+  totals: boolean;
+  /** The topic in the spotlight is drawn there, the others dimmed, and everyone's view follows it. */
+  spotlight: boolean;
+}
+
+const SHOWS: Record<RetroStep, StepShows> = {
+  write: Object.freeze({ faceDown: true, totals: false, spotlight: false }),
+  vote: Object.freeze({ faceDown: false, totals: false, spotlight: false }),
+  discuss: Object.freeze({ faceDown: false, totals: true, spotlight: true }),
+  done: Object.freeze({ faceDown: false, totals: true, spotlight: true }),
+};
+
+/** What the retro's step shows: on everyone's board, and in the board read. */
+export function stepShows(step: RetroStep): StepShows {
+  return SHOWS[step];
+}
+
 /**
  * Whether a sticky act can happen now: always when every sticky it touches
  * is the actor's own, otherwise only once the step allows touching others'.
@@ -97,11 +122,15 @@ export interface StepChange {
   reveal: boolean;
 }
 
-/** Moving the retro to a step, forward or back. Null when it is already there. */
+/**
+ * Moving the retro to a step, forward or back. Null when it is already there.
+ * Every step but the discussion starts with the spotlight off, finishing
+ * included. The discussion starts on its first topic or, back from Done, on
+ * whatever was put in the spotlight there.
+ */
 export function stepChange(from: RetroStep, to: RetroStep): StepChange | null {
   if (from === to) return null;
-  const spotlight =
-    to === "write" || to === "vote" ? "clear" : to === "discuss" && (from === "write" || from === "vote") ? "first" : "keep";
+  const spotlight = to !== "discuss" ? "clear" : from === "done" ? "keep" : "first";
   return { to, spotlight, reveal: from === "write" };
 }
 
@@ -129,12 +158,13 @@ export function stepped<S extends string, R extends { step: RetroStep; focusStic
 }
 
 /**
- * Where putting a topic in the spotlight takes the retro: to the discussion,
- * unless it's done. Null when it is there already. The spotlight itself goes
- * on the chosen topic, whatever `spotlight` says.
+ * Where putting a topic in the spotlight takes the retro: nowhere when its
+ * step draws the spotlight (Discuss, and Done, which it keeps done),
+ * otherwise to the discussion. The spotlight itself goes on the chosen topic,
+ * whatever `spotlight` says.
  */
 export function spotlightStepChange(from: RetroStep): StepChange | null {
-  return stepChange(from, from === "done" ? "done" : "discuss");
+  return stepShows(from).spotlight ? null : stepChange(from, "discuss");
 }
 
 /**

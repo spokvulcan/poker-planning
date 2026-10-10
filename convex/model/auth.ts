@@ -12,6 +12,7 @@ import {
 } from "../permissions";
 import { isRoomOwnerAbsent } from "./permissions";
 import { getMembership } from "./memberships";
+import { refusal } from "./refusal";
 import { NOT_THIS_CEREMONY } from "../ceremony";
 import { requireCaller, requireUser, type Caller } from "./caller";
 
@@ -41,8 +42,10 @@ export async function requireAuthAs(
 }
 
 /**
- * Requires authentication and verifies room membership.
- * Returns the identity, user, and membership records.
+ * Room attendance: requires authentication and verifies room membership.
+ * Returns the identity, user and membership records, and the room it
+ * checked, so a write never reads the room again. A read-only query takes
+ * `requireRoomReader` instead, which reads no room.
  */
 export async function requireRoomMember(
   ctx: QueryCtx | MutationCtx,
@@ -51,6 +54,7 @@ export async function requireRoomMember(
   identity: AuthIdentity;
   user: Doc<"users">;
   membership: Doc<"roomMemberships">;
+  room: Doc<"rooms">;
 }> {
   const { identity, user } = await requireUser(ctx);
   const membership = await ctx.db
@@ -60,14 +64,21 @@ export async function requireRoomMember(
     )
     .first();
   if (!membership) {
-    throw new Error("Not a member of this room");
+    throw refusal("forbidden", "Not a member of this room");
   }
-  return { identity, user, membership };
+  const room = await ctx.db.get("rooms", roomId);
+  if (!room) {
+    throw new Error("Room not found");
+  }
+  return { identity, user, membership, room };
 }
 
 /**
  * Room access (ADR-0009): may the authenticated user *read* this room's
- * contents? Passes a room member. Returns the identity, user and room.
+ * contents? Passes a room member, deciding from the caller and their
+ * membership alone, and returns the identity and user. It reads no room: a
+ * guard's reads join the read set of every query that takes it, so a room
+ * patch would re-run them all. A query that needs the room reads it itself.
  * Every read-only query on room-owned data takes this guard; every mutation
  * keeps `requireRoomMember` (attendance).
  */
@@ -77,26 +88,20 @@ export async function requireRoomReader(
 ): Promise<{
   identity: AuthIdentity;
   user: Doc<"users">;
-  room: Doc<"rooms">;
 }> {
   const { identity, user } = await requireUser(ctx);
-  const [room, membership] = await Promise.all([
-    ctx.db.get("rooms", roomId),
-    getMembership(ctx, roomId, user._id),
-  ]);
-  if (!room) {
-    throw new Error("Room not found");
-  }
+  const membership = await getMembership(ctx, roomId, user._id);
   if (!membership) {
     throw new Error("You don't have access to this room");
   }
-  return { identity, user, room };
+  return { identity, user };
 }
 
 /**
  * Requires authentication and room membership, and verifies the authenticated
  * user IS `userId` — handlers that accept a userId argument must not let one
- * member act as another. Returns the verified identity, user, and membership.
+ * member act as another. Returns the verified identity, user, and membership,
+ * and the room the attendance guard checked.
  *
  * `message` preserves each handler's existing denial copy; it is thrown only
  * on the acting-user mismatch (membership failures throw from requireRoomMember).
@@ -110,12 +115,13 @@ export async function requireActingUser(
   identity: AuthIdentity;
   user: Doc<"users">;
   membership: Doc<"roomMemberships">;
+  room: Doc<"rooms">;
 }> {
-  const { identity, user, membership } = await requireRoomMember(ctx, roomId);
+  const { identity, user, membership, room } = await requireRoomMember(ctx, roomId);
   if (user._id !== userId) {
     throw new Error(message);
   }
-  return { identity, user, membership };
+  return { identity, user, membership, room };
 }
 
 /**
@@ -163,12 +169,12 @@ export async function requireCan(
   spec: RequireCanSpec,
   targetUserId?: Id<"users">
 ): Promise<GuardBundle & { identity: AuthIdentity }> {
-  const { identity, user, membership } = await requireRoomMember(ctx, roomId);
+  const { identity, user, membership, room } = await requireRoomMember(ctx, roomId);
   const bundle = await guardRoomAction(
     ctx,
     user,
     membership,
-    roomId,
+    room,
     spec,
     targetUserId
   );
@@ -179,8 +185,9 @@ export async function requireCan(
  * The explicit-user entry point to the same permission guard, for callers
  * that resolved the user outside ctx.auth (e.g. an action that authenticated
  * via an explicit authUserId and called in through an internal query).
- * Resolves the actor's membership, then funnels into the same shared assembly
- * as requireCan — same Action, same decision, same thrown messages.
+ * Resolves the actor's membership and the room, then funnels into the same
+ * shared assembly as requireCan — same Action, same decision, same thrown
+ * messages.
  */
 export async function requireCanForUser(
   ctx: QueryCtx | MutationCtx,
@@ -196,29 +203,30 @@ export async function requireCanForUser(
     )
     .first();
   if (!membership) {
-    throw new Error("Not a member of this room");
+    throw refusal("forbidden", "Not a member of this room");
   }
-  return guardRoomAction(ctx, user, membership, roomId, spec, targetUserId);
+  const room = await ctx.db.get("rooms", roomId);
+  if (!room) {
+    throw new Error("Room not found");
+  }
+  return guardRoomAction(ctx, user, membership, room, spec, targetUserId);
 }
 
 /**
- * The guard's shared IO assembly, given the actor's user and membership from
- * either authentication mode. Loads the room, resolves the action through
- * `resolveRoomAction`, and throws the resolved decision's message on denial.
- * Returns the loaded bundle.
+ * The guard's shared IO assembly, given the actor's user, membership and room
+ * from either authentication mode. Resolves the action through
+ * `resolveRoomAction` and refuses with the resolved decision's message on
+ * denial, a coded refusal the browser can show (ADR-0031). Returns the
+ * loaded bundle.
  */
 async function guardRoomAction(
   ctx: QueryCtx | MutationCtx,
   user: Doc<"users">,
   membership: Doc<"roomMemberships">,
-  roomId: Id<"rooms">,
+  room: Doc<"rooms">,
   spec: RequireCanSpec,
   targetUserId?: Id<"users">
 ): Promise<GuardBundle> {
-  const room = await ctx.db.get("rooms", roomId);
-  if (!room) {
-    throw new Error("Room not found");
-  }
   const { decision, target } = await resolveRoomAction(
     ctx,
     membership,
@@ -227,7 +235,7 @@ async function guardRoomAction(
     targetUserId
   );
   if (!decision.allowed) {
-    throw new Error(decision.message);
+    throw refusal("forbidden", decision.message);
   }
   return { user, membership, room, target };
 }
@@ -259,7 +267,7 @@ export async function resolveRoomAction(
     // A category from the other ceremony has no level here (ADR-0013).
     const level = categoryLevel(effective, spec.category);
     if (level === undefined) {
-      throw new Error(NOT_THIS_CEREMONY);
+      throw refusal("missing", NOT_THIS_CEREMONY);
     }
     action = { kind: "category", category: spec.category, level };
   } else {

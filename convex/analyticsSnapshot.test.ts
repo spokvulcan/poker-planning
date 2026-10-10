@@ -98,6 +98,7 @@ describe("snapshot write path — round completion", () => {
         userId,
         cardLabel: "5",
         consensusLabel: "5",
+        deltaSteps: 0, // on the consensus, along the default deck the room deals
         votedAt: expect.any(Number),
       },
     ]);

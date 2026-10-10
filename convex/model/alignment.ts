@@ -1,10 +1,11 @@
 import { Id } from "../_generated/dataModel";
-import { SPECIAL_CARDS, VotingScale } from "../scales";
+import { type Deck, cardNumericValue, isSpecialCard } from "../scales";
 
 /**
  * Voter alignment — the pure computation behind the per-voter alignment
  * snapshot (CONTEXT.md: Voter Alignment; spec 04). No ctx, no IO: the round
- * module reads votes and persists rows; this module decides what each row is.
+ * module reads votes and persists rows; this module decides what each row is,
+ * reading each card through the room's deck (`../scales`).
  */
 
 /** A vote as the alignment computation reads it: who voted, with which card. */
@@ -25,35 +26,24 @@ export interface VoterAlignment {
 }
 
 /**
- * The ONE card→numeric conversion, shared by the round (vote writes, the
- * alignment snapshot) and `summarize` (result stats). Returns `undefined` for
- * non-numeric labels (special cards, t-shirt sizes) instead of NaN so callers
- * can't leak NaN into stored stats.
- */
-export function cardNumericValue(cardLabel: string): number | undefined {
-  const value = Number.parseFloat(cardLabel);
-  return Number.isFinite(value) ? value : undefined;
-}
-
-/**
  * Computes each voter's alignment with the consensus. Special cards and
  * voteless rows are excluded (they carry no estimate to align). `deltaSteps`
- * is the scale-index distance from consensus — only for numeric scales where
- * both the vote and the consensus are on the scale.
+ * is the scale-index distance from consensus — only on a numeric deck, where
+ * both the vote and the consensus are cards it deals.
  */
 export function computeVoterAlignment(
   votes: AlignmentVote[],
   consensusLabel: string | null,
-  votingScale: VotingScale | undefined
+  deck: Deck
 ): VoterAlignment[] {
   // Scale index map for deltaSteps; special cards hold no scale position.
   const scaleIndexMap = new Map<string, number>();
-  (votingScale?.cards ?? []).forEach((card, idx) => {
-    if (!SPECIAL_CARDS.includes(card)) {
+  deck.cards.forEach((card, idx) => {
+    if (!isSpecialCard(card)) {
       scaleIndexMap.set(card, idx);
     }
   });
-  const numericScale = votingScale?.isNumeric ?? false;
+  const numericScale = deck.isNumeric;
 
   const consensusIndex = consensusLabel
     ? scaleIndexMap.get(consensusLabel)
@@ -62,7 +52,7 @@ export function computeVoterAlignment(
     consensusLabel !== null ? cardNumericValue(consensusLabel) : undefined;
 
   return votes
-    .filter((vote) => vote.cardLabel && !SPECIAL_CARDS.includes(vote.cardLabel))
+    .filter((vote) => vote.cardLabel && !isSpecialCard(vote.cardLabel))
     .map((vote) => {
       const label = vote.cardLabel!;
       const voteIndex = scaleIndexMap.get(label);

@@ -1,14 +1,14 @@
-import { SPECIAL_CARDS } from "./scales";
-import { cardNumericValue } from "./model/alignment";
+import { type Deck, cardNumericValue, isSpecialCard } from "./scales";
 
 /**
  * summarize — the ONE pure computation of a round's results.
  *
  * Read by reveal (snapshotted onto the issue), the enhanced export (via that
  * snapshot), and the client results panel — so the live numbers can never
- * diverge from the stored/exported ones. Special cards (`?`, `☕`, `∞`) are
- * excluded from consensus and the numeric stats; they still appear in the
- * distribution so the panel can show every card cast.
+ * diverge from the stored/exported ones. Cards are read through the room's
+ * deck (`./scales`). Special cards (`?`, `☕`, `∞`) are excluded from consensus
+ * and the numeric stats; they still appear in the distribution so the panel
+ * can show every card cast.
  */
 
 export interface SummaryVote {
@@ -30,11 +30,11 @@ export interface VoteSummary {
 
 export function summarize(
   votes: SummaryVote[],
-  scale?: { isNumeric: boolean }
+  deck: Pick<Deck, "isNumeric">
 ): VoteSummary {
   const labels = votes
     .map((v) => v.cardLabel)
-    .filter((l): l is string => !!l && !SPECIAL_CARDS.includes(l));
+    .filter((l): l is string => !!l && !isSpecialCard(l));
 
   const counts: Record<string, number> = {};
   for (const label of labels) counts[label] = (counts[label] ?? 0) + 1;
@@ -52,11 +52,11 @@ export function summarize(
       // Tie-break toward the lowest numeric value, but return the original
       // label (not the reparsed number) so it round-trips for non-canonical
       // decks like "1.0"; fall back to alphabetical for non-numeric ties.
-      const numericModes = modes.filter((m) => !isNaN(parseFloat(m)));
+      const numericModes = modes.filter((m) => cardNumericValue(m) !== undefined);
       consensus =
         numericModes.length > 0
           ? numericModes.reduce((lo, m) =>
-              parseFloat(m) < parseFloat(lo) ? m : lo
+              cardNumericValue(m)! < cardNumericValue(lo)! ? m : lo
             )
           : [...modes].sort()[0];
     }
@@ -65,13 +65,12 @@ export function summarize(
   // Agreement: share of counted votes on the consensus.
   const agreement = voteCount > 0 ? Math.round((maxCount / voteCount) * 100) : 0;
 
-  // Average/median over numeric counted votes — only for numeric scales. An
-  // absent scale defaults to numeric: the default scale is numeric and the
-  // client renders these via `votingScale?.isNumeric ?? true`, so the stored
-  // stats must use the same default or the two diverge (ADR-0002).
+  // Average/median over numeric counted votes — only on a numeric deck. The
+  // server and the client panel pass the same deck, so the stored stats and
+  // the live ones can't diverge (ADR-0002).
   let average: number | null = null;
   let median: number | null = null;
-  if (scale?.isNumeric ?? true) {
+  if (deck.isNumeric) {
     const numericVotes = labels
       .map(cardNumericValue)
       .filter((n): n is number => n !== undefined);
@@ -96,11 +95,11 @@ export function summarize(
   const distribution = Object.entries(distCounts)
     .map(([label, count]) => ({ label, count }))
     .sort((a, b) => {
-      const na = parseFloat(a.label);
-      const nb = parseFloat(b.label);
-      if (!isNaN(na) && !isNaN(nb)) return na - nb;
-      if (!isNaN(na)) return -1;
-      if (!isNaN(nb)) return 1;
+      const na = cardNumericValue(a.label);
+      const nb = cardNumericValue(b.label);
+      if (na !== undefined && nb !== undefined) return na - nb;
+      if (na !== undefined) return -1;
+      if (nb !== undefined) return 1;
       return a.label.localeCompare(b.label);
     });
 
