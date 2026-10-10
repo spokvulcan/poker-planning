@@ -161,6 +161,8 @@ export const APP_PREVIEW = {
   description:
     "A distraction-free environment that keeps your team on the conversation, not the tool.",
   tabs: { poker: "Planning poker", retro: "Retro" },
+  /** Shown in the preview window's address bar. */
+  address: "agilekit.app",
   poker: {
     image: {
       light: "/agilekit_light.png",
