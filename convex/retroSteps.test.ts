@@ -33,7 +33,7 @@ describe("stepAllows and stepShows", () => {
     walk: { write: false, vote: false, discuss: true, done: false },
     "shows faceDown": { write: true, vote: false, discuss: false, done: false },
     "shows totals": { write: false, vote: false, discuss: true, done: true },
-    "shows spotlight": { write: false, vote: false, discuss: true, done: false },
+    "shows spotlight": { write: false, vote: false, discuss: true, done: true },
   };
 
   for (const [row, byStep] of Object.entries(table) as [keyof typeof table, Record<RetroStep, boolean>][]) {
@@ -109,13 +109,16 @@ describe("stepChange", () => {
   it("starts the discussion on its first topic when entering it from before", () => {
     expect(stepChange("vote", "discuss")!.spotlight).toBe("first");
     expect(stepChange("write", "discuss")!.spotlight).toBe("first");
-    expect(stepChange("done", "discuss")!.spotlight).toBe("keep");
-    expect(stepChange("discuss", "done")!.spotlight).toBe("keep");
   });
 
-  it("takes the spotlight off when going back to Write or Vote", () => {
+  it("back from Done, takes the discussion to whatever was put in the spotlight there", () => {
+    expect(stepChange("done", "discuss")!.spotlight).toBe("keep");
+  });
+
+  it("takes the spotlight off when going back to Write or Vote, and when the retro is finished", () => {
     expect(stepChange("discuss", "vote")!.spotlight).toBe("clear");
     expect(stepChange("done", "write")!.spotlight).toBe("clear");
+    expect(stepChange("discuss", "done")!.spotlight).toBe("clear");
   });
 });
 
@@ -149,6 +152,14 @@ describe("spotlightStepChange", () => {
 
   it("would be a reveal from Write, so no path can leave Write without one", () => {
     expect(spotlightStepChange("write")).toMatchObject({ to: "discuss", reveal: true });
+  });
+
+  it("leaves the retro where the spotlight is drawn, from every step that takes it", () => {
+    const taking = STEPS.filter((step) => stepAllows(step, "spotlight").allowed);
+    expect(taking).toEqual(["vote", "discuss", "done"]);
+    for (const from of taking) {
+      expect(stepShows(spotlightStepChange(from)?.to ?? from).spotlight).toBe(true);
+    }
   });
 });
 
