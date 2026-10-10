@@ -1,5 +1,28 @@
 # Changelog
 
+## [2.10.4](https://github.com/spokvulcan/poker-planning/compare/agilekit-v2.10.3...agilekit-v2.10.4) (2026-10-10)
+
+
+### Bug Fixes
+
+* Delete on several players asks to remove all of them ([#356](https://github.com/spokvulcan/poker-planning/issues/356)) ([f373fc5](https://github.com/spokvulcan/poker-planning/commit/f373fc56baee4ae48391b79f977a6a2e18fafe36))
+* **deps:** stop presence's disconnect watchdog from spinning ([#394](https://github.com/spokvulcan/poker-planning/issues/394)) ([37b35ef](https://github.com/spokvulcan/poker-planning/commit/37b35ef6afa612c1bf9b66b7ac7091ce1545a05a))
+
+
+### Documentation
+
+* bring authentication.md up to date with the guards and guest sign-in ([#355](https://github.com/spokvulcan/poker-planning/issues/355)) ([b2ae93e](https://github.com/spokvulcan/poker-planning/commit/b2ae93e0f6224895a2e779f38a57ab68bff36dd2))
+* keep the October architecture review in the repo ([#358](https://github.com/spokvulcan/poker-planning/issues/358)) ([665a13f](https://github.com/spokvulcan/poker-planning/commit/665a13f621ab42f1339d71afab2454d422b8b2d9))
+
+
+### Miscellaneous
+
+* **deps:** bump @modelcontextprotocol/sdk from 1.30.0 to 1.32.1 ([#395](https://github.com/spokvulcan/poker-planning/issues/395)) ([523b8ae](https://github.com/spokvulcan/poker-planning/commit/523b8aeda18d97142b436e8b3f227013315dd49c))
+* **deps:** bump next from 16.3.4 to 16.4.0 ([#399](https://github.com/spokvulcan/poker-planning/issues/399)) ([7d4e61b](https://github.com/spokvulcan/poker-planning/commit/7d4e61b25c53e9c508e4d2ecf30263329c3c558e))
+* **deps:** bump proxy-addr from 2.0.7 to 2.0.8 ([#396](https://github.com/spokvulcan/poker-planning/issues/396)) ([470cd74](https://github.com/spokvulcan/poker-planning/commit/470cd74eb9e09a94e6d5953c633a2fba71285707))
+* **deps:** bump sharp from 0.35.4 to 0.35.5 ([#397](https://github.com/spokvulcan/poker-planning/issues/397)) ([35f868f](https://github.com/spokvulcan/poker-planning/commit/35f868fcd394c3c6d546913218b8ecf3db4ba17b))
+* **deps:** bump source-map-js from 1.2.1 to 1.2.2 ([#398](https://github.com/spokvulcan/poker-planning/issues/398)) ([4a8d65d](https://github.com/spokvulcan/poker-planning/commit/4a8d65dd633da1eba3a90149680651136d133875))
+
 ## [2.10.3](https://github.com/spokvulcan/poker-planning/compare/agilekit-v2.10.2...agilekit-v2.10.3) (2026-09-29)
 
 
