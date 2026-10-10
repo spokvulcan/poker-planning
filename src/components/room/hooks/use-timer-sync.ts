@@ -52,8 +52,8 @@ export function useTimerSync({
   // from the demo provider and never touches Convex (zero reads, ADR-0003).
   const demo = useDemoSimulation();
 
-  // The seam also owns failure reporting (console, same as reveal/reset), so
-  // this hook no longer carries an error state of its own.
+  // The seam also owns failure reporting (a toast through runAct, same as
+  // reveal/reset), so this hook carries no error state of its own.
   const actions = useTimerActions({ roomId, currentUserId: userId });
 
   // Local clock for smooth ticking while running
