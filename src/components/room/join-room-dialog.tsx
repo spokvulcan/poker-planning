@@ -41,11 +41,10 @@ export function JoinRoomDialog({ roomId, roomName, roomType }: JoinRoomDialogPro
 
     setIsJoining(true);
     try {
-      // A guest session Convex already has. The join writes the user row
-      // with the typed name, so the session doesn't write one first.
-      let authUserId: string;
+      // A session Convex already has. The join makes the users row, with
+      // the typed name, when this is the person's first room.
       try {
-        authUserId = await ensureSession({ createUser: false });
+        await ensureSession();
       } catch (error) {
         toast.error(error instanceof Error ? error.message : SESSION_FAILED);
         return;
@@ -55,7 +54,6 @@ export function JoinRoomDialog({ roomId, roomName, roomType }: JoinRoomDialogPro
         roomId,
         name: userName,
         isSpectator,
-        authUserId,
       });
 
       // No need to set state - existingMembership query will auto-update

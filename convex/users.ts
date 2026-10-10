@@ -5,7 +5,6 @@ import * as AccountLifecycle from "./model/accountLifecycle";
 import { getMembership } from "./model/memberships";
 import { findUser, getCaller, requireCaller } from "./model/caller";
 import {
-  requireAuthAs,
   requireActingUser,
   requireCan,
 } from "./model/auth";
@@ -48,16 +47,13 @@ export const join = mutation({
     roomId: v.id("rooms"),
     name: v.string(),
     isSpectator: v.optional(v.boolean()),
-    authUserId: v.string(), // The caller's own id; older browsers still send it
+    authUserId: v.optional(v.string()), // Ignored: older browsers still send the caller's own id
   },
   handler: async (ctx, args) => {
-    await requireAuthAs(ctx, args.authUserId);
-
     return await Users.joinRoom(ctx, {
       roomId: args.roomId,
       name: args.name,
       isSpectator: args.isSpectator,
-      authUserId: args.authUserId,
     });
   },
 });
@@ -119,17 +115,29 @@ export const editGlobalUser = mutation({
     name: v.string(),
   },
   handler: async (ctx, args) => {
-    const { user } = await requireCaller(ctx);
-    await Users.updateGlobalUserName(ctx, user, args.name);
+    await Users.updateGlobalUserName(ctx, args.name);
   },
 });
 
-// Delete user completely (called on sign out)
+// Delete account: deletes the caller's account, whatever its kind (the
+// Account tab). Older browsers also call it to sign a guest out.
 export const deleteUser = mutation({
   args: {},
   handler: async (ctx) => {
     const { user } = await requireCaller(ctx);
     if (user) await AccountLifecycle.deleteAccount(ctx, user);
+  },
+});
+
+// Sign out: deletes the caller's account only when they are a guest; a
+// permanent account is kept. With nobody signed in there is nothing to
+// delete, and the browser, which calls it before clearing its session, still
+// clears it.
+export const signOut = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const caller = await getCaller(ctx);
+    if (caller) await AccountLifecycle.signOut(ctx, caller);
   },
 });
 
@@ -157,22 +165,18 @@ export const syncAvatarFromAuth = internalMutation({
   },
 });
 
-// Ensure the caller has a global user, making one with `name` when they have
-// none. An existing row keeps its name: the session bootstrap calls this on
-// every create, with a fresh guest name each time.
+// Older browsers' session bootstrap calls this before every create, to make
+// sure the caller has a users row. Creating a room now makes the row itself,
+// so it does no more than that: both arguments (the caller's own id, a guest
+// name made up in the browser) are accepted and ignored until browsers on the
+// old code are gone.
 export const ensureGlobalUser = mutation({
   args: {
-    authUserId: v.string(), // The caller's own id; older browsers still send it
+    authUserId: v.string(),
     name: v.string(),
   },
-  handler: async (ctx, args) => {
-    const { user } = await requireAuthAs(ctx, args.authUserId);
-
-    if (user) return;
-    await Users.findOrCreateGlobalUser(ctx, {
-      authUserId: args.authUserId,
-      name: args.name,
-    });
+  handler: async (ctx) => {
+    await Users.findOrMakeUser(ctx);
   },
 });
 

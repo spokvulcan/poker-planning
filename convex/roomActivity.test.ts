@@ -207,8 +207,8 @@ describe("room activity — timer and canvas ops bump", () => {
       })
     );
 
-    await t.run((ctx) =>
-      Timer.updateTimerState(ctx, { roomId, nodeId: "timer", action: "start", userId })
+    await t.run(async (ctx) =>
+      Timer.updateTimerState(ctx, { room: (await ctx.db.get("rooms", roomId))!, nodeId: "timer", action: "start", userId })
     );
 
     await expectBumped(t, roomId, stale);

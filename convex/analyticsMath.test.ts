@@ -1,14 +1,14 @@
 import { describe, it, expect } from "vitest";
 import {
   agreementTrend,
-  velocityByDay,
   voteDistribution,
-  participationStats,
   timeToConsensus,
   voterAlignment,
   predictability,
   dashboardSummary,
   sessionIssueStats,
+  dashboard,
+  formatDuration,
   type HistoryIssue,
   type HistoryVote,
   type RoomIssue,
@@ -19,6 +19,7 @@ import {
 const DAY1 = Date.UTC(2026, 0, 10, 12); // "2026-01-10"
 const DAY2 = Date.UTC(2026, 0, 11, 12); // "2026-01-11"
 const DAY3 = Date.UTC(2026, 0, 12, 12); // "2026-01-12"
+const DAY4 = Date.UTC(2026, 0, 13, 12); // "2026-01-13"
 
 function issue(over: Partial<HistoryIssue> = {}): HistoryIssue {
   return { title: "Issue", votedAt: DAY1, ...over };
@@ -53,41 +54,6 @@ describe("agreementTrend", () => {
   });
 });
 
-describe("velocityByDay", () => {
-  it("buckets story points and issue counts by day", () => {
-    const points = velocityByDay([
-      entry("A", issue({ finalEstimate: "5", votedAt: DAY1 })),
-      entry("B", issue({ finalEstimate: "3", votedAt: DAY1 })),
-      entry("A", issue({ finalEstimate: "8", votedAt: DAY2 })),
-    ]);
-    expect(points).toEqual([
-      { date: "2026-01-10", storyPoints: 8, issueCount: 2 },
-      { date: "2026-01-11", storyPoints: 8, issueCount: 1 },
-    ]);
-  });
-
-  it("skips non-numeric estimates, missing estimates, and missing votedAt", () => {
-    const points = velocityByDay([
-      entry("A", issue({ finalEstimate: "M" })), // non-numeric scale card
-      entry("A", issue({ finalEstimate: undefined })),
-      entry("A", issue({ finalEstimate: "5", votedAt: undefined })),
-    ]);
-    expect(points).toEqual([]);
-  });
-
-  it("never counts a literal \"Infinity\" estimate as points", () => {
-    const points = velocityByDay([
-      entry("A", issue({ finalEstimate: "Infinity", votedAt: DAY1 })),
-      entry("A", issue({ finalEstimate: "5", votedAt: DAY1 })),
-    ]);
-    expect(points).toEqual([{ date: "2026-01-10", storyPoints: 5, issueCount: 1 }]);
-  });
-
-  it("returns a defined empty result for empty history", () => {
-    expect(velocityByDay([])).toEqual([]);
-  });
-});
-
 describe("voteDistribution", () => {
   it("counts estimates with percentages, sorted by count descending", () => {
     const dist = voteDistribution([
@@ -104,9 +70,9 @@ describe("voteDistribution", () => {
     ]);
   });
 
-  it("counts whatever history it is given — the aggregate owns the window", () => {
+  it("counts whatever history it is given — the dashboard read owns the window", () => {
     // The old inline code leaked issues without a votedAt into RANGED results.
-    // Range filtering now happens once in completedIssueHistory, so a
+    // Range filtering now happens once in the dashboard read, so a
     // votedAt-less row simply never reaches this projection on a ranged call;
     // on an unranged call it is legitimately part of the history and counted.
     const dist = voteDistribution([issue({ finalEstimate: "5", votedAt: undefined })]);
@@ -115,25 +81,6 @@ describe("voteDistribution", () => {
 
   it("returns a defined empty result for empty history", () => {
     expect(voteDistribution([])).toEqual([]);
-  });
-});
-
-describe("participationStats", () => {
-  it("averages real votes cast per session, rounded", () => {
-    expect(participationStats({ totalSessions: 3, totalIssuesVoted: 3, totalVotesCast: 10 }))
-      .toEqual({ totalSessions: 3, totalIssuesVoted: 3, totalVotesCast: 10, averageVotesPerSession: 3 });
-  });
-
-  it("votes cast can exceed issues voted (several voters per issue)", () => {
-    // The fake old counter made these two equal by construction.
-    const stats = participationStats({ totalSessions: 1, totalIssuesVoted: 2, totalVotesCast: 5 });
-    expect(stats.totalVotesCast).toBe(5);
-    expect(stats.averageVotesPerSession).toBe(5);
-  });
-
-  it("returns zeros for empty history", () => {
-    expect(participationStats({ totalSessions: 0, totalIssuesVoted: 0, totalVotesCast: 0 }))
-      .toEqual({ totalSessions: 0, totalIssuesVoted: 0, totalVotesCast: 0, averageVotesPerSession: 0 });
   });
 });
 
@@ -181,20 +128,65 @@ describe("timeToConsensus", () => {
     ]);
   });
 
+  it("states how much faster or slower the later sessions reached consensus", () => {
+    const faster = timeToConsensus([
+      entry("A", withTime(400)),
+      entry("B", withTime(200, { votedAt: DAY2 })),
+    ]);
+    expect(faster.trend).toEqual({ direction: "faster", changePct: -50 });
+
+    const slower = timeToConsensus([
+      entry("A", withTime(200)),
+      entry("B", withTime(300, { votedAt: DAY2 })),
+    ]);
+    expect(slower.trend).toEqual({ direction: "slower", changePct: 50 });
+  });
+
+  it("calls a change within 10% stable, and still states its size", () => {
+    const stats = timeToConsensus([
+      entry("A", withTime(200)),
+      entry("B", withTime(218, { votedAt: DAY2 })),
+    ]);
+    expect(stats.trend).toEqual({ direction: "stable", changePct: 9 });
+  });
+
+  it("compares nothing within a single session", () => {
+    expect(timeToConsensus([entry("A", withTime(200))]).trend).toEqual({
+      direction: "stable",
+      changePct: null,
+    });
+  });
+
+  it("says slower, with no size, after sessions that took no time", () => {
+    // No relative change from zero: the zero guard, not an infinite percentage.
+    const stats = timeToConsensus([
+      entry("A", withTime(0)),
+      entry("B", withTime(300, { votedAt: DAY2 })),
+    ]);
+    expect(stats.trend).toEqual({ direction: "slower", changePct: null });
+  });
+
   it("skips issues without a duration or votedAt", () => {
     const stats = timeToConsensus([
       entry("A", issue({ voteStats: { agreement: 80 } })),
       entry("A", withTime(100, { votedAt: undefined })),
     ]);
-    expect(stats).toEqual({ averageMs: null, medianMs: null, outliers: [], trendBySession: [] });
+    expect(stats).toEqual({
+      averageMs: null,
+      medianMs: null,
+      outliers: [],
+      trendBySession: [],
+      trend: { direction: "stable", changePct: null },
+    });
   });
 
-  it("returns nulls and empty lists for empty history", () => {
+  it("returns nulls, empty lists and no trend for empty history", () => {
     expect(timeToConsensus([])).toEqual({
       averageMs: null,
       medianMs: null,
       outliers: [],
       trendBySession: [],
+      trend: { direction: "stable", changePct: null },
     });
   });
 });
@@ -332,9 +324,9 @@ describe("predictability", () => {
     // consistency = 1 - 0/10 = 1 → 80*0.6 + 100*0.4 = 88
     expect(data.predictabilityScore).toBe(88);
     expect(data.averageVelocityPerSession).toBe(10);
-    expect(data.velocityTrend).toBe("stable");
+    expect(data.velocityTrend).toEqual({ direction: "stable", changePct: 0 });
     expect(data.averageAgreement).toBe(80);
-    expect(data.agreementTrend).toBe("stable");
+    expect(data.agreementTrend).toEqual({ direction: "stable", changePct: 0 });
   });
 
   it("returns a null score with fewer than 3 sessions with story points", () => {
@@ -376,14 +368,14 @@ describe("predictability", () => {
     expect(data.predictabilityScore).toBe(100);
   });
 
-  it("detects increasing and decreasing velocity trends (>10% half-over-half)", () => {
+  it("detects increasing and decreasing velocity trends and their size (>10% half-over-half)", () => {
     const increasing = predictability([
       room("A", [scored("10", DAY1, 80)]),
       room("B", [scored("10", DAY1, 80)]),
       room("C", [scored("20", DAY3, 80)]),
       room("D", [scored("20", DAY3, 80)]),
     ]);
-    expect(increasing.velocityTrend).toBe("increasing");
+    expect(increasing.velocityTrend).toEqual({ direction: "increasing", changePct: 100 });
 
     const decreasing = predictability([
       room("A", [scored("20", DAY1, 80)]),
@@ -391,21 +383,21 @@ describe("predictability", () => {
       room("C", [scored("10", DAY3, 80)]),
       room("D", [scored("10", DAY3, 80)]),
     ]);
-    expect(decreasing.velocityTrend).toBe("decreasing");
+    expect(decreasing.velocityTrend).toEqual({ direction: "decreasing", changePct: -50 });
   });
 
-  it("detects improving and declining agreement trends (>5% half-over-half)", () => {
+  it("detects improving and declining agreement trends and their size (>5% half-over-half)", () => {
     const improving = predictability([
       room("A", [scored("10", DAY1, 60)]),
       room("B", [scored("10", DAY2, 90)]),
     ]);
-    expect(improving.agreementTrend).toBe("improving");
+    expect(improving.agreementTrend).toEqual({ direction: "improving", changePct: 50 });
 
     const declining = predictability([
       room("A", [scored("10", DAY1, 90)]),
       room("B", [scored("10", DAY2, 60)]),
     ]);
-    expect(declining.agreementTrend).toBe("declining");
+    expect(declining.agreementTrend).toEqual({ direction: "declining", changePct: -33 });
   });
 
   it("rolls one session per room with sums, rounded averages, and latest-day date", () => {
@@ -442,9 +434,9 @@ describe("predictability", () => {
       predictabilityScore: null,
       sessions: [],
       averageVelocityPerSession: 0,
-      velocityTrend: "stable",
+      velocityTrend: { direction: "stable", changePct: null },
       averageAgreement: 0,
-      agreementTrend: "stable",
+      agreementTrend: { direction: "stable", changePct: null },
     });
   });
 });
@@ -511,5 +503,38 @@ describe("sessionIssueStats", () => {
 
   it("reports null agreement when no issue has one", () => {
     expect(sessionIssueStats([issue({})]).averageAgreement).toBeNull();
+  });
+});
+
+describe("dashboard", () => {
+  function agreed(agreement: number, votedAt: number): HistoryIssue {
+    return issue({ votedAt, voteStats: { agreement } });
+  }
+
+  it("the agreement chart states the predictability card's agreement trend, room against room", () => {
+    // Day by day agreement climbs (40, 90, 90, 100), but room B, played in
+    // the middle, agreed more than room A, which ran until the last day.
+    const d = dashboard({
+      sessions: [],
+      rooms: [
+        { roomId: "a", roomName: "A", issues: [agreed(40, DAY1), agreed(100, DAY4)] },
+        { roomId: "b", roomName: "B", issues: [agreed(90, DAY2), agreed(90, DAY3)] },
+      ],
+      votes: [],
+      voterNames: {},
+    });
+
+    expect(d.agreementTrend.trend).toEqual({ direction: "declining", changePct: -22 });
+    expect(d.agreementTrend.trend).toEqual(d.predictability.agreementTrend);
+    expect(d.agreementTrend.points.map((p) => p.agreement)).toEqual([40, 90, 90, 100]);
+  });
+});
+
+describe("formatDuration", () => {
+  it("reads to the nearest second, with minutes from the first one", () => {
+    expect(formatDuration(0)).toBe("0s");
+    expect(formatDuration(45_600)).toBe("46s");
+    expect(formatDuration(90_000)).toBe("1m 30s");
+    expect(formatDuration(154_400)).toBe("2m 34s");
   });
 });

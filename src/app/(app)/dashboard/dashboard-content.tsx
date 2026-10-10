@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import { EMPTY_DASHBOARD } from "@/convex/analyticsMath";
 import { useAuth } from "@/components/auth/auth-provider";
 import {
   DashboardHeader,
@@ -38,38 +39,9 @@ export function DashboardContent() {
   const { isLoading: authLoading, isAuthenticated } = useAuth();
   const { dateRange } = useDateRange();
 
-  const summary = useQuery(
-    api.analytics.getSummary,
-    isAuthenticated ? { dateRange } : "skip"
-  );
-
-  const sessions = useQuery(
-    api.analytics.getSessions,
-    isAuthenticated ? { dateRange } : "skip"
-  );
-
-  const agreementTrend = useQuery(
-    api.analytics.getAgreementTrend,
-    isAuthenticated ? { dateRange } : "skip"
-  );
-
-  const voteDistribution = useQuery(
-    api.analytics.getVoteDistribution,
-    isAuthenticated ? { dateRange } : "skip"
-  );
-
-  const timeToConsensus = useQuery(
-    api.analytics.getTimeToConsensus,
-    isAuthenticated ? { dateRange } : "skip"
-  );
-
-  const voterAlignment = useQuery(
-    api.analytics.getVoterAlignment,
-    isAuthenticated ? { dateRange } : "skip"
-  );
-
-  const predictability = useQuery(
-    api.analytics.getPredictability,
+  // One read behind every panel: the viewer's history is loaded once.
+  const dashboard = useQuery(
+    api.analytics.getDashboard,
     isAuthenticated ? { dateRange } : "skip"
   );
 
@@ -83,15 +55,18 @@ export function DashboardContent() {
     return <LoadingState />;
   }
 
-  // Per-section loading states — each section shows its own skeleton
-  // instead of blocking the entire dashboard on the slowest query.
-  const summaryLoading = summary === undefined;
-  const consensusLoading = timeToConsensus === undefined;
-  const predictabilityLoading = predictability === undefined;
-  const agreementLoading = agreementTrend === undefined;
-  const alignmentLoading = voterAlignment === undefined;
-  const distributionLoading = voteDistribution === undefined;
-  const sessionsLoading = sessions === undefined;
+  // One loading branch: until the read lands every panel shows its skeleton,
+  // handed the dashboard's empty state in place of numbers it doesn't show.
+  const isLoading = dashboard === undefined;
+  const {
+    summary,
+    sessions,
+    agreementTrend,
+    voteDistribution,
+    timeToConsensus,
+    voterAlignment,
+    predictability,
+  } = dashboard ?? EMPTY_DASHBOARD;
 
   return (
     <>
@@ -101,82 +76,75 @@ export function DashboardContent() {
         {/* Stats Summary & Time to Consensus */}
         <div className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
           <StatsSummary
-            totalSessions={summary?.totalSessions ?? 0}
-            totalIssuesEstimated={summary?.totalIssuesEstimated ?? 0}
-            totalStoryPoints={summary?.totalStoryPoints ?? null}
-            averageAgreement={summary?.averageAgreement ?? null}
-            isLoading={summaryLoading}
+            totalSessions={summary.totalSessions}
+            totalIssuesEstimated={summary.totalIssuesEstimated}
+            totalStoryPoints={summary.totalStoryPoints}
+            averageAgreement={summary.averageAgreement}
+            isLoading={isLoading}
           />
           <TimeToConsensusCard
-            averageMs={timeToConsensus?.averageMs ?? null}
-            medianMs={timeToConsensus?.medianMs ?? null}
-            trendBySession={timeToConsensus?.trendBySession ?? []}
-            isLoading={consensusLoading}
+            averageMs={timeToConsensus.averageMs}
+            medianMs={timeToConsensus.medianMs}
+            trend={timeToConsensus.trend}
+            isLoading={isLoading}
           />
         </div>
 
         {/* Predictability + Velocity Trend */}
         <div className="mb-8 grid gap-6 lg:grid-cols-2">
           <PredictabilityGauge
-            score={predictability?.predictabilityScore ?? null}
-            averageVelocityPerSession={
-              predictability?.averageVelocityPerSession ?? 0
-            }
-            velocityTrend={predictability?.velocityTrend ?? "stable"}
-            averageAgreement={predictability?.averageAgreement ?? 0}
-            agreementTrend={predictability?.agreementTrend ?? "stable"}
-            isLoading={predictabilityLoading}
+            score={predictability.predictabilityScore}
+            averageVelocityPerSession={predictability.averageVelocityPerSession}
+            velocityTrend={predictability.velocityTrend.direction}
+            averageAgreement={predictability.averageAgreement}
+            agreementTrend={predictability.agreementTrend.direction}
+            isLoading={isLoading}
           />
           <VoterAlignmentChart
-            data={voterAlignment?.scatterPoints ?? []}
-            isLoading={alignmentLoading}
+            data={voterAlignment.scatterPoints}
+            isLoading={isLoading}
           />
         </div>
 
         {/* Agreement + Consensus Charts */}
         <div className="mb-8 grid gap-6 lg:grid-cols-2">
           <AgreementChart
-            data={agreementTrend ?? []}
-            isLoading={agreementLoading}
+            data={agreementTrend.points}
+            trend={agreementTrend.trend}
+            isLoading={isLoading}
           />
           <ConsensusOutliers
-            data={timeToConsensus?.outliers ?? []}
-            averageMs={timeToConsensus?.averageMs ?? null}
-            isLoading={consensusLoading}
+            data={timeToConsensus.outliers}
+            averageMs={timeToConsensus.averageMs}
+            isLoading={isLoading}
           />
         </div>
 
         {/* Consensus Trend + Voter Alignment + Vote Distribution */}
         <div className="mb-8 grid gap-6 lg:grid-cols-3">
           <ConsensusTrend
-            data={timeToConsensus?.trendBySession ?? []}
-            isLoading={consensusLoading}
+            data={timeToConsensus.trendBySession}
+            isLoading={isLoading}
           />
           <VelocityTrend
-            sessions={predictability?.sessions ?? []}
-            velocityTrend={predictability?.velocityTrend ?? "stable"}
-            isLoading={predictabilityLoading}
+            sessions={predictability.sessions}
+            velocityTrend={predictability.velocityTrend.direction}
+            isLoading={isLoading}
           />
-          <VoteDistribution
-            data={voteDistribution ?? []}
-            isLoading={distributionLoading}
-          />
+          <VoteDistribution data={voteDistribution} isLoading={isLoading} />
         </div>
 
         {/* Individual Voting Stats */}
         <div className="mb-8">
           <IndividualVotingStats
-            data={voterAlignment?.users ?? []}
-            isLoading={alignmentLoading}
+            data={voterAlignment.users}
+            isLoading={isLoading}
           />
         </div>
 
         {/* Session History */}
         <div className="mb-8">
-          <SessionHistory
-            sessions={sessions ?? []}
-            isLoading={sessionsLoading}
-          />
+          <SessionHistory sessions={sessions} isLoading={isLoading} />
         </div>
       </main>
     </>

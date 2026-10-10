@@ -17,7 +17,8 @@ import { as, join, seedUser } from "./people.seeds";
 // votes and the discussion walk, action items, the next retro, columns, and
 // who may do what at the default permissions. The pure rules are tested on
 // their own: topics and votes in retroTopics.test.ts, steps and the walk in
-// retroSteps.test.ts, GIF links in gifLinks.test.ts.
+// retroSteps.test.ts, who sees what of a sticky in retroStickyView.test.ts,
+// GIF links in gifLinks.test.ts.
 
 const modules = import.meta.glob("./**/*.*s");
 
@@ -187,6 +188,8 @@ describe("retro.create", () => {
 });
 
 describe("the board — who sees what", () => {
+  // The whole table is the sticky projection's (retroStickyView.test.ts);
+  // these prove the board read applies it to the rows it reads.
   it("while writing, someone else's sticky is face-down: its place, never its words, GIF or author", async () => {
     const t = withComponents(convexTest(schema, modules));
     const { roomId } = await seedRetro(t);
@@ -235,6 +238,8 @@ describe("the board — who sees what", () => {
 
     await as(t, "owner").mutation(api.retro.updateSettings, { roomId, showAuthors: true });
     expect((await seen(t, "bob", roomId, stickyId)).authorName).toBe("ann");
+    // Her own sticky too, as her browser shows a new one before the server answers.
+    expect((await seen(t, "ann", roomId, stickyId)).authorName).toBe("ann");
 
     // Back to writing: face-down again, and no name travels, not even to the author.
     await setStep(t, roomId, "write");
@@ -825,6 +830,75 @@ describe("permissions at the retro defaults", () => {
   });
 });
 
+describe("stickies and action items from another retro", () => {
+  // A write addressed by the sticky or action item it acts on lands in that
+  // one's own retro, so the room-scoped step turns away anyone who isn't in it.
+  // A second sticky a write names beside its retro is the model's to check.
+
+  /**
+   * "Sprint 41 retro", revealed, with ann's sticky, bob's stack (`ontoId`,
+   * with `stackedId` under it) and an action item, all of which ann may act
+   * on; and carol, who is in a retro of her own.
+   */
+  async function withCarolElsewhere(t: T) {
+    const { roomId } = await seedRetro(t);
+    const stickyId = await stick(t, "ann", roomId);
+    const ontoId = await stick(t, "bob", roomId);
+    const stackedId = await stick(t, "bob", roomId);
+    await stack(t, "bob", stackedId, ontoId);
+    const itemId = await as(t, "ann").mutation(api.retro.addActionItem, { roomId, text: "Timebox standups" });
+    await setStep(t, roomId, "vote");
+    await seedUser(t, "carol");
+    const carolsRetro = await as(t, "carol").mutation(api.retro.create, { name: "Carol's retro" });
+    return { roomId, carolsRetro, stickyId, ontoId, stackedId, itemId };
+  }
+
+  type Ids = Awaited<ReturnType<typeof withCarolElsewhere>>;
+
+  /** Each write addressed by a sticky or an action item, sent as `who`. */
+  const ADDRESSED_BY_ONE: [string, (t: T, who: string, ids: Ids) => Promise<unknown>][] = [
+    ["updateSticky", (t, who, { stickyId }) => as(t, who).mutation(api.retro.updateSticky, { stickyId, text: "Mine now" })],
+    ["deleteSticky", (t, who, { stickyId }) => as(t, who).mutation(api.retro.deleteSticky, { stickyId })],
+    ["stackSticky", (t, who, { stickyId, ontoId }) => stack(t, who, stickyId, ontoId)],
+    [
+      "unstackSticky",
+      (t, who, { stackedId }) =>
+        as(t, who).mutation(api.retro.unstackSticky, { stickyId: stackedId, position: { x: 400, y: 0 } }),
+    ],
+    ["toggleVote", (t, who, { stickyId }) => vote(t, who, stickyId)],
+    ["updateActionItem", (t, who, { itemId }) => as(t, who).mutation(api.retro.updateActionItem, { itemId, done: true })],
+    ["deleteActionItem", (t, who, { itemId }) => as(t, who).mutation(api.retro.deleteActionItem, { itemId })],
+  ];
+
+  it.each(ADDRESSED_BY_ONE)("%s is refused to someone from another retro", async (_, write) => {
+    const t = withComponents(convexTest(schema, modules));
+    const ids = await withCarolElsewhere(t);
+
+    expect(await refusalWith(write(t, "carol", ids))).toEqual({
+      code: "forbidden",
+      message: "Not a member of this room",
+    });
+    // The same write goes through for someone in the retro.
+    expect(await refusalOf(write(t, "ann", ids))).toBe("resolved");
+  });
+
+  it("a second sticky a write names must be in the retro it lands in, even for someone in both", async () => {
+    const t = withComponents(convexTest(schema, modules));
+    const { roomId, carolsRetro, stickyId } = await withCarolElsewhere(t);
+    await join(t, roomId, "carol");
+    const carols = await stick(t, "carol", carolsRetro);
+    await as(t, "carol").mutation(api.retro.setStep, { roomId: carolsRetro, step: "vote" });
+
+    expect(await refusalWith(stack(t, "carol", carols, stickyId))).toEqual({
+      code: "missing",
+      message: "That sticky is gone.",
+    });
+    expect(
+      await refusalWith(as(t, "carol").mutation(api.retro.focusTopic, { roomId: carolsRetro, stickyId }))
+    ).toEqual({ code: "missing", message: "That sticky is gone." });
+  });
+});
+
 describe("action items", () => {
   it("anyone in the retro adds, updates and deletes them", async () => {
     const t = withComponents(convexTest(schema, modules));
@@ -861,6 +935,20 @@ describe("action items", () => {
     const itemId = await ann.mutation(api.retro.addActionItem, { roomId, text: "Do it" });
     expect(await refusalOf(ann.mutation(api.retro.updateActionItem, { itemId, ownerId: outsiderId }))).toBe("missing");
     expect(await refusalOf(ann.mutation(api.retro.addActionItem, { roomId, text: "   " }))).toBe("forbidden");
+  });
+
+  it("once one is gone, deleting it again is done and changing it is refused", async () => {
+    const t = withComponents(convexTest(schema, modules));
+    const { roomId } = await seedRetro(t);
+    const itemId = await as(t, "ann").mutation(api.retro.addActionItem, { roomId, text: "Fix the flaky test" });
+    await as(t, "ann").mutation(api.retro.deleteActionItem, { itemId });
+    const bob = as(t, "bob");
+
+    expect(await refusalOf(bob.mutation(api.retro.deleteActionItem, { itemId }))).toBe("resolved");
+    expect(await refusalWith(bob.mutation(api.retro.updateActionItem, { itemId, done: true }))).toEqual({
+      code: "missing",
+      message: "That action item is gone.",
+    });
   });
 });
 

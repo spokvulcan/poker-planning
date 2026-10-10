@@ -28,12 +28,11 @@ import { StickyNode } from "./nodes/sticky-node";
 import { ActionsNode } from "./nodes/actions-node";
 import { RetroSettingsPanel } from "./retro-settings-panel";
 import { buildRetroEdges, buildRetroNodes } from "./build-retro-nodes";
-import { topicOrder } from "./board-view";
+import { isOptimistic, topicOrder } from "./board-view";
 import { buildRetroSummary } from "./retro-summary";
 import { freshHeights, type MeasuredSticky } from "./sticky-heights";
 import { useRetroMutations } from "./use-retro-mutations";
 import { useStickyDraft } from "./use-sticky-draft";
-import { isOptimistic } from "./optimistic";
 import type { RetroBoardActions, RetroFlowNode, StickyFlowNode } from "./types";
 
 // Outside the component so React Flow sees a stable object.
@@ -100,7 +99,7 @@ function RetroCanvasInner({ roomData, currentUserId }: RetroCanvasProps): ReactE
   const votesCast = useQuery(api.retro.votesCast, retro.step === "vote" ? { roomId } : "skip");
   const items = useQuery(api.retro.actionItems, { roomId });
   const canvasNodes = useQuery(api.canvas.getCanvasNodes, { roomId });
-  const m = useRetroMutations(roomId);
+  const m = useRetroMutations(roomId, currentUserId);
 
   const { draft, ...drafting } = useStickyDraft((sticky) =>
     runAct(m.addSticky({ roomId, ...sticky }), "That sticky didn't stick. Try again.")
@@ -255,7 +254,7 @@ function RetroCanvasInner({ roomData, currentUserId }: RetroCanvasProps): ReactE
       if (stickyMoves.length > 0) void runAct(m.moveStickies({ roomId, moves: stickyMoves }), MOVE_FAILED);
       const nodeMoves = nodes.flatMap((node) => (node.type === "sticky" ? [] : [{ nodeId: node.id, position: node.position }]));
       if (nodeMoves.length > 0) {
-        void runAct(m.moveNodes({ roomId, moves: nodeMoves, userId: currentUserId }), MOVE_FAILED);
+        void runAct(m.moveNodes({ roomId, moves: nodeMoves }), MOVE_FAILED);
       }
     },
     // Delete on a selection takes off only the stickies the viewer may remove.

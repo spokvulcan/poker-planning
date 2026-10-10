@@ -40,12 +40,12 @@ The authentication system consists of three layers:
 | `convex/http.ts` | HTTP routes for auth endpoints |
 | `convex/schema.ts` | Database schema with `users` and `roomMemberships` tables |
 | `convex/users.ts` | User/membership API (join, leave, edit, queries, linkAccount) |
-| `convex/model/users.ts` | Identity: user rows, names, avatars; joining and leaving a room |
+| `convex/model/users.ts` | Identity: user rows, names, avatars; makes the caller's row on their first room write (`findOrMakeUser`) and is the only place a row turns permanent; joining and leaving a room |
 | `convex/model/memberships.ts` | Room attendance: the one writer of `roomMemberships` |
 | `convex/model/ownership.ts` | Who owns a room: creation, transfer, a returning owner, the hand-off |
 | `convex/model/accountLifecycle.ts` | Deleting an account and linking a guest to an account, through every module's `UserRows` |
 | `convex/model/caller.ts` | Who is calling: the one place the signed-in identity is read and the caller's `users` row looked up (`getCaller`, `requireCaller`, `requireUser`) |
-| `convex/model/auth.ts` | Auth guard helpers (`requireAuthAs`, `requireRoomMember`, `requireRoomReader`, `requireActingUser`, `requireCan`, `requireCanForUser`) |
+| `convex/model/auth.ts` | Auth guard helpers (`requireRoomMember`, `requireRoomReader`, `requireRoomWrite`, `requireActingUser`, `requireCan`, `requireCanForUser`) |
 | `convex/email.ts` | Internal action that sends the Magic Link email via Resend (the only email AgileKit sends) |
 
 ### Frontend (Next.js)
@@ -58,7 +58,7 @@ The authentication system consists of three layers:
 | `src/app/(app)/auth/signin/page.tsx` | Dedicated Sign In Page for permanent account upgrade |
 | `src/app/(app)/auth/verify/page.tsx` | Magic Link Verification Page |
 | `src/app/api/auth/[...all]/route.ts` | Next.js API route handler |
-| `src/components/auth/auth-provider.tsx` | React context for auth state, and `whenAuth` for waiting on it |
+| `src/components/auth/auth-provider.tsx` | React context for auth state and the viewer (who is looking, from their users row), and `whenAuth` for waiting on it |
 | `src/hooks/useEnsureSession.ts` | The session every guest way in goes through (see [Guest flow](#first-time-user-joining-a-room-guest)) |
 | `src/lib/auth-waiters.ts` | Promises on the changing auth state, held by the auth provider |
 
@@ -73,7 +73,7 @@ The authentication system consists of three layers:
   name: string,          // Display name (persists across rooms)
   email?: string,        // Email from OAuth or magic link
   avatarUrl?: string,    // Google profile picture URL
-  accountType?: "anonymous" | "permanent", // left unset for a guest; "permanent" for an account
+  accountType?: "anonymous" | "permanent", // as the session's token says; unset on a guest's row made before the server made rows
   createdAt: number,
 }
 ```
@@ -101,24 +101,34 @@ Every Convex mutation enforces authorization with a guard from `convex/model/aut
 
 ### Who is calling (`convex/model/caller.ts`)
 
-One module answers who is calling. It is the only code that reads the signed-in identity (`ctx.auth`) or looks a `users` row up by `authUserId` (`convex/caller.test.ts` fails otherwise). Every guard below resolves the caller through it, and so does every query, mutation or action that needs the caller. It only reads: it never makes a row.
+One module answers who is calling. It is the only code that reads the signed-in identity (`ctx.auth`) or looks a `users` row up by `authUserId` (`convex/caller.test.ts` fails otherwise). Every guard below resolves the caller through it, and so does every query, mutation or action that needs the caller. It only reads: the users model makes the row (see [The caller's users row](#the-callers-users-row-convexmodelusersts)).
 
 | Function | Returns | Use when... |
 |----------|---------|-------------|
 | `getCaller(ctx)` | `{ identity, user } \| null` | Queries that should degrade gracefully: `null` when nobody is signed in, and `user` is `null` while the caller has no `users` row (a new guest before their first room) |
 | `requireCaller(ctx)` | `{ identity, user }` | The caller must be signed in, with or without a `users` row. Throws "Not authenticated" |
 | `requireUser(ctx)` | `{ identity, user }` | You need the caller's `users` row. Throws "Not authenticated", or "User not found" while they have none |
-| `findUser(ctx, authUserId)` | `user \| null` | Code that is told who the person is rather than asking: BetterAuth's hooks, and `users.join`, which names its own id |
+| `sessionAccountType(caller)` | `"anonymous" \| "permanent" \| undefined` | You need the kind of account the caller has (making their row does): their session's token says so in BetterAuth's `isAnonymous` claim, whatever kind their `users` row has; `undefined` for a token without the claim |
+| `isGuest(caller)` | `boolean` | You need to know whether the caller is a guest (signing out does): `sessionAccountType` is `"anonymous"` |
+| `findUser(ctx, authUserId)` | `user \| null` | Code that is told who the person is rather than asking: BetterAuth's hooks |
 
 `identity.subject` is the BetterAuth user id, the row's `authUserId`. The first three work in any function context: an action has no database of its own, so it reads the row through one internal query (`users.userByAuthId`).
+
+The token carries every field of BetterAuth's user but its id and image (the Convex plugin's JWT payload), so `isAnonymous`, `email` and `name` reach `identity` as claims; the `sessionId` claim beside them is what `@convex-dev/better-auth`'s own `getAuthUser` reads.
+
+### The caller's users row (`convex/model/users.ts`)
+
+The server makes a signed-in caller's `users` row, never the browser. The global ways in (`rooms.create`, `retro.create`, `users.join`, `users.editGlobalUser`, and `users.ensureGlobalUser`, which only older browsers call) take `findOrMakeUser(ctx, name?)`: it returns the caller's row, making it when they have none, so a person's first room write makes their row whatever the browser did first. A new row is of the kind the session's token says: a permanent account's has the token's email and the name its provider gave (fitted to the person-name rule, or the email's local part when there is none); a guest's is `"anonymous"`, with a guest name such as "Guest 4829". `name` is one the person typed (joining a room, renaming themselves): the row is made with it, or takes it. A token without the `isAnonymous` claim makes a row of no kind, as rows were made before.
+
+The users model is also the only place a row turns permanent (`convex/usersRow.test.ts` fails otherwise): on an account link, from the auth hook, and on a room write by a permanent account whose row isn't permanent yet (a deleted account that came back with a guest's row before the server made rows). Each time, every retro the account owns is retained (ADR-0029). Queries and actions can't write, so they only look the caller up, and a signed-in caller has no row until their first room write.
 
 ### Auth Helpers (`convex/model/auth.ts`)
 
 | Helper | Returns | Use when... |
 |--------|---------|-------------|
-| `requireAuthAs(ctx, authUserId)` | `{ identity, user }` | The mutation still takes the caller's own `authUserId` (older browsers send it). Throws unless the caller is signed in as that id |
-| `requireRoomMember(ctx, roomId)` | `{ identity, user, membership, room }` | **Room attendance**: the caller is in the room. For a write open to anyone in it. Returns the room it checked, so the handler never reads it again |
+| `requireRoomMember(ctx, roomId)` | `{ identity, user, membership, room }` | **Room attendance**: the caller is in the room. The room-scoped step checks it, and a write open to anyone in the room takes the step with no `spec`. Returns the room it checked, so the handler never reads it again |
 | `requireRoomReader(ctx, roomId)` | `{ identity, user }` | **Room access** (ADR-0009): a read-only query on room-owned data. Passes a room member and nobody else (there are no Teams since ADR-0026), reading only the caller and their membership; returns neither the room nor a membership |
+| `requireRoomWrite(ctx, address, spec?, targetUserId?)` | `{ user, membership, room, target? }` and the addressed entity | **The room-scoped step** a room write starts with. `address` is the room, or the one issue, sticky or action item the write acts on (`{ issue: issueId }`, handed back as `issue`), whose own room the write lands in. The caller must be in that room (attendance); a `spec` adds the permission guard, as in `requireCan`. The caller is whoever is signed in: no `userId` a client sends is compared |
 | `requireActingUser(ctx, roomId, userId, message?)` | `{ identity, user, membership, room }` | **Acting-user guard**: the mutation takes a client-supplied `userId`. Authenticated, a room member, and the caller *is* `userId`; `message` is what it throws on the mismatch |
 | `requireCan(ctx, roomId, spec, targetUserId?)` | `{ identity, user, membership, room, target? }` | **Permission guard**: the mutation is gated by a permission category or a relationship verb. Throws the resolved decision's message on denial |
 | `requireCanForUser(ctx, user, roomId, spec, targetUserId?)` | `{ user, membership, room, target? }` | The same permission guard for a caller that resolved the user outside `ctx.auth`, such as an action (the Jira integration) calling in through an internal query |
@@ -127,17 +137,37 @@ One module answers who is calling. It is the only code that reads the signed-in 
 
 `requireCan` and `requireCanForUser` share one IO assembly, so both reach the same decision and throw the same messages. `resolveRoomAction` is that assembly returning the decision instead of throwing, for a caller whose denial depends on the target (someone else's retro sticky).
 
-A guard's refusal is a coded refusal (`refusal()` in `convex/model/refusal.ts`), a `ConvexError` whose message the browser shows as written, because production redacts a plain Error's message (ADR-0031): a denied decision is `forbidden` with the resolved decision's message, a caller outside the room is `forbidden`, and a category from the other ceremony is `missing`. Not being signed in, a missing room or target, and the acting-user mismatch still throw plain Errors: they are caller errors, not refusals.
+A guard's refusal is a coded refusal (`refusal()` in `convex/model/refusal.ts`), a `ConvexError` whose message the browser shows as written, because production redacts a plain Error's message (ADR-0031): a denied decision is `forbidden` with the resolved decision's message, a caller outside the room is `forbidden`, and a category from the other ceremony, or an issue, sticky or action item a write is addressed by that is gone, is `missing`. Not being signed in, a missing room or target, and the acting-user mismatch still throw plain Errors: they are caller errors, not refusals.
 
 ### Which guard to use
 
-- **Room-scoped mutations that take a `userId`** (votes, canvas, timer, presence, `users.edit`, `users.leave`): `requireActingUser`. It is the one place the authenticated + member + acting-as-`userId` check lives; never rebuild it from `requireRoomMember` and a `user._id` comparison.
-- **Room-scoped mutations gated by a permission** (issues, game flow, room settings, roles, retro steps and settings, action items, `users.remove`): `requireCan` with the category or relationship verb. An action context that already resolved the user uses `requireCanForUser`.
-- **Room-scoped mutations open to everyone in the room** (writing and moving retro stickies): `requireRoomMember`.
-- **Mutations that take the caller's own `authUserId`** (`users.join`, `users.ensureGlobalUser`): `requireAuthAs`.
-- **Global mutations acting on own data** (`editGlobalUser`, `deleteUser`): `requireCaller` or `requireUser`.
+- **Room writes on the room-scoped step** (canvas, timer, the retro, setting permissions; the other room writes move onto it next): `requireRoomWrite`, with the permission spec where the write is gated by one, and none where everyone in the room may write (writing and moving retro stickies). The handler takes the room, the caller and the entity it acts on from the step and never works them out itself; the `userId` these writes still accept from old browsers is ignored.
+- **Room-scoped mutations that take a `userId`** (votes, presence, `users.edit`, `users.leave`): `requireActingUser`. It is the one place the authenticated + member + acting-as-`userId` check lives; never rebuild it from `requireRoomMember` and a `user._id` comparison.
+- **Room-scoped mutations gated by a permission** (issues, game flow, room settings, roles, `users.remove`): `requireCan` with the category or relationship verb. An action context that already resolved the user uses `requireCanForUser`.
+- **Global ways in, which make the caller's row** (`rooms.create`, `retro.create`, `users.join`, `users.editGlobalUser`, `users.ensureGlobalUser`): `findOrMakeUser` from the users model, not a guard. `users.join` and `users.ensureGlobalUser` still accept the `authUserId` older browsers send, and ignore it.
+- **Global mutations acting on own data** (`deleteUser`): `requireCaller` or `requireUser`. `signOut` takes `getCaller` instead: with nobody signed in it has nothing to delete, and must not keep the browser from clearing its session.
 - **Read-only queries on room-owned data** (canvas nodes, issue exports, the Jira mapping and issue links, the retro board and its action items): Use `requireRoomReader`. It answers "may you read this room?" rather than "are you in it?"; today both admit exactly the room's members, but the reader guard's return type carries no membership, so a read never leans on attendance (ADR-0009). Nor does it carry the room: a guard's reads join the read set of every query that takes it, so a query that needs the room reads it itself (the retro board), and a room patch, such as the activity clock every poker vote moves, re-runs only those. Every new query on room contents picks `requireRoomReader` or `requireRoomMember` deliberately; one that takes neither is a bug.
 - **Queries**: Use `getCaller` for graceful degradation. It derives the caller server-side, never from a client-supplied id (see `rooms.get` for the pattern).
+
+### Example: a room write on the room-scoped step
+
+```typescript
+import { requireRoomWrite } from "./model/auth";
+
+export const moveNodes = mutation({
+  args: {
+    roomId: v.id("rooms"),
+    moves: v.array(v.object({ nodeId: v.string(), position: positionValidator })),
+    userId: v.optional(v.id("users")), // Ignored: the caller's own id, which old browsers still send
+  },
+  handler: async (ctx, args) => {
+    const { room, user } = await requireRoomWrite(ctx, args.roomId);
+    await Canvas.moveNodes(ctx, room, args.moves, user._id);
+  },
+});
+```
+
+A write addressed by the entity it acts on names that instead of a room, and gets it back loaded, with the room it is in: `const { issue, room } = await requireRoomWrite(ctx, { issue: args.issueId }, { kind: "category", category: "issueManagement" })`. One that is gone is refused as `missing`, and one from a room the caller isn't in is refused like any write to that room.
 
 ### Example: room-scoped mutation with userId (acting-user guard)
 
@@ -204,12 +234,12 @@ export const updateTitle = mutation({
 
 ## User Creation on Sign-In (databaseHooks)
 
-BetterAuth `databaseHooks` in `convex/auth.ts` ensure a Convex `users` record exists for every permanent account:
+BetterAuth `databaseHooks` in `convex/auth.ts` make a Convex `users` record for every new permanent account:
 
 ```
 databaseHooks.user.create.after:
-  - Anonymous users → skipped (a guest's row comes from users.join or users.ensureGlobalUser;
-    see the guest flow below)
+  - Anonymous users → skipped (a guest's row is made on their first room write;
+    see The caller's users row)
   - Permanent users (Google OAuth, magic link) → calls ensureGlobalUserFromAuth
     to create Convex user with name, email, avatarUrl, accountType="permanent"
 
@@ -217,7 +247,7 @@ databaseHooks.user.update.after:
   - Syncs avatar URL changes to existing Convex user (syncAvatarFromAuth)
 ```
 
-This ensures the Convex `users` record exists immediately after sign-in, before the user joins any room.
+This makes a new account's `users` record exist right after its first sign-in, before it joins any room. The hook runs only when BetterAuth creates its user: an account deleted with Delete account keeps its BetterAuth user, so when it signs back in, its row is made again on its first room write, permanent from its token.
 
 ## Server-Side Auth (Next.js)
 
@@ -255,16 +285,15 @@ Use this for pages that require authentication (e.g., dashboard). Client-side re
 
 ```
 1. User visits /room/[roomId]
-2. The auth provider's isAuthenticated (Convex's, from useConvexAuth) is false → JoinRoomDialog shown
+2. The auth provider's viewer is a visitor (Convex's useConvexAuth says nobody is signed in) → JoinRoomDialog shown
 3. User enters a name and clicks Join
-4. JoinRoomDialog calls ensureSession({ createUser: false }) (useEnsureSession):
+4. JoinRoomDialog calls ensureSession() (useEnsureSession):
    a. Waits until BetterAuth's session and Convex's auth state have both loaded (isSessionPending and isLoading false)
    b. No session → authClient.signIn.anonymous() creates the guest's session (cookie set)
    c. Waits until Convex has the session's token (isAuthenticated true)
-   d. Writes no users row: the join writes it with the typed name
    Either wait taking longer than 10 s fails with "Failed to create session. Please try again."
-5. users.join mutation (requireAuthAs: the caller must be signed in as the authUserId it sends):
-   - Makes the guest's users row with the typed name (findOrCreateGlobalUser), accountType left unset
+5. users.join mutation (findOrMakeUser, for whoever the token says is calling):
+   - Makes the guest's users row with the typed name, accountType "anonymous" from the token
    - Creates the room membership (model/memberships.ts)
 6. getMyMembership query updates → RoomCanvas (or RetroCanvas for a retro) renders
 ```
@@ -272,11 +301,11 @@ Use this for pages that require authentication (e.g., dashboard). Client-side re
 Every guest way in goes through `useEnsureSession` (`src/hooks/useEnsureSession.ts`): joining a room from its link (above), "Continue as guest" on the sign-in page, and creating a poker room or a retro. It works in this order:
 
 - **It waits until BetterAuth's session and Convex's auth state have both loaded** before deciding whether there is a session. With the server-rendered token (`initialToken` in `src/app/(app)/layout.tsx`) Convex can load while BetterAuth's session is still on its way, and signing in anonymously over a live session is a BetterAuth 400 for a guest and a new guest for a permanent account.
-- **It waits until Convex has the token** after signing in. A fresh session reaches BetterAuth before Convex, and the server takes no write from a caller it can't identify: `users.join` and `users.ensureGlobalUser` both take `requireAuthAs`.
-- **Only then does it write the users row.** Every caller but the join passes the default `createUser: true`, and the hook calls `users.ensureGlobalUser` with a generated guest name. That makes a row only when the caller has none; an existing row keeps its name. It runs on every call, not only for a fresh session, so a guest whose first row write (or join) failed still gets a row, which creating a room needs.
+- **It waits until Convex has the token** after signing in. A fresh session reaches BetterAuth before Convex, and the room write that follows needs a caller the server can identify.
+- **It writes nothing.** The room write that follows (creating a room, joining one) makes the caller's users row when they have none ([The caller's users row](#the-callers-users-row-convexmodelusersts)). "Continue as guest" makes no row: a guest who only continues has none until their first room write.
 - **The waits are the auth provider's** (`whenAuth`, see [Auth Provider Context](#auth-provider-context)), not the calling component's, so they finish even when the page unmounts the caller meanwhile. The room page swaps out the join dialog while Convex takes the new session.
 
-A guest's users row has no `accountType`: `model/users.ts` can't tell from a mutation whether the session is anonymous, so the BetterAuth session's `isAnonymous` is what the frontend goes by. An account link, or a permanent account's first sign-in, sets `"permanent"`.
+A users row's `accountType` is what the session's token said when the row was made: `"anonymous"` for a guest, `"permanent"` for an account. A guest's row made before the server made rows has none. The frontend takes the kind from the row only, and only a row that says `"permanent"` is a permanent account's ([Auth Provider Context](#auth-provider-context)). An account link turns a guest's row permanent.
 
 ### Account Link (Guest → Permanent Account)
 
@@ -286,11 +315,12 @@ A guest's users row has no `accountType`: `model/users.ts` can't tell from a mut
 3. Signs in with Google or Magic Link
 4. BetterAuth creates permanent user and fires onLinkAccount hook
 5. Backend hook internal.users.linkAnonymousAccount executes
-   (model/accountLifecycle.ts `linkAccount`):
+   (model/users.ts `linkAnonymousToPermanent`, folding through
+   model/accountLifecycle.ts `linkAccount`):
    - Finds the guest's users row by the old authUserId (none: nothing to carry)
-   - With no permanent account yet, the guest's own row becomes permanent and
-     keeps everything; otherwise every module folds the guest's rows into the
-     account (its `UserRows.fold`) and the guest row is deleted:
+   - With no permanent account yet, the guest's own row becomes the account's
+     and keeps everything; otherwise every module folds the guest's rows into
+     the account (its `UserRows.fold`) and the guest row is deleted:
    - Rooms the guest owned go to the account, owner role included
    - Memberships, votes and canvas nodes move across; where both accounts are
      in a room, one membership stays with the more senior role, and the
@@ -298,28 +328,55 @@ A guest's users row has no `accountType`: `model/users.ts` can't tell from a mut
    - Retro stickies and action items move across; where both voted in a retro,
      the account keeps one vote per topic up to the vote budget, its own first,
      and the guest's other votes are refunded
-   - Every retro the account now owns is retained (kept past the 5-day sweep)
    - The guest's integration connections move across; where the account already
      has its own connection to a provider, it keeps that one and the guest's is
      disconnected (room mappings removed, webhooks deregistered)
-   - Updates accountType to "permanent", assigns email & avatarUrl
+   - The users model turns the account's row permanent, assigning email &
+     avatarUrl, and every retro the account now owns is retained (kept past
+     the 5-day sweep)
 6. Redirected back to /room/abc123
 ```
 
+### Signing Out
+
+```
+1. The person clicks Sign out in a user menu (useSignOut, the one sign-out)
+2. users.signOut runs while the session still says who they are
+   (model/accountLifecycle.ts `signOut`):
+   - A guest's account is deleted the way Delete account deletes one: each
+     room it owns is handed off (ADR-0029), and every module lets go of what
+     it keeps about them (ADR-0030)
+   - A permanent account is kept for when the person signs back in
+   - With nobody signed in (Convex has no token, a missing or expired one,
+     while BetterAuth's session lives on) there is nothing to delete
+3. authClient.signOut() clears the BetterAuth session. When step 2 fails, the
+   session is kept and the person can try again
+```
+
+The server tells a guest by the session's token (`isGuest`, see [Who is calling](#who-is-calling-convexmodelcallerts)), never by the browser's `isAnonymous`, which reads false while the session loads, nor by the `users` row's `accountType`, which a row can lack. Delete account (the Account tab, `useDeleteAccount`) stays its own act: `users.deleteUser` deletes the caller's account whatever its kind, then signs them out as above. Older browsers still call `users.deleteUser` to sign a guest out.
+
 ## Auth Provider Context
 
-The auth provider (`src/components/auth/auth-provider.tsx`) takes auth state from Convex (`useConvexAuth()`, which waits for token validation) and `authUserId` and `isAnonymous` from the BetterAuth session. It queries `users.getGlobalUser` for `email` and `accountType` once Convex has the session. Only the app shell mounts it: `/demo` sits in its own route group, whose shell has no auth at all (ADR-0003).
+The auth provider (`src/components/auth/auth-provider.tsx`) takes auth state from Convex (`useConvexAuth()`, which waits for token validation) and holds the app's one subscription to the caller's users row (`users.getGlobalUser`, once Convex has the session), which it hands out as the viewer. BetterAuth's session only feeds the waits (`whenAuth`). Only the app shell mounts it: `/demo` sits in its own route group, whose shell has no auth at all (ADR-0003).
 
 ```typescript
 interface AuthContextType {
-  authUserId: string | null;    // BetterAuth ID (sent to join/ensureGlobalUser, which check it names the caller)
-  isAnonymous: boolean;         // Whether the session is anonymous (from BetterAuth)
   isLoading: boolean;           // Auth loading state (from Convex: waits for token validation)
   isAuthenticated: boolean;     // Whether Convex has validated the token
-  email: string | null;         // User email for permanent accounts; never a guest's
-  accountType: "anonymous" | "permanent" | null;
+  viewer: Viewer;               // Who is looking, with the name, avatar and kind of account their users row has
   whenAuth: WhenAuth;           // Waits for the auth state to reach a condition
 }
+
+type Viewer =
+  | { status: "loading" }       // Convex's auth state or the caller's users row hasn't answered yet
+  | { status: "visitor" }       // Nobody is signed in
+  | {
+      status: "signedIn";
+      name: string | null;      // The users row's, as are the avatar and email: null while there is none
+      avatarUrl: string | null;
+      email: string | null;
+      isPermanent: boolean;     // Whether the row says "permanent"
+    };
 
 interface AuthSnapshot {
   authUserId: string | null;    // From BetterAuth's session: null means no session only once it has loaded
@@ -331,7 +388,7 @@ interface AuthSnapshot {
 type WhenAuth = (ready: (state: AuthSnapshot) => boolean, timeoutMs: number) => Promise<AuthSnapshot>;
 ```
 
-`accountType` is the users row's, falling back to `"permanent"` when the session isn't anonymous. A guest's row leaves it unset, so for a guest it is `null`; tell a guest by `isAnonymous`.
+The viewer is the frontend's one answer to who is looking. The user menus (UserMenu, NavUser) and the room's join gate take the name and avatar from it and never subscribe to the row themselves, and whatever tells a permanent account apart (the Account tab, the retention note on `/retro/new`, the sign-in page's guest button) goes by `isPermanent`. The account kind is the row's only: neither BetterAuth's `isAnonymous` nor its session's email stands in for the row. A signed-in caller has no row until their first room write makes it (a guest who only continued as one, or a deleted account that came back), and is ready all the same, with no name, avatar or email, and not taken for a permanent account: the menus show them as "Guest" with Sign in, and the join gate asks their name rather than joining them under one. Nor is a row with no kind (a guest's made before the server made rows) taken for one. The server goes by the session's token instead: an account's first room write makes it a permanent row, or turns its row permanent.
 
 `whenAuth(ready, timeoutMs)` resolves with the first auth state `ready` accepts (at once if the current one does, else on the update that makes it hold) and rejects after `timeoutMs`. The provider holds the waiters (`createAuthWaiters` in `src/lib/auth-waiters.ts`) and feeds them every change of `authUserId`, `isSessionPending`, `isLoading` and `isAuthenticated`. It sits in the app shell's layout, above the page, so a wait outlives the component that started it. Outside an `AuthProvider`, `whenAuth` rejects.
 

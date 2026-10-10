@@ -1,5 +1,5 @@
 import { MutationCtx } from "../_generated/server";
-import { Id } from "../_generated/dataModel";
+import { Doc, Id } from "../_generated/dataModel";
 import * as Canvas from "./canvas";
 import * as Rooms from "./rooms";
 import {
@@ -10,9 +10,11 @@ import {
 } from "../timerState";
 
 export interface UpdateTimerStateArgs {
-  roomId: Id<"rooms">;
+  /** The room the timer is in, as the room-scoped step loaded it. */
+  room: Doc<"rooms">;
   nodeId: string;
   action: TimerAction;
+  /** Who runs the action: the caller. */
   userId: Id<"users">;
 }
 
@@ -41,11 +43,11 @@ function transition(state: TimerState, action: TimerAction, now: number): TimerS
  */
 export async function updateTimerState(ctx: MutationCtx, args: UpdateTimerStateArgs): Promise<void> {
   const now = Date.now();
-  await Canvas.updateTimer(ctx, args.roomId, args.nodeId, args.userId, (state) => {
+  await Canvas.updateTimer(ctx, args.room._id, args.nodeId, args.userId, (state) => {
     validateTimerAction(state, args.action);
     return transition(state, args.action, now);
   });
   // A timer action is room activity — a room driven only by its timer must not
   // read as abandoned to the cleanup cascade.
-  await Rooms.updateRoomActivity(ctx, args.roomId);
+  await Rooms.updateRoomActivity(ctx, args.room);
 }

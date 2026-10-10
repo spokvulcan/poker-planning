@@ -11,7 +11,6 @@ import { DemoExplainer } from "./demo-explainer";
 import { useDemoSimulation, useIsDemoMode } from "./demo/DemoSimulationProvider";
 import { buildCanvasEdges, buildCanvasNodes, isNoteForIssue } from "./hooks/buildCanvasNodes";
 import { useCanvasActions } from "./hooks/useCanvasActions";
-import { useCardSelection } from "./hooks/useCardSelection";
 import { usePanelState } from "./hooks/usePanelState";
 import { NodePickerToolbar } from "./node-picker-toolbar";
 import { api } from "@/convex/_generated/api";
@@ -100,21 +99,9 @@ function RoomCanvasInner({ roomData, currentUserId, isEmbedded = false }: RoomCa
 
   const permissions = usePokerPermissions(roomData, currentUserId);
 
-  // Card selection: local highlight + server-sync restore/clear. The value is
-  // read during render to mark cards selected; the setter is injected into the
-  // writes so picking a card sets it optimistically.
-  const { selectedCardValue, setSelectedCardValue } = useCardSelection({
-    roomData,
-    currentUserId,
-  });
-
   // Every backend write the board makes, frozen. Under /demo each one no-ops.
-  const writes = useCanvasActions({
-    roomId,
-    currentUserId,
-    selectedCardValue,
-    setSelectedCardValue,
-  });
+  // A card pick lands on `roomData` at once, which raises the card.
+  const writes = useCanvasActions({ roomId, currentUserId });
 
   // Docked-panel state: mutual exclusion + Escape-to-close.
   const { isIssuesPanelOpen, isSettingsOpen, openIssues, openSettings, closeAll } =
@@ -198,12 +185,11 @@ function RoomCanvasInner({ roomData, currentUserId, isEmbedded = false }: RoomCa
       canvasNodes,
       currentIssue,
       viewerId: currentUserId,
-      selectedCardValue,
       isDemoMode,
       permissions,
       actions,
     });
-  }, [canvasNodes, roomData, phase, roomId, currentIssue, currentUserId, selectedCardValue, isDemoMode, permissions, actions]);
+  }, [canvasNodes, roomData, phase, roomId, currentIssue, currentUserId, isDemoMode, permissions, actions]);
 
   // The edges read a strict subset of what the nodes do (the phase, the
   // members, the canvas nodes and the issue's id), so a card pick or a renamed

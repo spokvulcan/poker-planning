@@ -15,5 +15,5 @@ So they refuse with the same coded refusal (`refusal()` in `convex/model/refusal
 ## Consequences
 
 - A `ConvexError`'s message is its data stringified, so a test matching a substring of a guard's message still passes. A test of what the browser receives reads `error.data` (`convex/refusal.test.ts`).
-- The browser shows the message wherever a write goes through `runAct` (`src/lib/run-act.ts`), as every retro write does. Planning poker's writes log or show their own copy until they go through it too.
+- The browser shows the message wherever a write goes through `runAct` (`src/lib/run-act.ts`): every retro write, planning poker's board, timer and panels, and Delete account. A failure that carries no refusal shows the caller's own copy there, never the redacted "Server Error".
 - Still plain Errors, because they are caller errors and not refusals by rule: not signed in, no user row, a room or a target that isn't there, and the acting-user guard's mismatch.

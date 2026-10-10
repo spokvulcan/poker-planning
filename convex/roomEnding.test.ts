@@ -531,8 +531,8 @@ describe("the sweep", () => {
 
     // The room's only sign of life in days is a timer start — that must count
     // as activity or the sweep ends a room in use.
-    await t.run((ctx) =>
-      Timer.updateTimerState(ctx, { roomId, nodeId: "timer", action: "start", userId })
+    await t.run(async (ctx) =>
+      Timer.updateTimerState(ctx, { room: (await ctx.db.get("rooms", roomId))!, nodeId: "timer", action: "start", userId })
     );
 
     expect(await t.mutation(internal.maintenance.endStaleRooms, {})).toMatchObject({ roomsEnding: 0 });

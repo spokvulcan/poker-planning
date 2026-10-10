@@ -20,10 +20,11 @@ import { RetroCanvas } from "@/components/retro/retro-canvas";
 type MyMembership = { _id: Id<"users"> };
 
 /**
- * `/room/[roomId]` serves both ceremonies. The three subscriptions every
- * visitor needs (the room shell, their membership, their user row) open
- * here in one render; both ceremonies join the same way, and only the
- * canvas differs: the poker room or the retro whiteboard.
+ * `/room/[roomId]` serves both ceremonies. The two subscriptions every
+ * visitor needs here (the room shell, their membership) open in one render;
+ * who they are comes from the auth provider, which reads their users row.
+ * Both ceremonies join the same way, and only the canvas differs: the poker
+ * room or the retro whiteboard.
  */
 export function RoomContent() {
   const params = useParams();
@@ -37,8 +38,6 @@ export function RoomContent() {
     api.users.getMyMembership,
     isAuthenticated ? { roomId } : "skip"
   );
-  // Query for global user (to check if they've joined any room before)
-  const globalUser = useQuery(api.users.getGlobalUser, isAuthenticated ? {} : "skip");
 
   if (roomData === undefined) {
     return <CenteredMessage title="Loading..." body="Fetching room data" />;
@@ -63,27 +62,27 @@ export function RoomContent() {
       roomId={roomId}
       roomData={roomData}
       existingMembership={existingMembership}
-      globalUser={globalUser}
     />
   );
 }
 
 /**
- * Joins the visitor (automatically when they already have a name, else
- * through the join dialog), then shows the room's canvas.
+ * Joins the viewer (automatically when their users row has a name, else
+ * through the join dialog), then shows the room's canvas. A viewer signed in
+ * with no row yet has no name, and gets the dialog like a visitor.
  */
 function JoinGate({
   roomId,
   roomData,
   existingMembership,
-  globalUser,
 }: {
   roomId: Id<"rooms">;
   roomData: RoomWithRelatedData;
   existingMembership: MyMembership | null | undefined;
-  globalUser: { name: string } | null | undefined;
 }) {
-  const { authUserId, isLoading: authLoading, isAuthenticated } = useAuth();
+  const { viewer } = useAuth();
+  // The name the viewer already goes by, to join under without asking
+  const knownName = viewer.status === "signedIn" ? viewer.name : null;
   const joinRoom = useMutation(api.users.join);
   const [isAutoJoining, setIsAutoJoining] = useState(false);
   const autoJoinAttemptedRef = useRef(false);
@@ -102,15 +101,12 @@ function JoinGate({
   }, [isInRoom]);
 
   // Auto-join callback
-  const performAutoJoin = useCallback(async () => {
-    if (!globalUser || !authUserId) return;
-
+  const performAutoJoin = useCallback(async (name: string) => {
     setIsAutoJoining(true);
     try {
       await joinRoom({
         roomId,
-        name: globalUser.name,
-        authUserId,
+        name,
       });
       // No need to set state - existingMembership query will auto-update
     } catch (error) {
@@ -120,46 +116,43 @@ function JoinGate({
     } finally {
       setIsAutoJoining(false);
     }
-  }, [globalUser, authUserId, roomId, joinRoom]);
+  }, [roomId, joinRoom]);
 
-  // Auto-join if global user exists but no membership in this room
+  // Auto-join if the viewer has a name but no membership in this room
   useEffect(() => {
     const shouldAutoJoin =
       !autoJoinAttemptedRef.current &&
       !wasMemberRef.current && // don't re-add a user who was removed / left
-      globalUser &&
-      existingMembership === null && // No membership in this room (query returned null, not undefined)
-      authUserId;
+      knownName &&
+      existingMembership === null; // No membership in this room (query returned null, not undefined)
 
     if (shouldAutoJoin) {
       autoJoinAttemptedRef.current = true;
-      performAutoJoin().catch(() => {
+      performAutoJoin(knownName).catch(() => {
         autoJoinAttemptedRef.current = false;
       });
     }
-  }, [globalUser, existingMembership, authUserId, performAutoJoin]);
+  }, [knownName, existingMembership, performAutoJoin]);
 
   // Show loading while auto-joining
   if (isAutoJoining) {
     return <CenteredMessage title="Joining room..." body="Please wait" />;
   }
 
-  // Wait for auth state to be determined before deciding what to show
-  if (authLoading) {
+  // Wait until the auth provider knows who the viewer is before deciding what to show
+  if (viewer.status === "loading") {
     return <CenteredMessage title="Loading..." body="Checking session" />;
   }
 
   const { roomType } = roomData.room;
 
-  // If not authenticated, show JoinRoomDialog (session will be created on join)
-  if (!isAuthenticated) {
+  // A visitor gets the JoinRoomDialog (the session is created on join)
+  if (viewer.status === "visitor") {
     return <JoinRoomDialog roomId={roomId} roomName={roomData.room.name} roomType={roomType} />;
   }
 
-  // If authenticated, wait for queries to load
-  const queriesLoaded = existingMembership !== undefined && globalUser !== undefined;
-
-  if (!queriesLoaded) {
+  // Signed in: wait for the membership query to load
+  if (existingMembership === undefined) {
     return <CenteredMessage title="Loading..." body="Checking membership" />;
   }
 
@@ -172,6 +165,6 @@ function JoinGate({
     );
   }
 
-  // No membership - show join dialog (auto-join may be in progress if globalUser exists)
+  // No membership - show join dialog (auto-join may be in progress if the viewer has a name)
   return <JoinRoomDialog roomId={roomId} roomName={roomData.room.name} roomType={roomType} />;
 }
