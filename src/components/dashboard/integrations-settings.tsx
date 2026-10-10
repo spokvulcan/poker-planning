@@ -38,7 +38,6 @@ export function IntegrationsSettings() {
         jira_token_failed: "Failed to exchange authorization code.",
         jira_resources_failed: "Could not fetch Jira site information.",
         jira_no_site: "No Jira site found for your account.",
-        jira_no_user: "Could not identify your user account.",
         jira_store_failed: "Failed to save connection.",
       };
       toast.error("Jira connection failed", {
