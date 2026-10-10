@@ -78,7 +78,7 @@ describe("use-timer-sync — demo no-op", () => {
 });
 
 describe("use-timer-sync — real room", () => {
-  it("forwards start/pause/reset to the seam with the acting user", async () => {
+  it("forwards start/pause/reset to the seam, leaving who is calling to the server", async () => {
     const { result } = renderHook(() =>
       useTimerSync({
         roomId: ROOM_ID,
@@ -99,7 +99,6 @@ describe("use-timer-sync — real room", () => {
       expect(call.args).toEqual({
         roomId: ROOM_ID,
         nodeId: "timer",
-        userId: USER_ID,
       });
     }
   });

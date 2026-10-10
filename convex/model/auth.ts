@@ -1,5 +1,5 @@
 import { QueryCtx, MutationCtx } from "../_generated/server";
-import { Id, Doc } from "../_generated/dataModel";
+import { Id, Doc, TableNames } from "../_generated/dataModel";
 import {
   PermissionCategory,
   Action,
@@ -210,6 +210,74 @@ export async function requireCanForUser(
     throw new Error("Room not found");
   }
   return guardRoomAction(ctx, user, membership, room, spec, targetUserId);
+}
+
+/**
+ * What a room write is addressed by: its room, or the one issue, sticky or
+ * action item it acts on (`{ issue: issueId }`), which lands the write in
+ * that entity's own room. A second id beside the room, such as a note's
+ * issue, is not an address: the model checks it against the room.
+ */
+export type RoomAddress =
+  | Id<"rooms">
+  | { issue: Id<"issues"> }
+  | { sticky: Id<"retroStickies"> }
+  | { actionItem: Id<"retroActionItems"> };
+
+/**
+ * What the room-scoped step hands a write's handler: the caller's users row
+ * and membership, the room, the target of a relationship verb, and the
+ * entity an address named, under the address's key (`issue` for
+ * `{ issue: issueId }`).
+ */
+export type RoomWrite<A extends RoomAddress = Id<"rooms">> = GuardBundle &
+  (A extends Id<"rooms">
+    ? unknown
+    : { [K in keyof A]: A[K] extends Id<infer T extends TableNames> ? Doc<T> : never });
+
+/**
+ * The room-scoped step every room write starts with, so that no handler works
+ * out by hand who is calling, which room the write lands in, or whether what
+ * it acts on is in that room. Loads the entity the address names (refused as
+ * missing once it is gone), seats the caller in its room or the room
+ * addressed (who is signed in, through model/caller.ts, and their membership:
+ * room attendance), runs the permission guard when `spec` names an action,
+ * and hands over every row it loaded.
+ *
+ * Who is calling comes from the session alone: a write that still takes the
+ * caller's own user id, for old browsers, ignores it. The room's activity
+ * clock stays in the model, which server-originated writes share (ADR-0005).
+ */
+export async function requireRoomWrite<A extends RoomAddress>(
+  ctx: MutationCtx,
+  address: A,
+  spec?: RequireCanSpec,
+  targetUserId?: Id<"users">
+): Promise<RoomWrite<A>> {
+  const { roomId, ...entity } = await addressed(ctx, address);
+  const { user, membership, room } = await requireRoomMember(ctx, roomId);
+  const bundle = spec
+    ? await guardRoomAction(ctx, user, membership, room, spec, targetUserId)
+    : { user, membership, room };
+  return { ...bundle, ...entity } as RoomWrite<A>;
+}
+
+/** The room an address lands a write in, and the entity it names, loaded. */
+async function addressed(ctx: MutationCtx, address: RoomAddress) {
+  if (typeof address === "string") return { roomId: address };
+  if ("issue" in address) {
+    const issue = await ctx.db.get("issues", address.issue);
+    if (!issue) throw refusal("missing", "Issue not found");
+    return { roomId: issue.roomId, issue };
+  }
+  if ("sticky" in address) {
+    const sticky = await ctx.db.get("retroStickies", address.sticky);
+    if (!sticky) throw refusal("missing", "That sticky is gone.");
+    return { roomId: sticky.roomId, sticky };
+  }
+  const actionItem = await ctx.db.get("retroActionItems", address.actionItem);
+  if (!actionItem) throw refusal("missing", "That action item is gone.");
+  return { roomId: actionItem.roomId, actionItem };
 }
 
 /**

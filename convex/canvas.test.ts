@@ -235,3 +235,70 @@ describe("discussion notes across rooms", () => {
     ]);
   });
 });
+
+describe("who a write on the board is from", () => {
+  // Whoever is signed in. The user id old browsers still send with a canvas or
+  // timer write is accepted and ignored, never compared.
+
+  const nodeById = async (t: T, roomId: Id<"rooms">, nodeId: string) =>
+    (await nodesOf(t, roomId)).find((n) => n.nodeId === nodeId);
+
+  it("a move is the caller's, whatever user id comes with it, or none", async () => {
+    const t = withComponents(convexTest(schema, modules));
+    const { roomId, ownerId } = await pokerRoom(t);
+    const annId = await join(t, roomId, "ann");
+    const ann = as(t, "ann");
+
+    await ann.mutation(api.canvas.moveNodes, {
+      roomId,
+      userId: ownerId,
+      moves: [{ nodeId: "timer", position: { x: 10, y: 20 } }],
+    });
+    await ann.mutation(api.canvas.updateNodePosition, {
+      roomId,
+      userId: ownerId,
+      nodeId: "session-current",
+      position: { x: 30, y: 40 },
+    });
+    await ann.mutation(api.canvas.moveNodes, { roomId, moves: [{ nodeId: `player-${ownerId}`, position: { x: 50, y: 60 } }] });
+
+    expect(await nodeById(t, roomId, "timer")).toMatchObject({ position: { x: 10, y: 20 }, lastUpdatedBy: annId });
+    expect(await nodeById(t, roomId, "session-current")).toMatchObject({ position: { x: 30, y: 40 }, lastUpdatedBy: annId });
+    expect(await nodeById(t, roomId, `player-${ownerId}`)).toMatchObject({ position: { x: 50, y: 60 }, lastUpdatedBy: annId });
+  });
+
+  it("a note names the caller as its last editor, whatever user id comes with it, or none", async () => {
+    const t = withComponents(convexTest(schema, modules));
+    const { roomId, ownerId } = await pokerRoom(t);
+    await join(t, roomId, "ann");
+    const ann = as(t, "ann");
+    const issueId = await as(t, "owner").mutation(api.issues.create, { roomId, title: "Login" });
+    const nodeId = `note-${issueId}`;
+
+    await ann.mutation(api.canvas.createNote, { roomId, issueId, userId: ownerId });
+    expect(await nodeById(t, roomId, nodeId)).toMatchObject({ data: { lastUpdatedBy: "ann" } });
+
+    await as(t, "owner").mutation(api.canvas.updateNoteContent, { roomId, nodeId, content: "Draft" });
+    await ann.mutation(api.canvas.updateNoteContent, { roomId, nodeId, content: "Risks: auth", userId: ownerId });
+    expect(await nodeById(t, roomId, nodeId)).toMatchObject({ data: { content: "Risks: auth", lastUpdatedBy: "ann" } });
+
+    await ann.mutation(api.canvas.deleteNote, { roomId, nodeId, userId: ownerId });
+    expect(await nodeById(t, roomId, nodeId)).toBeUndefined();
+  });
+
+  it("the timer runs as the caller, whatever user id comes with it, or none", async () => {
+    const t = withComponents(convexTest(schema, modules));
+    const { roomId, ownerId } = await pokerRoom(t);
+    const annId = await join(t, roomId, "ann");
+    const ann = as(t, "ann");
+
+    await ann.mutation(api.timer.startTimer, { roomId, nodeId: "timer", userId: ownerId });
+    expect(await nodeById(t, roomId, "timer")).toMatchObject({ data: { isRunning: true }, lastUpdatedBy: annId });
+
+    await as(t, "owner").mutation(api.timer.pauseTimer, { roomId, nodeId: "timer" });
+    expect(await nodeById(t, roomId, "timer")).toMatchObject({ data: { isRunning: false }, lastUpdatedBy: ownerId });
+
+    await ann.mutation(api.timer.resetTimer, { roomId, nodeId: "timer", userId: ownerId });
+    expect(await nodeById(t, roomId, "timer")).toMatchObject({ data: { lastAction: "reset" }, lastUpdatedBy: annId });
+  });
+});
