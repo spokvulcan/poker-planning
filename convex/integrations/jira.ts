@@ -8,9 +8,10 @@
  * invariants (connection upsert, mapping writes, webhook event dedup/apply)
  * live in model/integrations.ts and the handlers below delegate to it. The
  * token-field contract (key validation, encrypt-on-write, decrypt-on-read,
- * expiry rule) lives in model/tokenVault.ts. Token freshness/refresh and
- * client construction live in jiraAuth.ts; the provider registry
- * (integrations/registry.ts) points at this adapter's actions.
+ * expiry rule) lives in model/tokenVault.ts. The OAuth handshake, token
+ * freshness/refresh and client construction live in jiraAuth.ts; the
+ * provider registry (integrations/registry.ts) points at this adapter's
+ * actions.
  */
 
 import {
@@ -18,6 +19,7 @@ import {
   internalAction,
   internalMutation,
   internalQuery,
+  query,
 } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { v } from "convex/values";
@@ -26,7 +28,11 @@ import { Doc, Id } from "../_generated/dataModel";
 import { ActionCtx } from "../_generated/server";
 import { requireAuth, requireCanForUser } from "../model/auth";
 import { JiraClient } from "./jiraClient";
-import { buildJiraClient, connectJiraWithCode } from "./jiraAuth";
+import {
+  buildJiraAuthorizeUrl,
+  buildJiraClient,
+  connectJiraWithCode,
+} from "./jiraAuth";
 import { applyJiraWebhookEvent } from "./jiraWebhook";
 import { cardNumericValue } from "../model/alignment";
 import { createIssueInRoom } from "../model/issues";
@@ -266,6 +272,19 @@ export const getIssueData = internalQuery({
 // ---------------------------------------------------------------------------
 // Public actions — called from frontend
 // ---------------------------------------------------------------------------
+
+/**
+ * Called from the Next.js authorize route via fetchAuthQuery: the Atlassian
+ * consent URL for the state the route keeps in a cookie. Convex builds it
+ * because the Jira OAuth app's settings live here and nowhere else.
+ */
+export const getJiraAuthorizeUrl = query({
+  args: { state: v.string() },
+  handler: async (ctx, { state }) => {
+    await requireAuth(ctx);
+    return buildJiraAuthorizeUrl(state);
+  },
+});
 
 /**
  * Called from the Next.js OAuth callback via fetchAuthAction with the

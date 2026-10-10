@@ -1,10 +1,13 @@
 /// <reference types="vite/client" />
 /**
- * Connecting Jira (the public connectJira action the OAuth callback calls):
- * the tokens are stored as vault ciphertext, and a deployment missing a Jira
- * setting refuses at connect rather than at the first token refresh. The
- * action is registered, so it reads the deployment's settings from the
- * environment, stubbed here.
+ * Connecting Jira, the OAuth handshake Convex owns: the consent URL comes
+ * from the deployment's Jira settings, and the authorization code the
+ * callback hands over, the only thing that crosses the public action,
+ * becomes a stored connection whose tokens are vault ciphertext. A
+ * deployment missing a Jira setting refuses at once rather than at the first
+ * token refresh. The registered functions read the deployment's settings
+ * from the environment, stubbed here; the handshake's core runs with
+ * Atlassian, the clock and the vault key injected.
  */
 import { convexTest, type TestConvex } from "convex-test";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
@@ -115,6 +118,55 @@ async function refusalOf(
   }
   throw new Error("expected a refusal");
 }
+
+describe("getJiraAuthorizeUrl", () => {
+  it("sends the person to Atlassian's consent page with this deployment's client id, the state and its callback", async () => {
+    vi.stubEnv("SITE_URL", "https://agilekit.app");
+    const t = convexTest(schema, modules);
+    const person = await signedIn(t);
+
+    const url = new URL(
+      await person.query(api.integrations.jira.getJiraAuthorizeUrl, { state: "state-1" })
+    );
+
+    expect(`${url.origin}${url.pathname}`).toBe("https://auth.atlassian.com/authorize");
+    expect(Object.fromEntries(url.searchParams)).toMatchObject({
+      audience: "api.atlassian.com",
+      client_id: "jira-client-id",
+      redirect_uri: "https://agilekit.app/api/integrations/jira/callback",
+      state: "state-1",
+      response_type: "code",
+      prompt: "consent",
+    });
+    // Writing estimates back needs write access; a refresh token needs offline_access.
+    expect(url.searchParams.get("scope")?.split(" ")).toEqual(
+      expect.arrayContaining(["read:jira-work", "write:jira-work", "offline_access"])
+    );
+  });
+
+  it("refuses while a Jira setting is missing on Convex, before the person leaves for Atlassian", async () => {
+    vi.stubEnv("JIRA_CLIENT_ID", undefined);
+    const t = convexTest(schema, modules);
+    const person = await signedIn(t);
+
+    const refusal = await refusalOf(
+      person.query(api.integrations.jira.getJiraAuthorizeUrl, { state: "state-1" })
+    );
+
+    expect(refusal).toEqual({
+      code: "jira_not_configured",
+      message: expect.stringContaining("JIRA_CLIENT_ID"),
+    });
+  });
+
+  it("turns away a caller who isn't signed in", async () => {
+    const t = convexTest(schema, modules);
+
+    await expect(
+      t.query(api.integrations.jira.getJiraAuthorizeUrl, { state: "state-1" })
+    ).rejects.toThrow("Not authenticated");
+  });
+});
 
 describe("connecting Jira with an authorization code", () => {
   it("stores the tokens Atlassian trades for the code as vault ciphertext, beside the site and expiry", async () => {

@@ -1,11 +1,12 @@
 /**
- * The Jira adapter's OAuth token operations: the OAuth app's credentials
- * (read and checked here), the code exchange that turns the authorization
- * code the callback hands over into a stored connection, the freshness
- * check, the refresh round-trip (Atlassian rotates refresh tokens, so both
- * are re-encrypted on every refresh), and client construction on top of a
- * valid token. Tokens reach the database only as vault ciphertext and never
- * leave Convex.
+ * The Jira adapter's OAuth, the whole handshake and the token operations
+ * after it: the OAuth app's credentials (read and checked here), the consent
+ * URL, the code exchange that turns the authorization code the callback
+ * hands over into a stored connection, the freshness check, the refresh
+ * round-trip (Atlassian rotates refresh tokens, so both are re-encrypted on
+ * every refresh), and client construction on top of a valid token. Next.js
+ * keeps only the CSRF state cookie and the redirects; no token crosses a
+ * public function, and tokens reach the database only as vault ciphertext.
  *
  * Lives apart from jira.ts so the provider registry can reach token refresh
  * without importing the adapter's registered actions. Effectful dependencies
@@ -37,9 +38,10 @@ export type JiraNotConfigured = { code: "jira_not_configured"; message: string }
 
 /**
  * The Jira OAuth app's credentials, read from the deployment's environment
- * here and nowhere else. The code exchange and token refresh post them, and
- * connect asks for them first, so a missing one refuses the connect instead
- * of failing the refresh sweep 15–60 minutes later.
+ * here and nowhere else. The consent URL carries the id, the code exchange
+ * and token refresh post both, and the handshake asks for both first, so a
+ * missing one refuses the connect instead of failing the refresh sweep 15–60
+ * minutes later.
  */
 export function requireJiraClientCredentials(): JiraClientCredentials {
   const clientId = process.env.JIRA_CLIENT_ID;
@@ -74,6 +76,52 @@ function resolveDeps(deps: JiraTokenDeps) {
     fetchImpl: deps.fetchImpl ?? ((...args: Parameters<typeof fetch>) => fetch(...args)),
     now: deps.now ?? Date.now,
   };
+}
+
+/**
+ * What AgileKit asks Atlassian for: Jira work, projects, boards, sprints and
+ * issues to import, write access to push estimates back, and offline_access
+ * for the refresh token.
+ */
+const JIRA_SCOPES = [
+  "read:jira-work",
+  "write:jira-work",
+  "read:project:jira",
+  "read:board-scope:jira-software",
+  "read:sprint:jira-software",
+  "read:issue:jira-software",
+  "write:issue:jira-software",
+  "offline_access",
+];
+
+/**
+ * Where Atlassian sends the person back with the authorization code: the
+ * Next.js callback route on this deployment's site (SITE_URL). The consent
+ * URL and the code exchange both name it, and Atlassian checks they match.
+ */
+function jiraRedirectUri(): string {
+  return `${getSiteUrl()}/api/integrations/jira/callback`;
+}
+
+/**
+ * The Atlassian consent URL the authorize route sends the person to. `state`
+ * is the CSRF token the route keeps in a cookie; Atlassian hands it back to
+ * the callback beside the authorization code.
+ */
+export function buildJiraAuthorizeUrl(state: string): string {
+  // Both credentials are asked for, so a deployment missing the secret
+  // refuses before the person leaves for Atlassian.
+  const { clientId } = requireJiraClientCredentials();
+  const params = new URLSearchParams({
+    audience: "api.atlassian.com",
+    client_id: clientId,
+    scope: JIRA_SCOPES.join(" "),
+    redirect_uri: jiraRedirectUri(),
+    state,
+    response_type: "code",
+    prompt: "consent",
+  });
+  return `https://auth.atlassian.com/authorize?${params.toString()}`;
 }
 
 /** What the code exchange hands over: plaintext tokens, never persisted as such. */
@@ -198,14 +246,6 @@ export async function exchangeJiraCode(
       providerUserEmail: jiraUser?.email,
     },
   };
-}
-
-/**
- * Where Atlassian sends the person back with the authorization code: the
- * Next.js callback route on this deployment's site (SITE_URL).
- */
-function jiraRedirectUri(): string {
-  return `${getSiteUrl()}/api/integrations/jira/callback`;
 }
 
 /**
