@@ -9,19 +9,24 @@
  *
  * Callers learn two builder interfaces (nodes, edges) plus one shared
  * note-for-issue predicate; the per-node-type helpers stay private. The
- * `useCanvasNodes` hook is the adapter that selects the data source
- * (Convex vs demo context), derives the phase, and memoizes.
+ * board's adapter (`room-canvas.tsx`) selects the data source (Convex vs
+ * demo context), derives the phase, and memoizes.
  */
 import type { Edge } from "@xyflow/react";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { CanvasNode } from "@/convex/model/canvas";
 import type { SanitizedVote } from "@/convex/model/rooms";
 import type { RoomUserData } from "@/convex/model/memberships";
-import type { ResolvedDecision } from "@/convex/permissions";
+import type { PokerPermissionCategory, ResolvedDecision } from "@/convex/permissions";
 import type { Phase } from "@/convex/phase";
 import { computeVotingCardRow } from "@/convex/canvasLayout";
 import { deckOf } from "@/convex/scales";
-import { DEMO_VIEWER_ID, type CustomNodeType, type TimerNodeType } from "../types";
+import {
+  DEMO_VIEWER_ID,
+  type CustomNodeType,
+  type PokerBoardActions,
+  type TimerNodeType,
+} from "../types";
 
 /** The room fields the nodes builder reads — a view, not the whole document. */
 export interface CanvasRoomView {
@@ -34,18 +39,6 @@ export interface CanvasRoomView {
    */
   autoRevealCountdownStartedAt: number | null;
   votingScale?: { cards: string[]; isNumeric: boolean };
-}
-
-/** The canvas-triggered handlers written into node data at construction time. */
-export interface CanvasNodeCallbacks {
-  onRevealCards?: () => void;
-  onResetGame?: () => void;
-  onCardSelect?: (cardValue: string) => void;
-  onToggleAutoComplete?: () => void;
-  onCancelAutoReveal?: () => void;
-  onOpenIssuesPanel?: () => void;
-  onUpdateNoteContent?: (nodeId: string, content: string) => Promise<boolean | void> | void;
-  onDeleteNote?: (nodeId: string, hasContent: boolean) => void;
 }
 
 /**
@@ -65,10 +58,10 @@ export interface CanvasNodesInput {
   viewerId?: Id<"users">;
   selectedCardValue: string | null;
   isDemoMode: boolean;
-  canRevealCards: ResolvedDecision;
-  canControlGameFlow: ResolvedDecision;
-  canChangeRoomSettings: ResolvedDecision;
-  callbacks: CanvasNodeCallbacks;
+  /** The viewer's decision for each of the room's permission categories. */
+  permissions: Record<PokerPermissionCategory, ResolvedDecision>;
+  /** The one frozen object every node with a control reads its writes from. */
+  actions: PokerBoardActions;
 }
 
 /**
@@ -116,7 +109,7 @@ export function buildCanvasNodes(input: CanvasNodesInput): CustomNodeType[] {
 /**
  * The client-generated voting-card row: shown to non-spectator members, and to
  * the anonymous demo viewer (where the cards are display-only — never
- * selectable, no select handler).
+ * selectable).
  */
 function buildVotingCardRow(input: CanvasNodesInput): CustomNodeType[] {
   const shouldShowVotingCards = input.viewerId
@@ -138,7 +131,7 @@ function buildVotingCardRow(input: CanvasNodesInput): CustomNodeType[] {
       roomId: input.roomId,
       isSelectable: input.phase !== "revealed" && !input.isDemoMode,
       isSelected: cardValue === input.selectedCardValue,
-      onCardSelect: input.isDemoMode ? undefined : input.callbacks.onCardSelect,
+      actions: input.actions,
     },
     selected: cardValue === input.selectedCardValue,
     draggable: false,
@@ -195,7 +188,7 @@ function buildSessionNode(
   node: CanvasNode & { type: "session" },
   input: CanvasNodesInput,
 ): CustomNodeType {
-  const { room, members, votes, currentIssue, callbacks } = input;
+  const { room, members, votes, currentIssue, permissions } = input;
   return {
     id: node.nodeId,
     type: "session",
@@ -211,14 +204,15 @@ function buildSessionNode(
       currentIssue: currentIssue
         ? { id: currentIssue._id, title: currentIssue.title }
         : null,
-      canRevealCards: input.canRevealCards,
-      canControlGameFlow: input.canControlGameFlow,
-      canChangeRoomSettings: input.canChangeRoomSettings,
-      onRevealCards: callbacks.onRevealCards,
-      onResetGame: callbacks.onResetGame,
-      onToggleAutoComplete: callbacks.onToggleAutoComplete,
-      onCancelAutoReveal: callbacks.onCancelAutoReveal,
-      onOpenIssuesPanel: callbacks.onOpenIssuesPanel,
+      // The decisions alone, whatever else the caller's record carries: node
+      // data stays plain values, which the whiteboard's merge compares.
+      permissions: {
+        revealCards: permissions.revealCards,
+        gameFlow: permissions.gameFlow,
+        issueManagement: permissions.issueManagement,
+        roomSettings: permissions.roomSettings,
+      },
+      actions: input.actions,
     },
     draggable: !node.isLocked,
   };
@@ -241,29 +235,25 @@ function buildResultsNode(
   };
 }
 
+/**
+ * A note writes by its node id through the board's actions, so nothing here
+ * is built per note: a note nothing changed comes out equal to the last one.
+ */
 function buildNoteNode(
   node: CanvasNode & { type: "note" },
   input: CanvasNodesInput,
 ): CustomNodeType {
-  const { callbacks } = input;
-  const noteContent = node.data.content || "";
-  // The only per-node closures in the derivation: they must capture this
-  // node's identifier. Never part of a memo dependency array.
-  const nodeId = node.nodeId;
   return {
-    id: nodeId,
+    id: node.nodeId,
     type: "note",
     position: node.position,
     data: {
       issueId: node.data.issueId,
       issueTitle: node.data.issueTitle || input.currentIssue?.title || "",
-      content: noteContent,
+      content: node.data.content || "",
       lastUpdatedBy: node.data.lastUpdatedBy,
       lastUpdatedAt: node.data.lastUpdatedAt,
-      onUpdateContent: (content: string) => callbacks.onUpdateNoteContent?.(nodeId, content),
-      onDelete: () => {
-        callbacks.onDeleteNote?.(nodeId, !!noteContent);
-      },
+      actions: input.actions,
     },
     draggable: !node.isLocked,
   };
