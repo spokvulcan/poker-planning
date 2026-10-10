@@ -63,8 +63,8 @@ export async function requireRoomMember(
  * membership alone, and returns the identity and user. It reads no room: a
  * guard's reads join the read set of every query that takes it, so a room
  * patch would re-run them all. A query that needs the room reads it itself.
- * Every read-only query on room-owned data takes this guard; every mutation
- * keeps `requireRoomMember` (attendance).
+ * Every read-only query on room-owned data takes this guard; every room write
+ * takes `requireRoomMember` (attendance) through the room-scoped step.
  */
 export async function requireRoomReader(
   ctx: QueryCtx | MutationCtx,
@@ -100,9 +100,8 @@ export type RequireCanSpec =
     };
 
 /**
- * The loaded bundle the guard returns: everything its IO assembly fetched
- * while assembling the Action. `requireCan` adds the identity it
- * authenticated with; the explicit-user entry point has none to add.
+ * The loaded bundle the permission guard returns: everything its IO assembly
+ * fetched while assembling the Action.
  */
 export type GuardBundle = {
   user: Doc<"users">;
@@ -112,39 +111,12 @@ export type GuardBundle = {
 };
 
 /**
- * The permission guard: the single authorization entry point for room
- * mutations, authenticating via ctx.auth. Funnels into the shared assembly
- * (guardRoomAction) and returns the loaded bundle plus the identity, so
- * callers stop re-fetching.
- *
- * Identity rules (self-transfer, authoritative ownerId) are NOT enforced here;
- * they stay in the calling handler, after the guard.
- */
-export async function requireCan(
-  ctx: QueryCtx | MutationCtx,
-  roomId: Id<"rooms">,
-  spec: RequireCanSpec,
-  targetUserId?: Id<"users">
-): Promise<GuardBundle & { identity: AuthIdentity }> {
-  const { identity, user, membership, room } = await requireRoomMember(ctx, roomId);
-  const bundle = await guardRoomAction(
-    ctx,
-    user,
-    membership,
-    room,
-    spec,
-    targetUserId
-  );
-  return { identity, ...bundle };
-}
-
-/**
- * The explicit-user entry point to the same permission guard, for callers
- * that resolved the user outside ctx.auth (e.g. an action that authenticated
- * via an explicit authUserId and called in through an internal query).
- * Resolves the actor's membership and the room, then funnels into the same
- * shared assembly as requireCan — same Action, same decision, same thrown
- * messages.
+ * The explicit-user entry point to the permission guard, for callers that
+ * resolved the user outside ctx.auth (e.g. an action that authenticated via
+ * an explicit authUserId and called in through an internal query). Resolves
+ * the actor's membership and the room, then funnels into the same shared
+ * assembly as the room-scoped step's `spec` — same Action, same decision,
+ * same thrown messages.
  */
 export async function requireCanForUser(
   ctx: QueryCtx | MutationCtx,
@@ -202,7 +174,9 @@ export type RoomWrite<A extends RoomAddress = Id<"rooms">> = GuardBundle &
  * and hands over every row it loaded.
  *
  * Who is calling comes from the session alone: a write that still takes the
- * caller's own user id, for old browsers, ignores it. The room's activity
+ * caller's own user id, for old browsers, ignores it. Only presence's
+ * heartbeat compares the user id it is sent, against the caller seated here,
+ * because its component lists whoever a heartbeat names. The room's activity
  * clock stays in the model, which server-originated writes share (ADR-0005).
  */
 export async function requireRoomWrite<A extends RoomAddress>(
@@ -238,11 +212,14 @@ async function addressed(ctx: MutationCtx, address: RoomAddress) {
 }
 
 /**
- * The guard's shared IO assembly, given the actor's user, membership and room
- * from either authentication mode. Resolves the action through
- * `resolveRoomAction` and refuses with the resolved decision's message on
- * denial, a coded refusal the browser can show (ADR-0031). Returns the
- * loaded bundle.
+ * The permission guard's shared IO assembly, given the actor's user,
+ * membership and room from either authentication mode: the room-scoped step
+ * or `requireCanForUser`. Resolves the action through `resolveRoomAction` and
+ * refuses with the resolved decision's message on denial, a coded refusal
+ * the browser can show (ADR-0031). Returns the loaded bundle.
+ *
+ * Identity rules (self-transfer, authoritative ownerId) are NOT enforced here;
+ * they stay with the write, after the guard.
  */
 async function guardRoomAction(
   ctx: QueryCtx | MutationCtx,
