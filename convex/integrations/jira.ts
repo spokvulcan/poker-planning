@@ -6,7 +6,9 @@
  * Fetch orchestration (OAuth token exchange/refresh, Jira REST calls through
  * JiraClient, webhook registration) lives in the adapter; the db-side
  * invariants (connection upsert, mapping writes, webhook event dedup/apply)
- * live in model/integrations.ts and the handlers below delegate to it. The
+ * live in model/integrations.ts and the handlers below delegate to it. An
+ * imported Jira issue enters a room through the issue module's admission
+ * (model/issues.ts): the adapter only turns it into a title and a link. The
  * token-field contract (key validation, encrypt-on-write, decrypt-on-read,
  * expiry rule) lives in model/tokenVault.ts. Token freshness/refresh and
  * client construction live in jiraAuth.ts; the provider registry
@@ -20,19 +22,19 @@ import {
   internalQuery,
 } from "../_generated/server";
 import { internal } from "../_generated/api";
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { providerValidator } from "../schema";
 import { Doc, Id } from "../_generated/dataModel";
 import { ActionCtx } from "../_generated/server";
 import { requireAuth, requireCanForUser } from "../model/auth";
-import { JiraClient } from "./jiraClient";
-import { buildJiraClient } from "./jiraAuth";
+import { JiraClient, JiraIssue } from "./jiraClient";
+import { buildJiraClient, requireJiraClientCredentials } from "./jiraAuth";
 import { applyJiraWebhookEvent } from "./jiraWebhook";
 import { cardNumericValue } from "../scales";
-import { createIssueInRoom } from "../model/issues";
+import * as Issues from "../model/issues";
 import * as Integrations from "../model/integrations";
 import * as TokenVault from "../model/tokenVault";
-import { MAX_ISSUES_PER_ROOM } from "../constants";
+import type { Refusal } from "../model/refusal";
 
 // ---------------------------------------------------------------------------
 // Action preamble — the one chain from auth identity to a ready Jira client
@@ -133,66 +135,19 @@ export const updateTokens = internalMutation({
   },
 });
 
-export const createIssueWithLink = internalMutation({
+/** Hands one Jira issue, as a title and a link, to the issue module's admission. */
+export const admitIssue = internalMutation({
   args: {
     roomId: v.id("rooms"),
     title: v.string(),
-    provider: providerValidator,
-    externalId: v.string(),
-    externalUrl: v.string(),
+    link: v.object({
+      provider: providerValidator,
+      externalId: v.string(),
+      externalUrl: v.string(),
+    }),
   },
   handler: async (ctx, args) => {
-    // externalUrl is rendered as an anchor href in the room UI — only allow
-    // real web URLs so a malicious integration connection can't inject a
-    // javascript: link.
-    if (!args.externalUrl.startsWith("https://")) {
-      throw new Error("externalUrl must be an https:// URL");
-    }
-
-    // Dedup per-room: same Jira issue can exist in multiple rooms,
-    // but not twice in the same room.
-    const roomIssues = await ctx.db
-      .query("issues")
-      .withIndex("by_room", (q) => q.eq("roomId", args.roomId))
-      .collect();
-
-    // Cap check stays ahead of dedup so a full room errors even when this key
-    // was already imported; createIssueInRoom re-enforces it on creation.
-    if (roomIssues.length >= MAX_ISSUES_PER_ROOM) {
-      throw new Error(`Rooms are limited to ${MAX_ISSUES_PER_ROOM} issues`);
-    }
-
-    for (const issue of roomIssues) {
-      const link = await ctx.db
-        .query("issueLinks")
-        .withIndex("by_issue", (q) => q.eq("issueId", issue._id))
-        .first();
-      if (
-        link &&
-        link.provider === args.provider &&
-        link.externalId === args.externalId
-      ) {
-        return null; // Already imported in this room
-      }
-    }
-
-    const issueId = await createIssueInRoom(ctx, {
-      roomId: args.roomId,
-      title: args.title,
-    });
-
-    // Create bidirectional link (roomId-tagged so room-wide link fetches can
-    // use the by_room index instead of one by_issue query per issue)
-    await ctx.db.insert("issueLinks", {
-      issueId,
-      roomId: args.roomId,
-      provider: args.provider,
-      externalId: args.externalId,
-      externalUrl: args.externalUrl,
-      lastSyncedAt: Date.now(),
-    });
-
-    return issueId;
+    return await Issues.admitIssue(ctx, args);
   },
 });
 
@@ -265,42 +220,6 @@ export const getIssueData = internalQuery({
 });
 
 // ---------------------------------------------------------------------------
-// Internal actions — OAuth + external API calls
-// ---------------------------------------------------------------------------
-
-export const storeConnection = internalAction({
-  args: {
-    userId: v.id("users"),
-    accessToken: v.string(),
-    refreshToken: v.string(),
-    expiresIn: v.number(),
-    cloudId: v.string(),
-    siteUrl: v.string(),
-    scopes: v.array(v.string()),
-    providerUserId: v.optional(v.string()),
-    providerUserEmail: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    const enc = await TokenVault.encryptTokens({
-      accessToken: args.accessToken,
-      refreshToken: args.refreshToken,
-    });
-
-    await ctx.runMutation(internal.integrations.jira.saveConnection, {
-      userId: args.userId,
-      provider: "jira",
-      ...enc,
-      expiresAt: TokenVault.computeExpiresAt(args.expiresIn),
-      cloudId: args.cloudId,
-      siteUrl: args.siteUrl,
-      providerUserId: args.providerUserId,
-      providerUserEmail: args.providerUserEmail,
-      scopes: args.scopes,
-    });
-  },
-});
-
-// ---------------------------------------------------------------------------
 // Public actions — called from frontend
 // ---------------------------------------------------------------------------
 
@@ -319,6 +238,10 @@ export const connectJira = action({
   handler: async (ctx, args) => {
     const user = await requireActionUser(ctx);
 
+    // The first token refresh posts the deployment's Jira credentials, so a
+    // deployment without them refuses the connect now.
+    requireJiraClientCredentials();
+
     // The siteUrl is stored and later concatenated into issue browse links
     // rendered as anchor hrefs. This action is public, so a client could
     // bypass the OAuth callback and store a javascript: URL — validate it.
@@ -335,17 +258,22 @@ export const connectJira = action({
       throw new Error("Jira site URL must be an https://*.atlassian.net URL");
     }
 
-    // Delegate to internal action that handles encryption + storage
-    await ctx.runAction(internal.integrations.jira.storeConnection, {
-      userId: user._id,
+    // The tokens reach the database only as vault ciphertext.
+    const enc = await TokenVault.encryptTokens({
       accessToken: args.accessToken,
       refreshToken: args.refreshToken,
-      expiresIn: args.expiresIn,
+    });
+
+    await ctx.runMutation(internal.integrations.jira.saveConnection, {
+      userId: user._id,
+      provider: "jira",
+      ...enc,
+      expiresAt: TokenVault.computeExpiresAt(args.expiresIn),
       cloudId: args.cloudId,
       siteUrl: args.siteUrl,
-      scopes: args.scopes,
       providerUserId: args.providerUserId,
       providerUserEmail: args.providerUserEmail,
+      scopes: args.scopes,
     });
   },
 });
@@ -394,7 +322,7 @@ export const importIssues = action({
     roomId: v.id("rooms"),
     jiraIssueKeys: v.array(v.string()),
   },
-  handler: async (ctx, { roomId, jiraIssueKeys }) => {
+  handler: async (ctx, { roomId, jiraIssueKeys }): Promise<JiraImportResult> => {
     const { user, connection } = await requireJiraConnection(ctx);
 
     // Verify the caller is a member of the room with issue management
@@ -405,38 +333,86 @@ export const importIssues = action({
     });
 
     const client = await buildJiraClient(ctx, connection);
-    const siteUrl = connection.siteUrl ?? "";
-
-    let imported = 0;
-    let skipped = 0;
-    const errors: string[] = [];
-
-    for (const key of jiraIssueKeys) {
-      try {
-        const issue = await client.getIssue(key);
-        const result = await ctx.runMutation(
-          internal.integrations.jira.createIssueWithLink,
-          {
-            roomId,
-            title: `${issue.key} - ${issue.fields.summary}`,
-            provider: "jira",
-            externalId: issue.key,
-            externalUrl: `${siteUrl}/browse/${issue.key}`,
-          }
-        );
-        if (result) {
-          imported++;
-        } else {
-          skipped++;
-        }
-      } catch (error) {
-        errors.push(`${key}: ${error instanceof Error ? error.message : "Unknown error"}`);
-      }
-    }
-
-    return { imported, skipped, errors };
+    return await importIssuesWithClient(
+      client,
+      (candidate): Promise<Issues.Admission> =>
+        ctx.runMutation(internal.integrations.jira.admitIssue, { roomId, ...candidate }),
+      { keys: jiraIssueKeys, siteUrl: connection.siteUrl }
+    );
   },
 });
+
+/** What an import did with the selected keys. */
+export interface JiraImportResult {
+  imported: number;
+  /** Keys whose issue is already in the room. */
+  skipped: number;
+  /** Keys not imported, each with why, in words the import modal shows. */
+  refused: { key: string; reason: string }[];
+}
+
+/**
+ * The words a refused admission carries. A coded refusal keeps its message
+ * across the mutation boundary in production; any other error has only its
+ * own message to give.
+ */
+function refusalReason(error: unknown): string {
+  if (error instanceof ConvexError) {
+    const message = (error.data as Partial<Refusal> | undefined)?.message;
+    if (typeof message === "string" && message) return message;
+  }
+  return error instanceof Error ? error.message : "Unknown error";
+}
+
+/**
+ * The import itself, decoupled from ctx plumbing: each key is read from Jira,
+ * so the title and URL come from Jira rather than the client, and handed to
+ * the issue module's admission as a title and a link. A key that can't be
+ * linked, read or admitted is refused with why; the others still import.
+ */
+export async function importIssuesWithClient(
+  client: Pick<JiraClient, "getIssue">,
+  admit: (candidate: { title: string; link: Issues.IssueLink }) => Promise<Issues.Admission>,
+  args: { keys: string[]; siteUrl: string | undefined }
+): Promise<JiraImportResult> {
+  const { siteUrl } = args;
+  // Every link is a page on the connection's site: without one, none can be.
+  if (!siteUrl) {
+    const reason = "Your Jira connection has no site address; reconnect Jira";
+    return { imported: 0, skipped: 0, refused: args.keys.map((key) => ({ key, reason })) };
+  }
+
+  const result: JiraImportResult = { imported: 0, skipped: 0, refused: [] };
+  for (const key of args.keys) {
+    let issue: JiraIssue;
+    try {
+      issue = await client.getIssue(key);
+    } catch (error) {
+      console.warn(`Jira import: could not read ${key}:`, error);
+      result.refused.push({
+        key,
+        reason: "Couldn't be read from Jira (deleted, or not visible to you)",
+      });
+      continue;
+    }
+
+    try {
+      const admission = await admit({
+        title: `${issue.key} - ${issue.fields.summary}`,
+        link: {
+          provider: "jira",
+          externalId: issue.key,
+          externalUrl: `${siteUrl}/browse/${issue.key}`,
+        },
+      });
+      if (admission.kind === "admitted") result.imported++;
+      else result.skipped++;
+    } catch (error) {
+      result.refused.push({ key, reason: refusalReason(error) });
+    }
+  }
+  return result;
+}
 
 /**
  * The estimate push itself, decoupled from ctx plumbing: an already-built

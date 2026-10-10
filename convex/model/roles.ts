@@ -4,6 +4,7 @@ import { ceremonyOf, NOT_THIS_CEREMONY } from "../ceremony";
 import { isRetroPermissions, type RetroPermissions, type RoomPermissions } from "../permissions";
 import { requireCan } from "./auth";
 import * as Ownership from "./ownership";
+import { refusal } from "./refusal";
 import * as Rooms from "./rooms";
 
 /**
@@ -81,7 +82,7 @@ export async function updatePermissions(
   args: { roomId: Id<"rooms">; permissions: RoomPermissions | RetroPermissions }
 ): Promise<void> {
   const { room } = await requireCan(ctx, args.roomId, { kind: "relationship", verb: "changePerms" });
-  if (isRetroPermissions(args.permissions) !== (ceremonyOf(room) === "retro")) throw new Error(NOT_THIS_CEREMONY);
+  if (isRetroPermissions(args.permissions) !== (ceremonyOf(room) === "retro")) throw refusal("missing", NOT_THIS_CEREMONY);
   await ctx.db.patch("rooms", room._id, { permissions: args.permissions });
   await Rooms.updateRoomActivity(ctx, room);
 }

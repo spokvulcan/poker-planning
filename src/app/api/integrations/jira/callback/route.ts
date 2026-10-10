@@ -1,8 +1,17 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { ConvexError } from "convex/values";
 import { fetchAuthAction } from "@/lib/auth-server";
 import { api } from "@/convex/_generated/api";
+import type { JiraNotConfigured } from "@/convex/integrations/jiraAuth";
 import { exchangeJiraCode } from "./exchangeCode";
+
+/** Whether Convex refused the connect because its Jira settings are missing. */
+function isNotConfigured(error: unknown): boolean {
+  if (!(error instanceof ConvexError)) return false;
+  const code = (error.data as Partial<JiraNotConfigured> | undefined)?.code;
+  return code === "jira_not_configured";
+}
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -47,7 +56,9 @@ export async function GET(request: Request) {
   } catch (err) {
     console.error("Failed to store Jira connection:", err);
     redirect(
-      "/dashboard/settings?tab=integrations&error=jira_store_failed"
+      `/dashboard/settings?tab=integrations&error=${
+        isNotConfigured(err) ? "jira_not_configured" : "jira_store_failed"
+      }`
     );
   }
 
