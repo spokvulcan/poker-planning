@@ -1,0 +1,80 @@
+name: Refresh Dependencies
+
+# Dependabot opens PRs here only for security advisories, and its version
+# updates never reach npm packages that are only dependencies of dependencies.
+# This moves every package in the lockfile to the newest version its range
+# allows, so a fix like @convex-dev/batch-worker 0.2.1 arrives within a week.
+# package.json pins direct dependencies exactly, so those stay put.
+
+on:
+  schedule:
+    - cron: "0 6 * * 1" # Mondays, 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  refresh:
+    name: Refresh the lockfile
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+      - run: npm ci
+      - run: npm update
+      - name: See whether anything moved
+        id: diff
+        run: |
+          if git diff --quiet package-lock.json; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.diff.outputs.changed == 'true'
+        run: npm run lint && npm run ts:check && npm run test
+      - name: Open or update the PR
+        if: steps.diff.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          git show HEAD:package-lock.json > "$RUNNER_TEMP/before.json"
+          node -e '
+            const [before, after] = process.argv.slice(1).map((file) => require(file).packages);
+            const name = (path) => path.slice(path.lastIndexOf("node_modules/") + "node_modules/".length);
+            const moved = Object.entries(after)
+              .filter(([path, pkg]) => path && before[path] && before[path].version !== pkg.version)
+              .map(([path, pkg]) => `- \`${name(path)}\` ${before[path].version} → ${pkg.version}`);
+            console.log([...new Set(moved)].sort().join("\n"));
+          ' "$RUNNER_TEMP/before.json" "$PWD/package-lock.json" > "$RUNNER_TEMP/moved.md"
+
+          body="$RUNNER_TEMP/body.md"
+          {
+            echo "Moves every package in the lockfile to the newest version its range allows. Lint, type check and tests passed in [the workflow run]($RUN_URL)."
+            echo
+            echo "GitHub doesn't run CI on a pull request a workflow opened: close and reopen this PR to run it."
+            if grep -qE '`(@convex-dev/[^`]*|convex)`' "$RUNNER_TEMP/moved.md"; then
+              echo
+              echo "A Convex component moved, and its code ships inside the Convex deploy: run \`npx convex deploy\` from \`main\` after merging."
+            fi
+            echo
+            cat "$RUNNER_TEMP/moved.md"
+          } > "$body"
+
+          branch=chore/refresh-dependencies
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git commit -q -am "chore(deps): refresh the lockfile"
+          git push -q --force origin "$branch"
+          if [ "$(gh pr view "$branch" --json state --jq .state 2>/dev/null)" = OPEN ]; then
+            gh pr edit "$branch" --body-file "$body"
+          else
+            gh pr create --base main --head "$branch" --title "chore(deps): refresh the lockfile" --body-file "$body"
+          fi
