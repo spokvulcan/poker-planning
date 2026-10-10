@@ -1,8 +1,9 @@
 import { QueryCtx, MutationCtx } from "../_generated/server";
 import { Doc, Id } from "../_generated/dataModel";
 import * as Rooms from "./rooms";
-import { refusal } from "./refusal";
+import { refusal, requireValid } from "./refusal";
 import { rulesOf, ceremonyOf, NOT_THIS_CEREMONY } from "../ceremony";
+import { DISCUSSION_NOTE } from "../constants";
 import {
   computeHorizontalLayout,
   NOTE_POSITION,
@@ -69,8 +70,6 @@ export type CanvasNode = {
 type NodeType = CanvasNodeData["type"];
 type DataOf<T extends NodeType> = Extract<CanvasNodeData, { type: T }>["data"];
 
-/** Longest note a discussion can take. */
-const MAX_NOTE_CONTENT_LENGTH = 10000;
 /** Most nodes one drop can move. */
 export const MAX_MOVES = 200;
 
@@ -320,13 +319,11 @@ export async function updateNote(
   content: string,
   editor: Doc<"users">
 ): Promise<void> {
-  if (content.length > MAX_NOTE_CONTENT_LENGTH) {
-    throw new Error(`Note content too long (max ${MAX_NOTE_CONTENT_LENGTH} characters)`);
-  }
+  const kept = requireValid(DISCUSSION_NOTE, content);
   const node = await noteNode(ctx, room._id, nodeId);
   const now = Date.now();
   await ctx.db.patch("canvasNodes", node._id, {
-    data: { ...dataOf(node, "note"), content, lastUpdatedBy: editor.name, lastUpdatedAt: now },
+    data: { ...dataOf(node, "note"), content: kept, lastUpdatedBy: editor.name, lastUpdatedAt: now },
     lastUpdatedAt: now,
   });
   await Rooms.updateRoomActivity(ctx, room);

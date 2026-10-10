@@ -185,6 +185,24 @@ describe("applyJiraWebhookEvent (via processJiraWebhook)", () => {
     expect(room?.lastActivityAt).toBeGreaterThan(sentinel);
   });
 
+  it("jira:issue_updated fits a summary past the issue-title limit to it", async () => {
+    const t = convexTest(schema, modules);
+    const roomId = await seedRoom(t);
+    const issueId = await seedIssue(t, roomId);
+    await seedIssueLink(t, issueId, "PROJ-1");
+
+    await t.mutation(internal.integrations.jira.processJiraWebhook, {
+      eventKey: "jira:10001:1700000000003",
+      eventType: "jira:issue_updated",
+      issueKey: "PROJ-1",
+      issueSummary: "x".repeat(600),
+    });
+
+    // "PROJ-1 - " and 491 more: 500 characters, the title rule's limit.
+    const issue = await t.run((ctx) => ctx.db.get("issues", issueId));
+    expect(issue?.title).toBe(`PROJ-1 - ${"x".repeat(491)}`);
+  });
+
   it("jira:issue_deleted removes the link but keeps the local issue", async () => {
     const t = convexTest(schema, modules);
     const roomId = await seedRoom(t);

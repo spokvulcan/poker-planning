@@ -9,17 +9,6 @@ import {
   getOptionalAuthUser,
 } from "./model/auth";
 
-function validateName(name: string): string {
-  const trimmed = name.trim();
-  if (!trimmed) {
-    throw new Error("Name is required");
-  }
-  if (trimmed.length > 50) {
-    throw new Error("Name must be 50 characters or less");
-  }
-  return trimmed;
-}
-
 // Get global user for the currently authenticated user
 export const getGlobalUser = query({
   args: {},
@@ -69,7 +58,7 @@ export const join = mutation({
 
     return await Users.joinRoom(ctx, {
       roomId: args.roomId,
-      name: validateName(args.name),
+      name: args.name,
       isSpectator: args.isSpectator,
       authUserId: args.authUserId,
     });
@@ -90,7 +79,7 @@ export const edit = mutation({
     await Users.editUser(ctx, {
       userId: args.userId,
       roomId: args.roomId,
-      name: args.name !== undefined ? validateName(args.name) : undefined,
+      name: args.name,
       isSpectator: args.isSpectator,
     });
   },
@@ -134,11 +123,7 @@ export const editGlobalUser = mutation({
   },
   handler: async (ctx, args) => {
     const identity = await requireAuth(ctx);
-    await Users.updateGlobalUserName(
-      ctx,
-      identity.subject,
-      validateName(args.name)
-    );
+    await Users.updateGlobalUserName(ctx, identity.subject, args.name);
   },
 });
 
@@ -189,7 +174,7 @@ export const ensureGlobalUser = mutation({
     if (await Users.getGlobalUserByAuthUserId(ctx, args.authUserId)) return;
     await Users.findOrCreateGlobalUser(ctx, {
       authUserId: args.authUserId,
-      name: validateName(args.name),
+      name: args.name,
     });
   },
 });

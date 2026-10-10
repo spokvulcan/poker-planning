@@ -3,12 +3,16 @@ import { Id, Doc } from "../_generated/dataModel";
 import * as AccountLifecycle from "./accountLifecycle";
 import * as Memberships from "./memberships";
 import * as Rooms from "./rooms";
+import { requireValid } from "./refusal";
+import { PERSON_NAME } from "../constants";
 
 /**
  * People: the app's `users` rows, one per person, each linked to an auth
  * identity (BetterAuth's user id). Which rooms a person is in is
  * memberships.ts's; how an account ends, deleted or folded into another,
- * is accountLifecycle.ts's.
+ * is accountLifecycle.ts's. Every name a users row gets passes the
+ * person-name rule (constants.ts) here: one a person typed is refused when
+ * it breaks the rule, one a sign-in provider gives is fitted to it.
  */
 
 export interface JoinRoomArgs {
@@ -32,11 +36,12 @@ export async function findOrCreateGlobalUser(
   ctx: MutationCtx,
   args: { authUserId: string; name: string }
 ): Promise<Id<"users">> {
+  const name = requireValid(PERSON_NAME, args.name);
   const existingUser = await getGlobalUserByAuthUserId(ctx, args.authUserId);
   if (existingUser) {
     // Update name if changed
-    if (existingUser.name !== args.name) {
-      await ctx.db.patch("users", existingUser._id, { name: args.name });
+    if (existingUser.name !== name) {
+      await ctx.db.patch("users", existingUser._id, { name });
     }
     return existingUser._id;
   }
@@ -46,7 +51,7 @@ export async function findOrCreateGlobalUser(
   // for the frontend. Linking an account sets "permanent" on upgrade.
   return await ctx.db.insert("users", {
     authUserId: args.authUserId,
-    name: args.name,
+    name,
     createdAt: Date.now(),
   });
 }
@@ -101,13 +106,14 @@ export async function joinRoom(ctx: MutationCtx, args: JoinRoomArgs): Promise<Id
  * spectator in this room.
  */
 export async function editUser(ctx: MutationCtx, args: EditUserArgs): Promise<void> {
+  const name = args.name === undefined ? undefined : requireValid(PERSON_NAME, args.name);
   const [user, room] = await Promise.all([ctx.db.get("users", args.userId), ctx.db.get("rooms", args.roomId)]);
   if (!user) throw new Error("User not found");
   if (!room) throw new Error("Room not found");
   if (!(await Memberships.getMembership(ctx, room._id, user._id))) throw new Error("User not in room");
 
-  if (args.name !== undefined) {
-    await ctx.db.patch("users", args.userId, { name: args.name });
+  if (name !== undefined) {
+    await ctx.db.patch("users", args.userId, { name });
   }
   if (args.isSpectator !== undefined) {
     await Memberships.setSpectator(ctx, room, args.userId, args.isSpectator);
@@ -132,11 +138,21 @@ export async function updateGlobalUserName(
   authUserId: string,
   name: string
 ): Promise<void> {
+  const kept = requireValid(PERSON_NAME, name);
   const user = await getGlobalUserByAuthUserId(ctx, authUserId);
   if (!user) {
     throw new Error("User not found");
   }
-  await ctx.db.patch("users", user._id, { name });
+  await ctx.db.patch("users", user._id, { name: kept });
+}
+
+/**
+ * The name a sign-in provider gives an account, fitted to the person-name
+ * rule: its display name, or the email's local part when it has none, as
+ * an account made by magic link has none.
+ */
+function providerName(name: string, email: string): string {
+  return PERSON_NAME.fit(name) || PERSON_NAME.fit(email.split("@")[0]);
 }
 
 /**
@@ -169,7 +185,7 @@ export async function ensureGlobalUserFromAuth(
 
   await ctx.db.insert("users", {
     authUserId: args.authUserId,
-    name: args.name,
+    name: providerName(args.name, args.email),
     email: args.email,
     avatarUrl: args.avatarUrl,
     accountType: "permanent" as const,
@@ -217,5 +233,8 @@ export async function linkAnonymousToPermanent(
   const guest = await getGlobalUserByAuthUserId(ctx, args.oldAuthUserId);
   if (!guest) return;
   const account = await getGlobalUserByAuthUserId(ctx, args.newAuthUserId);
-  await AccountLifecycle.linkAccount(ctx, guest, account, args);
+  await AccountLifecycle.linkAccount(ctx, guest, account, {
+    ...args,
+    name: PERSON_NAME.fit(args.name ?? "") || undefined,
+  });
 }

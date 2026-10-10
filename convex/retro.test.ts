@@ -889,6 +889,29 @@ describe("retro.startNext", () => {
     expect(await owner.mutation(api.retro.startNext, { roomId })).toBe(nextId);
     expect(await t.run((ctx) => ctx.db.query("rooms").collect())).toHaveLength(2);
   });
+
+  it("opens the next retro from a name at the room-name limit, its number moved on and the words before it cut to fit", async () => {
+    const t = withComponents(convexTest(schema, modules));
+    await seedUser(t, "owner", "permanent");
+    const owner = as(t, "owner");
+    // 100 characters, the limit; "100" is a digit longer than "99".
+    const roomId = await owner.mutation(api.retro.create, { name: `${"x".repeat(97)} 99` });
+
+    const nextId = await owner.mutation(api.retro.startNext, { roomId });
+
+    expect((await t.run((ctx) => ctx.db.get("rooms", nextId)))!.name).toBe(`${"x".repeat(96)} 100`);
+  });
+
+  it("numbers the next retro of a name at the limit that has no number", async () => {
+    const t = withComponents(convexTest(schema, modules));
+    await seedUser(t, "owner", "permanent");
+    const owner = as(t, "owner");
+    const roomId = await owner.mutation(api.retro.create, { name: "x".repeat(100) });
+
+    const nextId = await owner.mutation(api.retro.startNext, { roomId });
+
+    expect((await t.run((ctx) => ctx.db.get("rooms", nextId)))!.name).toBe(`${"x".repeat(98)} 2`);
+  });
 });
 
 describe("columns", () => {

@@ -20,6 +20,7 @@ import type * as cleanup from "../cleanup.js";
 import type * as constants from "../constants.js";
 import type * as crons from "../crons.js";
 import type * as email from "../email.js";
+import type * as fieldRule from "../fieldRule.js";
 import type * as gifLinks from "../gifLinks.js";
 import type * as gifUsage from "../gifUsage.js";
 import type * as http from "../http.js";
@@ -96,6 +97,7 @@ declare const fullApi: ApiFromModules<{
   constants: typeof constants;
   crons: typeof crons;
   email: typeof email;
+  fieldRule: typeof fieldRule;
   gifLinks: typeof gifLinks;
   gifUsage: typeof gifUsage;
   http: typeof http;
