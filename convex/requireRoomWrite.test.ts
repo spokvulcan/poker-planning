@@ -197,23 +197,30 @@ describe.each(ADDRESSABLE)("a write addressed by the $entity it acts on", ({ tab
 // The rule the step exists for: a room write's handler takes its room and its
 // caller from the step, and works neither out again by hand. The modules
 // whose writes are on the step, as source text.
-const sources = import.meta.glob(["./canvas.ts", "./timer.ts"], {
+const sources = import.meta.glob(["./canvas.ts", "./timer.ts", "./retro.ts"], {
   query: "?raw",
   import: "default",
   eager: true,
 }) as Record<string, string>;
 
-/** Each public write in a module's source, by name: its code up to the next export, comments left out. */
+/**
+ * Each public write in a module's source that lands in a room, by name: its
+ * code up to the next export, comments left out. A write that names no room,
+ * issue, sticky or action item, such as opening a retro, lands in none yet.
+ */
 function writesIn(source: string): [string, string][] {
   const code = source
     .split("\n")
     .filter((line) => !/^\s*(\/\/|\/\*|\*)/.test(line))
     .map((line) => line.replace(/(^|[^:])\/\/.*$/, "$1"))
     .join("\n");
-  return [...code.matchAll(/export const (\w+) = mutation\(([\s\S]*?)(?=\nexport |$)/g)].map(
-    ([, name, body]) => [name, body]
-  );
+  return [...code.matchAll(/export const (\w+) = mutation\(([\s\S]*?)(?=\nexport |$)/g)]
+    .filter(([, , body]) => ADDRESSED.test(body))
+    .map(([, name, body]) => [name, body]);
 }
+
+/** An argument naming what a room write can be addressed by (`RoomAddress`): a room, an issue, a sticky or an action item. */
+const ADDRESSED = /v\.id\(\s*["'](rooms|issues|retroStickies|retroActionItems)["']\s*\)/;
 
 /** Code that works out the caller or the room itself: another guard, the caller module, a room read or the user id sent. */
 const RESOLVES_ITSELF =
