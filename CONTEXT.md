@@ -27,7 +27,7 @@ The backend adapter (`requireActingUser`) for "authenticated ∧ room member ∧
 _Avoid_: self-check, impersonation check
 
 **Room access**:
-May this person *read* this room's contents — today, exactly when they have **room attendance**. Still its own question with its own guard (`requireRoomReader`), which read-only queries on room contents take and which returns the room, never a membership (see [ADR-0009](docs/adr/0009-room-access-and-room-attendance-are-separate-guards.md)).
+May this person *read* this room's contents — today, exactly when they have **room attendance**. Still its own question with its own guard (`requireRoomReader`), which read-only queries on room contents take and which reads only the caller and their membership, returning neither the room nor a membership (see [ADR-0009](docs/adr/0009-room-access-and-room-attendance-are-separate-guards.md)).
 _Avoid_: visibility (that is the property being protected), read permission
 
 **Room attendance**:
