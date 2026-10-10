@@ -1,5 +1,29 @@
 # Changelog
 
+## [2.10.5](https://github.com/spokvulcan/poker-planning/compare/agilekit-v2.10.4...agilekit-v2.10.5) (2026-10-10)
+
+
+### Documentation
+
+* presence worker runbook, design tokens doc and a shorter CLAUDE.md ([#405](https://github.com/spokvulcan/poker-planning/issues/405)) ([3b018af](https://github.com/spokvulcan/poker-planning/commit/3b018af6d39e75f7743b5d5c50108f74233cbcea))
+
+
+### Miscellaneous
+
+* **deps:** bump brace-expansion from 5.0.9 to 5.0.12 ([#402](https://github.com/spokvulcan/poker-planning/issues/402)) ([cb8a859](https://github.com/spokvulcan/poker-planning/commit/cb8a85963b78e3c47aad2b4e4eb28758e5d72ff2))
+* **deps:** bump fast-uri from 3.1.7 to 3.1.8 ([#400](https://github.com/spokvulcan/poker-planning/issues/400)) ([4bfe857](https://github.com/spokvulcan/poker-planning/commit/4bfe8576442323152b9c914633a7e39592071d41))
+* **deps:** bump postcss-selector-parser from 7.1.4 to 7.1.6 ([#401](https://github.com/spokvulcan/poker-planning/issues/401)) ([cc56dc4](https://github.com/spokvulcan/poker-planning/commit/cc56dc4d40750db29d21b3c7ac274a23ae84f908))
+
+
+### Code Refactoring
+
+* carry out the October 2026 architecture review ([#406](https://github.com/spokvulcan/poker-planning/issues/406)) ([7f92e62](https://github.com/spokvulcan/poker-planning/commit/7f92e62d262b3e1c77940b8b198c86f915df0da9))
+
+
+### CI/CD
+
+* refresh the lockfile weekly and check PR titles ([#404](https://github.com/spokvulcan/poker-planning/issues/404)) ([e528998](https://github.com/spokvulcan/poker-planning/commit/e528998b96285808fdc607eba85cf7442820990a))
+
 ## [2.10.4](https://github.com/spokvulcan/poker-planning/compare/agilekit-v2.10.3...agilekit-v2.10.4) (2026-10-10)
 
 
