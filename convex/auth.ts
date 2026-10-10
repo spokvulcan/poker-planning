@@ -76,13 +76,14 @@ export const createAuth = (ctx: GenericCtx<DataModel>) => {
             // via ensureGlobalUser (guest sign-in) or joinRoom.
             if ((user as Record<string, unknown>).isAnonymous) return;
 
-            // Permanent account (Google OAuth, magic link): create Convex user record
-            const name = user.name || user.email.split("@")[0];
+            // Permanent account (Google OAuth, magic link): create Convex user
+            // record. The users model fits the provider's name to the name
+            // rule, or the email's local part when there is none (a magic link).
             await actionCtx.runMutation(
               internal.users.ensureGlobalUserFromAuth,
               {
                 authUserId: user.id,
-                name,
+                name: user.name,
                 email: user.email,
                 avatarUrl: user.image ?? undefined,
               }

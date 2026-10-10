@@ -140,6 +140,13 @@ describe("StickyNode", () => {
     expect(screen.queryByRole("button", { name: "Take off the stack" })).toBeNull();
   });
 
+  it("a draft given back by a refused write opens on what it said", () => {
+    const gif = { url: "https://media.giphy.com/media/abc/giphy.gif", width: 200, height: 150, title: "This is fine" };
+    renderSticky({ sticky: undefined, draft: { clientId: "draft-1", text: "Standups run long", gif }, editing: true, canEdit: true });
+    expect((screen.getByLabelText("Sticky text") as HTMLTextAreaElement).value).toBe("Standups run long");
+    expect(screen.getByAltText("This is fine")).toBeTruthy();
+  });
+
   it("offers no vote where the step doesn't take one", () => {
     renderSticky({ shows: stepShows("discuss"), canVote: false });
     expect(screen.queryByRole("button", { name: "Vote" })).toBeNull();
