@@ -72,7 +72,12 @@ export function applyNewSticky(
       totals: new Map(),
     }
   );
-  return { ...board, stickies: [...board.stickies, view] };
+  return {
+    ...board,
+    stickies: [...board.stickies, view],
+    // The viewer counts among the writers from their first sticky on.
+    writers: board.writers + (board.stickies.some((s) => s.mine) ? 0 : 1),
+  };
 }
 
 /** An edit of a sticky, as its update sends it: `gif: null` takes the GIF off. */
@@ -173,6 +178,7 @@ export function applyWalk(retro: RetroState, board: BoardView, direction: "next"
 /** An action item as its add sends it, when, and a key the client made for it. */
 export interface NewActionItem {
   text: string;
+  ownerId?: Id<"users">;
   createdAt: number;
   /** Unique among the items still pending: the item's stand-in id is made from it. */
   key: string;
@@ -198,10 +204,14 @@ function ownedBy(
 
 /**
  * A new action item at the end of the list a browser sees: its words as the
- * field keeps them, not done, under a stand-in id until the server's
- * arrives. Nothing when the words would be refused.
+ * field keeps them, its owner named, not done, under a stand-in id until the
+ * server's arrives. Nothing when the words would be refused.
  */
-export function applyNewActionItem(items: ActionItemView[], item: NewActionItem): ActionItemView[] {
+export function applyNewActionItem(
+  items: ActionItemView[],
+  item: NewActionItem,
+  members: readonly Member[]
+): ActionItemView[] {
   const text = ACTION_ITEM_TEXT.check(item.text);
   if (!text.ok) return items;
   return [
@@ -210,6 +220,7 @@ export function applyNewActionItem(items: ActionItemView[], item: NewActionItem)
       _id: pendingId<"retroActionItems">(item.key),
       text: text.value,
       done: false,
+      ...ownedBy(item.ownerId, members),
       carriedOver: false,
       createdAt: item.createdAt,
     },

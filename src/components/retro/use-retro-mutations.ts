@@ -146,7 +146,7 @@ export function useRetroMutations(roomId: Id<"rooms">, viewerId: Id<"users">) {
 
   const addActionItem = useMutation(api.retro.addActionItem).withOptimisticUpdate((store, args) => {
     patchItems(store, (items) =>
-      applyNewActionItem(items, { ...args, createdAt: Date.now(), key: crypto.randomUUID() })
+      applyNewActionItem(items, { ...args, createdAt: Date.now(), key: crypto.randomUUID() }, membersOf(store))
     );
   });
 

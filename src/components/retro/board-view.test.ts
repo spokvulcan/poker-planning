@@ -171,6 +171,13 @@ describe("a new sticky", () => {
     expect(after.stickies[0]).toBe(before.stickies[0]);
   });
 
+  it("counts the viewer among the writers from their first sticky on", () => {
+    const first = applyNewSticky(board([sticky("x", 1)]), written, { viewerId: ME, retro, members });
+    const second = applyNewSticky(first, { ...written, clientId: "draft-2" }, { viewerId: ME, retro, members });
+
+    expect([first.writers, second.writers]).toEqual([3, 3]);
+  });
+
   it("shows nothing when its words would be refused", () => {
     const before = board([]);
     const tooLong = { ...written, text: "x".repeat(MAX_STICKY_TEXT_LENGTH + 1) };
@@ -208,10 +215,26 @@ describe("a sticky edit", () => {
 });
 
 describe("a new action item", () => {
+  it("shows its owner at once, named as the room lists them", () => {
+    const after = applyNewActionItem([], { key: "k1", text: "Timebox standups", ownerId: ADA, createdAt: 9 }, members);
+
+    expect(after).toEqual([
+      {
+        _id: after[0]._id,
+        text: "Timebox standups",
+        done: false,
+        ownerId: ADA,
+        ownerName: "Ada",
+        carriedOver: false,
+        createdAt: 9,
+      },
+    ]);
+  });
+
   it("is pending until the server's arrives, with its words as the field keeps them", () => {
     const before = [item("a1")];
 
-    const after = applyNewActionItem(before, { key: "k1", text: "  Timebox standups ", createdAt: 9 });
+    const after = applyNewActionItem(before, { key: "k1", text: "  Timebox standups ", createdAt: 9 }, members);
 
     expect(after.map((i) => [isOptimistic(i._id), i.text, i.ownerId ?? null])).toEqual([
       [false, "Item a1", null],
@@ -222,7 +245,7 @@ describe("a new action item", () => {
   it("shows nothing when its words would be refused", () => {
     const before = [item("a1")];
 
-    expect(applyNewActionItem(before, { key: "k1", text: "   ", createdAt: 9 })).toBe(before);
+    expect(applyNewActionItem(before, { key: "k1", text: "   ", createdAt: 9 }, members)).toBe(before);
   });
 });
 
