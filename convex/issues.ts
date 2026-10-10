@@ -49,7 +49,8 @@ export const getForEnhancedExport = query({
 });
 
 /**
- * Create a new issue
+ * Create a new issue, typed in the room: the same admission as an import, with
+ * no link.
  */
 export const create = mutation({
   args: {
@@ -58,7 +59,8 @@ export const create = mutation({
   },
   handler: async (ctx, args) => {
     await requireCan(ctx, args.roomId, { kind: "category", category: "issueManagement" });
-    return await Issues.createIssue(ctx, args);
+    const admission = await Issues.admitIssue(ctx, args);
+    return admission.issueId;
   },
 });
 

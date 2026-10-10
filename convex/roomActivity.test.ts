@@ -294,12 +294,12 @@ describe("room activity — timer and canvas ops bump", () => {
 });
 
 describe("room activity — issue CRUD bumps", () => {
-  it("createIssueInRoom bumps", async () => {
+  it("admitIssue bumps", async () => {
     const t = convexTest(schema, modules);
     const stale = staleTimestamp();
     const roomId = await seedRoom(t, stale);
 
-    await t.run((ctx) => Issues.createIssueInRoom(ctx, { roomId, title: "One" }));
+    await t.run((ctx) => Issues.admitIssue(ctx, { roomId, title: "One" }));
 
     await expectBumped(t, roomId, stale);
   });
