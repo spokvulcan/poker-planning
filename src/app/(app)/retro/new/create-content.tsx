@@ -22,6 +22,9 @@ import { useCopyRoomUrlToClipboard } from "@/hooks/use-copy-room-url-to-clipboar
 import { ROOM_NAME } from "@/convex/constants";
 import { DEFAULT_TEMPLATE_ID, RETRO_TEMPLATES } from "@/convex/retroTemplates";
 import { STICKY_TONES } from "@/components/retro/sticky-colors";
+// PROTOTYPE: layout variants behind ?variant=; delete once one wins.
+import { PrototypeSwitcher, usePrototypeVariant } from "@/components/prototype-switcher";
+import { RETRO_VARIANTS, RetroPrototype } from "./prototype-variants";
 
 /** "Retro, Sep 24": the name a retro gets when nobody types one. */
 function defaultRetroName(): string {
@@ -63,6 +66,31 @@ export function CreateRetroContent() {
       setIsCreating(false);
     }
   };
+
+  // PROTOTYPE: the same state and create, rendered by a layout variant.
+  const variant = usePrototypeVariant(
+    RETRO_VARIANTS.map((v) => v.key),
+    "current"
+  );
+  if (variant !== "current") {
+    return (
+      <RetroPrototype
+        variant={variant}
+        form={{
+          name,
+          setName,
+          templateId,
+          setTemplateId,
+          isRetained,
+          isCreating,
+          create: () => {
+            if (!isCreating) void handleCreate();
+          },
+          cancel: () => router.push("/"),
+        }}
+      />
+    );
+  }
 
   return (
     <div className="flex min-h-screen flex-col bg-white dark:bg-black">
@@ -182,6 +210,7 @@ export function CreateRetroContent() {
       </main>
 
       <Footer />
+      <PrototypeSwitcher variants={RETRO_VARIANTS} current="current" />
     </div>
   );
 }

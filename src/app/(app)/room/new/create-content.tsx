@@ -38,6 +38,9 @@ import {
 } from "@/convex/scales";
 import { ROOM_NAME } from "@/convex/constants";
 import { cn } from "@/lib/utils";
+// PROTOTYPE: layout variants behind ?variant=; delete once one wins.
+import { PrototypeSwitcher, usePrototypeVariant } from "@/components/prototype-switcher";
+import { POKER_VARIANTS, PokerPrototype } from "./prototype-variants";
 
 // The one validator lives in convex/scales (throwing form, shared with the
 // backend); the form adapts it to inline error display.
@@ -158,6 +161,32 @@ export function CreateContent() {
   const isCreateDisabled =
     isCreating ||
     (selectedScale === "custom" && (!!customError || !customCards.trim()));
+
+  // PROTOTYPE: the same state and create, rendered by a layout variant.
+  const variant = usePrototypeVariant(
+    POKER_VARIANTS.map((v) => v.key),
+    "current"
+  );
+  if (variant !== "current") {
+    return (
+      <PokerPrototype
+        variant={variant}
+        form={{
+          roomName,
+          setRoomName,
+          scale: selectedScale,
+          setScale: handleScaleChange,
+          customCards,
+          setCustomCards: handleCustomCardsChange,
+          customError,
+          isCreating,
+          canCreate: !isCreateDisabled,
+          create: () => void handleCreate(),
+          cancel: () => router.push("/"),
+        }}
+      />
+    );
+  }
 
   return (
     <div className="bg-white dark:bg-black min-h-screen flex flex-col">
@@ -375,6 +404,7 @@ export function CreateContent() {
       </main>
 
       <Footer />
+      <PrototypeSwitcher variants={POKER_VARIANTS} current="current" />
     </div>
   );
 }
