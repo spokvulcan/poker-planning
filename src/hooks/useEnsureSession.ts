@@ -1,11 +1,8 @@
 "use client";
 
 import { useCallback } from "react";
-import { useMutation } from "convex/react";
-import { api } from "@/convex/_generated/api";
 import { useAuth, type AuthSnapshot, type WhenAuth } from "@/components/auth/auth-provider";
 import { authClient } from "@/lib/auth-client";
-import { generateGuestName } from "@/lib/guest-names";
 
 export const SESSION_FAILED = "Failed to create session. Please try again.";
 
@@ -19,55 +16,32 @@ function until(whenAuth: WhenAuth, ready: (state: AuthSnapshot) => boolean): Pro
   });
 }
 
-export interface EnsureSessionOptions {
-  /**
-   * Whether to make sure the caller has a users row, with a guest name when
-   * there was none (default true). Joining a room passes false: the join
-   * writes the row with the name the person typed.
-   */
-  createUser?: boolean;
-}
-
 /**
- * The session every guest way in goes through: returns the caller's
- * authUserId once Convex has the session, signing in anonymously first when
- * there is none. It decides only once BetterAuth's session and Convex's auth
- * state have both loaded: with the server-rendered token Convex can load
- * first, and signing in anonymously over a live session is a BetterAuth 400
- * for a guest and a new guest for a permanent account. A fresh session
- * reaches BetterAuth before Convex, so it waits for Convex to take the token
- * before anything writes. Only then does the caller get a
- * users row if they have none, since the server takes no write from a caller
- * it can't identify. Checking every time covers a session whose first row
- * write (or join) failed: creating a room needs the row. The waits are the
- * auth provider's, so they finish even when the page unmounts the caller
+ * The session every guest way in goes through: resolves once Convex has the
+ * session, signing in anonymously first when there is none. It decides only
+ * once BetterAuth's session and Convex's auth state have both loaded: with
+ * the server-rendered token Convex can load first, and signing in
+ * anonymously over a live session is a BetterAuth 400 for a guest and a new
+ * guest for a permanent account. A fresh session reaches BetterAuth before
+ * Convex, so it waits for Convex to take the token: the room write that
+ * follows needs a caller the server can identify. It writes nothing itself;
+ * that write makes the caller's users row when they have none. The waits are
+ * the auth provider's, so they finish even when the page unmounts the caller
  * meanwhile. Throws with a user-facing message on failure.
  */
 export function useEnsureSession() {
   const { whenAuth } = useAuth();
-  const ensureGlobalUser = useMutation(api.users.ensureGlobalUser);
 
-  return useCallback(
-    async ({ createUser = true }: EnsureSessionOptions = {}): Promise<string> => {
-      const loaded = await until(whenAuth, (s) => !s.isSessionPending && !s.isLoading);
+  return useCallback(async (): Promise<void> => {
+    const loaded = await until(whenAuth, (s) => !s.isSessionPending && !s.isLoading);
 
-      let sessionUserId = loaded.authUserId;
-      if (!sessionUserId) {
-        const result = await authClient.signIn.anonymous();
-        const newAuthUserId = result.data?.user?.id;
-        if (result.error || !newAuthUserId) {
-          throw new Error(result.error?.message || SESSION_FAILED);
-        }
-        sessionUserId = newAuthUserId;
+    if (!loaded.authUserId) {
+      const result = await authClient.signIn.anonymous();
+      if (result.error || !result.data?.user?.id) {
+        throw new Error(result.error?.message || SESSION_FAILED);
       }
+    }
 
-      await until(whenAuth, (s) => s.isAuthenticated);
-
-      if (createUser) {
-        await ensureGlobalUser({ authUserId: sessionUserId, name: generateGuestName() });
-      }
-      return sessionUserId;
-    },
-    [whenAuth, ensureGlobalUser]
-  );
+    await until(whenAuth, (s) => s.isAuthenticated);
+  }, [whenAuth]);
 }

@@ -23,7 +23,7 @@ export interface AuthSnapshot {
 export type WhenAuth = (ready: (state: AuthSnapshot) => boolean, timeoutMs: number) => Promise<AuthSnapshot>;
 
 interface AuthContextType {
-  // BetterAuth user ID (sent to join/ensureGlobalUser, which check it names the caller)
+  // BetterAuth user ID: whether there is a session (the server never takes it from the browser)
   authUserId: string | null;
   // Whether the user is anonymous (from BetterAuth session)
   isAnonymous: boolean;
@@ -54,7 +54,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Per docs: "Better Auth will reflect an authenticated user before Convex does"
   const { isAuthenticated, isLoading: convexAuthLoading } = useConvexAuth();
 
-  // Still need BetterAuth session for authUserId (used in mutations)
+  // Still need BetterAuth session for authUserId (whether there is a session at all)
   const { data: session, isPending: isSessionPending } = authClient.useSession();
   const authUserId = session?.user?.id;
 
