@@ -133,14 +133,6 @@ export async function editUser(
 }
 
 /**
- * Takes a person out of a room: they leave, or someone removes them. The
- * handler's room-scoped step hands over the room.
- */
-export async function leaveRoom(ctx: MutationCtx, room: Doc<"rooms">, userId: Id<"users">): Promise<void> {
-  await Memberships.leave(ctx, room, userId);
-}
-
-/**
  * Updates the caller's global name, making their users row with it when they
  * have none yet.
  */

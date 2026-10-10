@@ -58,8 +58,8 @@ export const create = mutation({
     title: v.string(),
   },
   handler: async (ctx, args) => {
-    await requireRoomWrite(ctx, args.roomId, { kind: "category", category: "issueManagement" });
-    const admission = await Issues.admitIssue(ctx, args);
+    const { room } = await requireRoomWrite(ctx, args.roomId, { kind: "category", category: "issueManagement" });
+    const admission = await Issues.admitIssue(ctx, { room, title: args.title });
     return admission.issueId;
   },
 });

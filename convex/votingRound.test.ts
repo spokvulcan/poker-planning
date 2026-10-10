@@ -9,7 +9,7 @@ import type { MutationCtx } from "./_generated/server";
 import * as VotingRound from "./model/votingRound";
 import * as Issues from "./model/issues";
 import * as Users from "./model/users";
-import { getMembership } from "./model/memberships";
+import { getMembership, leave } from "./model/memberships";
 
 const modules = import.meta.glob("./**/*.*s");
 
@@ -288,7 +288,9 @@ describe("dropVoter — a roster exit reconciles the round", () => {
     const b = await addMember(t, roomId); // hasn't voted
     await rawVote(t, roomId, a);
 
-    await onRoom(t, roomId, (ctx, room) => Users.leaveRoom(ctx, room, b)); // also the remove/kick path
+    await onRoom(t, roomId, async (ctx, room) =>
+      leave(ctx, room, (await getMembership(ctx, roomId, b))!)
+    ); // also the remove/kick path
 
     const room = await readRoom(t, roomId);
     expect(room?.autoRevealCountdownStartedAt).toEqual(expect.any(Number));

@@ -38,20 +38,20 @@ export async function demoteFacilitator(
  * Transfers ownership from the current owner to another member.
  * The old owner becomes a participant; the new owner gets the "owner" role.
  * The handler's room-scoped step runs the `transfer` guard and hands over the
- * room, the caller and the target's membership.
+ * room, the actor (the caller's users row) and the target's membership.
  */
 export async function transferOwnership(
   ctx: MutationCtx,
   room: Doc<"rooms">,
-  caller: Doc<"users">,
+  actor: Doc<"users">,
   target: Doc<"roomMemberships">
 ): Promise<void> {
   // Identity rules stay here, after the guard — these are identity, not
   // role, so they do not belong in the pure decision.
-  if (room.ownerId !== caller._id) {
+  if (room.ownerId !== actor._id) {
     throw new Error("Only the room owner can transfer ownership");
   }
-  if (target.userId === caller._id) {
+  if (target.userId === actor._id) {
     throw new Error("Cannot transfer ownership to yourself");
   }
 

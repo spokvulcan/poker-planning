@@ -116,13 +116,14 @@ async function issueHoldingLink(
  * issue at most once per room, the next sequential ID (the room counter
  * advances exactly once), an order after the current last, and the link row.
  * A full room or a link that isn't https is refused in words people see.
+ * Takes the room as its write loaded it: the room-scoped step, or the
+ * tracker import's own read.
  */
 export async function admitIssue(
   ctx: MutationCtx,
-  args: { roomId: Id<"rooms">; title: string; link?: IssueLink }
+  args: { room: Doc<"rooms">; title: string; link?: IssueLink }
 ): Promise<Admission> {
-  const room = await ctx.db.get("rooms", args.roomId);
-  if (!room) throw new Error("Room not found");
+  const { room } = args;
 
   if (args.link) {
     // The room UI renders the link as an anchor href: only a real web URL,
@@ -132,7 +133,7 @@ export async function admitIssue(
     }
     // Ahead of the cap: a tracker issue already in a full room is reported
     // as in the room, not refused.
-    const holder = await issueHoldingLink(ctx, args.roomId, args.link);
+    const holder = await issueHoldingLink(ctx, room._id, args.link);
     if (holder) return { kind: "alreadyInRoom", issueId: holder };
   }
 
@@ -142,7 +143,7 @@ export async function admitIssue(
   // Get current max order
   const issues = await ctx.db
     .query("issues")
-    .withIndex("by_room", (q) => q.eq("roomId", args.roomId))
+    .withIndex("by_room", (q) => q.eq("roomId", room._id))
     .collect();
   if (issues.length >= MAX_ISSUES_PER_ROOM) {
     throw refusal("forbidden", `Rooms are limited to ${MAX_ISSUES_PER_ROOM} issues`);
@@ -150,14 +151,14 @@ export async function admitIssue(
   const maxOrder = issues.length > 0 ? Math.max(...issues.map((i) => i.order)) : 0;
 
   // Update room's next issue number
-  await ctx.db.patch("rooms", args.roomId, {
+  await ctx.db.patch("rooms", room._id, {
     nextIssueNumber: nextNumber,
   });
-  await Rooms.updateRoomActivity(ctx, args.roomId);
+  await Rooms.updateRoomActivity(ctx, room);
 
   // Create the issue
   const issueId = await ctx.db.insert("issues", {
-    roomId: args.roomId,
+    roomId: room._id,
     sequentialId: nextNumber,
     title: requireValid(ISSUE_TITLE, args.title),
     status: "pending",
@@ -169,7 +170,7 @@ export async function admitIssue(
     // roomId-tagged so the room's links come from one by_room read.
     await ctx.db.insert("issueLinks", {
       issueId,
-      roomId: args.roomId,
+      roomId: room._id,
       provider: args.link.provider,
       externalId: args.link.externalId,
       externalUrl: args.link.externalUrl,

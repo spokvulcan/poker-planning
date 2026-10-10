@@ -121,11 +121,10 @@ export async function setSpectator(
 /**
  * Takes a member out of a room: leaving, or being removed. The membership
  * goes first, so the round re-checks completion against the smaller roster
- * when it drops their vote.
+ * when it drops their vote. Takes the membership as the room-scoped step
+ * loaded it: the caller's own, or the member a removal acts on.
  */
-export async function leave(ctx: MutationCtx, room: Doc<"rooms">, userId: Id<"users">): Promise<void> {
-  const membership = await getMembership(ctx, room._id, userId);
-  if (!membership) return;
+export async function leave(ctx: MutationCtx, room: Doc<"rooms">, membership: Doc<"roomMemberships">): Promise<void> {
   await takeOut(ctx, room, membership);
   await Rooms.updateRoomActivity(ctx, room);
 }

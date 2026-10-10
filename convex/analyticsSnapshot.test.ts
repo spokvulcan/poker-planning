@@ -374,7 +374,7 @@ describe("export path — issue links fetched by room", () => {
 describe("snapshot invalidation on account-level user events", () => {
   it("user deletion invalidates the snapshot of a room they already left", async () => {
     const t = withComponents(convexTest(schema, modules));
-    // No membership: leaveRoom can't bump this room's activity, so only the
+    // No membership: leaving can't bump this room's activity, so only the
     // direct invalidation keeps the deleted user's votes out of analytics.
     const userId = await seedUser(t, "auth-gone");
     const roomId = await seedRoom(t);

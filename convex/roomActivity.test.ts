@@ -300,7 +300,7 @@ describe("room activity — issue CRUD bumps", () => {
     const stale = staleTimestamp();
     const roomId = await seedRoom(t, stale);
 
-    await t.run((ctx) => Issues.admitIssue(ctx, { roomId, title: "One" }));
+    await t.run(async (ctx) => Issues.admitIssue(ctx, { room: (await ctx.db.get("rooms", roomId))!, title: "One" }));
 
     await expectBumped(t, roomId, stale);
   });

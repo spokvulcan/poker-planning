@@ -2,7 +2,7 @@ import { mutation, query, internalMutation, internalQuery } from "./_generated/s
 import { v } from "convex/values";
 import * as Users from "./model/users";
 import * as AccountLifecycle from "./model/accountLifecycle";
-import { getMembership } from "./model/memberships";
+import * as Memberships from "./model/memberships";
 import { findUser, getCaller, requireCaller } from "./model/caller";
 import { requireRoomWrite } from "./model/auth";
 
@@ -23,7 +23,7 @@ export const getMyMembership = query({
     const user = (await getCaller(ctx))?.user;
     if (!user) return null;
 
-    const membership = await getMembership(ctx, args.roomId, user._id);
+    const membership = await Memberships.getMembership(ctx, args.roomId, user._id);
     if (!membership) return null;
 
     // Return merged user + membership data for frontend
@@ -74,8 +74,8 @@ export const leave = mutation({
     roomId: v.id("rooms"),
   },
   handler: async (ctx, args) => {
-    const { room, user } = await requireRoomWrite(ctx, args.roomId);
-    await Users.leaveRoom(ctx, room, user._id);
+    const { room, membership } = await requireRoomWrite(ctx, args.roomId);
+    await Memberships.leave(ctx, room, membership);
   },
 });
 
@@ -92,7 +92,7 @@ export const remove = mutation({
       { kind: "relationship", verb: "remove" },
       args.userId
     );
-    await Users.leaveRoom(ctx, room, target!.userId);
+    await Memberships.leave(ctx, room, target!);
   },
 });
 
