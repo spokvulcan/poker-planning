@@ -73,15 +73,17 @@ export type Admission =
   | { kind: "alreadyInRoom"; issueId: Id<"issues"> };
 
 /**
- * The room's issue holding this link, found through the room's links. A link
- * whose issue is gone holds nothing: an issue's links are deleted with it,
- * but earlier deletions left theirs, for the daily sweep to drop.
+ * The room's issue holding this link, found through the room's links to its
+ * key. A link whose issue is gone holds nothing: an issue's links are
+ * deleted with it, but earlier deletions left theirs, for the daily sweep to
+ * drop.
  *
- * Rows written before `issueLinks.roomId` existed are invisible to by_room
- * until backfillIssueLinksRoomId tags them, and the field is still optional,
- * so nothing proves that has run in production. Until it is required, this
- * link's untagged rows are read through by_external (a handful: one per room
- * holding the tracker issue) and their issue says whose they are.
+ * Rows written before `issueLinks.roomId` existed are invisible to the
+ * room's index until backfillIssueLinksRoomId tags them, and the field is
+ * still optional, so nothing proves that has run in production. Until it is
+ * required, this link's untagged rows are read through by_external (a
+ * handful: one per room holding the tracker issue) and their issue says
+ * whose they are.
  */
 async function issueHoldingLink(
   ctx: QueryCtx,
@@ -90,10 +92,11 @@ async function issueHoldingLink(
 ): Promise<Id<"issues"> | null> {
   const roomLinks = await ctx.db
     .query("issueLinks")
-    .withIndex("by_room", (q) => q.eq("roomId", roomId))
+    .withIndex("by_room_provider_external", (q) =>
+      q.eq("roomId", roomId).eq("provider", link.provider).eq("externalId", link.externalId)
+    )
     .collect();
   for (const row of roomLinks) {
-    if (row.provider !== link.provider || row.externalId !== link.externalId) continue;
     if (await ctx.db.get("issues", row.issueId)) return row.issueId;
   }
 

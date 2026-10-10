@@ -428,6 +428,7 @@ export default defineSchema({
   })
     .index("by_issue", ["issueId"])
     .index("by_room", ["roomId"])
+    .index("by_room_provider_external", ["roomId", "provider", "externalId"])
     // The page is the issue's site's: the same key on two sites is two links.
     .index("by_external", ["provider", "externalId", "externalUrl"]),
 
