@@ -706,9 +706,9 @@ describe("VotingRound.reveal", () => {
   });
 
   it("stores numeric average/median when the room has no explicit scale", async () => {
-    // The demo room and pre-`votingScale` rooms have no scale; the canvas
-    // panel still shows an average (client default `?? true`), so the stored
-    // stats must be numeric too — not null (ADR-0002, no client/server divergence).
+    // The demo and pre-`votingScale` rooms have no scale, so they deal the
+    // default deck, which is numeric; the canvas panel shows an average from the
+    // same deck, so the stored stats must be numeric too — not null (ADR-0002).
     const t = withComponents(convexTest(schema, modules));
     const roomId = await seedRoom(t); // seedRoom sets no votingScale
     const issueId = await seedIssue(t, roomId, { status: "voting" });
@@ -747,6 +747,32 @@ describe("VotingRound.reveal", () => {
     );
     expect(snapshots).toHaveLength(2);
     expect(snapshots.every((s) => s.consensusLabel === "5")).toBe(true);
+  });
+
+  it("aligns a room that stores no scale on the default deck it voted with", async () => {
+    // The room dealt the default deck and its stats average it, so its
+    // alignment counts steps along it too: one answer for a missing scale.
+    const t = withComponents(convexTest(schema, modules));
+    const roomId = await seedRoom(t); // seedRoom sets no votingScale
+    const issueId = await seedIssue(t, roomId, { status: "voting" });
+    await t.run((ctx) => ctx.db.patch("rooms", roomId, { currentIssueId: issueId }));
+    const a = await addMember(t, roomId);
+    const b = await addMember(t, roomId);
+    const c = await addMember(t, roomId);
+    await rawVote(t, roomId, a, "3");
+    await rawVote(t, roomId, b, "3");
+    await rawVote(t, roomId, c, "8");
+
+    await t.run((ctx) => VotingRound.reveal(ctx, roomId));
+
+    const snapshots = await t.run((ctx) =>
+      ctx.db
+        .query("individualVotes")
+        .withIndex("by_issue", (q) => q.eq("issueId", issueId))
+        .collect()
+    );
+    expect(snapshots.find((s) => s.userId === a)?.deltaSteps).toBe(0);
+    expect(snapshots.find((s) => s.userId === c)?.deltaSteps).toBe(2); // 3 → 5 → 8
   });
 
   it("snapshots agreement excluding special cards (the client/server divergence)", async () => {
@@ -906,6 +932,59 @@ describe("VotingRound.castVote", () => {
     ).rejects.toThrow(/spectator/i);
 
     expect(await votesFor(t, roomId)).toHaveLength(0);
+  });
+
+  it("refuses a card the room's deck doesn't deal, recording nothing", async () => {
+    const t = withComponents(convexTest(schema, modules));
+    const roomId = await seedRoom(t, { autoCompleteVoting: false });
+    await t.run((ctx) =>
+      ctx.db.patch("rooms", roomId, {
+        votingScale: { type: "custom", cards: ["S", "M", "L"], isNumeric: false },
+      })
+    );
+    const a = await addMember(t, roomId);
+
+    await expect(
+      t.run((ctx) => VotingRound.castVote(ctx, { roomId, userId: a, cardLabel: "5" }))
+    ).rejects.toThrow("Card is not in this room's voting scale");
+    expect(await votesFor(t, roomId)).toHaveLength(0);
+  });
+
+  it("takes only the default deck's cards in a room that stores no scale", async () => {
+    const t = withComponents(convexTest(schema, modules));
+    const roomId = await seedRoom(t, { autoCompleteVoting: false }); // no votingScale
+    const a = await addMember(t, roomId);
+
+    await expect(
+      t.run((ctx) => VotingRound.castVote(ctx, { roomId, userId: a, cardLabel: "M" }))
+    ).rejects.toThrow("Card is not in this room's voting scale");
+    await t.run((ctx) => VotingRound.castVote(ctx, { roomId, userId: a, cardLabel: "89" }));
+
+    expect((await votesFor(t, roomId)).map((v) => v.cardLabel)).toEqual(["89"]);
+  });
+
+  it("records the number the deck reads a card as, and none for a card without one", async () => {
+    const t = withComponents(convexTest(schema, modules));
+    const roomId = await seedRoom(t, { autoCompleteVoting: false });
+    await t.run((ctx) =>
+      ctx.db.patch("rooms", roomId, {
+        votingScale: { type: "custom", cards: ["1", "3", "Spike", "?"], isNumeric: false },
+      })
+    );
+    const a = await addMember(t, roomId);
+    const b = await addMember(t, roomId);
+    const c = await addMember(t, roomId);
+
+    await t.run((ctx) => VotingRound.castVote(ctx, { roomId, userId: a, cardLabel: "3" }));
+    await t.run((ctx) => VotingRound.castVote(ctx, { roomId, userId: b, cardLabel: "Spike" }));
+    await t.run((ctx) => VotingRound.castVote(ctx, { roomId, userId: c, cardLabel: "?" }));
+
+    const valueOf = async (userId: Id<"users">) =>
+      (await votesFor(t, roomId)).find((v) => v.userId === userId)?.cardValue;
+    // The same number the Jira push and the alignment snapshot read it as.
+    expect(await valueOf(a)).toBe(3);
+    expect(await valueOf(b)).toBeUndefined();
+    expect(await valueOf(c)).toBeUndefined();
   });
 });
 

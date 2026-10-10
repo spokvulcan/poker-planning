@@ -75,6 +75,14 @@ describe("velocityByDay", () => {
     expect(points).toEqual([]);
   });
 
+  it("never counts a literal \"Infinity\" estimate as points", () => {
+    const points = velocityByDay([
+      entry("A", issue({ finalEstimate: "Infinity", votedAt: DAY1 })),
+      entry("A", issue({ finalEstimate: "5", votedAt: DAY1 })),
+    ]);
+    expect(points).toEqual([{ date: "2026-01-10", storyPoints: 5, issueCount: 1 }]);
+  });
+
   it("returns a defined empty result for empty history", () => {
     expect(velocityByDay([])).toEqual([]);
   });
@@ -343,6 +351,13 @@ describe("predictability", () => {
     });
   });
 
+  it("never counts a literal \"Infinity\" estimate as points", () => {
+    const data = predictability([
+      room("A", [scored("Infinity", DAY1, 80), scored("5", DAY1, 80)]),
+    ]);
+    expect(data.sessions[0]).toMatchObject({ estimatedPoints: 5, issueCount: 2 });
+  });
+
   it("clamps the score at 0 when velocity is wildly inconsistent", () => {
     const data = predictability([
       room("A", [scored("1", DAY1)]),
@@ -483,6 +498,15 @@ describe("sessionIssueStats", () => {
 
   it("reports null points for a fully non-numeric scale", () => {
     expect(sessionIssueStats([issue({ finalEstimate: "M" })]).totalStoryPoints).toBeNull();
+  });
+
+  it("never counts a literal \"Infinity\" estimate as points", () => {
+    expect(
+      sessionIssueStats([
+        issue({ finalEstimate: "Infinity" }),
+        issue({ finalEstimate: "5" }),
+      ]).totalStoryPoints
+    ).toBe(5);
   });
 
   it("reports null agreement when no issue has one", () => {

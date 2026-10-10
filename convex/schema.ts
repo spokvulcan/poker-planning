@@ -11,6 +11,16 @@ export const providerValidator = v.union(
 );
 
 /**
+ * Why a mapping's last Jira webhook registration failed: the server has no
+ * webhook secret to put in the webhook's URL, or Jira (or the connection's
+ * token) refused it.
+ */
+export const jiraWebhookFailureValidator = v.union(
+  v.literal("missingSecret"),
+  v.literal("jiraError")
+);
+
+/**
  * A permission level, shared by every configurable category (ADR-0013).
  */
 export const permissionLevelValidator = v.union(
@@ -384,8 +394,13 @@ export default defineSchema({
     jiraBoardId: v.optional(v.number()),
     jiraSprintId: v.optional(v.number()),
     storyPointsFieldId: v.optional(v.string()), // e.g., "customfield_10016"
+    // The mapping's Jira webhook record, written only by its reconcile
+    // (integrations/jiraWebhookReconcile.ts)
     jiraWebhookId: v.optional(v.string()), // Registered Jira webhook ID
     jiraWebhookRegisteredAt: v.optional(v.number()),
+    jiraWebhookConnectionId: v.optional(v.id("integrationConnections")), // The connection that registered it
+    jiraWebhookProjectKey: v.optional(v.string()), // The project it was registered for
+    jiraWebhookFailure: v.optional(jiraWebhookFailureValidator), // Why the last registration failed
     // GitHub mapping (Epic 7)
     githubRepo: v.optional(v.string()),
     githubProjectId: v.optional(v.string()),

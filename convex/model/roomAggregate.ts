@@ -1,7 +1,7 @@
 import { MutationCtx } from "../_generated/server";
 import { Doc, Id } from "../_generated/dataModel";
 import { internal } from "../_generated/api";
-import { scheduleWebhookDeregistration } from "./integrations";
+import * as Integrations from "./integrations";
 import * as Issues from "./issues";
 import * as Presence from "./presence";
 
@@ -92,11 +92,10 @@ export interface RoomAggregateDeleteStep {
  *    table reads empty. Memberships are gone by then, so no heartbeat can
  *    write presence for the room again.
  *
- * integrationMappings rows schedule webhook deregistration BEFORE deletion:
- * deleting the mapping alone would orphan the remote Jira webhook (it keeps
- * POSTing until its 30-day expiry). Connections belong to users, not rooms,
- * so the connection row survives the cascade and the scheduled action can
- * still authenticate the remote delete.
+ * integrationMappings rows are deleted through Integrations.deleteMapping,
+ * which hands each one's webhook to the provider's reconcile. Connections
+ * belong to users, not rooms, so the connection row survives the cascade and
+ * the webhook's removal can still authenticate with it.
  */
 export async function deleteRoomAggregateChunk(
   ctx: MutationCtx,
@@ -133,12 +132,12 @@ export async function deleteRoomAggregateChunk(
     const rows = batches[i];
 
     if (table === "integrationMappings") {
-      for (const mapping of rows as Doc<"integrationMappings">[]) {
-        await scheduleWebhookDeregistration(ctx, mapping);
-      }
+      await Promise.all(
+        (rows as Doc<"integrationMappings">[]).map((mapping) => Integrations.deleteMapping(ctx, mapping))
+      );
+    } else {
+      await Promise.all(rows.map((row) => ctx.db.delete(table, row._id as Id<typeof table>)));
     }
-
-    await Promise.all(rows.map((row) => ctx.db.delete(table, row._id)));
     deleted += rows.length;
     if (rows.length === batchSize) anyFullBatch = true;
   }

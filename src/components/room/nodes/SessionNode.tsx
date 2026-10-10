@@ -19,6 +19,11 @@ import type { SessionNodeType } from "../types";
 
 export const SessionNode = memo(
   ({ data, selected }: NodeProps<SessionNodeType>): ReactElement => {
+    // Resolved decisions in, by permission category; `.allowed` drives each
+    // control's own onClick, className, and non-permission disabled state.
+    // The denial copy and the disabled-when-denied state are layered on via
+    // permissionProps, spread after each button's own attributes so they
+    // compose rather than replace.
     const {
       sessionName,
       participantCount,
@@ -28,23 +33,9 @@ export const SessionNode = memo(
       autoCompleteVoting,
       autoRevealCountdownStartedAt,
       currentIssue,
-      canRevealCards: canRevealCardsDecision,
-      canControlGameFlow: canControlGameFlowDecision,
-      canChangeRoomSettings: canChangeRoomSettingsDecision,
-      onRevealCards,
-      onResetGame,
-      onToggleAutoComplete,
-      onCancelAutoReveal,
-      onOpenIssuesPanel,
+      permissions: { revealCards, gameFlow, roomSettings },
+      actions,
     } = data;
-
-    // Resolved decisions in; booleans drive each control's own onClick,
-    // className, and non-permission disabled state. The denial copy and the
-    // disabled-when-denied state are layered on via permissionProps, spread
-    // after each button's own attributes so they compose rather than replace.
-    const canRevealCards = canRevealCardsDecision.allowed;
-    const canControlGameFlow = canControlGameFlowDecision.allowed;
-    const canChangeRoomSettings = canChangeRoomSettingsDecision.allowed;
 
     const isRevealed = phase === "revealed";
     const isActive = !isRevealed;
@@ -99,11 +90,11 @@ export const SessionNode = memo(
     const displayCountdownSeconds = countdownSeconds ?? countdownDurationSeconds;
 
     const handleResetClick = useCallback(() => {
-      if (resetCooldown === 0 && onResetGame) {
+      if (resetCooldown === 0) {
         setResetCooldown(3); // 3 second cooldown
-        onResetGame();
+        actions.reset();
       }
-    }, [resetCooldown, onResetGame]);
+    }, [resetCooldown, actions]);
 
     const nodeClasses = useMemo(
       () =>
@@ -169,7 +160,7 @@ export const SessionNode = memo(
 
           {/* Current Issue / Quick Vote */}
           <button
-            onClick={onOpenIssuesPanel}
+            onClick={actions.openIssues}
             className="w-full mb-3 px-3 py-2 bg-gray-100/50 dark:bg-surface-2/50 rounded-md hover:bg-gray-200/50 dark:hover:bg-surface-3/50 transition-colors flex items-center justify-between gap-2 group"
             aria-label={
               currentIssue
@@ -192,11 +183,11 @@ export const SessionNode = memo(
 
           {/* Auto-reveal toggle */}
           <button
-            onClick={canChangeRoomSettings ? onToggleAutoComplete : undefined}
-            disabled={!canChangeRoomSettings}
+            onClick={roomSettings.allowed ? actions.toggleAutoComplete : undefined}
+            disabled={!roomSettings.allowed}
             className={cn(
               "flex items-center gap-2 w-full px-3 py-1.5 mb-3 rounded-md text-xs font-medium transition-colors",
-              !canChangeRoomSettings
+              !roomSettings.allowed
                 ? "opacity-50 cursor-not-allowed bg-gray-100 dark:bg-surface-1 text-gray-500 dark:text-gray-400"
                 : autoCompleteVoting
                   ? "bg-amber-100 dark:bg-status-warning-bg text-amber-700 dark:text-status-warning-fg hover:bg-amber-200 dark:hover:bg-status-warning-bg/80"
@@ -208,7 +199,7 @@ export const SessionNode = memo(
                 : "Enable auto-reveal when all vote"
             }
             aria-pressed={autoCompleteVoting}
-            {...permissionProps(canChangeRoomSettingsDecision)}
+            {...permissionProps(roomSettings)}
           >
             <Zap
               className={cn(
@@ -268,11 +259,11 @@ export const SessionNode = memo(
             {phase === "revealed" ? (
               /* PHASE: revealed → New Round */
               <button
-                onClick={canControlGameFlow ? handleResetClick : undefined}
-                disabled={resetCooldown > 0 || !canControlGameFlow}
+                onClick={gameFlow.allowed ? handleResetClick : undefined}
+                disabled={resetCooldown > 0 || !gameFlow.allowed}
                 className={cn(
                   "w-full h-12 flex items-center justify-center gap-2 rounded-lg font-medium transition-all",
-                  !canControlGameFlow || resetCooldown > 0
+                  !gameFlow.allowed || resetCooldown > 0
                     ? "bg-gray-100 dark:bg-surface-2 text-gray-400 dark:text-gray-500 cursor-not-allowed"
                     : "bg-emerald-500 hover:bg-emerald-600 active:bg-emerald-700 text-white shadow-sm hover:shadow-md",
                 )}
@@ -281,7 +272,7 @@ export const SessionNode = memo(
                     ? `Please wait ${resetCooldown} seconds`
                     : "Start a new voting round"
                 }
-                {...permissionProps(canControlGameFlowDecision)}
+                {...permissionProps(gameFlow)}
               >
                 <RotateCcw
                   className={cn("h-5 w-5", resetCooldown > 0 && "animate-spin")}
@@ -295,16 +286,16 @@ export const SessionNode = memo(
             ) : phase === "countingDown" ? (
               /* PHASE: countingDown → Cancel */
               <button
-                onClick={canRevealCards ? onCancelAutoReveal : undefined}
-                disabled={!canRevealCards}
+                onClick={revealCards.allowed ? actions.cancelAutoReveal : undefined}
+                disabled={!revealCards.allowed}
                 className={cn(
                   "w-full h-12 flex items-center justify-center gap-3 rounded-lg font-medium transition-all",
-                  canRevealCards
+                  revealCards.allowed
                     ? "bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-white shadow-sm hover:shadow-md animate-pulse"
                     : "bg-gray-100 dark:bg-surface-2 text-gray-400 dark:text-gray-500 cursor-not-allowed",
                 )}
                 aria-label={`Auto-revealing in ${displayCountdownSeconds} seconds. Tap to cancel.`}
-                {...permissionProps(canRevealCardsDecision)}
+                {...permissionProps(revealCards)}
               >
                 <span className="flex items-center gap-2">
                   <span className="font-mono text-lg font-bold tabular-nums">
@@ -317,22 +308,22 @@ export const SessionNode = memo(
             ) : (
               /* PHASE: voting → Reveal */
               <button
-                onClick={canRevealCards ? onRevealCards : undefined}
-                disabled={!hasVotes || !canRevealCards}
+                onClick={revealCards.allowed ? actions.reveal : undefined}
+                disabled={!hasVotes || !revealCards.allowed}
                 className={cn(
                   "w-full h-12 flex items-center justify-center gap-2 rounded-lg font-medium transition-all",
-                  !canRevealCards || !hasVotes
+                  !revealCards.allowed || !hasVotes
                     ? "bg-gray-100 dark:bg-surface-2 text-gray-400 dark:text-gray-500 cursor-not-allowed"
                     : "bg-blue-500 hover:bg-blue-600 active:bg-blue-700 text-white shadow-sm hover:shadow-md",
                 )}
                 aria-label={
                   hasVotes ? "Reveal all votes" : "Waiting for votes to reveal"
                 }
-                {...permissionProps(canRevealCardsDecision)}
+                {...permissionProps(revealCards)}
               >
                 <Play className="h-5 w-5" />
                 <span>
-                  {!canRevealCards
+                  {!revealCards.allowed
                     ? "Reveal Votes"
                     : hasVotes
                       ? "Reveal Votes"

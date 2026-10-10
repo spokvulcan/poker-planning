@@ -3,30 +3,10 @@ import { Id, Doc } from "../_generated/dataModel";
 import * as Canvas from "./canvas";
 import * as Rooms from "./rooms";
 import * as VotingRound from "./votingRound";
-import { refusal } from "./refusal";
-import {
-  MAX_ISSUE_TITLE_LENGTH,
-  MAX_ISSUES_PER_ROOM,
-} from "../constants";
+import { refusal, requireValid } from "./refusal";
+import { ISSUE_TITLE, MAX_ISSUES_PER_ROOM } from "../constants";
 
 export type IssueStatus = "pending" | "voting" | "completed";
-
-/**
- * Validates an issue title (trims, enforces non-empty and a length cap).
- * Jira-imported titles ("KEY - summary") fit comfortably under the cap.
- */
-export function validateIssueTitle(title: string): string {
-  const trimmed = title.trim();
-  if (!trimmed) {
-    throw new Error("Issue title is required");
-  }
-  if (trimmed.length > MAX_ISSUE_TITLE_LENGTH) {
-    throw new Error(
-      `Issue title must be ${MAX_ISSUE_TITLE_LENGTH} characters or less`
-    );
-  }
-  return trimmed;
-}
 
 export interface ExportableIssue {
   title: string;
@@ -179,7 +159,7 @@ export async function admitIssue(
   const issueId = await ctx.db.insert("issues", {
     roomId: args.roomId,
     sequentialId: nextNumber,
-    title: validateIssueTitle(args.title),
+    title: requireValid(ISSUE_TITLE, args.title),
     status: "pending",
     createdAt: Date.now(),
     order: maxOrder + 1,
@@ -233,7 +213,8 @@ export async function followTrackerChange(
     return;
   }
 
-  const title = validateIssueTitle(change.title);
+  // A tracker's title is fitted to the title rule, never refused.
+  const title = ISSUE_TITLE.fit(change.title);
   for (const row of rows) {
     const issue = await ctx.db.get("issues", row.issueId);
     if (!issue) continue;
@@ -255,7 +236,7 @@ export async function updateIssueTitle(
   const issue = await ctx.db.get("issues", args.issueId);
   if (!issue) throw new Error("Issue not found");
 
-  await ctx.db.patch("issues", args.issueId, { title: validateIssueTitle(args.title) });
+  await ctx.db.patch("issues", args.issueId, { title: requireValid(ISSUE_TITLE, args.title) });
 
   // Update room activity
   await Rooms.updateRoomActivity(ctx, issue.roomId);

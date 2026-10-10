@@ -185,6 +185,24 @@ describe("applyJiraWebhookEvent (via processJiraWebhook)", () => {
     expect(room?.lastActivityAt).toBeGreaterThan(sentinel);
   });
 
+  it("jira:issue_updated fits a summary past the issue-title limit to it", async () => {
+    const t = convexTest(schema, modules);
+    const roomId = await seedRoom(t);
+    const issueId = await seedIssue(t, roomId);
+    await seedIssueLink(t, issueId, "PROJ-1");
+
+    await t.mutation(internal.integrations.jira.processJiraWebhook, {
+      eventKey: "jira:10001:1700000000003",
+      eventType: "jira:issue_updated",
+      issueKey: "PROJ-1",
+      issueSummary: "x".repeat(600),
+    });
+
+    // "PROJ-1 - " and 491 more: 500 characters, the title rule's limit.
+    const issue = await t.run((ctx) => ctx.db.get("issues", issueId));
+    expect(issue?.title).toBe(`PROJ-1 - ${"x".repeat(491)}`);
+  });
+
   it("jira:issue_deleted removes the link but keeps the local issue", async () => {
     const t = convexTest(schema, modules);
     const roomId = await seedRoom(t);
@@ -315,6 +333,156 @@ describe("deregisterWebhook", () => {
   });
 });
 
+describe("registerWebhook", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  async function seedMember(t: T, roomId: Id<"rooms">, userId: Id<"users">): Promise<void> {
+    await t.run((ctx) =>
+      ctx.db.insert("roomMemberships", { roomId, userId, isSpectator: false, joinedAt: Date.now() })
+    );
+  }
+
+  it("records a failed registration on the mapping, where the room's settings read it", async () => {
+    const t = convexTest(schema, modules);
+    const userId = await seedUser(t, "auth-u");
+    const connectionId = await seedConnection(t, userId);
+    const roomId = await seedRoom(t);
+    await seedMember(t, roomId, userId);
+    const mappingId = await seedMapping(t, roomId, connectionId);
+
+    // No JIRA_WEBHOOK_SECRET is configured in the test env.
+    await t.action(internal.integrations.jira.registerWebhook, { mappingId });
+
+    const shown = await t
+      .withIdentity({ subject: "auth-u" })
+      .query(api.integrations.getRoomMapping, { roomId });
+    expect(shown?.jiraWebhookFailure).toBe("missingSecret");
+    expect(shown?.jiraWebhookId).toBeUndefined();
+  });
+
+  it("records Jira refusing the webhook", async () => {
+    vi.stubEnv("JIRA_WEBHOOK_SECRET", "s3cret");
+    const t = convexTest(schema, modules);
+    const connectionId = await seedConnection(t, await seedUser(t, "auth-u"));
+    const mappingId = await seedMapping(t, await seedRoom(t), connectionId);
+
+    // The seed tokens never decrypt, so no Jira client can be built.
+    await t.action(internal.integrations.jira.registerWebhook, { mappingId });
+
+    const mapping = await t.run((ctx) => ctx.db.get("integrationMappings", mappingId));
+    expect(mapping?.jiraWebhookFailure).toBe("jiraError");
+  });
+
+  it("deletes the webhook it replaces with the connection that made it", async () => {
+    const t = convexTest(schema, modules);
+    const first = await seedConnection(t, await seedUser(t, "auth-a"));
+    const second = await seedConnection(t, await seedUser(t, "auth-b"));
+    const mappingId = await seedMapping(t, await seedRoom(t), second);
+
+    await t.action(internal.integrations.jira.registerWebhook, {
+      mappingId,
+      replacing: { connectionId: first, webhookId: "wh-first" },
+    });
+
+    // The delete fails in the test env (seed tokens don't decrypt), so the
+    // one retry shows which connection it authenticates with.
+    const retries = await scheduledByName(t, ":deregisterWebhook");
+    expect(retries.map((job) => job.args[0])).toEqual([
+      { connectionId: first, webhookId: "wh-first", attemptsLeft: 0 },
+    ]);
+  });
+
+  it("removes a webhook that lands after auto-push was turned off, and records nothing", async () => {
+    const t = convexTest(schema, modules);
+    const connectionId = await seedConnection(t, await seedUser(t, "auth-u"));
+    const mappingId = await seedMapping(t, await seedRoom(t), connectionId);
+    await t.run((ctx) =>
+      ctx.db.patch("integrationMappings", mappingId, { autoPushEstimates: false })
+    );
+
+    await t.mutation(internal.integrations.jira.recordWebhookRegistration, {
+      mappingId,
+      registration: { kind: "registered", webhookId: "wh-late", connectionId, projectKey: "PROJ" },
+    });
+
+    const removals = await scheduledByName(t, ":deregisterWebhook");
+    expect(removals.map((job) => job.args[0])).toEqual([{ connectionId, webhookId: "wh-late" }]);
+    const mapping = await t.run((ctx) => ctx.db.get("integrationMappings", mappingId));
+    expect(mapping?.jiraWebhookId).toBeUndefined();
+  });
+
+  it("records a webhook the mapping still wants, with the connection and project it was made for", async () => {
+    const t = convexTest(schema, modules);
+    const connectionId = await seedConnection(t, await seedUser(t, "auth-u"));
+    const mappingId = await seedMapping(t, await seedRoom(t), connectionId);
+
+    await t.mutation(internal.integrations.jira.recordWebhookRegistration, {
+      mappingId,
+      registration: { kind: "registered", webhookId: "wh-new", connectionId, projectKey: "PROJ" },
+    });
+
+    expect(await t.run((ctx) => ctx.db.get("integrationMappings", mappingId))).toMatchObject({
+      jiraWebhookId: "wh-new",
+      jiraWebhookConnectionId: connectionId,
+      jiraWebhookProjectKey: "PROJ",
+    });
+    expect(await scheduledByName(t, ":deregisterWebhook")).toHaveLength(0);
+  });
+});
+
+describe("refreshJiraWebhooks (the weekly renewal)", () => {
+  it("renews each wanted webhook, retries a failed registration and removes a webhook nobody wants", async () => {
+    const t = convexTest(schema, modules);
+    const connectionId = await seedConnection(t, await seedUser(t, "auth-u"));
+    const live = await seedMapping(t, await seedRoom(t), connectionId, { jiraWebhookId: "wh-live" });
+    const failed = await seedMapping(t, await seedRoom(t), connectionId);
+    const leaked = await seedMapping(t, await seedRoom(t), connectionId, { jiraWebhookId: "wh-leaked" });
+    await t.run(async (ctx) => {
+      await ctx.db.patch("integrationMappings", live, {
+        jiraWebhookConnectionId: connectionId,
+        jiraWebhookProjectKey: "PROJ",
+      });
+      await ctx.db.patch("integrationMappings", failed, { jiraWebhookFailure: "jiraError" });
+      // Auto-push was turned off before the reconcile existed, leaving its webhook on record.
+      await ctx.db.patch("integrationMappings", leaked, { autoPushEstimates: false });
+    });
+
+    await t.mutation(internal.integrations.jira.refreshJiraWebhooks, {});
+
+    const registrations = (await scheduledByName(t, ":registerWebhook")).map((job) => job.args[0]);
+    expect(registrations).toHaveLength(2);
+    expect(registrations).toEqual(
+      expect.arrayContaining([
+        { mappingId: live, replacing: { connectionId, webhookId: "wh-live" } },
+        { mappingId: failed },
+      ])
+    );
+    const removals = await scheduledByName(t, ":deregisterWebhook");
+    expect(removals.map((job) => job.args[0])).toEqual([{ connectionId, webhookId: "wh-leaked" }]);
+    const leakedNow = await t.run((ctx) => ctx.db.get("integrationMappings", leaked));
+    expect(leakedNow?.jiraWebhookId).toBeUndefined();
+  });
+
+  it("pages through the mappings, rescheduling itself until done", async () => {
+    const t = convexTest(schema, modules);
+    const connectionId = await seedConnection(t, await seedUser(t, "auth-u"));
+    await seedMapping(t, await seedRoom(t), connectionId);
+    await seedMapping(t, await seedRoom(t), connectionId);
+
+    await t.mutation(internal.integrations.jira.refreshJiraWebhooks, { batchSize: 1 });
+    expect(await scheduledByName(t, ":registerWebhook")).toHaveLength(1);
+
+    const [continuation] = await scheduledByName(t, ":refreshJiraWebhooks");
+    await t.mutation(
+      internal.integrations.jira.refreshJiraWebhooks,
+      continuation.args[0] as { cursor: string; batchSize: number }
+    );
+    expect(await scheduledByName(t, ":registerWebhook")).toHaveLength(2);
+  });
+});
+
 describe("public Jira actions require authentication", () => {
   it("rejects unauthenticated callers before touching the network", async () => {
     const t = convexTest(schema, modules);
@@ -436,6 +604,115 @@ describe("saveRoomMapping", () => {
     expect(await scheduledByName(t, ":registerWebhook")).toHaveLength(2);
   });
 
+  it("turning auto-push off removes the webhook on record, with the connection that made it", async () => {
+    const t = convexTest(schema, modules);
+    const connectionId = await seedConnection(t, await seedUser(t, "auth-u"));
+    const roomId = await seedRoom(t);
+    const mappingId = await seedMapping(t, roomId, connectionId, { jiraWebhookId: "wh-live" });
+
+    await t.run((ctx) =>
+      Integrations.saveRoomMapping(ctx, {
+        roomId,
+        connectionId,
+        provider: "jira",
+        projectKey: "PROJ",
+        autoImport: false,
+        autoPushEstimates: false,
+      })
+    );
+
+    const removals = await scheduledByName(t, ":deregisterWebhook");
+    expect(removals.map((job) => job.args[0])).toEqual([{ connectionId, webhookId: "wh-live" }]);
+    expect(await scheduledByName(t, ":registerWebhook")).toHaveLength(0);
+    const mapping = await t.run((ctx) => ctx.db.get("integrationMappings", mappingId));
+    expect(mapping?.jiraWebhookId).toBeUndefined();
+  });
+
+  it("re-saving with another connection replaces the webhook, the old one going with the old connection", async () => {
+    const t = convexTest(schema, modules);
+    const first = await seedConnection(t, await seedUser(t, "auth-a"));
+    const second = await seedConnection(t, await seedUser(t, "auth-b"));
+    const roomId = await seedRoom(t);
+    const mappingId = await seedMapping(t, roomId, first, { jiraWebhookId: "wh-first" });
+
+    await t.run((ctx) =>
+      Integrations.saveRoomMapping(ctx, {
+        roomId,
+        connectionId: second,
+        provider: "jira",
+        projectKey: "PROJ",
+        autoImport: false,
+        autoPushEstimates: true,
+      })
+    );
+
+    // One action deletes the old webhook with the connection that made it,
+    // then registers the new one with the mapping's connection.
+    const registrations = await scheduledByName(t, ":registerWebhook");
+    expect(registrations.map((job) => job.args[0])).toEqual([
+      { mappingId, replacing: { connectionId: first, webhookId: "wh-first" } },
+    ]);
+    expect(await scheduledByName(t, ":deregisterWebhook")).toHaveLength(0);
+    // The old webhook is the action's to delete now, so it is off the record.
+    const mapping = await t.run((ctx) => ctx.db.get("integrationMappings", mappingId));
+    expect(mapping?.jiraWebhookId).toBeUndefined();
+  });
+
+  it("saving again clears the last failed registration and retries it", async () => {
+    const t = convexTest(schema, modules);
+    const connectionId = await seedConnection(t, await seedUser(t, "auth-u"));
+    const roomId = await seedRoom(t);
+    const mappingId = await seedMapping(t, roomId, connectionId);
+    await t.run((ctx) =>
+      ctx.db.patch("integrationMappings", mappingId, { jiraWebhookFailure: "jiraError" })
+    );
+
+    await t.run((ctx) =>
+      Integrations.saveRoomMapping(ctx, {
+        roomId,
+        connectionId,
+        provider: "jira",
+        projectKey: "PROJ",
+        autoImport: false,
+        autoPushEstimates: true,
+      })
+    );
+
+    const mapping = await t.run((ctx) => ctx.db.get("integrationMappings", mappingId));
+    expect(mapping?.jiraWebhookFailure).toBeUndefined();
+    expect(await scheduledByName(t, ":registerWebhook")).toHaveLength(1);
+  });
+
+  it("re-saving what the live webhook already serves keeps it", async () => {
+    const t = convexTest(schema, modules);
+    const connectionId = await seedConnection(t, await seedUser(t, "auth-u"));
+    const roomId = await seedRoom(t);
+    const mappingId = await seedMapping(t, roomId, connectionId, { jiraWebhookId: "wh-live" });
+    await t.run((ctx) =>
+      ctx.db.patch("integrationMappings", mappingId, {
+        jiraWebhookConnectionId: connectionId,
+        jiraWebhookProjectKey: "PROJ",
+      })
+    );
+
+    await t.run((ctx) =>
+      Integrations.saveRoomMapping(ctx, {
+        roomId,
+        connectionId,
+        provider: "jira",
+        projectKey: "PROJ",
+        storyPointsFieldId: "customfield_10016",
+        autoImport: false,
+        autoPushEstimates: true,
+      })
+    );
+
+    expect(await scheduledByName(t, ":registerWebhook")).toHaveLength(0);
+    expect(await scheduledByName(t, ":deregisterWebhook")).toHaveLength(0);
+    const mapping = await t.run((ctx) => ctx.db.get("integrationMappings", mappingId));
+    expect(mapping?.jiraWebhookId).toBe("wh-live");
+  });
+
   it("bumps the room's lastActivityAt through the activity chokepoint", async () => {
     const t = convexTest(schema, modules);
     const userId = await seedUser(t, "auth-u");
@@ -486,35 +763,6 @@ describe("toConnectionView", () => {
       providerUserEmail: "u@example.com",
       scopes: ["read:jira-work"],
     });
-  });
-});
-
-describe("setMappingWebhook", () => {
-  it("replaces the webhook id on re-registration and clears it on removal", async () => {
-    const t = convexTest(schema, modules);
-    const userId = await seedUser(t, "auth-u");
-    const connectionId = await seedConnection(t, userId);
-    const roomId = await seedRoom(t);
-    const mappingId = await seedMapping(t, roomId, connectionId, {
-      jiraWebhookId: "wh-old",
-    });
-    await t.run((ctx) =>
-      ctx.db.patch("integrationMappings", mappingId, { jiraWebhookRegisteredAt: 1_000_000 })
-    );
-
-    await t.run((ctx) =>
-      Integrations.setMappingWebhook(ctx, mappingId, "wh-new")
-    );
-    const replaced = await t.run((ctx) => ctx.db.get("integrationMappings", mappingId));
-    expect(replaced?.jiraWebhookId).toBe("wh-new");
-    expect(replaced?.jiraWebhookRegisteredAt).toBeGreaterThan(1_000_000);
-
-    await t.run((ctx) =>
-      Integrations.setMappingWebhook(ctx, mappingId, undefined)
-    );
-    const cleared = await t.run((ctx) => ctx.db.get("integrationMappings", mappingId));
-    expect(cleared?.jiraWebhookId).toBeUndefined();
-    expect(cleared?.jiraWebhookRegisteredAt).toBeUndefined();
   });
 });
 

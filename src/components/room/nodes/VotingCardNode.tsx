@@ -9,7 +9,7 @@ import type { VotingCardNodeType } from "../types";
 
 export const VotingCardNode = memo(
   ({ data, selected }: NodeProps<VotingCardNodeType>): ReactElement => {
-    const { card, userId, isSelectable, onCardSelect, isSelected } = data;
+    const { card, userId, isSelectable, isSelected, actions } = data;
     const [isHovered, setIsHovered] = useState(false);
     const [isClicking, setIsClicking] = useState(false);
 
@@ -21,14 +21,12 @@ export const VotingCardNode = memo(
 
       setIsClicking(true);
 
-      // Call the onCardSelect handler which will handle the mutation
-      if (onCardSelect) {
-        await onCardSelect(card.value);
-      }
+      // The board's actions write the vote
+      await actions.selectCard(card.value);
 
       // Reset clicking state after animation
       setTimeout(() => setIsClicking(false), 200);
-    }, [isSelectable, userId, card.value, onCardSelect]);
+    }, [isSelectable, userId, card.value, actions]);
 
     const containerClasses = useMemo(
       () =>

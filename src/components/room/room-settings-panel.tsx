@@ -33,6 +33,7 @@ import { useRoomSettingsActions } from "./hooks/useRoomSettingsActions";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { RoomWithRelatedData } from "@/convex/model/rooms";
 import type { PermissionLevel, PokerPermissionCategory, RoomPermissions } from "@/convex/permissions";
+import { ROOM_NAME } from "@/convex/constants";
 
 import { ParticipantsSection } from "./participants-section";
 import { PermissionsSection } from "./permissions-section";
@@ -165,6 +166,7 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
                   id="room-name"
                   ref={roomNameField}
                   value={roomName.value}
+                  maxLength={ROOM_NAME.maxLength}
                   onChange={(e) => perms.roomSettings.allowed && roomName.setValue(e.target.value)}
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && perms.roomSettings.allowed) handleSaveRoomName();

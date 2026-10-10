@@ -208,8 +208,12 @@ _Avoid_: kick (the `remove` relationship action is one trigger, not the concept)
 The looping illustration on `/demo`. It is **not a room and runs no voting round** — there is no `rooms` row, no membership, no persisted vote, and the backend never participates. Bots, issues, and **phase** transitions are computed entirely on the viewer's machine and discarded. It *imitates* a round's **phase** lifecycle and reuses the one pure results computation (`summarize`) so its revealed numbers match a real round's, but it lives deliberately outside the **voting round** module's authority. Paused while its tab is hidden (see [ADR-0003](docs/adr/0003-demo-is-a-client-simulation.md)).
 _Avoid_: demo room (there is no room), demo game, bot round
 
+**Deck**:
+What a poker room's cards mean, read from its stored voting scale by `deckOf` (`convex/scales.ts`): which cards are dealt, whether a label is a legal ballot (a card the deck deals; the round refuses any other), and what a card reads as a number. A legacy room that stores no scale deals the default deck, Fibonacci, and so does the **demo simulation**; a new room stores it when its creator picks none, and it is defined once. The special cards `?`, `☕` and `∞` are dealt and played but estimate nothing: no consensus, average or alignment counts them. A card is read as a number in one place (`cardNumericValue`, where a literal "Infinity" reads as none): the round, `summarize`, alignment, the Jira push and the card row ask the deck, and analytics shares that reading without a deck, since a final estimate can be free text. No second parse may be introduced.
+_Avoid_: card set, card values; scale for anything but the stored setting a deck is read from
+
 **Voter alignment**:
-The per-voter distance-from-consensus picture (spec 04), persisted as `individualVotes` rows at reveal. Computed pure in `convex/model/alignment.ts` (`computeVoterAlignment`); the single card→numeric conversion (`cardNumericValue`) is shared by alignment, the round's cast-vote path, and the `summarize` results computation — no second parse may be introduced.
+The per-voter distance-from-consensus picture (spec 04), persisted as `individualVotes` rows at reveal. Computed pure in `convex/model/alignment.ts` (`computeVoterAlignment`), reading each card through the room's **deck**: steps from the consensus are counted only along a numeric deck.
 _Avoid_: agreement score (that is `voteStats.agreement` on the issue), deviation, spread
 
 ### Room activity
@@ -231,8 +235,12 @@ The module (`convex/model/tokenVault.ts`) that owns the token-field contract for
 _Avoid_: encryption utils (the pure primitive is `convex/lib/encryption.ts` — the vault is the policy owner, not a second crypto implementation)
 
 **Integration provider registry**:
-The seam (`convex/integrations/registry.ts`) that maps a connection's `provider` to its adapter's handler — webhook lifecycle, token refresh, client construction. The generic integrations module (`convex/model/integrations.ts`) routes through it and never names a provider; an unregistered provider throws loudly rather than silently skipping. Adapter functions take their effects (fetch, clock, sleep) as injected dependencies so they are testable without faking globals. Jira is the sole adapter; GitHub (spec 07) is the planned second. See [ADR-0006](docs/adr/0006-integration-providers-sit-behind-a-registry.md).
+The seam (`convex/integrations/registry.ts`) that maps a connection's `provider` to its adapter's handler — its **webhook reconcile**, token refresh, client construction. The generic integrations module (`convex/model/integrations.ts`) routes through it and never names a provider; an unregistered provider throws loudly rather than silently skipping. Adapter functions take their effects (fetch, clock, sleep) as injected dependencies so they are testable without faking globals. Jira is the sole adapter; GitHub (spec 07) is the planned second. See [ADR-0006](docs/adr/0006-integration-providers-sit-behind-a-registry.md).
 _Avoid_: service layer, plugin, provider factory
+
+**Webhook reconcile**:
+The one owner of each room mapping's remote webhook, one per provider behind the **integration provider registry** (`convex/integrations/jiraWebhookReconcile.ts` for Jira). A mapping wants one webhook for its project while auto-push is on, made with the mapping's own connection; its record says which webhook is live, the connection that made it and the project it was made for. Everything that changes or ends a mapping hands over its case (saving it, the weekly renewal, removing it, its room ending, the orphan sweep, a disconnect), and the reconcile registers, replaces or removes the webhook, always deleting an old one with the connection that made it. A failed registration is recorded on the mapping, and the room's settings show it.
+_Avoid_: webhook sync, webhook manager
 
 ## Flagged ambiguities
 

@@ -6,7 +6,7 @@ import { test, expect } from "@playwright/test";
  * most recent releases stay expanded; the rest sit behind a native <details>
  * so they stay in the markup for crawlers without costing the reader anything.
  *
- * `EXPANDED_RELEASE_COUNT` in src/app/changelog/page.tsx is the contract here.
+ * `EXPANDED_RELEASE_COUNT` in src/app/(app)/changelog/page.tsx is the contract here.
  */
 
 const EXPANDED_RELEASE_COUNT = 10;

@@ -11,7 +11,12 @@
  * `issue.votedAt`. Projections only decide which fields their metric requires
  * (velocity needs a numeric estimate, the agreement trend needs an agreement,
  * and so on), and skip rows that lack them.
+ *
+ * A numeric estimate is the deck's one numeric reading (`cardNumericValue`),
+ * shared without a deck: a final estimate can be free text.
  */
+
+import { cardNumericValue } from "./scales";
 
 // ---------------------------------------------------------------------------
 // Row types — minimal structural views of the table Docs, so projections are
@@ -232,8 +237,8 @@ export function velocityByDay(entries: RoomIssue[]): VelocityDataPoint[] {
 
   for (const { issue } of entries) {
     if (issue.votedAt && issue.finalEstimate) {
-      const storyPoints = parseFloat(issue.finalEstimate);
-      if (isNaN(storyPoints)) continue;
+      const storyPoints = cardNumericValue(issue.finalEstimate);
+      if (storyPoints === undefined) continue;
 
       const date = isoDay(issue.votedAt);
       if (!byDate[date]) {
@@ -480,8 +485,8 @@ export function predictability(rooms: RoomIssues[]): PredictabilityData {
 
     // Story points
     const numericEstimates = usable
-      .map((i) => (i.finalEstimate ? parseFloat(i.finalEstimate) : NaN))
-      .filter((v) => !isNaN(v));
+      .map((i) => (i.finalEstimate ? cardNumericValue(i.finalEstimate) : undefined))
+      .filter((v): v is number => v !== undefined);
     const estimatedPoints =
       numericEstimates.length > 0
         ? numericEstimates.reduce((sum, v) => sum + v, 0)
@@ -604,8 +609,8 @@ export function dashboardSummary(sessions: SessionIssueStats[]): DashboardSummar
 export function sessionIssueStats(issues: HistoryIssue[]): SessionIssueStats {
   // Total story points (numeric estimates only)
   const numericEstimates = issues
-    .map((i) => (i.finalEstimate ? parseFloat(i.finalEstimate) : NaN))
-    .filter((v) => !isNaN(v));
+    .map((i) => (i.finalEstimate ? cardNumericValue(i.finalEstimate) : undefined))
+    .filter((v): v is number => v !== undefined);
   const totalStoryPoints =
     numericEstimates.length > 0
       ? numericEstimates.reduce((sum, v) => sum + v, 0)

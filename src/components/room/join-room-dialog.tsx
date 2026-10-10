@@ -5,6 +5,7 @@ import { useState } from "react";
 import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { rulesOf } from "@/convex/ceremony";
+import { PERSON_NAME } from "@/convex/constants";
 import { Doc, Id } from "@/convex/_generated/dataModel";
 import { SESSION_FAILED, useEnsureSession } from "@/hooks/useEnsureSession";
 import { Button } from "@/components/ui/button";
@@ -82,6 +83,7 @@ export function JoinRoomDialog({ roomId, roomName, roomType }: JoinRoomDialogPro
               id="name"
               placeholder="Enter your name"
               autoComplete="name"
+              maxLength={PERSON_NAME.maxLength}
               value={userName}
               onChange={(e) => setUserName(e.target.value)}
               onKeyDown={(e) => {
