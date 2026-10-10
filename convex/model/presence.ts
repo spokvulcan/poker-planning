@@ -9,6 +9,10 @@ import type { UserRows } from "./userRows";
  * by room and user id strings, outside the app schema. Its rows stay until
  * something deletes them, so whatever deletes a room or a user deletes their
  * presence here too.
+ *
+ * The component times out closed tabs with a nested @convex-dev/batch-worker,
+ * shown in the dashboard as `presence/batchWorker/*`. To read its state or
+ * restart it, see docs/presence-worker-runbook.md.
  */
 export const presence = new Presence(components.presence);
 
