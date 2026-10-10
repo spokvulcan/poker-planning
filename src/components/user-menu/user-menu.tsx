@@ -32,19 +32,13 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { toast } from "@/lib/toast";
 
 export function UserMenu() {
-  const { authUserId, isAnonymous, isAuthenticated, email } = useAuth();
+  const { isAuthenticated, viewer } = useAuth();
   const { theme, setTheme } = useTheme();
   const [editDialogOpen, setEditDialogOpen] = useState(false);
 
   // Get roomId from URL params (if on a room page)
   const params = useParams();
   const roomId = params.roomId as Id<"rooms"> | undefined;
-
-  // Get global user data (derived server-side from auth)
-  const globalUser = useQuery(
-    api.users.getGlobalUser,
-    isAuthenticated ? {} : "skip"
-  );
 
   // Get room membership data (for spectator status) - only if in a room
   const roomMembership = useQuery(
@@ -65,11 +59,13 @@ export function UserMenu() {
   // above the early return below, per the rules of hooks.
   const handleSignOut = useSignOut();
 
-  if (!authUserId || !globalUser) {
+  // A guest signed in with no users row yet gets the menu too, as "Guest".
+  if (viewer.status !== "signedIn") {
     return null;
   }
 
-  const userName = globalUser.name || "Guest";
+  const { avatarUrl, email, isPermanent } = viewer;
+  const userName = viewer.name || "Guest";
   const isInRoom = !!roomMembership;
   const isSpectator = roomMembership?.isSpectator ?? false;
 
@@ -98,7 +94,7 @@ export function UserMenu() {
     <>
       <DropdownMenu>
         <DropdownMenuTrigger data-testid="user-menu-trigger" className="flex items-center gap-2 rounded-full border bg-background px-2 py-1.5 hover:bg-muted transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring">
-          <UserAvatar name={userName} avatarUrl={globalUser.avatarUrl} size="sm" />
+          <UserAvatar name={userName} avatarUrl={avatarUrl} size="sm" />
           <span className="text-sm font-medium max-w-24 truncate hidden sm:block">
             {userName}
           </span>
@@ -111,7 +107,7 @@ export function UserMenu() {
         <DropdownMenuContent align="end" className="w-56">
           {/* Profile header */}
           <div className="flex items-center gap-3 px-2 py-2">
-            <UserAvatar name={userName} avatarUrl={globalUser.avatarUrl} size="lg" />
+            <UserAvatar name={userName} avatarUrl={avatarUrl} size="lg" />
             <div className="flex flex-col min-w-0">
               <span className="text-sm font-medium truncate">{userName}</span>
               <span className="text-xs text-muted-foreground">{email || "Guest"}</span>
@@ -140,8 +136,8 @@ export function UserMenu() {
 
           <DropdownMenuSeparator />
 
-          {/* Sign in link - only for anonymous users, shown first */}
-          {isAnonymous && (
+          {/* Sign in link - for anyone without a permanent account, shown first */}
+          {!isPermanent && (
             <>
               <DropdownMenuItem render={<Link href={roomId ? `/auth/signin?from=/room/${roomId}` : "/auth/signin"} />}>
                 <LogIn className="mr-2 size-4" />

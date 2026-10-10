@@ -8,11 +8,15 @@ import { render, screen, fireEvent, cleanup, waitFor, within } from "@testing-li
 import type { ReactNode } from "react";
 
 const mocks = vi.hoisted(() => ({
-  accountType: "permanent" as "permanent" | "anonymous" | null,
+  isPermanent: true,
   deleteAccount: vi.fn(async () => true),
 }));
 
-vi.mock("@/components/auth/auth-provider", () => ({ useAuth: () => ({ accountType: mocks.accountType }) }));
+vi.mock("@/components/auth/auth-provider", () => ({
+  useAuth: () => ({
+    viewer: { status: "signedIn", name: "Ada", avatarUrl: null, email: null, isPermanent: mocks.isPermanent },
+  }),
+}));
 vi.mock("@/hooks/useDeleteAccount", () => ({ useDeleteAccount: () => mocks.deleteAccount }));
 vi.mock("@/components/ui/alert-dialog", () => {
   const pass = ({ children }: { children?: ReactNode }) => <div>{children}</div>;
@@ -37,7 +41,7 @@ vi.mock("@/components/ui/alert-dialog", () => {
 import { AccountSettings } from "./account-settings";
 
 beforeEach(() => {
-  mocks.accountType = "permanent";
+  mocks.isPermanent = true;
   mocks.deleteAccount.mockReset();
   mocks.deleteAccount.mockResolvedValue(true);
 });
@@ -69,7 +73,7 @@ describe("AccountSettings — Delete account", () => {
   });
 
   it("an anonymous account has no Delete account: signing out already deletes it", () => {
-    mocks.accountType = "anonymous";
+    mocks.isPermanent = false;
     render(<AccountSettings />);
     expect(screen.getByTestId("guest-account")).toBeTruthy();
     expect(screen.queryByTestId("delete-account")).toBeNull();
