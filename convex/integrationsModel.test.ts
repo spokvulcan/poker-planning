@@ -330,14 +330,7 @@ describe("public Jira actions require authentication", () => {
       })
     ).rejects.toThrow("Not authenticated");
     await expect(
-      t.action(api.integrations.jira.connectJira, {
-        accessToken: "a",
-        refreshToken: "r",
-        expiresIn: 3600,
-        cloudId: "cloud-1",
-        siteUrl: "https://team.atlassian.net",
-        scopes: [],
-      })
+      t.action(api.integrations.jira.connectJira, { code: "the-code" })
     ).rejects.toThrow("Not authenticated");
   });
 

@@ -26,12 +26,11 @@ import { Doc, Id } from "../_generated/dataModel";
 import { ActionCtx } from "../_generated/server";
 import { requireAuth, requireCanForUser } from "../model/auth";
 import { JiraClient } from "./jiraClient";
-import { buildJiraClient, requireJiraClientCredentials } from "./jiraAuth";
+import { buildJiraClient, connectJiraWithCode } from "./jiraAuth";
 import { applyJiraWebhookEvent } from "./jiraWebhook";
 import { cardNumericValue } from "../model/alignment";
 import { createIssueInRoom } from "../model/issues";
 import * as Integrations from "../model/integrations";
-import * as TokenVault from "../model/tokenVault";
 import { MAX_ISSUES_PER_ROOM } from "../constants";
 
 // ---------------------------------------------------------------------------
@@ -268,58 +267,16 @@ export const getIssueData = internalQuery({
 // Public actions — called from frontend
 // ---------------------------------------------------------------------------
 
-/** Called from Next.js OAuth callback via fetchAuthAction */
+/**
+ * Called from the Next.js OAuth callback via fetchAuthAction with the
+ * authorization code Atlassian handed back; Convex exchanges it and stores
+ * the connection (jiraAuth.ts), so no token ever crosses a public argument.
+ */
 export const connectJira = action({
-  args: {
-    accessToken: v.string(),
-    refreshToken: v.string(),
-    expiresIn: v.number(),
-    cloudId: v.string(),
-    siteUrl: v.string(),
-    scopes: v.array(v.string()),
-    providerUserId: v.optional(v.string()),
-    providerUserEmail: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
+  args: { code: v.string() },
+  handler: async (ctx, { code }) => {
     const user = await requireActionUser(ctx);
-
-    // The first token refresh posts the deployment's Jira credentials, so a
-    // deployment without them refuses the connect now.
-    requireJiraClientCredentials();
-
-    // The siteUrl is stored and later concatenated into issue browse links
-    // rendered as anchor hrefs. This action is public, so a client could
-    // bypass the OAuth callback and store a javascript: URL — validate it.
-    let parsedSiteUrl: URL;
-    try {
-      parsedSiteUrl = new URL(args.siteUrl);
-    } catch {
-      throw new Error("Invalid Jira site URL");
-    }
-    if (
-      parsedSiteUrl.protocol !== "https:" ||
-      !parsedSiteUrl.hostname.endsWith(".atlassian.net")
-    ) {
-      throw new Error("Jira site URL must be an https://*.atlassian.net URL");
-    }
-
-    // The tokens reach the database only as vault ciphertext.
-    const enc = await TokenVault.encryptTokens({
-      accessToken: args.accessToken,
-      refreshToken: args.refreshToken,
-    });
-
-    await ctx.runMutation(internal.integrations.jira.saveConnection, {
-      userId: user._id,
-      provider: "jira",
-      ...enc,
-      expiresAt: TokenVault.computeExpiresAt(args.expiresIn),
-      cloudId: args.cloudId,
-      siteUrl: args.siteUrl,
-      providerUserId: args.providerUserId,
-      providerUserEmail: args.providerUserEmail,
-      scopes: args.scopes,
-    });
+    await connectJiraWithCode(ctx, user._id, code);
   },
 });
 
