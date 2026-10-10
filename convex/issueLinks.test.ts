@@ -4,6 +4,7 @@ import { describe, it, expect } from "vitest";
 import schema from "./schema";
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
+import * as Issues from "./model/issues";
 import type { T } from "./analytics.seeds";
 import { as, join, seedUser } from "./people.seeds";
 
@@ -110,6 +111,26 @@ describe("a Jira issue renamed", () => {
 
     const room = await t.run((ctx) => ctx.db.get("rooms", roomId));
     expect(room?.lastActivityAt).toBe(1_000_000);
+  });
+});
+
+describe("following a tracker change (Issues.followTrackerChange)", () => {
+  it("keeps the title when the tracker's title fits the title rule as nothing", async () => {
+    const t = convexTest(schema, modules);
+    await seedUser(t, "ann");
+    const roomId = await openRoom(t, "Room");
+    await importJiraIssue(t, roomId, "PROJ-1");
+
+    // Jira always sends "KEY - summary"; another tracker might send nothing.
+    await t.run((ctx) =>
+      Issues.followTrackerChange(
+        ctx,
+        { provider: "jira", externalId: "PROJ-1" },
+        { kind: "retitled", title: "   " }
+      )
+    );
+
+    expect(await titles(t, roomId)).toEqual(["PROJ-1 - Old summary"]);
   });
 });
 

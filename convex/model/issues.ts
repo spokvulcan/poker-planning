@@ -213,12 +213,13 @@ export async function followTrackerChange(
     return;
   }
 
-  // A tracker's title is fitted to the title rule, never refused.
+  // A tracker's title is fitted to the title rule, never refused; one that
+  // fits as nothing leaves the titles as they are.
   const title = ISSUE_TITLE.fit(change.title);
   for (const row of rows) {
     const issue = await ctx.db.get("issues", row.issueId);
     if (!issue) continue;
-    if (issue.title !== title) {
+    if (title && issue.title !== title) {
       await ctx.db.patch("issues", issue._id, { title });
       await Rooms.updateRoomActivity(ctx, issue.roomId);
     }
