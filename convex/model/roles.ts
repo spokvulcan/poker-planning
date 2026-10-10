@@ -1,5 +1,5 @@
 import { MutationCtx } from "../_generated/server";
-import { Id } from "../_generated/dataModel";
+import { Doc, Id } from "../_generated/dataModel";
 import { ceremonyOf, NOT_THIS_CEREMONY } from "../ceremony";
 import { isRetroPermissions, type RetroPermissions, type RoomPermissions } from "../permissions";
 import { requireCan } from "./auth";
@@ -75,14 +75,15 @@ export async function transferOwnership(
 
 /**
  * Sets who may do what in a room: the poker room's categories or the retro's,
- * whichever the room's ceremony has. Owner only.
+ * whichever the room's ceremony has. Owner only: the handler's room-scoped
+ * step runs the `changePerms` guard and hands over the room.
  */
 export async function updatePermissions(
   ctx: MutationCtx,
-  args: { roomId: Id<"rooms">; permissions: RoomPermissions | RetroPermissions }
+  room: Doc<"rooms">,
+  permissions: RoomPermissions | RetroPermissions
 ): Promise<void> {
-  const { room } = await requireCan(ctx, args.roomId, { kind: "relationship", verb: "changePerms" });
-  if (isRetroPermissions(args.permissions) !== (ceremonyOf(room) === "retro")) throw refusal("missing", NOT_THIS_CEREMONY);
-  await ctx.db.patch("rooms", room._id, { permissions: args.permissions });
+  if (isRetroPermissions(permissions) !== (ceremonyOf(room) === "retro")) throw refusal("missing", NOT_THIS_CEREMONY);
+  await ctx.db.patch("rooms", room._id, { permissions });
   await Rooms.updateRoomActivity(ctx, room);
 }
