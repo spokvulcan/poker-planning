@@ -37,17 +37,13 @@ export function useTimerActions({
   // All three controls share one shape: guard, write, log on failure.
   const timerCall =
     (
-      mutate: (args: {
-        roomId: Id<"rooms">;
-        nodeId: string;
-        userId: Id<"users">;
-      }) => Promise<unknown>,
+      mutate: (args: { roomId: Id<"rooms">; nodeId: string }) => Promise<unknown>,
       label: string,
     ) =>
     async (nodeId: string) => {
       if (isDemo || !currentUserId) return;
       try {
-        await mutate({ roomId, nodeId, userId: currentUserId });
+        await mutate({ roomId, nodeId });
       } catch (error) {
         console.error(`Failed to ${label} timer:`, error);
       }

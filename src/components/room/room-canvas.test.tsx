@@ -185,7 +185,6 @@ describe("a drop", () => {
         name: "canvas:moveNodes",
         args: {
           roomId: ROOM_ID,
-          userId: ME,
           moves: [
             { nodeId: "session-current", position: { x: 10, y: 20 } },
             { nodeId: `player-${ADA}`, position: { x: 300, y: 40 } },
@@ -205,7 +204,7 @@ describe("Delete on a note", () => {
 
     expect(screen.queryByRole("alertdialog")).toBeNull();
     expect(server.writes).toEqual([
-      { name: "canvas:deleteNote", args: { roomId: ROOM_ID, nodeId: "note-1", userId: ME } },
+      { name: "canvas:deleteNote", args: { roomId: ROOM_ID, nodeId: "note-1" } },
     ]);
   });
 
@@ -228,7 +227,7 @@ describe("Delete on a note", () => {
     fireEvent.click(dialog().getByRole("button", { name: "Delete" }));
 
     expect(server.writes).toEqual([
-      { name: "canvas:deleteNote", args: { roomId: ROOM_ID, nodeId: "note-1", userId: ME } },
+      { name: "canvas:deleteNote", args: { roomId: ROOM_ID, nodeId: "note-1" } },
     ]);
   });
 });

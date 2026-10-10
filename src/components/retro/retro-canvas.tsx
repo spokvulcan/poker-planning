@@ -266,7 +266,7 @@ function RetroCanvasInner({ roomData, currentUserId }: RetroCanvasProps): ReactE
       if (stickyMoves.length > 0) void runAct(m.moveStickies({ roomId, moves: stickyMoves }), MOVE_FAILED);
       const nodeMoves = nodes.flatMap((node) => (node.type === "sticky" ? [] : [{ nodeId: node.id, position: node.position }]));
       if (nodeMoves.length > 0) {
-        void runAct(m.moveNodes({ roomId, moves: nodeMoves, userId: currentUserId }), MOVE_FAILED);
+        void runAct(m.moveNodes({ roomId, moves: nodeMoves }), MOVE_FAILED);
       }
     },
     // Delete on a selection takes off only the stickies the viewer may remove.

@@ -122,7 +122,7 @@ export function useCanvasActions({
     updateNoteContent: async (nodeId: string, content: string) => {
       if (isDemo || !currentUserId) return true;
       try {
-        await updateNoteContentMutation({ roomId, nodeId, content, userId: currentUserId });
+        await updateNoteContentMutation({ roomId, nodeId, content });
         return true;
       } catch (error) {
         console.error("Failed to update note content:", error);
@@ -132,7 +132,7 @@ export function useCanvasActions({
     createNote: async (issueId: Id<"issues">) => {
       if (isDemo || !currentUserId) return;
       try {
-        await createNoteMutation({ roomId, issueId, userId: currentUserId });
+        await createNoteMutation({ roomId, issueId });
       } catch (error) {
         console.error("Failed to create note:", error);
       }
@@ -140,7 +140,7 @@ export function useCanvasActions({
     deleteNote: async (nodeId: string) => {
       if (isDemo || !currentUserId) return;
       try {
-        await deleteNoteMutation({ roomId, nodeId, userId: currentUserId });
+        await deleteNoteMutation({ roomId, nodeId });
       } catch (error) {
         console.error("Failed to delete note:", error);
       }
@@ -148,7 +148,7 @@ export function useCanvasActions({
     moveNodes: async (moves) => {
       if (isDemo || !currentUserId || moves.length === 0) return;
       try {
-        await moveNodesMutation({ roomId, moves, userId: currentUserId });
+        await moveNodesMutation({ roomId, moves });
       } catch (error) {
         console.error("Failed to move nodes:", error);
       }
