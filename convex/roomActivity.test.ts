@@ -20,7 +20,7 @@ type T = TestConvex<typeof schema>;
 /**
  * Room activity ownership: every user-initiated mutation touching room-scoped
  * state must bump `lastActivityAt` through the one chokepoint
- * (`Rooms.updateRoomActivity`), or the cleanup cascade (model/cleanup.ts)
+ * (`Rooms.updateRoomActivity`), or the sweep (model/roomEnding.ts)
  * deletes rooms that are quietly in use. Each test seeds a room whose activity
  * is a minute stale and asserts the operation refreshes it.
  */
@@ -641,7 +641,7 @@ describe("room activity — every retro write goes through the chokepoint (ADR-0
 
     await stick(owner, roomId, "new");
 
-    const result = await t.mutation(internal.cleanup.removeInactiveRooms, {});
-    expect(result.roomsScheduled).toBe(0);
+    const result = await t.mutation(internal.maintenance.endStaleRooms, {});
+    expect(result.roomsEnding).toBe(0);
   });
 });

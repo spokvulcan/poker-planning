@@ -7,9 +7,9 @@
  * which webhook is live, the connection that made it and the project it was
  * made for; only this module writes it. Every caller that changes or ends a
  * mapping hands over its case through the provider registry: saving it, the
- * weekly renewal, removing it, its room ending and the orphan sweep
- * (reconcile), and a disconnect, with all of a connection's mappings at once
- * (disconnect). The decisions are pure (planWebhook, settleRegistration,
+ * weekly renewal, removing it and its room ending (reconcile), and a
+ * disconnect, with all of a connection's mappings at once (disconnect).
+ * The decisions are pure (planWebhook, settleRegistration,
  * planDisconnect) and tested without Jira; the actions in jira.ts carry them
  * out and report each registration back (recordRegistration).
  *

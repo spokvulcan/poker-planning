@@ -14,7 +14,7 @@ import * as Integrations from "./model/integrations";
  * widen-only so the by_room index could become the authoritative read path
  * for a room's links (see model/issues.issueLinksForRoom); rows written
  * before it are invisible to that path until tagged. Orphaned links (parent
- * issue gone) are left for the orphan sweep.
+ * issue gone) are left for the sweep, which drops them.
  */
 export const backfillIssueLinksRoomId = internalMutation({
   args: {},

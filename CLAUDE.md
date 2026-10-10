@@ -69,6 +69,8 @@ convex/
 
 **One writer per concern**: `model/memberships.ts` writes `roomMemberships`, `model/ownership.ts` writes a room's owner, owner role and retention, `model/canvas.ts` writes `canvasNodes`, `model/votingRound.ts` writes poker votes. Deleting an account and a guest signing in go through `model/accountLifecycle.ts`: a module that stores a user id implements `UserRows` (`model/userRows.ts`), or `convex/accountLifecycle.test.ts` fails (ADR-0030).
 
+**Room ending**: a room is deleted only through `model/roomEnding.ts`: `endRoom` (deleting a retro, the hand-off, the admin wipe) and `endStaleRooms` (the daily sweep), in bounded steps it schedules itself. It deletes the room's rows itself; only issues (with their links), integration mappings (through the webhook reconcile) and presence let go of their own. A table that gains a `roomId` joins its inventory, or `convex/roomEnding.test.ts` fails.
+
 Example usage in frontend:
 
 ```typescript
