@@ -146,8 +146,10 @@ export const admitIssue = internalMutation({
       externalUrl: v.string(),
     }),
   },
-  handler: async (ctx, args) => {
-    return await Issues.admitIssue(ctx, args);
+  handler: async (ctx, { roomId, ...issue }) => {
+    const room = await ctx.db.get("rooms", roomId);
+    if (!room) throw new Error("Room not found");
+    return await Issues.admitIssue(ctx, { room, ...issue });
   },
 });
 

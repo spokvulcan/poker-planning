@@ -27,8 +27,6 @@ export interface JoinRoomArgs {
 }
 
 export interface EditUserArgs {
-  userId: Id<"users">;
-  roomId: Id<"rooms">;
   name?: string;
   isSpectator?: boolean;
 }
@@ -113,31 +111,25 @@ export async function joinRoom(ctx: MutationCtx, args: JoinRoomArgs): Promise<Id
 
 /**
  * Updates a member's name (their global one) and whether they sit out as a
- * spectator in this room.
+ * spectator in this room. The handler's room-scoped step hands over the room
+ * and the member's membership.
  */
-export async function editUser(ctx: MutationCtx, args: EditUserArgs): Promise<void> {
+export async function editUser(
+  ctx: MutationCtx,
+  room: Doc<"rooms">,
+  membership: Doc<"roomMemberships">,
+  args: EditUserArgs
+): Promise<void> {
   const name = args.name === undefined ? undefined : requireValid(PERSON_NAME, args.name);
-  const [user, room] = await Promise.all([ctx.db.get("users", args.userId), ctx.db.get("rooms", args.roomId)]);
-  if (!user) throw new Error("User not found");
-  if (!room) throw new Error("Room not found");
-  if (!(await Memberships.getMembership(ctx, room._id, user._id))) throw new Error("User not in room");
 
   if (name !== undefined) {
-    await ctx.db.patch("users", args.userId, { name });
+    await ctx.db.patch("users", membership.userId, { name });
   }
   if (args.isSpectator !== undefined) {
-    await Memberships.setSpectator(ctx, room, args.userId, args.isSpectator);
+    await Memberships.setSpectator(ctx, room, membership, args.isSpectator);
   } else {
     await Rooms.updateRoomActivity(ctx, room);
   }
-}
-
-/**
- * Takes a person out of a room: they leave, or someone removes them.
- */
-export async function leaveRoom(ctx: MutationCtx, userId: Id<"users">, roomId: Id<"rooms">): Promise<void> {
-  const room = await ctx.db.get("rooms", roomId);
-  if (room) await Memberships.leave(ctx, room, userId);
 }
 
 /**

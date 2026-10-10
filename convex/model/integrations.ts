@@ -175,10 +175,12 @@ export async function deleteConnection(
  * Provider-neutral mapping args. The db columns keep their provider-prefixed
  * names (jiraProjectKey, … — schema.ts), because each provider persists its
  * own mapping shape; the neutral names here are what the generic module
- * routes on. Public endpoint args map 1:1 onto these (see integrations.ts).
+ * routes on. Public endpoint args map 1:1 onto these, the room loaded (see
+ * integrations.ts).
  */
 export interface RoomMappingArgs {
-  roomId: Id<"rooms">;
+  /** The room the mapping is for, as the room-scoped step loaded it. */
+  room: Doc<"rooms">;
   connectionId: Id<"integrationConnections">;
   provider: Doc<"integrationMappings">["provider"];
   projectKey?: string;
@@ -215,7 +217,7 @@ export async function saveRoomMapping(
   // Upsert: check for existing mapping
   const existing = await ctx.db
     .query("integrationMappings")
-    .withIndex("by_room", (q) => q.eq("roomId", args.roomId))
+    .withIndex("by_room", (q) => q.eq("roomId", args.room._id))
     .first();
 
   let mappingId: Id<"integrationMappings">;
@@ -224,13 +226,13 @@ export async function saveRoomMapping(
     mappingId = existing._id;
   } else {
     mappingId = await ctx.db.insert("integrationMappings", {
-      roomId: args.roomId,
+      roomId: args.room._id,
       ...fields,
       createdAt: Date.now(),
     });
   }
 
-  await Rooms.updateRoomActivity(ctx, args.roomId);
+  await Rooms.updateRoomActivity(ctx, args.room);
   const after = (await ctx.db.get("integrationMappings", mappingId))!;
   await getProviderHandler(args.provider).webhooks.reconcile(ctx, {
     kind: "saved",
@@ -243,22 +245,23 @@ export async function saveRoomMapping(
 /**
  * Removes the room's mapping (if any) from the room's settings, through
  * deleteMapping. The connection row survives the mapping, so the webhook's
- * removal can still authenticate with it.
+ * removal can still authenticate with it. Takes the room as the room-scoped
+ * step loaded it.
  */
 export async function removeRoomMapping(
   ctx: MutationCtx,
-  roomId: Id<"rooms">
+  room: Doc<"rooms">
 ): Promise<void> {
   const mapping = await ctx.db
     .query("integrationMappings")
-    .withIndex("by_room", (q) => q.eq("roomId", roomId))
+    .withIndex("by_room", (q) => q.eq("roomId", room._id))
     .first();
 
   if (mapping) {
     await deleteMapping(ctx, mapping);
     // Removing the room's integration mapping is user-initiated room
     // activity — route it through the single chokepoint.
-    await Rooms.updateRoomActivity(ctx, roomId);
+    await Rooms.updateRoomActivity(ctx, room);
   }
 }
 

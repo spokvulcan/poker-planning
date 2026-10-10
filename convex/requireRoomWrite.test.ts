@@ -197,11 +197,26 @@ describe.each(ADDRESSABLE)("a write addressed by the $entity it acts on", ({ tab
 // The rule the step exists for: a room write's handler takes its room and its
 // caller from the step, and works neither out again by hand. The modules
 // whose writes are on the step, as source text.
-const sources = import.meta.glob(["./canvas.ts", "./timer.ts", "./retro.ts"], {
-  query: "?raw",
-  import: "default",
-  eager: true,
-}) as Record<string, string>;
+const sources = import.meta.glob(
+  [
+    "./canvas.ts",
+    "./timer.ts",
+    "./retro.ts",
+    "./votes.ts",
+    "./issues.ts",
+    "./rooms.ts",
+    "./roles.ts",
+    "./users.ts",
+    "./integrations.ts",
+  ],
+  { query: "?raw", import: "default", eager: true }
+) as Record<string, string>;
+
+/**
+ * Joining names the room it seats the caller in, so it is the one room write
+ * the step can't take: the step seats only a caller already in the room.
+ */
+const WAY_IN = { file: "./users.ts", write: "join" };
 
 /**
  * Each public write in a module's source that lands in a room, by name: its
@@ -226,13 +241,21 @@ const ADDRESSED = /v\.id\(\s*["'](rooms|issues|retroStickies|retroActionItems)["
 const RESOLVES_ITSELF =
   /\b(requireRoomMember|requireActingUser|requireCan|requireCanForUser|findOrMakeUser|requireUser|requireCaller|getCaller)\(|\.get\(\s*["']rooms["']|args\.userId/;
 
+/**
+ * A write's code without the member a relationship verb acts on, where it is
+ * named to the step: the one user id a write may hand on (whom `users.remove`
+ * takes out), and only to the step, which loads that member.
+ */
+const withoutStepTarget = (body: string) =>
+  body.replace(/(requireRoomWrite\([^()]*),\s*args\.userId(?=\s*\))/g, "$1");
+
 describe("the writes on the room-scoped step", () => {
-  it.each(Object.entries(sources))("in %s take their room and caller from it", (_, source) => {
-    const writes = writesIn(source);
+  it.each(Object.entries(sources))("in %s take their room and caller from it", (file, source) => {
+    const writes = writesIn(source).filter(([name]) => !(file === WAY_IN.file && name === WAY_IN.write));
     expect(writes.length).toBeGreaterThan(0);
     for (const [name, body] of writes) {
       expect(body, name).toContain("requireRoomWrite(");
-      expect(body, name).not.toMatch(RESOLVES_ITSELF);
+      expect(withoutStepTarget(body), name).not.toMatch(RESOLVES_ITSELF);
     }
   });
 });

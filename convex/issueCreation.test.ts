@@ -42,7 +42,7 @@ async function createLocal(
   roomId: Id<"rooms">,
   title: string
 ): Promise<Id<"issues">> {
-  const admission = await t.run((ctx) => Issues.admitIssue(ctx, { roomId, title }));
+  const admission = await t.run(async (ctx) => Issues.admitIssue(ctx, { room: (await ctx.db.get("rooms", roomId))!, title }));
   return admission.issueId;
 }
 
@@ -51,9 +51,9 @@ async function admitLinked(
   roomId: Id<"rooms">,
   externalId: string
 ): Promise<Issues.Admission> {
-  return t.run((ctx) =>
+  return t.run(async (ctx) =>
     Issues.admitIssue(ctx, {
-      roomId,
+      room: (await ctx.db.get("rooms", roomId))!,
       title: `${externalId} - Summary`,
       link: jiraLink(externalId),
     })
@@ -223,9 +223,9 @@ describe("issue admission (Issues.admitIssue)", () => {
     const roomId = await seedRoom(t);
     await createLocal(t, roomId, "Local");
 
-    const admission = await t.run((ctx) =>
+    const admission = await t.run(async (ctx) =>
       Issues.admitIssue(ctx, {
-        roomId,
+        room: (await ctx.db.get("rooms", roomId))!,
         title: "PROJ-7 - Summary",
         link: jiraLink("PROJ-7"),
       })
@@ -272,7 +272,9 @@ describe("issue admission (Issues.admitIssue)", () => {
     const roomId = await seedRoom(t);
     const first = await admitLinked(t, roomId, "PROJ-4");
 
-    await t.run((ctx) => Issues.removeIssue(ctx, first.issueId));
+    await t.run(async (ctx) =>
+      Issues.removeIssue(ctx, (await ctx.db.get("rooms", roomId))!, (await ctx.db.get("issues", first.issueId))!)
+    );
     const again = await admitLinked(t, roomId, "PROJ-4");
 
     expect(again.kind).toBe("admitted");
@@ -320,9 +322,9 @@ describe("issue admission (Issues.admitIssue)", () => {
     const t = convexTest(schema, modules);
     const roomId = await seedRoom(t);
 
-    const admission = t.run((ctx) =>
+    const admission = t.run(async (ctx) =>
       Issues.admitIssue(ctx, {
-        roomId,
+        room: (await ctx.db.get("rooms", roomId))!,
         title: "PROJ-6 - Summary",
         link: { provider: "jira", externalId: "PROJ-6", externalUrl: "javascript:alert(1)" },
       })

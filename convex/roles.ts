@@ -10,7 +10,13 @@ export const promoteFacilitator = mutation({
     targetUserId: v.id("users"),
   },
   handler: async (ctx, args) => {
-    await Roles.promoteFacilitator(ctx, args);
+    const { room, target } = await requireRoomWrite(
+      ctx,
+      args.roomId,
+      { kind: "relationship", verb: "promote" },
+      args.targetUserId
+    );
+    await Roles.promoteFacilitator(ctx, room, target!);
   },
 });
 
@@ -20,7 +26,13 @@ export const demoteFacilitator = mutation({
     targetUserId: v.id("users"),
   },
   handler: async (ctx, args) => {
-    await Roles.demoteFacilitator(ctx, args);
+    const { room, target } = await requireRoomWrite(
+      ctx,
+      args.roomId,
+      { kind: "relationship", verb: "demote" },
+      args.targetUserId
+    );
+    await Roles.demoteFacilitator(ctx, room, target!);
   },
 });
 
@@ -30,7 +42,13 @@ export const transferOwnership = mutation({
     targetUserId: v.id("users"),
   },
   handler: async (ctx, args) => {
-    await Roles.transferOwnership(ctx, args);
+    const { room, user, target } = await requireRoomWrite(
+      ctx,
+      args.roomId,
+      { kind: "relationship", verb: "transfer" },
+      args.targetUserId
+    );
+    await Roles.transferOwnership(ctx, room, user, target!);
   },
 });
 

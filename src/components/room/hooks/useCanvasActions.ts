@@ -64,9 +64,10 @@ export function useCanvasActions({
   const resetGame = useMutation(api.rooms.resetGame);
   // The vote lands on the room's data before the server answers, so the card
   // the viewer picked rises at once, by the round's own rules (room-view.ts).
+  // It is the viewer's vote: the server votes as whoever is signed in.
   const pickCard = useMutation(api.votes.pickCard).withOptimisticUpdate((store, args) => {
     const data = store.getQuery(api.rooms.get, { roomId: args.roomId });
-    const next = data && applyCardPick(data, args.userId, args.cardLabel);
+    const next = data && currentUserId && applyCardPick(data, currentUserId, args.cardLabel);
     if (next && next !== data) store.setQuery(api.rooms.get, { roomId: args.roomId }, next);
   });
   const moveNodesMutation = useMoveCanvasNodes();
@@ -98,7 +99,7 @@ export function useCanvasActions({
     },
     selectCard: async (cardLabel: string) => {
       if (isDemo || !currentUserId) return;
-      await runAct(pickCard({ roomId, userId: currentUserId, cardLabel }), VOTE_FAILED);
+      await runAct(pickCard({ roomId, cardLabel }), VOTE_FAILED);
     },
     updateNoteContent: async (nodeId: string, content: string) => {
       if (isDemo || !currentUserId) return true;

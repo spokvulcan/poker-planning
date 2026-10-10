@@ -117,13 +117,14 @@ async function issueHoldingLink(
  * issue at most once per room, the next sequential ID (the room counter
  * advances exactly once), an order after the current last, and the link row.
  * A full room or a link that isn't https is refused in words people see.
+ * Takes the room as its write loaded it: the room-scoped step, or the
+ * tracker import's own read.
  */
 export async function admitIssue(
   ctx: MutationCtx,
-  args: { roomId: Id<"rooms">; title: string; link?: IssueLink }
+  args: { room: Doc<"rooms">; title: string; link?: IssueLink }
 ): Promise<Admission> {
-  const room = await ctx.db.get("rooms", args.roomId);
-  if (!room) throw new Error("Room not found");
+  const { room } = args;
 
   if (args.link) {
     // The room UI renders the link as an anchor href: only a real web URL,
@@ -133,7 +134,7 @@ export async function admitIssue(
     }
     // Ahead of the cap: a tracker issue already in a full room is reported
     // as in the room, not refused.
-    const holder = await issueHoldingLink(ctx, args.roomId, args.link);
+    const holder = await issueHoldingLink(ctx, room._id, args.link);
     if (holder) return { kind: "alreadyInRoom", issueId: holder };
   }
 
@@ -143,7 +144,7 @@ export async function admitIssue(
   // Get current max order
   const issues = await ctx.db
     .query("issues")
-    .withIndex("by_room", (q) => q.eq("roomId", args.roomId))
+    .withIndex("by_room", (q) => q.eq("roomId", room._id))
     .collect();
   if (issues.length >= MAX_ISSUES_PER_ROOM) {
     throw refusal("forbidden", `Rooms are limited to ${MAX_ISSUES_PER_ROOM} issues`);
@@ -151,14 +152,14 @@ export async function admitIssue(
   const maxOrder = issues.length > 0 ? Math.max(...issues.map((i) => i.order)) : 0;
 
   // Update room's next issue number
-  await ctx.db.patch("rooms", args.roomId, {
+  await ctx.db.patch("rooms", room._id, {
     nextIssueNumber: nextNumber,
   });
-  await Rooms.updateRoomActivity(ctx, args.roomId);
+  await Rooms.updateRoomActivity(ctx, room);
 
   // Create the issue
   const issueId = await ctx.db.insert("issues", {
-    roomId: args.roomId,
+    roomId: room._id,
     sequentialId: nextNumber,
     title: requireValid(ISSUE_TITLE, args.title),
     status: "pending",
@@ -170,7 +171,7 @@ export async function admitIssue(
     // roomId-tagged so the room's links come from one by_room read.
     await ctx.db.insert("issueLinks", {
       issueId,
-      roomId: args.roomId,
+      roomId: room._id,
       provider: args.link.provider,
       externalId: args.link.externalId,
       externalUrl: args.link.externalUrl,
@@ -229,56 +230,56 @@ export async function followTrackerChange(
 }
 
 /**
- * Updates an issue's title
+ * Updates an issue's title. The handler's room-scoped step hands over the
+ * issue and the room it is in.
  */
 export async function updateIssueTitle(
   ctx: MutationCtx,
-  args: { issueId: Id<"issues">; title: string }
+  room: Doc<"rooms">,
+  issue: Doc<"issues">,
+  title: string
 ): Promise<void> {
-  const issue = await ctx.db.get("issues", args.issueId);
-  if (!issue) throw new Error("Issue not found");
-
-  await ctx.db.patch("issues", args.issueId, { title: requireValid(ISSUE_TITLE, args.title) });
+  await ctx.db.patch("issues", issue._id, { title: requireValid(ISSUE_TITLE, title) });
 
   // Update room activity
-  await Rooms.updateRoomActivity(ctx, issue.roomId);
+  await Rooms.updateRoomActivity(ctx, room);
 }
 
 /**
- * Updates an issue's final estimate (manual override after voting)
+ * Updates an issue's final estimate (manual override after voting). The
+ * handler's room-scoped step hands over the issue and the room it is in.
  */
 export async function updateIssueEstimate(
   ctx: MutationCtx,
-  args: { issueId: Id<"issues">; finalEstimate: string }
+  room: Doc<"rooms">,
+  issue: Doc<"issues">,
+  finalEstimate: string
 ): Promise<void> {
-  const issue = await ctx.db.get("issues", args.issueId);
-  if (!issue) throw new Error("Issue not found");
-
-  await ctx.db.patch("issues", args.issueId, { finalEstimate: args.finalEstimate });
+  await ctx.db.patch("issues", issue._id, { finalEstimate });
 
   // Update room activity
-  await Rooms.updateRoomActivity(ctx, issue.roomId);
+  await Rooms.updateRoomActivity(ctx, room);
 }
 
 /**
- * Removes an issue
+ * Removes an issue. The handler's room-scoped step hands over the issue and
+ * the room it is in.
  */
 export async function removeIssue(
   ctx: MutationCtx,
-  issueId: Id<"issues">
+  room: Doc<"rooms">,
+  issue: Doc<"issues">
 ): Promise<void> {
-  const issue = await ctx.db.get("issues", issueId);
-  if (!issue) throw new Error("Issue not found");
+  const issueId = issue._id;
 
   // Deleting the issue being voted on ends the round cleanly: delegate to the
   // round's abandon (drops the target to a Quick Vote, cancels the countdown,
   // clears votes — and bumps room activity itself) before the issue and its
   // records are removed below.
-  const room = await ctx.db.get("rooms", issue.roomId);
-  if (room?.currentIssueId === issueId) {
-    await VotingRound.abandon(ctx, issue.roomId);
+  if (room.currentIssueId === issueId) {
+    await VotingRound.abandon(ctx, room);
   } else {
-    await Rooms.updateRoomActivity(ctx, issue.roomId);
+    await Rooms.updateRoomActivity(ctx, room);
   }
 
   // Delete associated voting timestamps
@@ -365,34 +366,36 @@ export async function getIssuesForExport(
 }
 
 /**
- * Reorders issues (for drag-and-drop)
+ * Reorders issues (for drag-and-drop). The handler's room-scoped step hands
+ * over the room.
  */
 export async function reorderIssues(
   ctx: MutationCtx,
-  args: { roomId: Id<"rooms">; issueIds: Id<"issues">[] }
+  room: Doc<"rooms">,
+  issueIds: Id<"issues">[]
 ): Promise<void> {
-  // Authorization was checked against args.roomId, so every reordered issue
-  // must belong to that room — otherwise issue IDs from another room could be
+  // Authorization was checked against this room, so every reordered issue
+  // must belong to it — otherwise issue IDs from another room could be
   // smuggled into the array to scramble its ordering.
   const issues = await Promise.all(
-    args.issueIds.map((issueId) => ctx.db.get("issues", issueId))
+    issueIds.map((issueId) => ctx.db.get("issues", issueId))
   );
   for (const issue of issues) {
     if (!issue) throw new Error("Issue not found");
-    if (issue.roomId !== args.roomId) {
+    if (issue.roomId !== room._id) {
       throw new Error("Issue does not belong to this room");
     }
   }
 
   // Update order for each issue
   await Promise.all(
-    args.issueIds.map((issueId, index) =>
+    issueIds.map((issueId, index) =>
       ctx.db.patch("issues", issueId, { order: index + 1 })
     )
   );
 
   // Update room activity
-  await Rooms.updateRoomActivity(ctx, args.roomId);
+  await Rooms.updateRoomActivity(ctx, room);
 }
 
 /**

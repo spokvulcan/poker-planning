@@ -10,6 +10,7 @@ import * as Canvas from "./model/canvas";
 import * as Timer from "./model/timer";
 import * as Rooms from "./model/rooms";
 import * as Retro from "./model/retro";
+import { getMembership } from "./model/memberships";
 import { DEFAULT_RETRO_PERMISSIONS } from "./permissions";
 import { CEREMONY_RULES } from "./ceremony";
 
@@ -110,7 +111,7 @@ describe("room activity — voting round transitions bump", () => {
     const roomId = await seedRoom(t, stale);
     const issueId = await seedIssue(t, roomId);
 
-    await t.run((ctx) => VotingRound.start(ctx, { roomId, issueId }));
+    await t.run(async (ctx) => VotingRound.start(ctx, { room: (await ctx.db.get("rooms", roomId))!, issueId }));
 
     await expectBumped(t, roomId, stale);
   });
@@ -122,7 +123,7 @@ describe("room activity — voting round transitions bump", () => {
     const issueId = await seedIssue(t, roomId, "voting");
     await t.run((ctx) => ctx.db.patch("rooms", roomId, { currentIssueId: issueId }));
 
-    await t.run((ctx) => VotingRound.reset(ctx, roomId));
+    await t.run(async (ctx) => VotingRound.reset(ctx, (await ctx.db.get("rooms", roomId))!));
 
     await expectBumped(t, roomId, stale);
   });
@@ -134,7 +135,7 @@ describe("room activity — voting round transitions bump", () => {
     const issueId = await seedIssue(t, roomId, "voting");
     await t.run((ctx) => ctx.db.patch("rooms", roomId, { currentIssueId: issueId }));
 
-    await t.run((ctx) => VotingRound.reveal(ctx, roomId));
+    await t.run(async (ctx) => VotingRound.reveal(ctx, (await ctx.db.get("rooms", roomId))!));
 
     await expectBumped(t, roomId, stale);
   });
@@ -146,7 +147,7 @@ describe("room activity — voting round transitions bump", () => {
     const issueId = await seedIssue(t, roomId, "voting");
     await t.run((ctx) => ctx.db.patch("rooms", roomId, { currentIssueId: issueId }));
 
-    await t.run((ctx) => VotingRound.abandon(ctx, roomId));
+    await t.run(async (ctx) => VotingRound.abandon(ctx, (await ctx.db.get("rooms", roomId))!));
 
     await expectBumped(t, roomId, stale);
   });
@@ -156,7 +157,7 @@ describe("room activity — voting round transitions bump", () => {
     const stale = staleTimestamp();
     const roomId = await seedRoom(t, stale);
 
-    await t.run((ctx) => VotingRound.setAutoComplete(ctx, roomId, true));
+    await t.run(async (ctx) => VotingRound.setAutoComplete(ctx, (await ctx.db.get("rooms", roomId))!, true));
 
     await expectBumped(t, roomId, stale);
   });
@@ -166,7 +167,7 @@ describe("room activity — voting round transitions bump", () => {
     const stale = staleTimestamp();
     const roomId = await seedRoom(t, stale);
 
-    await t.run((ctx) => VotingRound.cancelCountdown(ctx, roomId));
+    await t.run(async (ctx) => VotingRound.cancelCountdown(ctx, (await ctx.db.get("rooms", roomId))!));
 
     await expectBumped(t, roomId, stale);
   });
@@ -177,8 +178,8 @@ describe("room activity — voting round transitions bump", () => {
     const roomId = await seedRoom(t, stale);
     const a = await addMember(t, roomId, "auth-a");
 
-    await t.run((ctx) =>
-      VotingRound.castVote(ctx, { roomId, userId: a, cardLabel: "5", cardValue: 5 })
+    await t.run(async (ctx) =>
+      VotingRound.castVote(ctx, { room: (await ctx.db.get("rooms", roomId))!, voter: (await getMembership(ctx, roomId, a))!, cardLabel: "5" })
     );
 
     await expectBumped(t, roomId, stale);
@@ -299,7 +300,7 @@ describe("room activity — issue CRUD bumps", () => {
     const stale = staleTimestamp();
     const roomId = await seedRoom(t, stale);
 
-    await t.run((ctx) => Issues.admitIssue(ctx, { roomId, title: "One" }));
+    await t.run(async (ctx) => Issues.admitIssue(ctx, { room: (await ctx.db.get("rooms", roomId))!, title: "One" }));
 
     await expectBumped(t, roomId, stale);
   });
@@ -310,7 +311,7 @@ describe("room activity — issue CRUD bumps", () => {
     const roomId = await seedRoom(t, stale);
     const issueId = await seedIssue(t, roomId);
 
-    await t.run((ctx) => Issues.updateIssueTitle(ctx, { issueId, title: "Renamed" }));
+    await t.run(async (ctx) => Issues.updateIssueTitle(ctx, (await ctx.db.get("rooms", roomId))!, (await ctx.db.get("issues", issueId))!, "Renamed"));
 
     await expectBumped(t, roomId, stale);
   });
@@ -321,9 +322,7 @@ describe("room activity — issue CRUD bumps", () => {
     const roomId = await seedRoom(t, stale);
     const issueId = await seedIssue(t, roomId);
 
-    await t.run((ctx) =>
-      Issues.updateIssueEstimate(ctx, { issueId, finalEstimate: "8" })
-    );
+    await t.run(async (ctx) => Issues.updateIssueEstimate(ctx, (await ctx.db.get("rooms", roomId))!, (await ctx.db.get("issues", issueId))!, "8"));
 
     await expectBumped(t, roomId, stale);
   });
@@ -334,7 +333,7 @@ describe("room activity — issue CRUD bumps", () => {
     const roomId = await seedRoom(t, stale);
     const issueId = await seedIssue(t, roomId);
 
-    await t.run((ctx) => Issues.reorderIssues(ctx, { roomId, issueIds: [issueId] }));
+    await t.run(async (ctx) => Issues.reorderIssues(ctx, (await ctx.db.get("rooms", roomId))!, [issueId]));
 
     await expectBumped(t, roomId, stale);
   });
@@ -345,7 +344,7 @@ describe("room activity — issue CRUD bumps", () => {
     const roomId = await seedRoom(t, stale);
     const issueId = await seedIssue(t, roomId);
 
-    await t.run((ctx) => Issues.removeIssue(ctx, issueId));
+    await t.run(async (ctx) => Issues.removeIssue(ctx, (await ctx.db.get("rooms", roomId))!, (await ctx.db.get("issues", issueId))!));
 
     await expectBumped(t, roomId, stale);
   });

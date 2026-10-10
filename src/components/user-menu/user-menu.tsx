@@ -80,11 +80,7 @@ export function UserMenu() {
   const handleSpectatorToggle = async (checked: boolean) => {
     if (!roomMembership || !roomId) return;
     try {
-      await editUser({
-        userId: roomMembership._id,
-        roomId,
-        isSpectator: checked,
-      });
+      await editUser({ roomId, isSpectator: checked });
     } catch {
       toast.error("Failed to update spectator mode. Please try again.");
     }

@@ -8,7 +8,7 @@ import { v } from "convex/values";
 import { providerValidator } from "./schema";
 import * as Integrations from "./model/integrations";
 import * as Issues from "./model/issues";
-import { requireRoomReader, requireCan } from "./model/auth";
+import { requireRoomReader, requireRoomWrite } from "./model/auth";
 import { requireUser } from "./model/caller";
 
 // ---------------------------------------------------------------------------
@@ -102,10 +102,9 @@ export const saveRoomMapping = mutation({
     autoPushEstimates: v.boolean(),
   },
   handler: async (ctx, args) => {
-    await requireCan(ctx, args.roomId, { kind: "category", category: "roomSettings" });
+    const { user, room } = await requireRoomWrite(ctx, args.roomId, { kind: "category", category: "roomSettings" });
 
     // Verify the connection belongs to the current user
-    const { user } = await requireUser(ctx);
     const connection = await ctx.db.get("integrationConnections", args.connectionId);
     if (!connection || connection.userId !== user._id) {
       throw new Error("Connection not found");
@@ -114,7 +113,7 @@ export const saveRoomMapping = mutation({
     // The public args keep the Jira column names (the UI is the Jira mapping
     // form); the model routes on provider-neutral names.
     return await Integrations.saveRoomMapping(ctx, {
-      roomId: args.roomId,
+      room,
       connectionId: args.connectionId,
       provider: args.provider,
       projectKey: args.jiraProjectKey,
@@ -130,8 +129,8 @@ export const saveRoomMapping = mutation({
 export const removeRoomMapping = mutation({
   args: { roomId: v.id("rooms") },
   handler: async (ctx, args) => {
-    await requireCan(ctx, args.roomId, { kind: "category", category: "roomSettings" });
+    const { room } = await requireRoomWrite(ctx, args.roomId, { kind: "category", category: "roomSettings" });
 
-    await Integrations.removeRoomMapping(ctx, args.roomId);
+    await Integrations.removeRoomMapping(ctx, room);
   },
 });

@@ -520,7 +520,7 @@ describe("removeRoomMapping", () => {
     const roomId = await seedRoom(t);
     await seedMapping(t, roomId, connectionId, { jiraWebhookId: "wh-room" });
 
-    await t.run((ctx) => Integrations.removeRoomMapping(ctx, roomId));
+    await t.run(async (ctx) => Integrations.removeRoomMapping(ctx, (await ctx.db.get("rooms", roomId))!));
 
     expect(await countRows(t, "integrationMappings")).toBe(0);
 
@@ -546,7 +546,7 @@ describe("removeRoomMapping", () => {
     const sentinel = 1_000_000;
     await t.run((ctx) => ctx.db.patch("rooms", roomId, { lastActivityAt: sentinel }));
 
-    await t.run((ctx) => Integrations.removeRoomMapping(ctx, roomId));
+    await t.run(async (ctx) => Integrations.removeRoomMapping(ctx, (await ctx.db.get("rooms", roomId))!));
 
     const room = await t.run((ctx) => ctx.db.get("rooms", roomId));
     expect(room?.lastActivityAt).toBeGreaterThan(sentinel);
@@ -560,9 +560,9 @@ describe("saveRoomMapping", () => {
     const connectionId = await seedConnection(t, userId);
     const roomId = await seedRoom(t);
 
-    const mappingId = await t.run((ctx) =>
+    const mappingId = await t.run(async (ctx) =>
       Integrations.saveRoomMapping(ctx, {
-        roomId,
+        room: (await ctx.db.get("rooms", roomId))!,
         connectionId,
         provider: "jira",
         projectKey: "PROJ",
@@ -575,9 +575,9 @@ describe("saveRoomMapping", () => {
     const sentinel = 1_000_000;
     await t.run((ctx) => ctx.db.patch("integrationMappings", mappingId, { createdAt: sentinel }));
 
-    const again = await t.run((ctx) =>
+    const again = await t.run(async (ctx) =>
       Integrations.saveRoomMapping(ctx, {
-        roomId,
+        room: (await ctx.db.get("rooms", roomId))!,
         connectionId,
         provider: "jira",
         projectKey: "PROJ",
@@ -603,9 +603,9 @@ describe("saveRoomMapping", () => {
     const roomId = await seedRoom(t);
     const mappingId = await seedMapping(t, roomId, connectionId, { jiraWebhookId: "wh-live" });
 
-    await t.run((ctx) =>
+    await t.run(async (ctx) =>
       Integrations.saveRoomMapping(ctx, {
-        roomId,
+        room: (await ctx.db.get("rooms", roomId))!,
         connectionId,
         provider: "jira",
         projectKey: "PROJ",
@@ -628,9 +628,9 @@ describe("saveRoomMapping", () => {
     const roomId = await seedRoom(t);
     const mappingId = await seedMapping(t, roomId, first, { jiraWebhookId: "wh-first" });
 
-    await t.run((ctx) =>
+    await t.run(async (ctx) =>
       Integrations.saveRoomMapping(ctx, {
-        roomId,
+        room: (await ctx.db.get("rooms", roomId))!,
         connectionId: second,
         provider: "jira",
         projectKey: "PROJ",
@@ -660,9 +660,9 @@ describe("saveRoomMapping", () => {
       ctx.db.patch("integrationMappings", mappingId, { jiraWebhookFailure: "jiraError" })
     );
 
-    await t.run((ctx) =>
+    await t.run(async (ctx) =>
       Integrations.saveRoomMapping(ctx, {
-        roomId,
+        room: (await ctx.db.get("rooms", roomId))!,
         connectionId,
         provider: "jira",
         projectKey: "PROJ",
@@ -688,9 +688,9 @@ describe("saveRoomMapping", () => {
       })
     );
 
-    await t.run((ctx) =>
+    await t.run(async (ctx) =>
       Integrations.saveRoomMapping(ctx, {
-        roomId,
+        room: (await ctx.db.get("rooms", roomId))!,
         connectionId,
         provider: "jira",
         projectKey: "PROJ",
@@ -716,9 +716,9 @@ describe("saveRoomMapping", () => {
     const sentinel = 1_000_000;
     await t.run((ctx) => ctx.db.patch("rooms", roomId, { lastActivityAt: sentinel }));
 
-    await t.run((ctx) =>
+    await t.run(async (ctx) =>
       Integrations.saveRoomMapping(ctx, {
-        roomId,
+        room: (await ctx.db.get("rooms", roomId))!,
         connectionId,
         provider: "jira",
         projectKey: "PROJ",
@@ -729,6 +729,55 @@ describe("saveRoomMapping", () => {
 
     const room = await t.run((ctx) => ctx.db.get("rooms", roomId));
     expect(room?.lastActivityAt).toBeGreaterThan(sentinel);
+  });
+});
+
+describe("the room's mapping, through its writes", () => {
+  // Each lands in the room it names, on the room-scoped step: its caller is a
+  // member of that room, whose own connection a mapping is saved with.
+
+  /** Someone in the room, with a Jira connection of their own. */
+  async function memberWithConnection(t: T, roomId: Id<"rooms">, authUserId: string) {
+    const userId = await seedUser(t, authUserId);
+    await t.run((ctx) =>
+      ctx.db.insert("roomMemberships", { roomId, userId, isSpectator: false, joinedAt: Date.now() })
+    );
+    return await seedConnection(t, userId);
+  }
+
+  const mappingOf = (t: T, roomId: Id<"rooms">) =>
+    t.run((ctx) => ctx.db.query("integrationMappings").withIndex("by_room", (q) => q.eq("roomId", roomId)).first());
+
+  it("saves with the caller's own connection, never another member's", async () => {
+    const t = convexTest(schema, modules);
+    const roomId = await seedRoom(t);
+    const annsConnection = await memberWithConnection(t, roomId, "auth-ann");
+    const bobsConnection = await memberWithConnection(t, roomId, "auth-bob");
+    const ann = t.withIdentity({ subject: "auth-ann" });
+    const mapping = { roomId, provider: "jira" as const, jiraProjectKey: "PROJ", autoImport: false, autoPushEstimates: false };
+
+    await expect(
+      ann.mutation(api.integrations.saveRoomMapping, { ...mapping, connectionId: bobsConnection })
+    ).rejects.toThrow("Connection not found");
+    await ann.mutation(api.integrations.saveRoomMapping, { ...mapping, connectionId: annsConnection });
+
+    expect(await mappingOf(t, roomId)).toMatchObject({ connectionId: annsConnection, jiraProjectKey: "PROJ" });
+  });
+
+  it("refuses someone outside the room, and removes for a member", async () => {
+    const t = convexTest(schema, modules);
+    const roomId = await seedRoom(t);
+    const connectionId = await memberWithConnection(t, roomId, "auth-ann");
+    await seedMapping(t, roomId, connectionId);
+    await seedUser(t, "auth-outsider");
+
+    await expect(
+      t.withIdentity({ subject: "auth-outsider" }).mutation(api.integrations.removeRoomMapping, { roomId })
+    ).rejects.toMatchObject({ data: { code: "forbidden", message: "Not a member of this room" } });
+    expect(await mappingOf(t, roomId)).not.toBeNull();
+
+    await t.withIdentity({ subject: "auth-ann" }).mutation(api.integrations.removeRoomMapping, { roomId });
+    expect(await mappingOf(t, roomId)).toBeNull();
   });
 });
 

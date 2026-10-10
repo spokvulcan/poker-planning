@@ -9,6 +9,7 @@ import * as Analytics from "./model/analytics";
 import * as Issues from "./model/issues";
 import * as Users from "./model/users";
 import * as VotingRound from "./model/votingRound";
+import { getMembership } from "./model/memberships";
 import {
   type T,
   IN,
@@ -38,11 +39,11 @@ async function playRound(
   userId: Id<"users">,
   cardLabel = "5"
 ): Promise<void> {
-  await t.run((ctx) => VotingRound.start(ctx, { roomId, issueId }));
-  await t.run((ctx) =>
-    VotingRound.castVote(ctx, { roomId, userId, cardLabel, cardValue: 0 })
+  await t.run(async (ctx) => VotingRound.start(ctx, { room: (await ctx.db.get("rooms", roomId))!, issueId }));
+  await t.run(async (ctx) =>
+    VotingRound.castVote(ctx, { room: (await ctx.db.get("rooms", roomId))!, voter: (await getMembership(ctx, roomId, userId))!, cardLabel })
   );
-  await t.run((ctx) => VotingRound.reveal(ctx, roomId));
+  await t.run(async (ctx) => VotingRound.reveal(ctx, (await ctx.db.get("rooms", roomId))!));
 }
 
 async function readSnapshot(
@@ -246,7 +247,7 @@ describe("stale snapshot — history-changing writes outside completion", () => 
 
     // removeIssue bumps the room's activity clock past the snapshot.
     vi.setSystemTime(BASE + 2_000);
-    await t.run((ctx) => Issues.removeIssue(ctx, issueId));
+    await t.run(async (ctx) => Issues.removeIssue(ctx, (await ctx.db.get("rooms", roomId))!, (await ctx.db.get("issues", issueId))!));
 
     expect(await distributionOf(t)).toEqual([]);
   });
@@ -269,8 +270,8 @@ describe("stale snapshot — history-changing writes outside completion", () => 
     await refreshSnapshot(t, roomId);
 
     vi.setSystemTime(BASE + 2_000);
-    await t.run((ctx) =>
-      Issues.updateIssueEstimate(ctx, { issueId, finalEstimate: "8" })
+    await t.run(async (ctx) =>
+      Issues.updateIssueEstimate(ctx, (await ctx.db.get("rooms", roomId))!, (await ctx.db.get("issues", issueId))!, "8")
     );
 
     expect(await distributionOf(t)).toEqual([
@@ -293,8 +294,8 @@ describe("stale snapshot — history-changing writes outside completion", () => 
 
     // History changes without a completion (estimate override).
     vi.setSystemTime(BASE + 2_000);
-    await t.run((ctx) =>
-      Issues.updateIssueEstimate(ctx, { issueId: i1, finalEstimate: "13" })
+    await t.run(async (ctx) =>
+      Issues.updateIssueEstimate(ctx, (await ctx.db.get("rooms", roomId))!, (await ctx.db.get("issues", i1))!, "13")
     );
 
     // The next completion recomputes from the tables, picking the override up.
@@ -373,7 +374,7 @@ describe("export path — issue links fetched by room", () => {
 describe("snapshot invalidation on account-level user events", () => {
   it("user deletion invalidates the snapshot of a room they already left", async () => {
     const t = withComponents(convexTest(schema, modules));
-    // No membership: leaveRoom can't bump this room's activity, so only the
+    // No membership: leaving can't bump this room's activity, so only the
     // direct invalidation keeps the deleted user's votes out of analytics.
     const userId = await seedUser(t, "auth-gone");
     const roomId = await seedRoom(t);
