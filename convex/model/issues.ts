@@ -73,8 +73,8 @@ export type Admission =
 
 /**
  * The room's issue holding this link, found through the room's links. A link
- * whose issue is gone holds nothing: removeIssue leaves links to the daily
- * orphan sweep.
+ * whose issue is gone holds nothing: an issue's links are deleted with it,
+ * but earlier deletions left theirs to the daily orphan sweep.
  *
  * Rows written before `issueLinks.roomId` existed are invisible to by_room
  * until backfillIssueLinksRoomId tags them, and the field is still optional,
@@ -180,6 +180,53 @@ export async function admitIssue(
   return { kind: "admitted", issueId };
 }
 
+/** What a tracker says became of one of its issues. */
+export type TrackerChange =
+  | { kind: "retitled"; title: string }
+  | { kind: "deleted" };
+
+/**
+ * Follows a change in a tracker to every issue holding the link, in every
+ * room it was brought into: a tracker issue can sit in several rooms on
+ * purpose. A rename retitles them by the title rule, and moves a room's
+ * activity clock only where the title changed (it feeds the room's analytics
+ * history, so a fresh snapshot mustn't serve the old one). A deletion drops
+ * every link to it and keeps the issues. A link whose issue is gone holds
+ * nothing and is passed over.
+ *
+ * The rows come through by_external, which reaches those written before
+ * links carried their room too: a handful, one per room holding the issue.
+ */
+export async function followTrackerChange(
+  ctx: MutationCtx,
+  link: Pick<IssueLink, "provider" | "externalId">,
+  change: TrackerChange
+): Promise<void> {
+  const rows = await ctx.db
+    .query("issueLinks")
+    .withIndex("by_external", (q) =>
+      q.eq("provider", link.provider).eq("externalId", link.externalId)
+    )
+    .collect();
+  if (change.kind === "deleted") {
+    await Promise.all(rows.map((row) => ctx.db.delete("issueLinks", row._id)));
+    return;
+  }
+
+  // A tracker's title is fitted to the title rule, never refused; one that
+  // fits as nothing leaves the titles as they are.
+  const title = ISSUE_TITLE.fit(change.title);
+  for (const row of rows) {
+    const issue = await ctx.db.get("issues", row.issueId);
+    if (!issue) continue;
+    if (title && issue.title !== title) {
+      await ctx.db.patch("issues", issue._id, { title });
+      await Rooms.updateRoomActivity(ctx, issue.roomId);
+    }
+    await ctx.db.patch("issueLinks", row._id, { lastSyncedAt: Date.now() });
+  }
+}
+
 /**
  * Updates an issue's title
  */
@@ -250,7 +297,29 @@ export async function removeIssue(
   // Its discussion note goes with it.
   await Canvas.issueRemoved(ctx, issue.roomId, issueId);
 
-  await ctx.db.delete("issues", issueId);
+  await deleteIssueWithLinks(ctx, issueId);
+}
+
+/**
+ * Deletes an issue's row and its links: a link leaves with its issue. Links
+ * are found by issue, so rows from before links carried their room go too.
+ * Returns how many rows went. The rest of what an issue owns (its timing,
+ * vote snapshots and note) is the caller's: removeIssue clears it issue by
+ * issue, the room cascade room by room.
+ */
+export async function deleteIssueWithLinks(
+  ctx: MutationCtx,
+  issueId: Id<"issues">
+): Promise<number> {
+  const links = await ctx.db
+    .query("issueLinks")
+    .withIndex("by_issue", (q) => q.eq("issueId", issueId))
+    .collect();
+  await Promise.all([
+    ...links.map((link) => ctx.db.delete("issueLinks", link._id)),
+    ctx.db.delete("issues", issueId),
+  ]);
+  return links.length + 1;
 }
 
 /**

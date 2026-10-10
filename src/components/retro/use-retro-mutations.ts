@@ -14,6 +14,7 @@ import {
   stickyActAllowed,
   withSpotlight,
 } from "@/convex/retroSteps";
+import { stickyView, type Viewer } from "@/convex/retroStickyView";
 import { useMoveCanvasNodes } from "@/components/whiteboard/use-move-canvas-nodes";
 import { applyTopicChange, applyVoteToggle, applyWalk } from "./board-view";
 import { OPTIMISTIC_PREFIX } from "./optimistic";
@@ -27,7 +28,7 @@ import { OPTIMISTIC_PREFIX } from "./optimistic";
  * an act the step would refuse. Convex rolls an update back by itself if the
  * server refuses.
  */
-export function useRetroMutations(roomId: Id<"rooms">) {
+export function useRetroMutations(roomId: Id<"rooms">, viewerId: Id<"users">) {
   const boardOf = (store: OptimisticLocalStore) => store.getQuery(api.retro.board, { roomId });
   const retroOf = (store: OptimisticLocalStore) => store.getQuery(api.rooms.get, { roomId })?.room.retro;
 
@@ -57,25 +58,35 @@ export function useRetroMutations(roomId: Id<"rooms">) {
     patchRetro(store, (retro) => withSpotlight(retro, Topics.followSpotlight(retro.focusStickyId, change)));
   };
 
+  // The viewer's new sticky, projected as the board read will send it back:
+  // named once revealed while the retro shows authors, and no votes yet.
   const addSticky = useMutation(api.retro.addSticky).withOptimisticUpdate((store, args) => {
-    patchBoard(store, (board) => ({
-      ...board,
-      stickies: [
-        ...board.stickies,
+    const data = store.getQuery(api.rooms.get, { roomId });
+    const retro = data?.room.retro;
+    if (!data || !retro) return;
+    const viewer: Viewer = {
+      retro,
+      viewerId,
+      myTopics: new Set(),
+      names: new Map(data.users.map((user) => [user._id, user.name])),
+      totals: new Map(),
+    };
+    patchBoard(store, (board) => {
+      const sticky = stickyView(
         {
           _id: `${OPTIMISTIC_PREFIX}${args.clientId}` as Id<"retroStickies">,
           clientId: args.clientId,
           columnId: args.columnId,
           position: args.position,
           createdAt: Date.now(),
-          mine: true,
-          hidden: false,
+          authorId: viewerId,
           text: args.text.trim(),
           ...(args.gif ? { gif: args.gif } : {}),
-          myVote: false,
         },
-      ],
-    }));
+        viewer
+      );
+      return { ...board, stickies: [...board.stickies, sticky] };
+    });
   });
 
   const updateSticky = useMutation(api.retro.updateSticky).withOptimisticUpdate((store, args) => {

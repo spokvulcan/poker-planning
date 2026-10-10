@@ -4,6 +4,7 @@ import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useDemoSimulation } from "../demo/DemoSimulationProvider";
+import { applyCardPick } from "../room-view";
 import { useStableActions } from "@/hooks/useStableActions";
 import { useMoveCanvasNodes } from "@/components/whiteboard/use-move-canvas-nodes";
 import { runAct } from "@/lib/run-act";
@@ -25,8 +26,8 @@ export interface CanvasActions {
   reset: () => void;
   toggleAutoComplete: () => void;
   cancelAutoReveal: () => void;
-  /** Sets the local highlight, writes the vote, rolls the highlight back on failure. */
-  selectCard: (cardValue: string) => void;
+  /** Writes the viewer's vote, whose card rises at once: Convex lowers it again if the server refuses. */
+  selectCard: (cardLabel: string) => void;
   /** Resolves once the write has landed (or failed), so a note knows when its text is saved. */
   /** Resolves to whether the note's text landed, for the field to keep it until it has. */
   updateNoteContent: (nodeId: string, content: string) => Promise<boolean>;
@@ -40,9 +41,6 @@ export interface CanvasActions {
 interface UseCanvasActionsProps {
   roomId: Id<"rooms">;
   currentUserId?: Id<"users">;
-  /** The currently-highlighted card, so a failed pick can roll back to it. */
-  selectedCardValue: string | null;
-  setSelectedCardValue: (value: string | null) => void;
 }
 
 /**
@@ -57,8 +55,6 @@ interface UseCanvasActionsProps {
 export function useCanvasActions({
   roomId,
   currentUserId,
-  selectedCardValue,
-  setSelectedCardValue,
 }: UseCanvasActionsProps): CanvasActions {
   // Reading the demo context here folds the action side of the `isDemoMode`
   // prop-drilling cleanup into this seam: a non-null context means demo mode.
@@ -66,7 +62,13 @@ export function useCanvasActions({
 
   const showCards = useMutation(api.rooms.showCards);
   const resetGame = useMutation(api.rooms.resetGame);
-  const pickCard = useMutation(api.votes.pickCard);
+  // The vote lands on the room's data before the server answers, so the card
+  // the viewer picked rises at once, by the round's own rules (room-view.ts).
+  const pickCard = useMutation(api.votes.pickCard).withOptimisticUpdate((store, args) => {
+    const data = store.getQuery(api.rooms.get, { roomId: args.roomId });
+    const next = data && applyCardPick(data, args.userId, args.cardLabel);
+    if (next && next !== data) store.setQuery(api.rooms.get, { roomId: args.roomId }, next);
+  });
   const moveNodesMutation = useMoveCanvasNodes();
   const toggleAutoCompleteMutation = useMutation(api.rooms.toggleAutoComplete);
   const cancelAutoRevealCountdown = useMutation(api.rooms.cancelAutoRevealCountdown);
@@ -94,22 +96,9 @@ export function useCanvasActions({
       if (isDemo) return;
       await runAct(cancelAutoRevealCountdown({ roomId }), FAILED);
     },
-    selectCard: async (cardValue: string) => {
+    selectCard: async (cardLabel: string) => {
       if (isDemo || !currentUserId) return;
-      // Snapshot the prior highlight so a failed write rolls back to it rather
-      // than to `null` (which would flash "no selection" over an existing vote
-      // until the next server tick re-applies it).
-      const previous = selectedCardValue ?? null;
-      setSelectedCardValue(cardValue);
-      const picked = await runAct(
-        pickCard({
-          roomId,
-          userId: currentUserId,
-          cardLabel: cardValue,
-        }),
-        VOTE_FAILED,
-      );
-      if (!picked) setSelectedCardValue(previous);
+      await runAct(pickCard({ roomId, userId: currentUserId, cardLabel }), VOTE_FAILED);
     },
     updateNoteContent: async (nodeId: string, content: string) => {
       if (isDemo || !currentUserId) return true;

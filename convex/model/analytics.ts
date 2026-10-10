@@ -8,9 +8,7 @@ import type { UserRows } from "./userRows";
 // here so existing imports from this module keep working.
 export type {
   AgreementDataPoint,
-  VelocityDataPoint,
   VoteDistributionItem,
-  ParticipationStats,
   TimeToConsensusStats,
   VoterAlignmentUser,
   VoterAlignmentScatterPoint,
@@ -18,18 +16,9 @@ export type {
   PredictabilitySession,
   PredictabilityData,
   DashboardSummary,
+  SessionSummary,
+  Dashboard,
 } from "../analyticsMath";
-
-export interface SessionSummary {
-  roomId: string;
-  roomName: string;
-  joinedAt: number;
-  lastActivityAt: number;
-  issuesCompleted: number;
-  totalStoryPoints: number | null; // null if non-numeric scale
-  averageAgreement: number | null;
-  participantCount: number;
-}
 
 export interface DateRange {
   from: number; // timestamp
@@ -101,46 +90,6 @@ export async function getUserMemberships(
   return results.filter((r): r is NonNullable<typeof r> => r !== null);
 }
 
-/**
- * completedIssueHistory — THE one memberships → rooms → history aggregate
- * behind every analytics metric. Model functions are scan → project: they call
- * this aggregate and hand the rows to a pure projection in analyticsMath.
- *
- * Source: each room's history comes from its `roomAnalyticsSnapshots` row when
- * one exists and is fresh — written when a round completes its target issue
- * (refreshRoomAnalyticsSnapshot) — else from a live scan of the room's tables
- * (legacy rooms before their next completion, and rooms with any activity
- * since the snapshot was computed; see roomHistories for the freshness rule).
- * Both sources produce identical records.
- *
- * Date semantics: a date range windows on `issue.votedAt` — when voting
- * completed — never on `membership.joinedAt`. An issue without a `votedAt`
- * can't be placed in a window, so a range excludes it; with no range every
- * completed issue is history. Membership-tenure filtering survives only in
- * getUserSessions and getParticipationStats.totalSessions, where the metric
- * is about the membership itself (see those functions).
- *
- * individualVotes are windowed at consumption, not here: vote-level metrics
- * window on the vote's own `votedAt` (see votesInRange).
- */
-export async function completedIssueHistory(
-  ctx: QueryCtx,
-  user: Doc<"users"> | null,
-  dateRange?: DateRange
-): Promise<RoomHistory[]> {
-  const history = await roomHistories(ctx, user);
-  if (!dateRange) return history;
-  return history.map((h) => ({
-    ...h,
-    completedIssues: h.completedIssues.filter(
-      (i) =>
-        i.votedAt !== undefined &&
-        i.votedAt >= dateRange.from &&
-        i.votedAt <= dateRange.to
-    ),
-  }));
-}
-
 /** Trims a completed issue Doc to the record the snapshot stores. */
 function toIssueRecord(issue: Doc<"issues">): HistoryIssueRecord {
   return {
@@ -203,8 +152,17 @@ async function collectRoomHistoryRecords(
 }
 
 /**
- * Loads every room's history for a user: one snapshot read per room when
- * fresh, the live scan otherwise.
+ * completedIssueHistory — THE one memberships → rooms → history aggregate
+ * behind every analytics number, loaded once per read and never windowed
+ * here: getDashboard states the date windows. Each of the viewer's poker
+ * rooms comes with its membership, its completed issues and the votes cast
+ * on them.
+ *
+ * Source: each room's history comes from its `roomAnalyticsSnapshots` row when
+ * one exists and is fresh — written when a round completes its target issue
+ * (refreshRoomAnalyticsSnapshot) — else from a live scan of the room's tables
+ * (legacy rooms before their next completion, and rooms with any activity
+ * since the snapshot was computed). Both sources produce identical records.
  *
  * Freshness rule: every mutation that touches a room's history bumps
  * `room.lastActivityAt` (issue edits/removals, round transitions, votes), so a
@@ -215,7 +173,7 @@ async function collectRoomHistoryRecords(
  * play settles, while the dashboard's typical post-session read hits the
  * snapshot.
  */
-async function roomHistories(
+async function completedIssueHistory(
   ctx: QueryCtx,
   user: Doc<"users"> | null
 ): Promise<RoomHistory[]> {
@@ -340,208 +298,125 @@ export const analyticsUserRows: UserRows = {
   },
 };
 
-/** Flattens the aggregate into issue entries carrying their room context. */
-function flattenIssues(history: RoomHistory[]): AnalyticsMath.RoomIssue[] {
-  return history.flatMap(({ room, completedIssues }) =>
-    completedIssues.map((issue) => ({
-      roomId: room._id,
-      roomName: room.name,
-      issue,
-    }))
-  );
-}
-
-/** Filters vote rows to a date range on the vote's own votedAt. */
-function votesInRange(
-  history: RoomHistory[],
-  dateRange?: DateRange
-): HistoryVoteRecord[] {
-  return history
-    .flatMap((h) => h.individualVotes)
-    .filter(
-      (v) =>
-        !dateRange || (v.votedAt >= dateRange.from && v.votedAt <= dateRange.to)
-    );
-}
-
 /**
- * Gets session history summaries for a user
+ * getDashboard — the dashboard read: every panel of the Overview from one
+ * load of the viewer's history, and the one place that says which numbers
+ * window on what:
+ *
+ * - The panels window on when an issue was voted (`issue.votedAt`). An issue
+ *   without a `votedAt` can't be placed in a window, so a range excludes it;
+ *   with no range every completed issue counts. The voter alignment windows
+ *   each vote on its own `votedAt`.
+ * - The session list and the header totals over it (`summary`) window on
+ *   membership tenure: the rooms the viewer joined in the range
+ *   (`membership.joinedAt`, shown on each row), each reporting its lifetime
+ *   issue stats.
+ *
+ * The two rules differ on purpose; making them one would change numbers people
+ * see, so that is a product decision of its own. Live reads remain where the
+ * data isn't history (ADR-0007): each listed room's participant count and the
+ * voters' display names.
  */
+export async function getDashboard(
+  ctx: QueryCtx,
+  user: Doc<"users"> | null,
+  dateRange?: DateRange
+): Promise<AnalyticsMath.Dashboard> {
+  const history = await completedIssueHistory(ctx, user);
+  const votes = votesCastIn(history, dateRange);
+  const [sessions, voterNames] = await Promise.all([
+    sessionsJoinedIn(ctx, history, dateRange),
+    namesOf(ctx, votes),
+  ]);
+  return AnalyticsMath.dashboard({
+    sessions,
+    rooms: issuesVotedIn(history, dateRange),
+    votes,
+    voterNames,
+  });
+}
+
+/** The Sessions page: the dashboard's session list on its own, by the same rule. */
 export async function getUserSessions(
   ctx: QueryCtx,
   user: Doc<"users"> | null,
   dateRange?: DateRange
-): Promise<SessionSummary[]> {
-  // No range on the aggregate: a session row reports the room's lifetime
-  // issue stats. The range instead windows on membership.joinedAt — session
-  // history is a membership-tenure view ("rooms I joined in this window"),
-  // and joinedAt is a displayed field of each row.
+): Promise<AnalyticsMath.SessionSummary[]> {
   const history = await completedIssueHistory(ctx, user);
+  return sessionsJoinedIn(ctx, history, dateRange);
+}
 
-  const filtered = dateRange
-    ? history.filter(
-        ({ membership }) =>
-          membership.joinedAt >= dateRange.from &&
-          membership.joinedAt <= dateRange.to
-      )
-    : history;
+/** Whether a moment falls in the range; with no range every moment does. */
+function inRange(at: number | undefined, dateRange?: DateRange): boolean {
+  if (!dateRange) return true;
+  return at !== undefined && at >= dateRange.from && at <= dateRange.to;
+}
 
+/** The panels' window: each room's issues voted in the range. */
+function issuesVotedIn(
+  history: RoomHistory[],
+  dateRange?: DateRange
+): AnalyticsMath.RoomIssues[] {
+  return history.map(({ room, completedIssues }) => ({
+    roomId: room._id,
+    roomName: room.name,
+    issues: completedIssues.filter((issue) => inRange(issue.votedAt, dateRange)),
+  }));
+}
+
+/** The voter alignment's window: the votes cast in the range. */
+function votesCastIn(
+  history: RoomHistory[],
+  dateRange?: DateRange
+): HistoryVoteRecord[] {
+  return history.flatMap(({ individualVotes }) =>
+    individualVotes.filter((vote) => inRange(vote.votedAt, dateRange))
+  );
+}
+
+/**
+ * The session list's window: a row for each room the viewer joined in the
+ * range, with the room's lifetime issue stats and its participant count.
+ */
+async function sessionsJoinedIn(
+  ctx: QueryCtx,
+  history: RoomHistory[],
+  dateRange?: DateRange
+): Promise<AnalyticsMath.SessionSummary[]> {
   const summaries = await Promise.all(
-    filtered.map(async ({ membership, room, completedIssues }) => {
-      const roomMembers = await ctx.db
-        .query("roomMemberships")
-        .withIndex("by_room", (q) => q.eq("roomId", room._id))
-        .collect();
+    history
+      .filter(({ membership }) => inRange(membership.joinedAt, dateRange))
+      .map(async ({ membership, room, completedIssues }) => {
+        const roomMembers = await ctx.db
+          .query("roomMemberships")
+          .withIndex("by_room", (q) => q.eq("roomId", room._id))
+          .collect();
 
-      return {
-        roomId: room._id,
-        roomName: room.name,
-        joinedAt: membership.joinedAt,
-        lastActivityAt: room.lastActivityAt,
-        ...AnalyticsMath.sessionIssueStats(completedIssues),
-        participantCount: roomMembers.length,
-      };
-    })
+        return {
+          roomId: room._id,
+          roomName: room.name,
+          joinedAt: membership.joinedAt,
+          lastActivityAt: room.lastActivityAt,
+          ...AnalyticsMath.sessionIssueStats(completedIssues),
+          participantCount: roomMembers.length,
+        };
+      })
   );
 
   // Sort by most recent activity
   return summaries.sort((a, b) => b.lastActivityAt - a.lastActivityAt);
 }
 
-/**
- * Gets agreement trend data points across all user's sessions
- */
-export async function getAgreementTrend(
+/** Batch-resolves the voters' display names. */
+async function namesOf(
   ctx: QueryCtx,
-  user: Doc<"users"> | null,
-  dateRange?: DateRange
-): Promise<AnalyticsMath.AgreementDataPoint[]> {
-  const history = await completedIssueHistory(ctx, user, dateRange);
-  return AnalyticsMath.agreementTrend(flattenIssues(history));
-}
-
-/**
- * Gets velocity data (story points per day)
- */
-export async function getVelocityStats(
-  ctx: QueryCtx,
-  user: Doc<"users"> | null,
-  dateRange?: DateRange
-): Promise<AnalyticsMath.VelocityDataPoint[]> {
-  const history = await completedIssueHistory(ctx, user, dateRange);
-  return AnalyticsMath.velocityByDay(flattenIssues(history));
-}
-
-/**
- * Gets distribution of final estimates (vote values)
- */
-export async function getVoteDistribution(
-  ctx: QueryCtx,
-  user: Doc<"users"> | null,
-  dateRange?: DateRange
-): Promise<AnalyticsMath.VoteDistributionItem[]> {
-  const history = await completedIssueHistory(ctx, user, dateRange);
-  return AnalyticsMath.voteDistribution(
-    history.flatMap((h) => h.completedIssues)
-  );
-}
-
-/**
- * Gets overall participation statistics
- */
-export async function getParticipationStats(
-  ctx: QueryCtx,
-  user: Doc<"users"> | null,
-  dateRange?: DateRange
-): Promise<AnalyticsMath.ParticipationStats> {
-  const history = await completedIssueHistory(ctx, user, dateRange);
-
-  // totalSessions is membership-tenure: sessions joined within the window.
-  const totalSessions = dateRange
-    ? history.filter(
-        ({ membership }) =>
-          membership.joinedAt >= dateRange.from &&
-          membership.joinedAt <= dateRange.to
-      ).length
-    : history.length;
-
-  // Issue/vote activity windows on votedAt via the aggregate, across all of
-  // the user's rooms. totalVotesCast counts real individualVotes snapshots
-  // (the old code faked it with the completed-issue count).
-  const totalIssuesVoted = history.reduce(
-    (sum, h) => sum + h.completedIssues.length,
-    0
-  );
-  const totalVotesCast = votesInRange(history, dateRange).length;
-
-  return AnalyticsMath.participationStats({
-    totalSessions,
-    totalIssuesVoted,
-    totalVotesCast,
-  });
-}
-
-/**
- * Gets time-to-consensus statistics across all user's sessions
- */
-export async function getTimeToConsensusStats(
-  ctx: QueryCtx,
-  user: Doc<"users"> | null,
-  dateRange?: DateRange
-): Promise<AnalyticsMath.TimeToConsensusStats> {
-  const history = await completedIssueHistory(ctx, user, dateRange);
-  return AnalyticsMath.timeToConsensus(flattenIssues(history));
-}
-
-/**
- * Gets summary statistics for the dashboard header
- */
-export async function getDashboardSummary(
-  ctx: QueryCtx,
-  user: Doc<"users"> | null,
-  dateRange?: DateRange
-): Promise<AnalyticsMath.DashboardSummary> {
-  const sessions = await getUserSessions(ctx, user, dateRange);
-  return AnalyticsMath.dashboardSummary(sessions);
-}
-
-/**
- * Gets voter alignment statistics across all user's sessions
- */
-export async function getVoterAlignment(
-  ctx: QueryCtx,
-  user: Doc<"users"> | null,
-  dateRange?: DateRange
-): Promise<AnalyticsMath.VoterAlignmentData> {
-  const history = await completedIssueHistory(ctx, user, dateRange);
-  const votes = votesInRange(history, dateRange);
-
-  // Batch-resolve user names
+  votes: HistoryVoteRecord[]
+): Promise<Record<string, string>> {
   const userIds = [...new Set(votes.map((v) => v.userId))];
   const resolvedUsers = await Promise.all(userIds.map((id) => ctx.db.get("users", id)));
   const userNames: Record<string, string> = {};
   userIds.forEach((id, i) => {
     userNames[id] = resolvedUsers[i]?.name ?? "Unknown";
   });
-
-  return AnalyticsMath.voterAlignment(votes, userNames);
-}
-
-/**
- * Computes sprint predictability score and related metrics.
- * The score formula lives in analyticsMath.predictability.
- */
-export async function getPredictabilityScore(
-  ctx: QueryCtx,
-  user: Doc<"users"> | null,
-  dateRange?: DateRange
-): Promise<AnalyticsMath.PredictabilityData> {
-  const history = await completedIssueHistory(ctx, user, dateRange);
-  return AnalyticsMath.predictability(
-    history.map(({ room, completedIssues }) => ({
-      roomId: room._id,
-      roomName: room.name,
-      issues: completedIssues,
-    }))
-  );
+  return userNames;
 }

@@ -1,10 +1,12 @@
 /**
- * Where the Jira OAuth callback sends the person when Convex refuses to store
- * the connection: a deployment missing its Jira settings reads as "not
- * configured" on the settings page, any other failure as a failed save.
+ * The Jira OAuth callback hands Convex the authorization code and nothing
+ * else (Convex owns the exchange, so no token and no client secret passes
+ * through Next.js), then sends the person to the settings page: a step Convex
+ * refused by rule shows that step's copy, any other failure a failed save.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { ConvexError } from "convex/values";
+import { getFunctionName } from "convex/server";
 
 const { fetchAuthAction, Redirect } = vi.hoisted(() => {
   class Redirect extends Error {
@@ -45,24 +47,9 @@ async function landing(): Promise<string> {
 }
 
 beforeEach(() => {
-  // Atlassian accepts the code.
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(async (input: string) => {
-      if (input === "https://auth.atlassian.com/oauth/token") {
-        return Response.json({
-          access_token: "access-1",
-          refresh_token: "refresh-1",
-          expires_in: 3600,
-          scope: "read:jira-work",
-        });
-      }
-      if (input === "https://api.atlassian.com/oauth/token/accessible-resources") {
-        return Response.json([{ id: "cloud-1", url: "https://team.atlassian.net" }]);
-      }
-      return Response.json({ account_id: "jira-user-1" });
-    })
-  );
+  fetchAuthAction.mockReset();
+  // Next.js no longer talks to Atlassian, so any fetch of its own is a leak.
+  vi.stubGlobal("fetch", vi.fn());
   vi.spyOn(console, "error").mockImplementation(() => {});
 });
 
@@ -72,6 +59,18 @@ afterEach(() => {
 });
 
 describe("GET /api/integrations/jira/callback", () => {
+  it("hands Convex the authorization code and nothing else, then shows the connected toast", async () => {
+    fetchAuthAction.mockResolvedValueOnce(null);
+
+    expect(await landing()).toBe("/dashboard/settings?tab=integrations&connected=jira");
+
+    expect(fetchAuthAction).toHaveBeenCalledTimes(1);
+    const [action, args] = fetchAuthAction.mock.calls[0];
+    expect(getFunctionName(action)).toBe("integrations/jira:connectJira");
+    expect(args).toEqual({ code: "the-code" });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it("shows the not-configured copy when Convex lacks its Jira settings", async () => {
     fetchAuthAction.mockRejectedValueOnce(
       new ConvexError({
@@ -84,6 +83,19 @@ describe("GET /api/integrations/jira/callback", () => {
       "/dashboard/settings?tab=integrations&error=jira_not_configured"
     );
   });
+
+  it.each(["jira_token_failed", "jira_resources_failed", "jira_no_site"])(
+    "shows the %s copy when Convex refuses that step of the exchange",
+    async (code) => {
+      fetchAuthAction.mockRejectedValueOnce(
+        new ConvexError({ code, message: "Refused by the exchange." })
+      );
+
+      expect(await landing()).toBe(
+        `/dashboard/settings?tab=integrations&error=${code}`
+      );
+    }
+  );
 
   it("reports any other refused store as a failed save", async () => {
     fetchAuthAction.mockRejectedValueOnce(new Error("Server Error"));

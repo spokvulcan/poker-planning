@@ -10,11 +10,11 @@
  * imported Jira issue enters a room through the issue module's admission
  * (model/issues.ts): the adapter only turns it into a title and a link. The
  * token-field contract (key validation, encrypt-on-write, decrypt-on-read,
- * expiry rule) lives in model/tokenVault.ts. Token freshness/refresh and
- * client construction live in jiraAuth.ts. What happens to a mapping's
- * webhook is decided in jiraWebhookReconcile.ts, which the provider registry
- * (integrations/registry.ts) points at; the webhook actions below carry its
- * decisions out against Jira.
+ * expiry rule) lives in model/tokenVault.ts. The OAuth handshake, token
+ * freshness/refresh and client construction live in jiraAuth.ts. What happens
+ * to a mapping's webhook is decided in jiraWebhookReconcile.ts, which the
+ * provider registry (integrations/registry.ts) points at; the webhook actions
+ * below carry its decisions out against Jira.
  */
 
 import {
@@ -22,6 +22,7 @@ import {
   internalAction,
   internalMutation,
   internalQuery,
+  query,
 } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { ConvexError, v } from "convex/values";
@@ -29,9 +30,13 @@ import { providerValidator } from "../schema";
 import { Doc, Id } from "../_generated/dataModel";
 import { ActionCtx } from "../_generated/server";
 import { requireCanForUser } from "../model/auth";
-import { requireUser } from "../model/caller";
+import { requireCaller, requireUser } from "../model/caller";
 import { JiraClient, JiraIssue } from "./jiraClient";
-import { buildJiraClient, requireJiraClientCredentials } from "./jiraAuth";
+import {
+  buildJiraAuthorizeUrl,
+  buildJiraClient,
+  connectJiraWithCode,
+} from "./jiraAuth";
 import { applyJiraWebhookEvent } from "./jiraWebhook";
 import {
   jiraWebhookReconcile,
@@ -44,7 +49,6 @@ import {
 import { cardNumericValue } from "../scales";
 import * as Issues from "../model/issues";
 import * as Integrations from "../model/integrations";
-import * as TokenVault from "../model/tokenVault";
 import type { Refusal } from "../model/refusal";
 
 // ---------------------------------------------------------------------------
@@ -220,58 +224,29 @@ export const getIssueData = internalQuery({
 // Public actions — called from frontend
 // ---------------------------------------------------------------------------
 
-/** Called from Next.js OAuth callback via fetchAuthAction */
-export const connectJira = action({
-  args: {
-    accessToken: v.string(),
-    refreshToken: v.string(),
-    expiresIn: v.number(),
-    cloudId: v.string(),
-    siteUrl: v.string(),
-    scopes: v.array(v.string()),
-    providerUserId: v.optional(v.string()),
-    providerUserEmail: v.optional(v.string()),
+/**
+ * Called from the Next.js authorize route via fetchAuthQuery: the Atlassian
+ * consent URL for the state the route keeps in a cookie. Convex builds it
+ * because the Jira OAuth app's settings live here and nowhere else.
+ */
+export const getJiraAuthorizeUrl = query({
+  args: { state: v.string() },
+  handler: async (ctx, { state }) => {
+    await requireCaller(ctx);
+    return buildJiraAuthorizeUrl(state);
   },
-  handler: async (ctx, args) => {
+});
+
+/**
+ * Called from the Next.js OAuth callback via fetchAuthAction with the
+ * authorization code Atlassian handed back; Convex exchanges it and stores
+ * the connection (jiraAuth.ts), so no token ever crosses a public argument.
+ */
+export const connectJira = action({
+  args: { code: v.string() },
+  handler: async (ctx, { code }) => {
     const { user } = await requireUser(ctx);
-
-    // The first token refresh posts the deployment's Jira credentials, so a
-    // deployment without them refuses the connect now.
-    requireJiraClientCredentials();
-
-    // The siteUrl is stored and later concatenated into issue browse links
-    // rendered as anchor hrefs. This action is public, so a client could
-    // bypass the OAuth callback and store a javascript: URL — validate it.
-    let parsedSiteUrl: URL;
-    try {
-      parsedSiteUrl = new URL(args.siteUrl);
-    } catch {
-      throw new Error("Invalid Jira site URL");
-    }
-    if (
-      parsedSiteUrl.protocol !== "https:" ||
-      !parsedSiteUrl.hostname.endsWith(".atlassian.net")
-    ) {
-      throw new Error("Jira site URL must be an https://*.atlassian.net URL");
-    }
-
-    // The tokens reach the database only as vault ciphertext.
-    const enc = await TokenVault.encryptTokens({
-      accessToken: args.accessToken,
-      refreshToken: args.refreshToken,
-    });
-
-    await ctx.runMutation(internal.integrations.jira.saveConnection, {
-      userId: user._id,
-      provider: "jira",
-      ...enc,
-      expiresAt: TokenVault.computeExpiresAt(args.expiresIn),
-      cloudId: args.cloudId,
-      siteUrl: args.siteUrl,
-      providerUserId: args.providerUserId,
-      providerUserEmail: args.providerUserEmail,
-      scopes: args.scopes,
-    });
+    await connectJiraWithCode(ctx, user._id, code);
   },
 });
 
