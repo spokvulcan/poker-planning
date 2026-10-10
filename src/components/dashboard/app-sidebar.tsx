@@ -10,6 +10,7 @@ import {
   Settings,
   HelpCircle,
   Home,
+  Search,
 } from "lucide-react";
 
 import {
@@ -24,6 +25,8 @@ import {
   SidebarMenuItem,
   SidebarSeparator,
 } from "@/components/ui/sidebar";
+import { CommandMenuShortcut, useOpenCommandMenu } from "@/components/command-menu/command-menu";
+import { COMMAND_MENU } from "@/components/command-menu/copy";
 import { NavUser } from "./nav-user";
 
 const navMain = [
@@ -65,6 +68,7 @@ const navSecondary: { title: string; url: string; icon: typeof Settings; externa
 
 export function AppSidebar() {
   const pathname = usePathname();
+  const openCommandMenu = useOpenCommandMenu();
 
   return (
     <Sidebar variant="inset" collapsible="offcanvas">
@@ -94,6 +98,20 @@ export function AppSidebar() {
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu>
+              {openCommandMenu && (
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    onClick={openCommandMenu}
+                    tooltip={COMMAND_MENU.trigger}
+                    aria-keyshortcuts="Meta+K Control+K"
+                    className="text-muted-foreground"
+                  >
+                    <Search className="size-4" />
+                    <span>{COMMAND_MENU.trigger}</span>
+                    <CommandMenuShortcut className="ml-auto" />
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              )}
               {navMain.map((item) => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton
