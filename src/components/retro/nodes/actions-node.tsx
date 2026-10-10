@@ -20,7 +20,7 @@ import { MAX_ACTION_TEXT_LENGTH } from "@/convex/retroTemplates";
 import { ACTIONS_WIDTH } from "@/convex/retroLayout";
 import type { ActionItemView } from "@/convex/model/retro";
 import type { ActionsNodeData, RetroBoardActions, RetroMember } from "../types";
-import { isOptimistic } from "../optimistic";
+import { isOptimistic } from "../board-view";
 
 function ActionRow({
   item,

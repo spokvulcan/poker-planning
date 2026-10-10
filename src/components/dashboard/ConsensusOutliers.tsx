@@ -22,6 +22,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { formatDuration } from "@/convex/analyticsMath";
 
 interface OutlierItem {
   issueTitle: string;
@@ -42,15 +43,6 @@ const chartConfig = {
     color: "var(--chart-4)",
   },
 } satisfies ChartConfig;
-
-function formatDuration(ms: number): string {
-  const totalSeconds = Math.round(ms / 1000);
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-
-  if (minutes === 0) return `${seconds}s`;
-  return `${minutes}m ${seconds}s`;
-}
 
 function getBarColor(multiplier: number): string {
   if (multiplier > 3) return "var(--chart-5)"; // red-ish

@@ -22,6 +22,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { formatDuration } from "@/convex/analyticsMath";
 import { formatChartDay } from "./chart-day";
 
 interface TrendDataPoint {
@@ -41,13 +42,6 @@ const chartConfig = {
     color: "var(--chart-1)",
   },
 } satisfies ChartConfig;
-
-function formatSeconds(sec: number): string {
-  const minutes = Math.floor(sec / 60);
-  const secs = sec % 60;
-  if (minutes === 0) return `${secs}s`;
-  return `${minutes}m ${secs}s`;
-}
 
 export function ConsensusTrend({ data, isLoading }: ConsensusTrendProps) {
   const hasData = data.length > 0;
@@ -167,14 +161,15 @@ export function ConsensusTrend({ data, isLoading }: ConsensusTrendProps) {
             <YAxis
               tickLine={false}
               axisLine={false}
-              tickFormatter={(v) => formatSeconds(v)}
+              allowDecimals={false}
+              tickFormatter={(sec) => formatDuration(sec * 1000)}
             />
             <ChartTooltip
               content={
                 <ChartTooltipContent
                   labelFormatter={(label) => formatChartDay(label as string)}
                   formatter={(value) => [
-                    formatSeconds(value as number),
+                    formatDuration((value as number) * 1000),
                     "Avg Time",
                   ]}
                 />
