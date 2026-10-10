@@ -9,7 +9,7 @@ import type { ActionItemView, BoardView, RetroState, StickyView } from "@/convex
 import type { CanvasNode } from "@/convex/model/canvas";
 import type { ResolvedDecision, RetroPermissionCategory } from "@/convex/permissions";
 import type { RetroColumn } from "@/convex/retroTemplates";
-import { stepAllows, stickyActAllowed, stickyEditDecision } from "@/convex/retroSteps";
+import { stepAllows, stepShows, stickyActAllowed, stickyEditDecision } from "@/convex/retroSteps";
 import {
   actionsPosition,
   padNodeId,
@@ -59,16 +59,19 @@ export function topicLabel(sticky: StickyView | undefined): string | undefined {
 export function buildRetroNodes(input: RetroNodesInput): RetroFlowNode[] {
   const { board, retro, perms, actions } = input;
   const { columns, step } = retro;
+  const shows = stepShows(step);
   const stickies = board?.stickies ?? [];
   const positionOf = (nodeId: string) => input.canvasNodes?.find((n) => n.nodeId === nodeId)?.position;
   const defaultPads = padPositions(columns.length);
   const nodes: RetroFlowNode[] = [];
 
-  // The walk: in Discuss and after, the topics in order and where it is.
-  const discussing = step === "discuss" || step === "done";
-  const order = discussing ? topicOrder(board, columns) : [];
+  // The walk: once the totals show, the topics in the order they give and
+  // where the spotlight is in it. While it runs, the topics it has passed are
+  // discussed; once it's over, all of them.
+  const order = shows.totals ? topicOrder(board, columns) : [];
   const focusIndex = retro.focusStickyId ? order.indexOf(retro.focusStickyId) : -1;
   const focused = stickies.find((s) => s._id === retro.focusStickyId);
+  const walking = stepAllows(step, "walk").allowed;
   const openActions = (input.items ?? []).filter((i) => !i.done).length;
 
   nodes.push({
@@ -86,8 +89,8 @@ export function buildRetroNodes(input: RetroNodesInput): RetroFlowNode[] {
       myVotes: board?.myVotes ?? 0,
       topicIndex: focusIndex,
       topicCount: order.length,
-      ...(retro.focusStickyId && step === "discuss" ? { focusedId: retro.focusStickyId } : {}),
-      ...(step === "discuss" ? { focusedLabel: topicLabel(focused) } : {}),
+      ...(retro.focusStickyId && shows.spotlight ? { focusedId: retro.focusStickyId } : {}),
+      ...(shows.spotlight ? { focusedLabel: topicLabel(focused) } : {}),
       ...(retro.nextRoomId ? { nextRoomId: retro.nextRoomId } : {}),
       openActions,
       totalActions: input.items?.length ?? 0,
@@ -141,7 +144,7 @@ export function buildRetroNodes(input: RetroNodesInput): RetroFlowNode[] {
     const canEdit = !pending && stickyEditDecision(step, sticky.mine, perms.cardManagement).allowed;
     const editing = input.editingId === sticky._id;
     const rank = order.indexOf(sticky._id);
-    const isFocused = step === "discuss" && sticky._id === retro.focusStickyId;
+    const isFocused = shows.spotlight && sticky._id === retro.focusStickyId;
     nodes.push({
       id: sticky.clientId,
       type: "sticky",
@@ -152,7 +155,7 @@ export function buildRetroNodes(input: RetroNodesInput): RetroFlowNode[] {
       data: {
         sticky,
         color: colorOf.get(sticky.columnId) ?? "yellow",
-        step,
+        shows,
         editing,
         canEdit,
         members: (membersOf.get(sticky._id) ?? [])
@@ -164,8 +167,8 @@ export function buildRetroNodes(input: RetroNodesInput): RetroFlowNode[] {
         votesLeft,
         ...(rank >= 0 ? { rank: rank + 1 } : {}),
         focused: isFocused,
-        discussed: discussing && rank >= 0 && (step === "done" || (focusIndex >= 0 && rank < focusIndex)),
-        dimmed: step === "discuss" && !!retro.focusStickyId && !isFocused,
+        discussed: rank >= 0 && (!walking || (focusIndex >= 0 && rank < focusIndex)),
+        dimmed: shows.spotlight && !!retro.focusStickyId && !isFocused,
         canFocus: canSpotlight && !pending,
         actions,
       },
@@ -183,7 +186,7 @@ export function buildRetroNodes(input: RetroNodesInput): RetroFlowNode[] {
       data: {
         draft: { clientId: input.draft.clientId },
         color: colorOf.get(input.draft.columnId) ?? "yellow",
-        step,
+        shows,
         editing: true,
         canEdit: true,
         members: [],

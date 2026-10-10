@@ -663,6 +663,22 @@ describe("VotingRound.reset", () => {
     expect(ts).toHaveLength(2);
     expect(ts.find((x) => x.roundNumber === 2)?.votingEndedAt).toBeUndefined();
   });
+
+  it("stays open mid-vote: throws the votes away, closes the running timed round and opens round 2", async () => {
+    const t = withComponents(convexTest(schema, modules));
+    const roomId = await seedRoom(t);
+    const issueId = await seedIssue(t, roomId, { status: "pending" });
+    await t.run((ctx) => VotingRound.start(ctx, { roomId, issueId })); // round 1, running
+    const a = await addMember(t, roomId);
+    await rawVote(t, roomId, a);
+
+    await t.run((ctx) => VotingRound.reset(ctx, roomId));
+
+    const ts = await timingFor(t, issueId);
+    expect(await votesFor(t, roomId)).toHaveLength(0);
+    expect(ts.find((x) => x.roundNumber === 1)?.votingEndedAt).toEqual(expect.any(Number));
+    expect(ts.find((x) => x.roundNumber === 2)?.votingEndedAt).toBeUndefined();
+  });
 });
 
 describe("VotingRound.reveal", () => {
@@ -924,6 +940,148 @@ describe("VotingRound.retractVote", () => {
     const room = await readRoom(t, roomId);
     expect(room?.autoRevealCountdownStartedAt).toBeUndefined();
     expect(room?.autoRevealScheduledId).toBeUndefined();
+  });
+});
+
+// What the phase refuses, the round refuses quietly, with no side effects, the
+// way a stale scheduled reveal reveals nothing. Each race plays the late act on
+// a moved-on clock and finds the round exactly as it was.
+describe("the round refuses what its phase doesn't allow", () => {
+  const BASE = new Date("2026-10-10T12:00:00Z").getTime();
+  const LATER = BASE + 60_000;
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** Everything the round and its reveal write for a room; scheduled jobs by id. */
+  async function roundState(t: T, roomId: Id<"rooms">) {
+    return t.run(async (ctx) => ({
+      room: await ctx.db.get("rooms", roomId),
+      issues: await ctx.db.query("issues").withIndex("by_room", (q) => q.eq("roomId", roomId)).collect(),
+      votes: await ctx.db.query("votes").withIndex("by_room", (q) => q.eq("roomId", roomId)).collect(),
+      timing: await ctx.db.query("votingTimestamps").withIndex("by_room", (q) => q.eq("roomId", roomId)).collect(),
+      alignment: await ctx.db.query("individualVotes").withIndex("by_room", (q) => q.eq("roomId", roomId)).collect(),
+      canvas: await ctx.db.query("canvasNodes").withIndex("by_room", (q) => q.eq("roomId", roomId)).collect(),
+      analytics: await ctx.db
+        .query("roomAnalyticsSnapshots")
+        .withIndex("by_room", (q) => q.eq("roomId", roomId))
+        .collect(),
+      scheduled: (await ctx.db.system.query("_scheduled_functions").collect()).map((job) => job._id),
+    }));
+  }
+
+  /**
+   * A round started on a fresh issue with two voters in the room. Timers are
+   * fake, so no scheduled job fires on its own and every write is stamped BASE.
+   */
+  async function startRound(t: T) {
+    vi.useFakeTimers();
+    vi.setSystemTime(BASE);
+    const roomId = await seedRoom(t, { autoCompleteVoting: true });
+    const issueId = await seedIssue(t, roomId, { status: "pending" });
+    const voters = [await addMember(t, roomId), await addMember(t, roomId)];
+    await t.run((ctx) => VotingRound.start(ctx, { roomId, issueId }));
+    return { roomId, issueId, voters };
+  }
+
+  /** Links the issue to Jira in a room that pushes each estimate on reveal. */
+  async function linkToJira(t: T, roomId: Id<"rooms">, issueId: Id<"issues">) {
+    await t.run(async (ctx) => {
+      const userId = await ctx.db.insert("users", { authUserId: "auth-jira", name: "J", createdAt: Date.now() });
+      const connectionId = await ctx.db.insert("integrationConnections", {
+        userId,
+        provider: "jira",
+        encryptedAccessToken: "enc-access",
+        accessTokenIv: "iv",
+        accessTokenAuthTag: "tag",
+        expiresAt: Date.now() + 3_600_000,
+        scopes: [],
+        connectedAt: Date.now(),
+        lastRefreshedAt: Date.now(),
+      });
+      await ctx.db.insert("integrationMappings", {
+        roomId,
+        connectionId,
+        provider: "jira",
+        jiraProjectKey: "PROJ",
+        storyPointsFieldId: "customfield_10016",
+        autoImport: false,
+        autoPushEstimates: true,
+        createdAt: Date.now(),
+      });
+      await ctx.db.insert("issueLinks", {
+        issueId,
+        roomId,
+        provider: "jira",
+        externalId: "PROJ-1",
+        externalUrl: "https://team.atlassian.net/browse/PROJ-1",
+        lastSyncedAt: Date.now(),
+      });
+    });
+  }
+
+  async function jiraPushes(t: T) {
+    return (await scheduledFns(t)).filter((job) => job.name.endsWith(":pushEstimateToJira"));
+  }
+
+  it("a second reveal neither re-stamps the issue nor pushes the estimate to Jira again", async () => {
+    const t = withComponents(convexTest(schema, modules));
+    const { roomId, issueId, voters } = await startRound(t);
+    await linkToJira(t, roomId, issueId);
+    await armCountdown(t, roomId, voters); // both pick "5"
+    await t.run((ctx) => VotingRound.reveal(ctx, roomId));
+    expect(await jiraPushes(t)).toHaveLength(1);
+    const revealed = await roundState(t, roomId);
+
+    vi.setSystemTime(LATER);
+    await t.run((ctx) => VotingRound.reveal(ctx, roomId)); // a second facilitator's click
+
+    expect(await roundState(t, roomId)).toEqual(revealed);
+    expect(await jiraPushes(t)).toHaveLength(1);
+  });
+
+  it("a card picked after the auto-reveal changes neither the votes nor the results", async () => {
+    const t = withComponents(convexTest(schema, modules));
+    const { roomId, voters } = await startRound(t);
+    await armCountdown(t, roomId, voters); // both pick "5"
+    const token = (await readRoom(t, roomId))!.autoRevealCountdownStartedAt!;
+    await t.run((ctx) => VotingRound.autoReveal(ctx, { roomId, token }));
+    const revealed = await roundState(t, roomId);
+
+    vi.setSystemTime(LATER);
+    await t.run((ctx) =>
+      VotingRound.castVote(ctx, { roomId, userId: voters[0], cardLabel: "8", cardValue: 8 })
+    );
+
+    expect(await roundState(t, roomId)).toEqual(revealed);
+  });
+
+  it("a card taken back after the reveal stays on the table", async () => {
+    const t = withComponents(convexTest(schema, modules));
+    const { roomId, voters } = await startRound(t);
+    await armCountdown(t, roomId, voters); // both pick "5"
+    await t.run((ctx) => VotingRound.reveal(ctx, roomId));
+    const revealed = await roundState(t, roomId);
+
+    vi.setSystemTime(LATER);
+    await t.run((ctx) => VotingRound.retractVote(ctx, { roomId, userId: voters[0] }));
+
+    expect(await roundState(t, roomId)).toEqual(revealed);
+  });
+
+  it("a second start of the issue being voted on keeps its votes and its one timed round", async () => {
+    const t = withComponents(convexTest(schema, modules));
+    const { roomId, issueId, voters } = await startRound(t); // one facilitator's start
+    await t.run((ctx) =>
+      VotingRound.castVote(ctx, { roomId, userId: voters[0], cardLabel: "5", cardValue: 5 })
+    );
+    const voting = await roundState(t, roomId);
+
+    vi.setSystemTime(LATER);
+    await t.run((ctx) => VotingRound.start(ctx, { roomId, issueId })); // the other's, a moment late
+
+    expect(await roundState(t, roomId)).toEqual(voting);
   });
 });
 

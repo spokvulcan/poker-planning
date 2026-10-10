@@ -8,7 +8,7 @@ import { v } from "convex/values";
 import { providerValidator } from "./schema";
 import * as Integrations from "./model/integrations";
 import * as Issues from "./model/issues";
-import { requireAuthUser, requireRoomMember, requireCan } from "./model/auth";
+import { requireAuthUser, requireRoomReader, requireCan } from "./model/auth";
 
 // ---------------------------------------------------------------------------
 // Connection queries & mutations
@@ -48,7 +48,7 @@ export const disconnect = mutation({
 export const getRoomMapping = query({
   args: { roomId: v.id("rooms") },
   handler: async (ctx, args) => {
-    await requireRoomMember(ctx, args.roomId);
+    await requireRoomReader(ctx, args.roomId);
     return await ctx.db
       .query("integrationMappings")
       .withIndex("by_room", (q) => q.eq("roomId", args.roomId))
@@ -59,7 +59,7 @@ export const getRoomMapping = query({
 export const getIssueLinks = query({
   args: { roomId: v.id("rooms") },
   handler: async (ctx, args) => {
-    await requireRoomMember(ctx, args.roomId);
+    await requireRoomReader(ctx, args.roomId);
 
     // One by_room fetch via the model helper — no per-issue queries.
     const linkByIssue = await Issues.issueLinksForRoom(ctx, args.roomId);

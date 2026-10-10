@@ -9,7 +9,10 @@ import { createAuthWaiters } from "@/lib/auth-waiters";
 
 /** The auth state a sign-in waits on. */
 export interface AuthSnapshot {
+  // BetterAuth's session: a null authUserId means no session only once it has loaded
   authUserId: string | null;
+  isSessionPending: boolean;
+  // Convex's auth state
   isLoading: boolean;
   isAuthenticated: boolean;
 }
@@ -53,7 +56,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const { isAuthenticated, isLoading: convexAuthLoading } = useConvexAuth();
 
   // Still need BetterAuth session for authUserId (used in mutations)
-  const { data: session } = authClient.useSession();
+  const { data: session, isPending: isSessionPending } = authClient.useSession();
   const authUserId = session?.user?.id;
 
   // Zero reads on /demo (ADR-0003): the demo is a client-side simulation with
@@ -66,11 +69,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const isDemoRoute = pathname === "/demo" || pathname.startsWith("/demo/");
 
   const [waiters] = useState(() =>
-    createAuthWaiters<AuthSnapshot>({ authUserId: null, isLoading: true, isAuthenticated: false })
+    createAuthWaiters<AuthSnapshot>({ authUserId: null, isSessionPending: true, isLoading: true, isAuthenticated: false })
   );
   useEffect(() => {
-    waiters.update({ authUserId: authUserId ?? null, isLoading: convexAuthLoading, isAuthenticated });
-  }, [waiters, authUserId, convexAuthLoading, isAuthenticated]);
+    waiters.update({ authUserId: authUserId ?? null, isSessionPending, isLoading: convexAuthLoading, isAuthenticated });
+  }, [waiters, authUserId, isSessionPending, convexAuthLoading, isAuthenticated]);
 
   const globalUser = useQuery(
     api.users.getGlobalUser,

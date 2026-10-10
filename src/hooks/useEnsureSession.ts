@@ -31,10 +31,12 @@ export interface EnsureSessionOptions {
 /**
  * The session every guest way in goes through: returns the caller's
  * authUserId once Convex has the session, signing in anonymously first when
- * there is none. It waits for the auth provider's first load before deciding
- * (signing in anonymously over a live session is a BetterAuth 400), and a
- * fresh session reaches BetterAuth before Convex, so it waits for Convex to
- * take the token before anything writes. Only then does the caller get a
+ * there is none. It decides only once BetterAuth's session and Convex's auth
+ * state have both loaded: with the server-rendered token Convex can load
+ * first, and signing in anonymously over a live session is a BetterAuth 400
+ * for a guest and a new guest for a permanent account. A fresh session
+ * reaches BetterAuth before Convex, so it waits for Convex to take the token
+ * before anything writes. Only then does the caller get a
  * users row if they have none, since the server takes no write from a caller
  * it can't identify. Checking every time covers a session whose first row
  * write (or join) failed: creating a room needs the row. The waits are the
@@ -47,7 +49,7 @@ export function useEnsureSession() {
 
   return useCallback(
     async ({ createUser = true }: EnsureSessionOptions = {}): Promise<string> => {
-      const loaded = await until(whenAuth, (s) => !s.isLoading);
+      const loaded = await until(whenAuth, (s) => !s.isSessionPending && !s.isLoading);
 
       let sessionUserId = loaded.authUserId;
       if (!sessionUserId) {

@@ -8,7 +8,6 @@ export const metadata: Metadata = pageMetadata({
     "Start a retro on a shared whiteboard. Sticky notes, GIFs, dot voting and action items, free and with no sign-up.",
   path: "/retro/new",
   social: {
-    title: "New Retrospective | AgileKit",
     description: "Start a retro on a shared whiteboard with your team.",
   },
 });

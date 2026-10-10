@@ -1,19 +1,57 @@
 /**
- * The Jira adapter's OAuth token operations: the freshness check, the refresh
- * round-trip (Atlassian rotates refresh tokens, so both are re-encrypted on
- * every refresh), and client construction on top of a valid token.
+ * The Jira adapter's OAuth token operations: the OAuth app's credentials
+ * (read and checked here), the freshness check, the refresh round-trip
+ * (Atlassian rotates refresh tokens, so both are re-encrypted on every
+ * refresh), and client construction on top of a valid token.
  *
  * Lives apart from jira.ts so the provider registry can reach token refresh
  * without importing the adapter's registered actions. Effectful dependencies
- * (fetch, clock, vault key) are injectable; production callers use the
- * defaults, tests drive the real code paths with fakes.
+ * (fetch, clock, vault key, client credentials) are injectable; production
+ * callers use the defaults, tests drive the real code paths with fakes.
  */
 
+import { ConvexError } from "convex/values";
 import { ActionCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { Doc } from "../_generated/dataModel";
 import * as TokenVault from "../model/tokenVault";
 import { JiraClient, JiraClientDeps } from "./jiraClient";
+
+/** The Jira OAuth app's credentials, as set on the Convex deployment. */
+export interface JiraClientCredentials {
+  clientId: string;
+  clientSecret: string;
+}
+
+/**
+ * What a deployment without the Jira OAuth app's credentials refuses with.
+ * The code is also the OAuth callback's `error=` param, so the person sees
+ * the settings page's "not configured" copy while the message, in the logs,
+ * names what to set.
+ */
+export type JiraNotConfigured = { code: "jira_not_configured"; message: string };
+
+/**
+ * The Jira OAuth app's credentials, read from the deployment's environment
+ * here and nowhere else. Token refresh posts them, and connect asks for them
+ * first, so a missing one refuses the connect instead of failing the refresh
+ * sweep 15–60 minutes later.
+ */
+export function requireJiraClientCredentials(): JiraClientCredentials {
+  const clientId = process.env.JIRA_CLIENT_ID;
+  const clientSecret = process.env.JIRA_CLIENT_SECRET;
+  if (!clientId || !clientSecret) {
+    const missing = [
+      ...(clientId ? [] : ["JIRA_CLIENT_ID"]),
+      ...(clientSecret ? [] : ["JIRA_CLIENT_SECRET"]),
+    ];
+    throw new ConvexError<JiraNotConfigured>({
+      code: "jira_not_configured",
+      message: `Jira is not configured: set ${missing.join(" and ")} on the Convex deployment.`,
+    });
+  }
+  return { clientId, clientSecret };
+}
 
 /** Effectful dependencies of the token operations below. */
 export interface JiraTokenDeps {
@@ -23,6 +61,8 @@ export interface JiraTokenDeps {
   now?: () => number;
   /** Defaults to the TOKEN_ENCRYPTION_KEY env var (via the token vault). */
   keyHex?: string;
+  /** Defaults to the JIRA_CLIENT_* env vars (via requireJiraClientCredentials). */
+  credentials?: JiraClientCredentials;
 }
 
 function resolveDeps(deps: JiraTokenDeps) {
@@ -58,14 +98,16 @@ export async function refreshJiraToken(
 ): Promise<string> {
   const { fetchImpl, now } = resolveDeps(deps);
   const refreshToken = await TokenVault.decryptRefreshToken(connection, deps.keyHex);
+  const { clientId, clientSecret } =
+    deps.credentials ?? requireJiraClientCredentials();
 
   const response = await fetchImpl("https://auth.atlassian.com/oauth/token", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       grant_type: "refresh_token",
-      client_id: process.env.JIRA_CLIENT_ID,
-      client_secret: process.env.JIRA_CLIENT_SECRET,
+      client_id: clientId,
+      client_secret: clientSecret,
       refresh_token: refreshToken,
     }),
   });

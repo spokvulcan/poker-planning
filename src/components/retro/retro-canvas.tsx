@@ -10,7 +10,7 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { RoomWithRelatedData } from "@/convex/model/rooms";
 import type { RetroStep } from "@/convex/retroTemplates";
-import { stickyActAllowed } from "@/convex/retroSteps";
+import { stepShows, stickyActAllowed } from "@/convex/retroSteps";
 import { nextStickyPosition, PAD_WIDTH, padNodeId, STICKY_MIN_HEIGHT, STICKY_WIDTH } from "@/convex/retroLayout";
 import { CanvasNavigation } from "@/components/room/canvas-navigation";
 import { TimerNode } from "@/components/room/nodes/TimerNode";
@@ -89,8 +89,8 @@ function StickyHeights({ onHeights }: { onHeights: (heights: { stickyId: Id<"ret
  * The retro's adapter onto the whiteboard: its nodes, and what its gestures
  * mean. A sticky dropped on another stacks, any other drop is a move, Delete
  * takes off the stickies the viewer may remove, and a double-click writes a
- * sticky where it lands. During the discussion the board follows the
- * spotlight.
+ * sticky where it lands. The board follows the spotlight wherever the step
+ * draws it.
  */
 function RetroCanvasInner({ roomData, currentUserId }: RetroCanvasProps): ReactElement {
   const router = useRouter();
@@ -324,8 +324,9 @@ function RetroCanvasInner({ roomData, currentUserId }: RetroCanvasProps): ReactE
     [retro.columns, canvasNodes]
   );
 
-  // The spotlight: when the discussion moves, everyone's view follows it.
-  const spotlit = retro.step === "discuss" && retro.focusStickyId ? stickyOf(retro.focusStickyId)?.clientId : undefined;
+  // The spotlight: wherever the step draws it, everyone's view follows it.
+  const spotlit =
+    stepShows(retro.step).spotlight && retro.focusStickyId ? stickyOf(retro.focusStickyId)?.clientId : undefined;
 
   const shareActions = useMemo(
     () => [
