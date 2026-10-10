@@ -129,11 +129,11 @@ The users model is also the only place a row turns permanent (`convex/usersRow.t
 | `requireRoomMember(ctx, roomId)` | `{ identity, user, membership, room }` | **Room attendance**: the caller is in the room. The room-scoped step checks it, and a write open to anyone in the room takes the step with no `spec`. Returns the room it checked, so the handler never reads it again |
 | `requireRoomReader(ctx, roomId)` | `{ identity, user }` | **Room access** (ADR-0009): a read-only query on room-owned data. Passes a room member and nobody else (there are no Teams since ADR-0026), reading only the caller and their membership; returns neither the room nor a membership |
 | `requireRoomWrite(ctx, address, spec?, targetUserId?)` | `{ user, membership, room, target? }` and the addressed entity | **The room-scoped step** a room write starts with. `address` is the room, or the one issue, sticky or action item the write acts on (`{ issue: issueId }`, handed back as `issue`), whose own room the write lands in. The caller must be in that room (attendance); a `spec` adds the permission guard, as in `requireCan`. The caller is whoever is signed in: no `userId` a client sends is compared |
-| `requireActingUser(ctx, roomId, userId, message?)` | `{ identity, user, membership, room }` | **Acting-user guard**: the mutation takes a client-supplied `userId`. Authenticated, a room member, and the caller *is* `userId`; `message` is what it throws on the mismatch |
-| `requireCan(ctx, roomId, spec, targetUserId?)` | `{ identity, user, membership, room, target? }` | **Permission guard**: the mutation is gated by a permission category or a relationship verb. Throws the resolved decision's message on denial |
+| `requireActingUser(ctx, roomId, userId, message?)` | `{ identity, user, membership, room }` | **Acting-user guard**: the mutation acts as a client-supplied `userId` (presence, the one left). Authenticated, a room member, and the caller *is* `userId`; `message` is what it throws on the mismatch |
+| `requireCan(ctx, roomId, spec, targetUserId?)` | `{ identity, user, membership, room, target? }` | **Permission guard** on its own: the decision for a permission category or a relationship verb. Throws the resolved decision's message on denial. A room write gets the same guard from the step's `spec` |
 | `requireCanForUser(ctx, user, roomId, spec, targetUserId?)` | `{ user, membership, room, target? }` | The same permission guard for a caller that resolved the user outside `ctx.auth`, such as an action (the Jira integration) calling in through an internal query |
 
-`spec` names what the caller asks to do: `{ kind: "category", category }` (`issueManagement`, `gameFlow`, `stageFlow`, `retroSettings`, ...) or `{ kind: "relationship", verb }`, where `verb` is `remove`, `promote`, `demote`, `transfer`, `changePerms` or `delete`. `remove`, `promote` and `demote` need `targetUserId`: the guard loads the target's membership so the permission decision can weigh the target's role. A category from the other ceremony throws (ADR-0013). Identity rules (self-transfer, the authoritative `ownerId`) are not the guard's; they stay in the handler, after it.
+`spec` names what the caller asks to do: `{ kind: "category", category }` (`issueManagement`, `gameFlow`, `stageFlow`, `retroSettings`, ...) or `{ kind: "relationship", verb }`, where `verb` is `remove`, `promote`, `demote`, `transfer`, `changePerms` or `delete`. `remove`, `promote` and `demote` need `targetUserId`: the guard loads the target's membership so the permission decision can weigh the target's role. A category from the other ceremony throws (ADR-0013). Identity rules (self-transfer, the authoritative `ownerId`) are not the guard's; they stay with the write, after it (`Roles.transferOwnership`).
 
 `requireCan` and `requireCanForUser` share one IO assembly, so both reach the same decision and throw the same messages. `resolveRoomAction` is that assembly returning the decision instead of throwing, for a caller whose denial depends on the target (someone else's retro sticky).
 
@@ -207,7 +207,7 @@ export const remove = mutation({
   args: { userId: v.id("users"), roomId: v.id("rooms") },
   handler: async (ctx, args) => {
     const { room, target } = await requireRoomWrite(ctx, args.roomId, { kind: "relationship", verb: "remove" }, args.userId);
-    await Users.leaveRoom(ctx, room, target!.userId);
+    await Memberships.leave(ctx, room, target!);
   },
 });
 ```
