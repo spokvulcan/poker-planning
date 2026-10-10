@@ -4,8 +4,16 @@ import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useDemoSimulation } from "../demo/DemoSimulationProvider";
+import { applyCardPick } from "../room-view";
 import { useStableActions } from "@/hooks/useStableActions";
 import { useMoveCanvasNodes } from "@/components/whiteboard/use-move-canvas-nodes";
+import { runAct } from "@/lib/run-act";
+
+// What a failed write shows when the server sent no refusal of its own.
+const FAILED = "That didn't go through. Try again.";
+const VOTE_FAILED = "That vote didn't count. Try again.";
+const MOVE_FAILED = "That move didn't save.";
+const NOTE_FAILED = "That note didn't save.";
 
 /**
  * Every backend write the canvas can trigger, behind one frozen-identity object.
@@ -18,8 +26,8 @@ export interface CanvasActions {
   reset: () => void;
   toggleAutoComplete: () => void;
   cancelAutoReveal: () => void;
-  /** Sets the local highlight, writes the vote, rolls the highlight back on failure. */
-  selectCard: (cardValue: string) => void;
+  /** Writes the viewer's vote, whose card rises at once: Convex lowers it again if the server refuses. */
+  selectCard: (cardLabel: string) => void;
   /** Resolves once the write has landed (or failed), so a note knows when its text is saved. */
   /** Resolves to whether the note's text landed, for the field to keep it until it has. */
   updateNoteContent: (nodeId: string, content: string) => Promise<boolean>;
@@ -33,23 +41,20 @@ export interface CanvasActions {
 interface UseCanvasActionsProps {
   roomId: Id<"rooms">;
   currentUserId?: Id<"users">;
-  /** The currently-highlighted card, so a failed pick can roll back to it. */
-  selectedCardValue: string | null;
-  setSelectedCardValue: (value: string | null) => void;
 }
 
 /**
  * Owns the demo-vs-real decision once, at the action seam: inside a demo context
  * every method is a no-op, so "the demo never writes to the backend" (ADR-0003)
  * is one adapter rather than an inline `isDemoMode` guard per method (user
- * stories 8/9/12/23). Frozen method identity comes from useStableActions, the
- * shared stabilizer every *Actions seam returns through.
+ * stories 8/9/12/23). A write that fails says so through runAct, as the retro's
+ * do: the refusal's message when the server refused it, else the board's own
+ * words. Frozen method identity comes from useStableActions, the shared
+ * stabilizer every *Actions seam returns through.
  */
 export function useCanvasActions({
   roomId,
   currentUserId,
-  selectedCardValue,
-  setSelectedCardValue,
 }: UseCanvasActionsProps): CanvasActions {
   // Reading the demo context here folds the action side of the `isDemoMode`
   // prop-drilling cleanup into this seam: a non-null context means demo mode.
@@ -57,7 +62,13 @@ export function useCanvasActions({
 
   const showCards = useMutation(api.rooms.showCards);
   const resetGame = useMutation(api.rooms.resetGame);
-  const pickCard = useMutation(api.votes.pickCard);
+  // The vote lands on the room's data before the server answers, so the card
+  // the viewer picked rises at once, by the round's own rules (room-view.ts).
+  const pickCard = useMutation(api.votes.pickCard).withOptimisticUpdate((store, args) => {
+    const data = store.getQuery(api.rooms.get, { roomId: args.roomId });
+    const next = data && applyCardPick(data, args.userId, args.cardLabel);
+    if (next && next !== data) store.setQuery(api.rooms.get, { roomId: args.roomId }, next);
+  });
   const moveNodesMutation = useMoveCanvasNodes();
   const toggleAutoCompleteMutation = useMutation(api.rooms.toggleAutoComplete);
   const cancelAutoRevealCountdown = useMutation(api.rooms.cancelAutoRevealCountdown);
@@ -71,95 +82,43 @@ export function useCanvasActions({
   const impl: CanvasActions = {
     reveal: async () => {
       if (isDemo) return;
-      try {
-        await showCards({ roomId });
-      } catch (error) {
-        console.error("Failed to show cards:", error);
-      }
+      await runAct(showCards({ roomId }), FAILED);
     },
     reset: async () => {
       if (isDemo) return;
-      try {
-        await resetGame({ roomId });
-      } catch (error) {
-        console.error("Failed to reset game:", error);
-      }
+      await runAct(resetGame({ roomId }), FAILED);
     },
     toggleAutoComplete: async () => {
       if (isDemo) return;
-      try {
-        await toggleAutoCompleteMutation({ roomId });
-      } catch (error) {
-        console.error("Failed to toggle auto-complete:", error);
-      }
+      await runAct(toggleAutoCompleteMutation({ roomId }), FAILED);
     },
     cancelAutoReveal: async () => {
       if (isDemo) return;
-      try {
-        await cancelAutoRevealCountdown({ roomId });
-      } catch (error) {
-        console.error("Failed to cancel auto-reveal:", error);
-      }
+      await runAct(cancelAutoRevealCountdown({ roomId }), FAILED);
     },
-    selectCard: async (cardValue: string) => {
+    selectCard: async (cardLabel: string) => {
       if (isDemo || !currentUserId) return;
-      // Snapshot the prior highlight so a failed write rolls back to it rather
-      // than to `null` (which would flash "no selection" over an existing vote
-      // until the next server tick re-applies it).
-      const previous = selectedCardValue ?? null;
-      setSelectedCardValue(cardValue);
-      try {
-        await pickCard({
-          roomId,
-          userId: currentUserId,
-          cardLabel: cardValue,
-        });
-      } catch (error) {
-        console.error("Failed to pick card:", error);
-        setSelectedCardValue(previous);
-      }
+      await runAct(pickCard({ roomId, userId: currentUserId, cardLabel }), VOTE_FAILED);
     },
     updateNoteContent: async (nodeId: string, content: string) => {
       if (isDemo || !currentUserId) return true;
-      try {
-        await updateNoteContentMutation({ roomId, nodeId, content, userId: currentUserId });
-        return true;
-      } catch (error) {
-        console.error("Failed to update note content:", error);
-        return false;
-      }
+      return await runAct(updateNoteContentMutation({ roomId, nodeId, content }), NOTE_FAILED);
     },
     createNote: async (issueId: Id<"issues">) => {
       if (isDemo || !currentUserId) return;
-      try {
-        await createNoteMutation({ roomId, issueId, userId: currentUserId });
-      } catch (error) {
-        console.error("Failed to create note:", error);
-      }
+      await runAct(createNoteMutation({ roomId, issueId }), FAILED);
     },
     deleteNote: async (nodeId: string) => {
       if (isDemo || !currentUserId) return;
-      try {
-        await deleteNoteMutation({ roomId, nodeId, userId: currentUserId });
-      } catch (error) {
-        console.error("Failed to delete note:", error);
-      }
+      await runAct(deleteNoteMutation({ roomId, nodeId }), FAILED);
     },
     moveNodes: async (moves) => {
       if (isDemo || !currentUserId || moves.length === 0) return;
-      try {
-        await moveNodesMutation({ roomId, moves, userId: currentUserId });
-      } catch (error) {
-        console.error("Failed to move nodes:", error);
-      }
+      await runAct(moveNodesMutation({ roomId, moves }), MOVE_FAILED);
     },
     removeUser: async (userId: Id<"users">) => {
       if (isDemo) return;
-      try {
-        await removeUserMutation({ userId, roomId });
-      } catch (error) {
-        console.error("Failed to remove user:", error);
-      }
+      await runAct(removeUserMutation({ userId, roomId }), FAILED);
     },
   };
 

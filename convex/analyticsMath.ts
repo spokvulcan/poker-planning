@@ -4,13 +4,14 @@
  * Every dashboard number is projected here from plain rows, with no database
  * access, so the math is testable without a ctx (the summarize.ts precedent).
  * The model layer (model/analytics.ts) owns the single memberships → rooms →
- * history scan (`completedIssueHistory`); these functions own the projections.
- * Scan → project, never scan-and-compute inline.
+ * history scan (`completedIssueHistory`); these functions own the projections,
+ * and `dashboard` gathers them into the Overview's panels. Scan → project,
+ * never scan-and-compute inline.
  *
- * Date-window semantics live in the aggregate, not here: a range windows on
- * `issue.votedAt`. Projections only decide which fields their metric requires
- * (velocity needs a numeric estimate, the agreement trend needs an agreement,
- * and so on), and skip rows that lack them.
+ * Date-window semantics live in the dashboard read (`getDashboard`), not
+ * here. Projections only decide which fields their metric requires (the
+ * agreement trend needs an agreement, time to consensus a duration, and so
+ * on), and skip rows that lack them.
  *
  * A numeric estimate is the deck's one numeric reading (`cardNumericValue`),
  * shared without a deck: a final estimate can be free text.
@@ -68,23 +69,10 @@ export interface AgreementDataPoint {
   roomName: string;
 }
 
-export interface VelocityDataPoint {
-  date: string; // ISO date string (YYYY-MM-DD)
-  storyPoints: number;
-  issueCount: number;
-}
-
 export interface VoteDistributionItem {
   value: string;
   count: number;
   percentage: number;
-}
-
-export interface ParticipationStats {
-  totalSessions: number;
-  totalIssuesVoted: number;
-  totalVotesCast: number;
-  averageVotesPerSession: number;
 }
 
 export interface TimeToConsensusStats {
@@ -150,11 +138,44 @@ export interface DashboardSummary {
   averageAgreement: number | null;
 }
 
-/** The per-session issue stats getUserSessions reports for one room. */
+/** The per-session issue stats a session-list row reports for one room. */
 export interface SessionIssueStats {
   issuesCompleted: number;
   totalStoryPoints: number | null; // null if non-numeric scale
   averageAgreement: number | null;
+}
+
+/** One row of the session list: a room the viewer joined, over its lifetime. */
+export interface SessionSummary extends SessionIssueStats {
+  roomId: string;
+  roomName: string;
+  joinedAt: number;
+  lastActivityAt: number;
+  participantCount: number;
+}
+
+/** Everything the dashboard Overview shows: one field per panel. */
+export interface Dashboard {
+  summary: DashboardSummary;
+  sessions: SessionSummary[];
+  agreementTrend: AgreementDataPoint[];
+  voteDistribution: VoteDistributionItem[];
+  timeToConsensus: TimeToConsensusStats;
+  voterAlignment: VoterAlignmentData;
+  predictability: PredictabilityData;
+}
+
+/**
+ * The viewer's history as the dashboard read hands it over, already windowed
+ * (model/analytics.ts getDashboard states the window rules): the session-list
+ * rows, the issues voted in the window by room, the votes cast in it, and
+ * those voters' display names.
+ */
+export interface DashboardHistory {
+  sessions: SessionSummary[];
+  rooms: RoomIssues[];
+  votes: HistoryVote[];
+  voterNames: Record<string, string>;
 }
 
 // ---------------------------------------------------------------------------
@@ -230,38 +251,11 @@ export function agreementTrend(entries: RoomIssue[]): AgreementDataPoint[] {
   return points.sort((a, b) => a.timestamp - b.timestamp);
 }
 
-/** Velocity: story points and issue counts bucketed by day. */
-export function velocityByDay(entries: RoomIssue[]): VelocityDataPoint[] {
-  const byDate: Record<string, { storyPoints: number; issueCount: number }> =
-    {};
-
-  for (const { issue } of entries) {
-    if (issue.votedAt && issue.finalEstimate) {
-      const storyPoints = cardNumericValue(issue.finalEstimate);
-      if (storyPoints === undefined) continue;
-
-      const date = isoDay(issue.votedAt);
-      if (!byDate[date]) {
-        byDate[date] = { storyPoints: 0, issueCount: 0 };
-      }
-      byDate[date].storyPoints += storyPoints;
-      byDate[date].issueCount += 1;
-    }
-  }
-
-  return Object.entries(byDate)
-    .map(([date, data]) => ({
-      date,
-      storyPoints: data.storyPoints,
-      issueCount: data.issueCount,
-    }))
-    .sort((a, b) => a.date.localeCompare(b.date));
-}
-
 /**
  * Distribution of final estimates. Counts whatever history it is given —
- * the aggregate decides the window, so a ranged call never sees issues that
- * lack a `votedAt` (the old inline copy leaked them into ranged results).
+ * the dashboard read decides the window, so a ranged read never hands it
+ * issues that lack a `votedAt` (the old inline copy leaked them into ranged
+ * results).
  */
 export function voteDistribution(
   issues: HistoryIssue[]
@@ -283,22 +277,6 @@ export function voteDistribution(
   }));
 
   return distribution.sort((a, b) => b.count - a.count);
-}
-
-/** Participation header numbers from pre-counted totals. */
-export function participationStats(totals: {
-  totalSessions: number;
-  totalIssuesVoted: number;
-  totalVotesCast: number;
-}): ParticipationStats {
-  const { totalSessions, totalIssuesVoted, totalVotesCast } = totals;
-  return {
-    totalSessions,
-    totalIssuesVoted,
-    totalVotesCast,
-    averageVotesPerSession:
-      totalSessions > 0 ? Math.round(totalVotesCast / totalSessions) : 0,
-  };
 }
 
 /** Time-to-consensus: average/median, >2x outliers, and per-session trend. */
@@ -628,3 +606,35 @@ export function sessionIssueStats(issues: HistoryIssue[]): SessionIssueStats {
     averageAgreement,
   };
 }
+
+// ---------------------------------------------------------------------------
+// The Overview
+// ---------------------------------------------------------------------------
+
+/**
+ * Every panel of the Overview, each from its own projection. The header
+ * totals the session list; the charts read the windowed issues and votes.
+ */
+export function dashboard(history: DashboardHistory): Dashboard {
+  const entries: RoomIssue[] = history.rooms.flatMap(
+    ({ roomId, roomName, issues }) =>
+      issues.map((issue) => ({ roomId, roomName, issue }))
+  );
+  return {
+    summary: dashboardSummary(history.sessions),
+    sessions: history.sessions,
+    agreementTrend: agreementTrend(entries),
+    voteDistribution: voteDistribution(history.rooms.flatMap((r) => r.issues)),
+    timeToConsensus: timeToConsensus(entries),
+    voterAlignment: voterAlignment(history.votes, history.voterNames),
+    predictability: predictability(history.rooms),
+  };
+}
+
+/** The dashboard of a viewer with no history: every panel's empty state. */
+export const EMPTY_DASHBOARD: Dashboard = dashboard({
+  sessions: [],
+  rooms: [],
+  votes: [],
+  voterNames: {},
+});
