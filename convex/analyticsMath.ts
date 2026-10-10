@@ -102,7 +102,7 @@ export interface TimeToConsensusStats {
     roomName: string;
     averageMs: number;
   }>;
-  /** The later sessions' times against the earlier ones', past a 10% change. */
+  /** The later rooms' times against the earlier rooms', past a 10% change. */
   trend: Trend<"faster" | "stable" | "slower">;
 }
 
@@ -141,10 +141,10 @@ export interface PredictabilityData {
   predictabilityScore: number | null;
   sessions: PredictabilitySession[];
   averageVelocityPerSession: number;
-  /** The later sessions' points against the earlier ones', past a 10% change. */
+  /** The later rooms' points against the earlier rooms', past a 10% change. */
   velocityTrend: Trend<"increasing" | "stable" | "decreasing">;
   averageAgreement: number;
-  /** The later sessions' agreement against the earlier ones', past a 5% change. */
+  /** The later rooms' agreement against the earlier rooms', past a 5% change. */
   agreementTrend: Trend<"improving" | "stable" | "declining">;
 }
 

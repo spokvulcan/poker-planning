@@ -48,6 +48,6 @@ export async function updateTimerState(ctx: MutationCtx, args: UpdateTimerStateA
     return transition(state, args.action, now);
   });
   // A timer action is room activity — a room driven only by its timer must not
-  // read as abandoned to the cleanup cascade.
+  // read as abandoned to the sweep.
   await Rooms.updateRoomActivity(ctx, args.room);
 }

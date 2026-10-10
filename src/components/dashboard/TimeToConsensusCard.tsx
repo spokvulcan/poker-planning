@@ -54,7 +54,7 @@ export function TimeToConsensusCard({
     );
   }
 
-  // The read's trend: the later sessions against the earlier ones
+  // The read's trend: the later rooms against the earlier ones
   let TrendIcon = Minus;
   let trendText = "Stable";
   let trendColor = "text-muted-foreground";

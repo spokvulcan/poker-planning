@@ -61,7 +61,7 @@ export const PUBLIC_PATHS = {
   // Sign-in, and the dashboard behind it.
   "/auth": "noindex",
   "/dashboard": "noindex",
-  // Rooms are a team's private sessions, and the demo simulates one.
+  // A room is private to the people in it, and the demo simulates one.
   "/demo": "disallow",
   "/room/[roomId]": "disallow",
 } as const satisfies Record<string, Indexing>;
