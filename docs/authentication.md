@@ -54,8 +54,9 @@ The authentication system consists of three layers:
 |------|---------|
 | `src/lib/auth-client.ts` | BetterAuth client with anonymous and magic link plugins |
 | `src/lib/auth-server.ts` | Server-side auth helpers (`isAuthenticated`, `fetchAuthQuery`, etc.) for use in Server Components |
-| `src/app/auth/signin/page.tsx` | Dedicated Sign In Page for permanent account upgrade |
-| `src/app/auth/verify/page.tsx` | Magic Link Verification Page |
+| `src/app/(app)/layout.tsx` | The app shell, for every page but `/demo`: fetches the session's token on the server and mounts BetterAuth and the auth provider (`src/components/providers.tsx`) |
+| `src/app/(app)/auth/signin/page.tsx` | Dedicated Sign In Page for permanent account upgrade |
+| `src/app/(app)/auth/verify/page.tsx` | Magic Link Verification Page |
 | `src/app/api/auth/[...all]/route.ts` | Next.js API route handler |
 | `src/components/auth/auth-provider.tsx` | React context for auth state, and `whenAuth` for waiting on it |
 | `src/hooks/useEnsureSession.ts` | The session every guest way in goes through (see [Guest flow](#first-time-user-joining-a-room-guest)) |
@@ -270,7 +271,7 @@ Use this for pages that require authentication (e.g., dashboard). Client-side re
 
 Every guest way in goes through `useEnsureSession` (`src/hooks/useEnsureSession.ts`): joining a room from its link (above), "Continue as guest" on the sign-in page, and creating a poker room or a retro. It works in this order:
 
-- **It waits until BetterAuth's session and Convex's auth state have both loaded** before deciding whether there is a session. With the server-rendered token (`initialToken` in `src/app/layout.tsx`) Convex can load while BetterAuth's session is still on its way, and signing in anonymously over a live session is a BetterAuth 400 for a guest and a new guest for a permanent account.
+- **It waits until BetterAuth's session and Convex's auth state have both loaded** before deciding whether there is a session. With the server-rendered token (`initialToken` in `src/app/(app)/layout.tsx`) Convex can load while BetterAuth's session is still on its way, and signing in anonymously over a live session is a BetterAuth 400 for a guest and a new guest for a permanent account.
 - **It waits until Convex has the token** after signing in. A fresh session reaches BetterAuth before Convex, and the server takes no write from a caller it can't identify: `users.join` and `users.ensureGlobalUser` both take `requireAuthAs`.
 - **Only then does it write the users row.** Every caller but the join passes the default `createUser: true`, and the hook calls `users.ensureGlobalUser` with a generated guest name. That makes a row only when the caller has none; an existing row keeps its name. It runs on every call, not only for a fresh session, so a guest whose first row write (or join) failed still gets a row, which creating a room needs.
 - **The waits are the auth provider's** (`whenAuth`, see [Auth Provider Context](#auth-provider-context)), not the calling component's, so they finish even when the page unmounts the caller meanwhile. The room page swaps out the join dialog while Convex takes the new session.
@@ -307,7 +308,7 @@ A guest's users row has no `accountType`: `model/users.ts` can't tell from a mut
 
 ## Auth Provider Context
 
-The auth provider (`src/components/auth/auth-provider.tsx`) takes auth state from Convex (`useConvexAuth()`, which waits for token validation) and `authUserId` and `isAnonymous` from the BetterAuth session. It queries `users.getGlobalUser` for `email` and `accountType` once Convex has the session (never on `/demo`, ADR-0003).
+The auth provider (`src/components/auth/auth-provider.tsx`) takes auth state from Convex (`useConvexAuth()`, which waits for token validation) and `authUserId` and `isAnonymous` from the BetterAuth session. It queries `users.getGlobalUser` for `email` and `accountType` once Convex has the session. Only the app shell mounts it: `/demo` sits in its own route group, whose shell has no auth at all (ADR-0003).
 
 ```typescript
 interface AuthContextType {
@@ -332,7 +333,7 @@ type WhenAuth = (ready: (state: AuthSnapshot) => boolean, timeoutMs: number) => 
 
 `accountType` is the users row's, falling back to `"permanent"` when the session isn't anonymous. A guest's row leaves it unset, so for a guest it is `null`; tell a guest by `isAnonymous`.
 
-`whenAuth(ready, timeoutMs)` resolves with the first auth state `ready` accepts (at once if the current one does, else on the update that makes it hold) and rejects after `timeoutMs`. The provider holds the waiters (`createAuthWaiters` in `src/lib/auth-waiters.ts`) and feeds them every change of `authUserId`, `isSessionPending`, `isLoading` and `isAuthenticated`. It sits at the root, so a wait outlives the component that started it. Outside an `AuthProvider`, `whenAuth` rejects.
+`whenAuth(ready, timeoutMs)` resolves with the first auth state `ready` accepts (at once if the current one does, else on the update that makes it hold) and rejects after `timeoutMs`. The provider holds the waiters (`createAuthWaiters` in `src/lib/auth-waiters.ts`) and feeds them every change of `authUserId`, `isSessionPending`, `isLoading` and `isAuthenticated`. It sits in the app shell's layout, above the page, so a wait outlives the component that started it. Outside an `AuthProvider`, `whenAuth` rejects.
 
 ## Environment Variables
 
