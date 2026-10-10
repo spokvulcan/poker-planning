@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 import { useLiveText } from "@/hooks/use-live-text";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { MAX_STICKY_TEXT_LENGTH } from "@/convex/retroTemplates";
+import { STICKY_TEXT } from "@/convex/retroTemplates";
 import type { Gif, StickyView } from "@/convex/model/retro";
 import type { StickyColor } from "@/convex/retroTemplates";
 import { FACE_DOWN_HEIGHT, STICKY_WIDTH, STICKY_MIN_HEIGHT } from "@/convex/retroLayout";
@@ -128,7 +128,7 @@ function StickyEditor({
       <textarea
         ref={textRef}
         value={text}
-        maxLength={MAX_STICKY_TEXT_LENGTH}
+        maxLength={STICKY_TEXT.maxLength}
         onChange={(e) => live.setValue(e.target.value)}
         onKeyDown={onKeyDown}
         rows={3}

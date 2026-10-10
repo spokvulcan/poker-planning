@@ -5,7 +5,7 @@ import { useLiveText } from "@/hooks/use-live-text";
 import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
 import { Pencil, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { MAX_COLUMN_TITLE_LENGTH } from "@/convex/retroTemplates";
+import { COLUMN_TITLE } from "@/convex/retroTemplates";
 import { PAD_HEIGHT, PAD_WIDTH } from "@/convex/retroLayout";
 import { STICKY_TONES } from "../sticky-colors";
 import { stickiesLabel } from "../retro-summary";
@@ -77,7 +77,7 @@ export const PadNode = memo(({ data, selected }: NodeProps<Node<PadNodeData, "pa
               autoFocus
               ref={titleField}
               value={title.value}
-              maxLength={MAX_COLUMN_TITLE_LENGTH}
+              maxLength={COLUMN_TITLE.maxLength}
               onChange={(e) => title.setValue(e.target.value)}
               onBlur={finishRename}
               onClick={(e) => e.stopPropagation()}
