@@ -37,7 +37,12 @@ import {
   buildJiraClient,
   connectJiraWithCode,
 } from "./jiraAuth";
-import { applyJiraWebhookEvent } from "./jiraWebhook";
+import {
+  applyJiraWebhookEvent,
+  jiraIssueLink,
+  jiraIssueTitle,
+  jiraWebhookAddress,
+} from "./jiraWebhook";
 import {
   jiraWebhookReconcile,
   recordRegistration,
@@ -372,12 +377,8 @@ export async function importIssuesWithClient(
 
     try {
       const admission = await admit({
-        title: `${issue.key} - ${issue.fields.summary}`,
-        link: {
-          provider: "jira",
-          externalId: issue.key,
-          externalUrl: `${siteUrl}/browse/${issue.key}`,
-        },
+        title: jiraIssueTitle(issue.key, issue.fields.summary),
+        link: jiraIssueLink(siteUrl, issue.key),
       });
       if (admission.kind === "admitted") result.imported++;
       else result.skipped++;
@@ -488,6 +489,7 @@ export const processJiraWebhook = internalMutation({
   args: {
     eventKey: v.string(),
     eventType: v.string(),
+    site: v.string(),
     issueKey: v.string(),
     issueSummary: v.optional(v.string()),
   },
@@ -670,14 +672,13 @@ async function attemptRegistration(
   wanted: WantedWebhook
 ): Promise<Registration> {
   // Jira Cloud webhooks cannot send custom headers, so the shared secret
-  // travels in the registered URL. The endpoint rejects deliveries without
-  // it, so registration must not proceed when the secret is missing.
+  // travels in the registered address. The endpoint rejects deliveries
+  // without it, so registration must not proceed when the secret is missing.
   const webhookSecret = process.env.JIRA_WEBHOOK_SECRET;
   if (!webhookSecret) {
     console.error("JIRA_WEBHOOK_SECRET must be configured to register a Jira webhook");
     return { kind: "failed", failure: "missingSecret", ...wanted };
   }
-  const webhookUrl = `${process.env.CONVEX_SITE_URL}/webhooks/jira?secret=${encodeURIComponent(webhookSecret)}`;
 
   try {
     const connection = await ctx.runQuery(
@@ -685,7 +686,14 @@ async function attemptRegistration(
       { connectionId: wanted.connectionId }
     );
     if (!connection) throw new Error("Connection not found");
+    // The address names the site the webhook watches; without it, no
+    // delivery could say which site's issues it is about.
+    if (!connection.siteUrl) throw new Error("Connection has no site address");
 
+    const webhookUrl = jiraWebhookAddress(process.env.CONVEX_SITE_URL, {
+      secret: webhookSecret,
+      site: connection.siteUrl,
+    });
     const client = await buildJiraClient(ctx, connection);
     const webhookId = await client.registerWebhook(`project = ${wanted.projectKey}`, webhookUrl);
     if (!webhookId) throw new Error("Jira registered no webhook");

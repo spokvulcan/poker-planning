@@ -148,6 +148,7 @@ describe("applyJiraWebhookEvent (via processJiraWebhook)", () => {
     const event = {
       eventKey: "jira:10001:1700000000000",
       eventType: "jira:issue_updated",
+      site: "https://team.atlassian.net",
       issueKey: "PROJ-1",
       issueSummary: "First summary",
     };
@@ -177,6 +178,7 @@ describe("applyJiraWebhookEvent (via processJiraWebhook)", () => {
     await t.mutation(internal.integrations.jira.processJiraWebhook, {
       eventKey: "jira:10001:1700000000002",
       eventType: "jira:issue_updated",
+      site: "https://team.atlassian.net",
       issueKey: "PROJ-1",
       issueSummary: "New summary",
     });
@@ -194,6 +196,7 @@ describe("applyJiraWebhookEvent (via processJiraWebhook)", () => {
     await t.mutation(internal.integrations.jira.processJiraWebhook, {
       eventKey: "jira:10001:1700000000003",
       eventType: "jira:issue_updated",
+      site: "https://team.atlassian.net",
       issueKey: "PROJ-1",
       issueSummary: "x".repeat(600),
     });
@@ -212,6 +215,7 @@ describe("applyJiraWebhookEvent (via processJiraWebhook)", () => {
     await t.mutation(internal.integrations.jira.processJiraWebhook, {
       eventKey: "jira:10001:1700000000001",
       eventType: "jira:issue_deleted",
+      site: "https://team.atlassian.net",
       issueKey: "PROJ-1",
     });
 

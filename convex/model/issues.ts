@@ -190,24 +190,28 @@ export type TrackerChange =
 /**
  * Follows a change in a tracker to every issue holding the link, in every
  * room it was brought into: a tracker issue can sit in several rooms on
- * purpose. A rename retitles them by the title rule, and moves a room's
- * activity clock only where the title changed (it feeds the room's analytics
- * history, so a fresh snapshot mustn't serve the old one). A deletion drops
- * every link to it and keeps the issues. A link whose issue is gone holds
- * nothing and is passed over.
+ * purpose. The link is the key and its page, and the page names the tracker's
+ * site, so the same key on another site is never reached. A rename retitles
+ * them by the title rule, and moves a room's activity clock only where the
+ * title changed (it feeds the room's analytics history, so a fresh snapshot
+ * mustn't serve the old one). A deletion drops every link to it and keeps the
+ * issues. A link whose issue is gone holds nothing and is passed over.
  *
  * The rows come through by_external, which reaches those written before
  * links carried their room too: a handful, one per room holding the issue.
  */
 export async function followTrackerChange(
   ctx: MutationCtx,
-  link: Pick<IssueLink, "provider" | "externalId">,
+  link: IssueLink,
   change: TrackerChange
 ): Promise<void> {
   const rows = await ctx.db
     .query("issueLinks")
     .withIndex("by_external", (q) =>
-      q.eq("provider", link.provider).eq("externalId", link.externalId)
+      q
+        .eq("provider", link.provider)
+        .eq("externalId", link.externalId)
+        .eq("externalUrl", link.externalUrl)
     )
     .collect();
   if (change.kind === "deleted") {
