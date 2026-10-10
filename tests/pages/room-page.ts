@@ -27,7 +27,7 @@ export class RoomPage {
     this.votingCards = page.locator('[role="button"][aria-label*="Vote"]');
     this.revealButton = page.getByRole("button", { name: /Reveal (all )?([Cc]ards|[Vv]otes)/i });
     this.resetButton = page.getByRole("button", { name: /New Round|Start (a )?new (voting )?round/i });
-    this.voteCountIndicator = page.locator('[aria-label="Voting progress"]').locator('..').locator('span.text-xs');
+    this.voteCountIndicator = page.getByRole("progressbar", { name: "Voting progress" });
 
     // Room information
     this.roomTitle = page.locator('.font-semibold').filter({ hasText: "Planning Session" });
@@ -90,8 +90,11 @@ export class RoomPage {
     await expect(this.resultsSection).not.toBeVisible();
   }
 
+  // Counts the votes the server has, plus this viewer's own pick. The round
+  // refuses a ballot that lands after the reveal (#378), so wait on the
+  // revealer's page until every vote has landed before revealing.
   async expectVoteCount(count: number): Promise<void> {
-    await expect(this.voteCountIndicator).toContainText(`${count}`);
+    await expect(this.voteCountIndicator).toHaveAttribute("aria-valuenow", `${count}`);
   }
 
   async expectPlayerInList(playerName: string): Promise<void> {
