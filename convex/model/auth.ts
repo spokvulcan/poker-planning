@@ -91,7 +91,8 @@ export async function getOptionalAuthUser(
 /**
  * Room attendance: requires authentication and verifies room membership.
  * Returns the identity, user and membership records, and the room it
- * checked, so a write never reads the room again.
+ * checked, so a write never reads the room again. A read-only query takes
+ * `requireRoomReader` instead, which reads no room.
  */
 export async function requireRoomMember(
   ctx: QueryCtx | MutationCtx,
