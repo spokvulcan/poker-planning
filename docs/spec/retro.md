@@ -8,7 +8,7 @@
 |---|---|
 | Rules shared with the browser (pure) | `convex/retroTemplates.ts` (steps, colours, templates, caps), `convex/retroTopics.ts` (stacking, unstacking and deleting, how votes and the spotlight follow a topic, vote totals and the vote toggle), `convex/retroSteps.ts` (what each step allows and shows, step changes, the discussion order and walk), `convex/retroStickyView.ts` (what one viewer sees of a sticky: face-down or not, its author's name, their vote and its total), `convex/retroLayout.ts` (where nodes and new stickies land), `convex/gifLinks.ts` (the GIF allowlist) |
 | Backend | `convex/retro.ts` (arguments and guards), `convex/model/retro.ts` (logic, and the board read that applies the sticky projection) |
-| Board | `src/components/retro/`: `retro-canvas.tsx`, `build-retro-nodes.ts`, `nodes/`, `use-retro-mutations.ts`, `gif-picker.tsx`, `retro-settings-panel.tsx`, `retro-summary.ts` |
+| Board | `src/components/retro/`: `retro-canvas.tsx`, `build-retro-nodes.ts`, `nodes/`, `use-retro-mutations.ts` (the optimistic updates), `board-view.ts` (what each write does to the board, by the server's rules), `use-sticky-draft.ts` (a sticky being written, until its add lands), `gif-picker.tsx`, `retro-settings-panel.tsx`, `retro-summary.ts` |
 | Routes | `/retro/new` (create), `/room/[roomId]` (both ceremonies, one join gate), `/dashboard/retros` (list), `/api/gifs` (GIPHY proxy) |
 
 ## 2. Data
