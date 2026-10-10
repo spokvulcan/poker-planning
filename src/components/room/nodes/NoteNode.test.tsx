@@ -133,3 +133,11 @@ describe("NoteNode — concurrent edits", () => {
     expect(note.textarea.value).toBe("note to self");
   });
 });
+
+describe("NoteNode — its limit", () => {
+  it("stops typing at the discussion note's limit", () => {
+    const note = renderNote({ content: "" });
+
+    expect(note.textarea.maxLength).toBe(10000);
+  });
+});

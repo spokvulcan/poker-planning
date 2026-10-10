@@ -7,6 +7,7 @@ import { ReactElement, memo, useCallback } from "react";
 import { Textarea } from "@/components/ui/textarea";
 import { useLiveText } from "@/hooks/use-live-text";
 import { cn } from "@/lib/utils";
+import { DISCUSSION_NOTE } from "@/convex/constants";
 
 import type { NoteNodeType } from "../types";
 
@@ -84,6 +85,7 @@ export const NoteNode = memo(
             <Textarea
               ref={textarea}
               value={text.value}
+              maxLength={DISCUSSION_NOTE.maxLength}
               onChange={(e) => text.setValue(e.target.value)}
               placeholder="Add discussion notes, rationale, risks..."
               className={cn(
