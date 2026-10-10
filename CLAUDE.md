@@ -37,11 +37,11 @@ convex/
 
 **Model layer** (`convex/model/*.ts`): Contains business logic, database operations, and helper functions.
 
-**Auth guards** (`convex/model/auth.ts`): Every mutation must enforce authorization. A room write starts with the room-scoped step, `requireRoomWrite(ctx, address, spec?)`, which seats the caller in the room the write lands in (`address` is the room, or the issue, sticky or action item the write acts on), runs the permission guard when `spec` names an action, and hands the handler the rows it loaded. The caller is whoever is signed in: a write ignores the `userId` old browsers still send, and only presence's heartbeat checks the one it is sent against the caller the step seats. Read-only queries on room contents take `requireRoomReader(ctx, roomId)`, an action gated by a permission takes `requireCanForUser` through an internal query, and global mutations take `requireCaller(ctx)` or `requireUser(ctx)`. Resolve the caller only through `convex/model/caller.ts` (`getCaller`, `requireCaller`, `requireUser`), the one reader of the signed-in identity and of `users` by `authUserId`. Never re-implement these checks inline in handlers. See [docs/authentication.md](docs/authentication.md) for full patterns.
+**Auth guards** (`convex/model/auth.ts`): every mutation is guarded, and its handler takes the caller and the rows its guard loaded: a room write starts with `requireRoomWrite`, and every other way in takes what [docs/authentication.md](docs/authentication.md) names for it. The caller comes from the session, through `convex/model/caller.ts` alone; a query on room contents takes `requireRoomReader`, any other public query degrades with `getCaller`, and a guard refuses through `refusal()` (ADR-0031). `convex/requireRoomWrite.test.ts`, `convex/caller.test.ts` and the lint (`eslint.config.mjs`) enforce this.
 
 **Ceremony rules** (`convex/ceremony.ts`): whatever differs between planning poker and a retro (spectators, voting rounds, player nodes, retention, activity precision, the hand-off) is read from `rulesOf(room)`. Never compare `roomType` directly.
 
-**One writer per concern**: `model/users.ts` makes `users` rows (`findOrMakeUser`, which the global ways in such as creating a room take instead of `requireUser`) and is the only place one turns permanent, `model/memberships.ts` writes `roomMemberships`, `model/ownership.ts` writes a room's owner, owner role and retention, `model/canvas.ts` writes `canvasNodes`, `model/votingRound.ts` writes poker votes. Deleting an account and a guest signing in go through `model/accountLifecycle.ts`: a module that stores a user id implements `UserRows` (`model/userRows.ts`), or `convex/accountLifecycle.test.ts` fails (ADR-0030).
+**One writer per concern**: `model/users.ts` makes `users` rows (`findOrMakeUser`, which the global ways in such as creating a room take instead of `requireUser`) and is the only place one turns permanent, `model/memberships.ts` writes `roomMemberships`, `model/ownership.ts` writes a room's owner, owner role and retention, `model/canvas.ts` writes `canvasNodes`, `model/votingRound.ts` writes poker votes. Deleting an account and a guest signing in go through `model/accountLifecycle.ts`: a module that stores a user id implements `UserRows` (`model/userRows.ts`), or `convex/accountLifecycle.test.ts` fails (ADR-0030). `eslint.config.mjs` lists who may write each of these concerns, and the lint fails any other writer.
 
 **Room ending**: a room is deleted only through `model/roomEnding.ts`: `endRoom` (deleting a retro, the hand-off, the admin wipe) and `endStaleRooms` (the daily sweep), in bounded steps it schedules itself. It deletes the room's rows itself; only issues (with their links), integration mappings (through the webhook reconcile) and presence let go of their own. A table that gains a `roomId` joins its inventory, or `convex/roomEnding.test.ts` fails.
 
@@ -64,30 +64,9 @@ Both ceremonies are drawn on one whiteboard (`src/components/whiteboard/whiteboa
 - **Node state** synced via Convex (`canvasNodes` table), written only by `convex/model/canvas.ts`
 - **Text over shared data** (notes, names, stickies) goes through `useLiveText` (`src/hooks/use-live-text.ts`), which never overwrites what someone is typing
 
-### Database Schema
-
-Schema defined in `convex/schema.ts`. Key tables:
-
-- `rooms` - Room configuration and state
-- `users` - Global user identity (linked to BetterAuth via `authUserId`)
-- `roomMemberships` - User participation in rooms (spectator status, join time)
-- `votes` - User votes (sanitized based on reveal state)
-- `issues` - Issue tracking with vote statistics
-- `canvasNodes` - Persisted node positions and data
-
-See [docs/authentication.md](docs/authentication.md) for details on the user/membership data model.
-
 ### E2E Testing Pattern
 
-Tests use Page Object Model pattern:
-
-```
-tests/
-├── pages/              # Page objects (HomePage, RoomPage, JoinRoomPage)
-├── utils/              # Helper functions (room-helpers.ts, test-helpers.ts)
-├── fixtures/           # Test fixtures
-└── *.spec.ts           # Test files
-```
+Playwright specs act through the page objects in `tests/pages/` (guide: [tests/README.md](tests/README.md)).
 
 ## Important Notes
 
