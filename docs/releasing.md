@@ -94,6 +94,16 @@ A push to `main` deploys both the frontend and the backend to production. Releas
 - **Previews** (any other branch): the preview environment's key targets the shared dev deployment, `zealous-reindeer-966`. That is the same one `npx convex dev` and the e2e tests use, so whichever branch built last is what runs there.
 - Don't run `npx convex deploy` by hand after merging. The build has already deployed, and from a stale checkout it would push old code over it.
 
+### Checking a deploy
+
+A deployment's build log says what its Convex step did: which deployment it targeted and whether the push succeeded. The Vercel CLI, installed and signed in on the maintainer's machine, prints those lines:
+
+```bash
+vercel inspect <deployment-url> --logs --scope spok-vulcan-projects | grep -E "convex deploy|Deploying code to deployment|Deployed Convex"
+```
+
+The Vercel MCP's `list_deployment_events` returns one JSON object per log line, so the CLI is the cheap read.
+
 ## Viewing Releases
 
 - **GitHub Releases**: [Releases page](../../releases)
