@@ -85,7 +85,7 @@ export function DashboardContent() {
           <TimeToConsensusCard
             averageMs={timeToConsensus.averageMs}
             medianMs={timeToConsensus.medianMs}
-            trendBySession={timeToConsensus.trendBySession}
+            trend={timeToConsensus.trend}
             isLoading={isLoading}
           />
         </div>
@@ -95,9 +95,9 @@ export function DashboardContent() {
           <PredictabilityGauge
             score={predictability.predictabilityScore}
             averageVelocityPerSession={predictability.averageVelocityPerSession}
-            velocityTrend={predictability.velocityTrend}
+            velocityTrend={predictability.velocityTrend.direction}
             averageAgreement={predictability.averageAgreement}
-            agreementTrend={predictability.agreementTrend}
+            agreementTrend={predictability.agreementTrend.direction}
             isLoading={isLoading}
           />
           <VoterAlignmentChart
@@ -108,7 +108,11 @@ export function DashboardContent() {
 
         {/* Agreement + Consensus Charts */}
         <div className="mb-8 grid gap-6 lg:grid-cols-2">
-          <AgreementChart data={agreementTrend} isLoading={isLoading} />
+          <AgreementChart
+            data={agreementTrend.points}
+            trend={agreementTrend.trend}
+            isLoading={isLoading}
+          />
           <ConsensusOutliers
             data={timeToConsensus.outliers}
             averageMs={timeToConsensus.averageMs}
@@ -124,7 +128,7 @@ export function DashboardContent() {
           />
           <VelocityTrend
             sessions={predictability.sessions}
-            velocityTrend={predictability.velocityTrend}
+            velocityTrend={predictability.velocityTrend.direction}
             isLoading={isLoading}
           />
           <VoteDistribution data={voteDistribution} isLoading={isLoading} />

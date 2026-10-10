@@ -1,8 +1,10 @@
 /**
  * analyticsMath — the ONE pure computation layer behind the analytics dashboard.
  *
- * Every dashboard number is projected here from plain rows, with no database
- * access, so the math is testable without a ctx (the summarize.ts precedent).
+ * Every dashboard number, and every verdict a chart states (a trend and its
+ * size), is projected here from plain rows, with no database access, so the
+ * math is testable without a ctx (the summarize.ts precedent); the charts
+ * only render them.
  * The model layer (model/analytics.ts) owns the single memberships → rooms →
  * history scan (`completedIssueHistory`); these functions own the projections,
  * and `dashboard` gathers them into the Overview's panels. Scan → project,
@@ -75,6 +77,17 @@ export interface VoteDistributionItem {
   percentage: number;
 }
 
+/**
+ * A trend verdict, in the metric's own words: the second half of its series
+ * against the first. `changePct` is the change of the second half's mean
+ * relative to the first's, in whole percent; null when nothing was compared
+ * (fewer than two values, or a first half averaging zero).
+ */
+export interface Trend<Direction extends string> {
+  direction: Direction;
+  changePct: number | null;
+}
+
 export interface TimeToConsensusStats {
   averageMs: number | null;
   medianMs: number | null;
@@ -89,6 +102,8 @@ export interface TimeToConsensusStats {
     roomName: string;
     averageMs: number;
   }>;
+  /** The later sessions' times against the earlier ones', past a 10% change. */
+  trend: Trend<"faster" | "stable" | "slower">;
 }
 
 export interface VoterAlignmentUser {
@@ -126,9 +141,11 @@ export interface PredictabilityData {
   predictabilityScore: number | null;
   sessions: PredictabilitySession[];
   averageVelocityPerSession: number;
-  velocityTrend: "increasing" | "stable" | "decreasing";
+  /** The later sessions' points against the earlier ones', past a 10% change. */
+  velocityTrend: Trend<"increasing" | "stable" | "decreasing">;
   averageAgreement: number;
-  agreementTrend: "improving" | "stable" | "declining";
+  /** The later sessions' agreement against the earlier ones', past a 5% change. */
+  agreementTrend: Trend<"improving" | "stable" | "declining">;
 }
 
 export interface DashboardSummary {
@@ -154,11 +171,20 @@ export interface SessionSummary extends SessionIssueStats {
   participantCount: number;
 }
 
+/**
+ * The agreement chart: a point per issue, and the agreement trend it states,
+ * which is the predictability card's.
+ */
+export interface AgreementTrendData {
+  points: AgreementDataPoint[];
+  trend: PredictabilityData["agreementTrend"];
+}
+
 /** Everything the dashboard Overview shows: one field per panel. */
 export interface Dashboard {
   summary: DashboardSummary;
   sessions: SessionSummary[];
-  agreementTrend: AgreementDataPoint[];
+  agreementTrend: AgreementTrendData;
   voteDistribution: VoteDistributionItem[];
   timeToConsensus: TimeToConsensusStats;
   voterAlignment: VoterAlignmentData;
@@ -202,15 +228,17 @@ function stdDev(values: number[]): number {
 }
 
 /**
- * Compares the first half vs second half of a numeric series.
- * Returns "increasing" if second half is >threshold% higher,
- * "decreasing" if lower, "stable" otherwise.
+ * Compares the first half vs second half of a numeric series. Goes `up` if
+ * the second half's mean is more than `thresholdPct` percent above the
+ * first's, `down` if as far below, "stable" otherwise. A first half averaging
+ * zero has no relative change: any rise goes `up`.
  */
-function computeTrend(
+function trend<Up extends string, Down extends string>(
   values: number[],
-  thresholdPct: number
-): "increasing" | "stable" | "decreasing" {
-  if (values.length < 2) return "stable";
+  thresholdPct: number,
+  { up, down }: { up: Up; down: Down }
+): Trend<Up | "stable" | Down> {
+  if (values.length < 2) return { direction: "stable", changePct: null };
 
   const mid = Math.floor(values.length / 2);
   const firstHalf = values.slice(0, mid);
@@ -219,13 +247,15 @@ function computeTrend(
   const firstAvg = mean(firstHalf);
   const secondAvg = mean(secondHalf);
 
-  if (firstAvg === 0) return secondAvg > 0 ? "increasing" : "stable";
+  if (firstAvg === 0) {
+    return { direction: secondAvg > 0 ? up : "stable", changePct: null };
+  }
 
   const diffPct = ((secondAvg - firstAvg) / firstAvg) * 100;
+  const direction =
+    diffPct > thresholdPct ? up : diffPct < -thresholdPct ? down : "stable";
 
-  if (diffPct > thresholdPct) return "increasing";
-  if (diffPct < -thresholdPct) return "decreasing";
-  return "stable";
+  return { direction, changePct: Math.round(diffPct) };
 }
 
 // ---------------------------------------------------------------------------
@@ -279,7 +309,10 @@ export function voteDistribution(
   return distribution.sort((a, b) => b.count - a.count);
 }
 
-/** Time-to-consensus: average/median, >2x outliers, and per-session trend. */
+/**
+ * Time-to-consensus: average/median, >2x outliers, the per-session series and
+ * its trend.
+ */
 export function timeToConsensus(entries: RoomIssue[]): TimeToConsensusStats {
   const issuesWithTime: Array<{
     issueTitle: string;
@@ -302,7 +335,13 @@ export function timeToConsensus(entries: RoomIssue[]): TimeToConsensusStats {
   }
 
   if (issuesWithTime.length === 0) {
-    return { averageMs: null, medianMs: null, outliers: [], trendBySession: [] };
+    return {
+      averageMs: null,
+      medianMs: null,
+      outliers: [],
+      trendBySession: [],
+      trend: { direction: "stable", changePct: null },
+    };
   }
 
   const durations = issuesWithTime.map((i) => i.durationMs);
@@ -356,6 +395,11 @@ export function timeToConsensus(entries: RoomIssue[]): TimeToConsensusStats {
     medianMs: Math.round(medianMs),
     outliers,
     trendBySession,
+    trend: trend(
+      trendBySession.map((s) => s.averageMs),
+      10,
+      { up: "slower", down: "faster" }
+    ),
   };
 }
 
@@ -505,7 +549,10 @@ export function predictability(rooms: RoomIssues[]): PredictabilityData {
   const velocities = sessionsWithPoints.map((s) => s.estimatedPoints);
   const averageVelocityPerSession =
     velocities.length > 0 ? round(mean(velocities), 1) : 0;
-  const velocityTrend = computeTrend(velocities, 10);
+  const velocityTrend = trend(velocities, 10, {
+    up: "increasing",
+    down: "decreasing",
+  });
 
   const allAgreements = sessions
     .map((s) => s.averageAgreement)
@@ -513,13 +560,10 @@ export function predictability(rooms: RoomIssues[]): PredictabilityData {
   const overallAgreement =
     allAgreements.length > 0 ? Math.round(mean(allAgreements)) : 0;
 
-  const agreementTrendDir = computeTrend(allAgreements, 5);
-  const agreementTrend: "improving" | "stable" | "declining" =
-    agreementTrendDir === "increasing"
-      ? "improving"
-      : agreementTrendDir === "decreasing"
-        ? "declining"
-        : "stable";
+  const agreementTrend = trend(allAgreements, 5, {
+    up: "improving",
+    down: "declining",
+  });
 
   // Predictability score (need at least 3 sessions with points)
   let predictabilityScore: number | null = null;
@@ -608,26 +652,51 @@ export function sessionIssueStats(issues: HistoryIssue[]): SessionIssueStats {
 }
 
 // ---------------------------------------------------------------------------
+// Formatting
+// ---------------------------------------------------------------------------
+
+/**
+ * How a duration reads, on the dashboard and in the issue export: to the
+ * nearest second, with minutes from the first one ("2m 34s").
+ */
+export function formatDuration(ms: number): string {
+  const totalSeconds = Math.round(ms / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+
+  if (minutes === 0) return `${seconds}s`;
+  return `${minutes}m ${seconds}s`;
+}
+
+// ---------------------------------------------------------------------------
 // The Overview
 // ---------------------------------------------------------------------------
 
 /**
  * Every panel of the Overview, each from its own projection. The header
  * totals the session list; the charts read the windowed issues and votes.
+ *
+ * The agreement chart plots its points day by day but states the
+ * predictability card's agreement trend, room against room (#391): the page
+ * shows one agreement trend.
  */
 export function dashboard(history: DashboardHistory): Dashboard {
   const entries: RoomIssue[] = history.rooms.flatMap(
     ({ roomId, roomName, issues }) =>
       issues.map((issue) => ({ roomId, roomName, issue }))
   );
+  const predictabilityData = predictability(history.rooms);
   return {
     summary: dashboardSummary(history.sessions),
     sessions: history.sessions,
-    agreementTrend: agreementTrend(entries),
+    agreementTrend: {
+      points: agreementTrend(entries),
+      trend: predictabilityData.agreementTrend,
+    },
     voteDistribution: voteDistribution(history.rooms.flatMap((r) => r.issues)),
     timeToConsensus: timeToConsensus(entries),
     voterAlignment: voterAlignment(history.votes, history.voterNames),
-    predictability: predictability(history.rooms),
+    predictability: predictabilityData,
   };
 }
 

@@ -65,6 +65,7 @@ const DASHBOARD: Dashboard = {
     medianMs: 60_000,
     outliers: [],
     trendBySession: [],
+    trend: { direction: "stable", changePct: null },
   },
   voterAlignment: {
     users: [
@@ -146,6 +147,51 @@ describe("DashboardContent", () => {
     expect(card("Avg Time to Consensus").getByText("1m 30s")).toBeTruthy();
     expect(card("Individual Voting Stats").getByText("Ada Lovelace")).toBeTruthy();
     expect(screen.getByText("Sprint 42 planning")).toBeTruthy();
+  });
+
+  it("states the read's trend verdicts, not verdicts of its own", () => {
+    spy.result = {
+      ...DASHBOARD,
+      agreementTrend: {
+        // The points climb day by day; the verdict is the read's, room against room.
+        points: [
+          { date: "2026-10-01", timestamp: Date.UTC(2026, 9, 1), agreement: 40, issueTitle: "Login", roomName: "Sprint 42 planning" },
+          { date: "2026-10-02", timestamp: Date.UTC(2026, 9, 2), agreement: 90, issueTitle: "Logout", roomName: "Sprint 43 planning" },
+        ],
+        trend: { direction: "declining", changePct: -12 },
+      },
+      timeToConsensus: {
+        ...DASHBOARD.timeToConsensus,
+        trend: { direction: "faster", changePct: -25 },
+      },
+    } satisfies Dashboard;
+    renderOverview();
+
+    expect(card("Agreement Trend").getByText("Trending down 12%")).toBeTruthy();
+    expect(card("Avg Time to Consensus").getByText("25% faster")).toBeTruthy();
+  });
+
+  it("claims no size the read didn't state", () => {
+    spy.result = {
+      ...DASHBOARD,
+      agreementTrend: {
+        points: [
+          { date: "2026-10-01", timestamp: Date.UTC(2026, 9, 1), agreement: 40, issueTitle: "Login", roomName: "Sprint 42 planning" },
+          { date: "2026-10-02", timestamp: Date.UTC(2026, 9, 2), agreement: 90, issueTitle: "Logout", roomName: "Sprint 42 planning" },
+        ],
+        // One room: nothing to compare.
+        trend: { direction: "stable", changePct: null },
+      },
+      timeToConsensus: {
+        ...DASHBOARD.timeToConsensus,
+        // Slower than sessions that took no time: no percentage to state.
+        trend: { direction: "slower", changePct: null },
+      },
+    } satisfies Dashboard;
+    renderOverview();
+
+    expect(card("Agreement Trend").getByText("Team alignment over time")).toBeTruthy();
+    expect(card("Avg Time to Consensus").getByText("Slower")).toBeTruthy();
   });
 
   it("shows skeletons and no numbers until the read lands", () => {

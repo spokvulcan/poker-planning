@@ -5,6 +5,7 @@ import * as Rooms from "./rooms";
 import * as VotingRound from "./votingRound";
 import { refusal, requireValid } from "./refusal";
 import { ISSUE_TITLE, MAX_ISSUES_PER_ROOM } from "../constants";
+import { formatDuration } from "../analyticsMath";
 
 export type IssueStatus = "pending" | "voting" | "completed";
 
@@ -379,17 +380,6 @@ export async function reorderIssues(
 }
 
 /**
- * Formats milliseconds into a human-readable duration string (e.g., "2m 34s")
- */
-function formatDurationMs(ms: number): string {
-  const totalSeconds = Math.round(ms / 1000);
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  if (minutes === 0) return `${seconds}s`;
-  return `${minutes}m ${seconds}s`;
-}
-
-/**
  * Gets issues with enhanced data for export (time-to-consensus, individual votes, voting rounds)
  */
 /**
@@ -478,7 +468,7 @@ export async function getEnhancedIssuesForExport(
     // completed the issue — see completeTargetIssue in model/votingRound.ts)
     const timeToConsensusMs = issue.voteStats?.timeToConsensusMs ?? null;
     const timeToConsensusFormatted =
-      timeToConsensusMs !== null ? formatDurationMs(timeToConsensusMs) : null;
+      timeToConsensusMs !== null ? formatDuration(timeToConsensusMs) : null;
 
     // Voting rounds count
     const timestamps = timestampsByIssue.get(issueId) ?? [];

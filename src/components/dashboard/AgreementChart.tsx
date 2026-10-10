@@ -22,6 +22,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import type { AgreementTrendData } from "@/convex/analyticsMath";
 import { formatChartDay } from "./chart-day";
 
 interface AgreementDataPoint {
@@ -34,6 +35,7 @@ interface AgreementDataPoint {
 
 interface AgreementChartProps {
   data: AgreementDataPoint[];
+  trend: AgreementTrendData["trend"];
   isLoading?: boolean;
 }
 
@@ -67,30 +69,21 @@ function aggregateByDate(
     .sort((a, b) => a.date.localeCompare(b.date));
 }
 
-export function AgreementChart({ data, isLoading }: AgreementChartProps) {
+/** The read's agreement trend in words; none when it compared nothing. */
+function describeTrend({
+  direction,
+  changePct,
+}: AgreementChartProps["trend"]): string {
+  if (changePct === null) return "";
+  if (direction === "improving") return `Trending up ${changePct}%`;
+  if (direction === "declining") return `Trending down ${Math.abs(changePct)}%`;
+  return "Stable trend";
+}
+
+export function AgreementChart({ data, trend, isLoading }: AgreementChartProps) {
   const aggregated = aggregateByDate(data);
   const hasData = aggregated.length > 0;
-
-  // Calculate trend
-  let trendText = "";
-  if (aggregated.length >= 2) {
-    const recent = aggregated.slice(-3);
-    const earlier = aggregated.slice(0, 3);
-    const recentAvg =
-      recent.reduce((s, d) => s + d.agreement, 0) / recent.length;
-    const earlierAvg =
-      earlier.reduce((s, d) => s + d.agreement, 0) / earlier.length;
-    const diff = recentAvg - earlierAvg;
-
-    if (Math.abs(diff) >= 5) {
-      trendText =
-        diff > 0
-          ? `Trending up ${Math.round(diff)}%`
-          : `Trending down ${Math.round(Math.abs(diff))}%`;
-    } else {
-      trendText = "Stable trend";
-    }
-  }
+  const trendText = describeTrend(trend);
 
   if (isLoading) {
     return (
