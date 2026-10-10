@@ -15,9 +15,9 @@ import { describe, it, expect } from "vitest";
 import * as homepage from "@/components/homepage/copy";
 import * as seo from "@/components/seo/copy";
 import * as site from "@/lib/site-copy";
-import * as features from "@/app/features/copy";
-import * as about from "@/app/about/copy";
-import * as pricing from "@/app/pricing/copy";
+import * as features from "@/app/(app)/features/copy";
+import * as about from "@/app/(app)/about/copy";
+import * as pricing from "@/app/(app)/pricing/copy";
 import { siteConfig } from "@/lib/site-config";
 import {
   DEFAULT_VOTES_PER_PERSON,

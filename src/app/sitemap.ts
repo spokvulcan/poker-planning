@@ -1,5 +1,5 @@
 import { MetadataRoute } from "next";
-import { getPosts, type PostMeta } from "./blog/posts";
+import { getPosts, type PostMeta } from "./(app)/blog/posts";
 import { getLatestRelease } from "@/lib/changelog";
 import { SITE_ORIGIN } from "@/lib/site-config";
 

@@ -8,7 +8,7 @@ import path from "path";
 import { describe, it, expect } from "vitest";
 import sitemap from "./sitemap";
 import robots from "./robots";
-import { getAllSlugs } from "./blog/posts";
+import { getAllSlugs } from "./(app)/blog/posts";
 import { SITE_ORIGIN } from "@/lib/site-config";
 
 describe("the sitemap", () => {
