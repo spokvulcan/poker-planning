@@ -135,7 +135,7 @@ describe("reveal schedules the Jira estimate push", () => {
       })
     );
 
-    await t.run((ctx) => VotingRound.reveal(ctx, roomId));
+    await t.run(async (ctx) => VotingRound.reveal(ctx, (await ctx.db.get("rooms", roomId))!));
 
     const pushes = await scheduledPushes(t);
     expect(pushes).toHaveLength(1);
@@ -151,7 +151,7 @@ describe("reveal schedules the Jira estimate push", () => {
     const { roomId } = await seedRoomMidRound(t);
     await seedMapping(t, roomId, connectionId, false); // off
 
-    await t.run((ctx) => VotingRound.reveal(ctx, roomId));
+    await t.run(async (ctx) => VotingRound.reveal(ctx, (await ctx.db.get("rooms", roomId))!));
     expect(await scheduledPushes(t)).toHaveLength(0);
   });
 });

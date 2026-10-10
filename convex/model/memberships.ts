@@ -101,22 +101,21 @@ export async function join(
 /**
  * Sits a member out as a spectator, or back in. A spectator is voteless, so
  * sitting out drops their vote and the round re-checks whether everyone has
- * voted (ADR-0004); coming back in needs nothing from the round.
+ * voted (ADR-0004); coming back in needs nothing from the round. Takes the
+ * member's membership as the room-scoped step loaded it.
  */
 export async function setSpectator(
   ctx: MutationCtx,
   room: Doc<"rooms">,
-  userId: Id<"users">,
+  membership: Doc<"roomMemberships">,
   isSpectator: boolean
 ): Promise<void> {
-  const membership = await getMembership(ctx, room._id, userId);
-  if (!membership) throw new Error("User not in room");
   if (isSpectator && !rulesOf(room).spectators) throw refusal("missing", "Everyone takes part here: there are no spectators.");
   await Rooms.updateRoomActivity(ctx, room);
   if (membership.isSpectator === isSpectator) return;
   // The roster bit first, so the round re-checks against the new roster.
   await ctx.db.patch("roomMemberships", membership._id, { isSpectator });
-  if (isSpectator) await VotingRound.dropVoter(ctx, room._id, userId);
+  if (isSpectator) await VotingRound.dropVoter(ctx, room._id, membership.userId);
 }
 
 /**

@@ -41,7 +41,7 @@ export const rename = mutation({
   handler: async (ctx, args) => {
     const { room } = await requireRoomWrite(ctx, args.roomId, { kind: "category", category: "retroSettings" });
     Retro.retroOf(room);
-    await renameRoom(ctx, args);
+    await renameRoom(ctx, room, args.name);
   },
 });
 

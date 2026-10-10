@@ -108,20 +108,20 @@ describe("acting-user guard (requireActingUser)", () => {
     ).rejects.toThrow("You don't have access to this room");
   });
 
-  it("actor mismatch throws on pickCard", async () => {
+  it("actor mismatch throws on heartbeat", async () => {
     const t = convexTest(schema, modules);
     const roomId = await seedRoom(t);
     await addMember(t, roomId, "auth-a");
     const userB = await addMember(t, roomId, "auth-b");
     const asA = t.withIdentity({ subject: "auth-a" });
     await expect(
-      asA.mutation(api.votes.pickCard, {
+      asA.mutation(api.presence.heartbeat, {
         roomId,
         userId: userB,
-        cardLabel: "5",
-        cardValue: 5,
+        sessionId: "session-a",
+        interval: 10_000,
       })
-    ).rejects.toThrow("Cannot vote as another user");
+    ).rejects.toThrow("Cannot heartbeat as another user");
   });
 
   it("member casts a vote through the registered handler", async () => {

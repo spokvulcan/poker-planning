@@ -181,13 +181,11 @@ export async function updateRoomActivity(
 }
 
 /**
- * Renames a room. The permission guard runs in the endpoint handler; the model
- * owns the validation, the write, and the activity bump.
+ * Renames a room. The handler's room-scoped step runs the permission guard and
+ * hands over the room; the model owns the validation, the write, and the
+ * activity bump.
  */
-export async function renameRoom(
-  ctx: MutationCtx,
-  args: { roomId: Id<"rooms">; name: string }
-): Promise<void> {
-  await ctx.db.patch("rooms", args.roomId, { name: requireValid(ROOM_NAME, args.name) });
-  await updateRoomActivity(ctx, args.roomId);
+export async function renameRoom(ctx: MutationCtx, room: Doc<"rooms">, name: string): Promise<void> {
+  await ctx.db.patch("rooms", room._id, { name: requireValid(ROOM_NAME, name) });
+  await updateRoomActivity(ctx, room);
 }

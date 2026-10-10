@@ -228,56 +228,56 @@ export async function followTrackerChange(
 }
 
 /**
- * Updates an issue's title
+ * Updates an issue's title. The handler's room-scoped step hands over the
+ * issue and the room it is in.
  */
 export async function updateIssueTitle(
   ctx: MutationCtx,
-  args: { issueId: Id<"issues">; title: string }
+  room: Doc<"rooms">,
+  issue: Doc<"issues">,
+  title: string
 ): Promise<void> {
-  const issue = await ctx.db.get("issues", args.issueId);
-  if (!issue) throw new Error("Issue not found");
-
-  await ctx.db.patch("issues", args.issueId, { title: requireValid(ISSUE_TITLE, args.title) });
+  await ctx.db.patch("issues", issue._id, { title: requireValid(ISSUE_TITLE, title) });
 
   // Update room activity
-  await Rooms.updateRoomActivity(ctx, issue.roomId);
+  await Rooms.updateRoomActivity(ctx, room);
 }
 
 /**
- * Updates an issue's final estimate (manual override after voting)
+ * Updates an issue's final estimate (manual override after voting). The
+ * handler's room-scoped step hands over the issue and the room it is in.
  */
 export async function updateIssueEstimate(
   ctx: MutationCtx,
-  args: { issueId: Id<"issues">; finalEstimate: string }
+  room: Doc<"rooms">,
+  issue: Doc<"issues">,
+  finalEstimate: string
 ): Promise<void> {
-  const issue = await ctx.db.get("issues", args.issueId);
-  if (!issue) throw new Error("Issue not found");
-
-  await ctx.db.patch("issues", args.issueId, { finalEstimate: args.finalEstimate });
+  await ctx.db.patch("issues", issue._id, { finalEstimate });
 
   // Update room activity
-  await Rooms.updateRoomActivity(ctx, issue.roomId);
+  await Rooms.updateRoomActivity(ctx, room);
 }
 
 /**
- * Removes an issue
+ * Removes an issue. The handler's room-scoped step hands over the issue and
+ * the room it is in.
  */
 export async function removeIssue(
   ctx: MutationCtx,
-  issueId: Id<"issues">
+  room: Doc<"rooms">,
+  issue: Doc<"issues">
 ): Promise<void> {
-  const issue = await ctx.db.get("issues", issueId);
-  if (!issue) throw new Error("Issue not found");
+  const issueId = issue._id;
 
   // Deleting the issue being voted on ends the round cleanly: delegate to the
   // round's abandon (drops the target to a Quick Vote, cancels the countdown,
   // clears votes — and bumps room activity itself) before the issue and its
   // records are removed below.
-  const room = await ctx.db.get("rooms", issue.roomId);
-  if (room?.currentIssueId === issueId) {
-    await VotingRound.abandon(ctx, issue.roomId);
+  if (room.currentIssueId === issueId) {
+    await VotingRound.abandon(ctx, room);
   } else {
-    await Rooms.updateRoomActivity(ctx, issue.roomId);
+    await Rooms.updateRoomActivity(ctx, room);
   }
 
   // Delete associated voting timestamps
@@ -348,34 +348,36 @@ export async function getIssuesForExport(
 }
 
 /**
- * Reorders issues (for drag-and-drop)
+ * Reorders issues (for drag-and-drop). The handler's room-scoped step hands
+ * over the room.
  */
 export async function reorderIssues(
   ctx: MutationCtx,
-  args: { roomId: Id<"rooms">; issueIds: Id<"issues">[] }
+  room: Doc<"rooms">,
+  issueIds: Id<"issues">[]
 ): Promise<void> {
-  // Authorization was checked against args.roomId, so every reordered issue
-  // must belong to that room — otherwise issue IDs from another room could be
+  // Authorization was checked against this room, so every reordered issue
+  // must belong to it — otherwise issue IDs from another room could be
   // smuggled into the array to scramble its ordering.
   const issues = await Promise.all(
-    args.issueIds.map((issueId) => ctx.db.get("issues", issueId))
+    issueIds.map((issueId) => ctx.db.get("issues", issueId))
   );
   for (const issue of issues) {
     if (!issue) throw new Error("Issue not found");
-    if (issue.roomId !== args.roomId) {
+    if (issue.roomId !== room._id) {
       throw new Error("Issue does not belong to this room");
     }
   }
 
   // Update order for each issue
   await Promise.all(
-    args.issueIds.map((issueId, index) =>
+    issueIds.map((issueId, index) =>
       ctx.db.patch("issues", issueId, { order: index + 1 })
     )
   );
 
   // Update room activity
-  await Rooms.updateRoomActivity(ctx, args.roomId);
+  await Rooms.updateRoomActivity(ctx, room);
 }
 
 /**

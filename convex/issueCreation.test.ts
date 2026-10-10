@@ -272,7 +272,9 @@ describe("issue admission (Issues.admitIssue)", () => {
     const roomId = await seedRoom(t);
     const first = await admitLinked(t, roomId, "PROJ-4");
 
-    await t.run((ctx) => Issues.removeIssue(ctx, first.issueId));
+    await t.run(async (ctx) =>
+      Issues.removeIssue(ctx, (await ctx.db.get("rooms", roomId))!, (await ctx.db.get("issues", first.issueId))!)
+    );
     const again = await admitLinked(t, roomId, "PROJ-4");
 
     expect(again.kind).toBe("admitted");

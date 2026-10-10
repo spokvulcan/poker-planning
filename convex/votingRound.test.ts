@@ -4,10 +4,12 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import schema from "./schema";
 import { withComponents } from "./components.setup";
 import { api } from "./_generated/api";
-import type { Id } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
+import type { MutationCtx } from "./_generated/server";
 import * as VotingRound from "./model/votingRound";
 import * as Issues from "./model/issues";
 import * as Users from "./model/users";
+import { getMembership } from "./model/memberships";
 
 const modules = import.meta.glob("./**/*.*s");
 
@@ -36,6 +38,24 @@ async function seedRoom(
 
 async function readRoom(t: T, roomId: Id<"rooms">) {
   return t.run((ctx) => ctx.db.get("rooms", roomId));
+}
+
+/** Runs a round act on the room as the write that runs it hands it over: loaded. */
+async function onRoom(
+  t: T,
+  roomId: Id<"rooms">,
+  act: (ctx: MutationCtx, room: Doc<"rooms">) => Promise<unknown>
+): Promise<void> {
+  await t.run(async (ctx) => {
+    await act(ctx, (await ctx.db.get("rooms", roomId))!);
+  });
+}
+
+/** Plays `userId`'s card as pickCard does: in the room, from the voter's seat, both loaded. */
+async function castVote(t: T, roomId: Id<"rooms">, userId: Id<"users">, cardLabel = "5"): Promise<void> {
+  await onRoom(t, roomId, async (ctx, room) =>
+    VotingRound.castVote(ctx, { room, voter: (await getMembership(ctx, roomId, userId))!, cardLabel })
+  );
 }
 
 async function scheduledFns(t: T) {
@@ -113,14 +133,7 @@ async function armCountdown(
   voterIds: Id<"users">[]
 ): Promise<void> {
   for (const userId of voterIds) {
-    await t.run((ctx) =>
-      VotingRound.castVote(ctx, {
-        roomId,
-        userId,
-        cardLabel: "5",
-        cardValue: 5,
-      })
-    );
+    await castVote(t, roomId, userId, "5");
   }
 }
 
@@ -237,8 +250,8 @@ describe("dropVoter — a roster exit reconciles the round", () => {
     await rawVote(t, roomId, a);
 
     // The last non-voter switches to spectator — the room is now fully voted.
-    await t.run((ctx) =>
-      Users.editUser(ctx, { roomId, userId: b, isSpectator: true })
+    await onRoom(t, roomId, async (ctx, room) =>
+      Users.editUser(ctx, room, (await getMembership(ctx, roomId, b))!, { isSpectator: true })
     );
 
     const room = await readRoom(t, roomId);
@@ -253,8 +266,8 @@ describe("dropVoter — a roster exit reconciles the round", () => {
     await rawVote(t, roomId, a);
     await rawVote(t, roomId, b); // b has voted, then spectates
 
-    await t.run((ctx) =>
-      Users.editUser(ctx, { roomId, userId: b, isSpectator: true })
+    await onRoom(t, roomId, async (ctx, room) =>
+      Users.editUser(ctx, room, (await getMembership(ctx, roomId, b))!, { isSpectator: true })
     );
 
     // The round drops a spectating member's votes, so only a's vote remains —
@@ -275,7 +288,7 @@ describe("dropVoter — a roster exit reconciles the round", () => {
     const b = await addMember(t, roomId); // hasn't voted
     await rawVote(t, roomId, a);
 
-    await t.run((ctx) => Users.leaveRoom(ctx, b, roomId)); // also the remove/kick path
+    await onRoom(t, roomId, (ctx, room) => Users.leaveRoom(ctx, room, b)); // also the remove/kick path
 
     const room = await readRoom(t, roomId);
     expect(room?.autoRevealCountdownStartedAt).toEqual(expect.any(Number));
@@ -402,7 +415,7 @@ describe("early-reveal regression (issue #199)", () => {
     const t = withComponents(convexTest(schema, modules));
     const { roomId, members, T1, S1 } = await setupArmedRound(t);
 
-    await t.run((ctx) => VotingRound.abandon(ctx, roomId));
+    await onRoom(t, roomId, VotingRound.abandon);
 
     await assertOriginalScheduledRevealCancelled(t, S1);
     const T2 = await armFreshCountdown(t, roomId, members);
@@ -413,7 +426,9 @@ describe("early-reveal regression (issue #199)", () => {
     const t = withComponents(convexTest(schema, modules));
     const { roomId, issueId, members, T1, S1 } = await setupArmedRound(t);
 
-    await t.run((ctx) => Issues.removeIssue(ctx, issueId));
+    await onRoom(t, roomId, async (ctx, room) =>
+      Issues.removeIssue(ctx, room, (await ctx.db.get("issues", issueId))!)
+    );
 
     await assertOriginalScheduledRevealCancelled(t, S1);
     const T2 = await armFreshCountdown(t, roomId, members);
@@ -424,9 +439,7 @@ describe("early-reveal regression (issue #199)", () => {
     const t = withComponents(convexTest(schema, modules));
     const { roomId, otherIssueId, members, T1, S1 } = await setupArmedRound(t);
 
-    await t.run((ctx) =>
-      VotingRound.start(ctx, { roomId, issueId: otherIssueId })
-    );
+    await onRoom(t, roomId, (ctx, room) => VotingRound.start(ctx, { room, issueId: otherIssueId }));
 
     await assertOriginalScheduledRevealCancelled(t, S1);
     const T2 = await armFreshCountdown(t, roomId, members);
@@ -441,7 +454,7 @@ describe("VotingRound.abandon", () => {
     const issueId = await seedIssue(t, roomId, { status: "voting" });
     await t.run((ctx) => ctx.db.patch("rooms", roomId, { currentIssueId: issueId }));
 
-    await t.run((ctx) => VotingRound.abandon(ctx, roomId));
+    await onRoom(t, roomId, VotingRound.abandon);
 
     const room = await readRoom(t, roomId);
     const issue = await t.run((ctx) => ctx.db.get("issues", issueId));
@@ -458,7 +471,7 @@ describe("VotingRound.abandon", () => {
     const a = await addMember(t, roomId);
     await rawVote(t, roomId, a);
 
-    await t.run((ctx) => VotingRound.abandon(ctx, roomId));
+    await onRoom(t, roomId, VotingRound.abandon);
 
     const votes = await t.run((ctx) =>
       ctx.db
@@ -483,7 +496,7 @@ describe("VotingRound.abandon", () => {
       })
     );
 
-    await t.run((ctx) => VotingRound.abandon(ctx, roomId));
+    await onRoom(t, roomId, VotingRound.abandon);
 
     const ts = await t.run((ctx) =>
       ctx.db
@@ -504,7 +517,7 @@ describe("VotingRound.abandon", () => {
     await armCountdown(t, roomId, [memberId]);
     const scheduledId = (await readRoom(t, roomId))!.autoRevealScheduledId!;
 
-    await t.run((ctx) => VotingRound.abandon(ctx, roomId));
+    await onRoom(t, roomId, VotingRound.abandon);
 
     const room = await readRoom(t, roomId);
     const scheduled = await scheduledFns(t);
@@ -519,7 +532,7 @@ describe("VotingRound.abandon", () => {
     const t = withComponents(convexTest(schema, modules));
     const roomId = await seedRoom(t); // no currentIssueId
 
-    await t.run((ctx) => VotingRound.abandon(ctx, roomId));
+    await onRoom(t, roomId, VotingRound.abandon);
 
     const room = await readRoom(t, roomId);
     expect(room?.currentIssueId).toBeUndefined();
@@ -536,7 +549,9 @@ describe("removeIssue of the current issue (delegates to abandon)", () => {
     const a = await addMember(t, roomId);
     await rawVote(t, roomId, a);
 
-    await t.run((ctx) => Issues.removeIssue(ctx, issueId));
+    await onRoom(t, roomId, async (ctx, room) =>
+      Issues.removeIssue(ctx, room, (await ctx.db.get("issues", issueId))!)
+    );
 
     const room = await readRoom(t, roomId);
     const issue = await t.run((ctx) => ctx.db.get("issues", issueId));
@@ -579,7 +594,7 @@ describe("VotingRound.start", () => {
     const a = await addMember(t, roomId);
     await rawVote(t, roomId, a); // leftover vote from a prior round
 
-    await t.run((ctx) => VotingRound.start(ctx, { roomId, issueId }));
+    await onRoom(t, roomId, (ctx, room) => VotingRound.start(ctx, { room, issueId }));
 
     const room = await readRoom(t, roomId);
     const issue = await t.run((ctx) => ctx.db.get("issues", issueId));
@@ -599,7 +614,7 @@ describe("VotingRound.start", () => {
     const a = await addMember(t, roomId);
     await rawVote(t, roomId, a);
 
-    await t.run((ctx) => VotingRound.start(ctx, { roomId }));
+    await onRoom(t, roomId, (ctx, room) => VotingRound.start(ctx, { room }));
 
     const room = await readRoom(t, roomId);
     expect(room?.currentIssueId).toBeUndefined();
@@ -621,7 +636,7 @@ describe("VotingRound.start", () => {
     const second = await seedIssue(t, roomId, { status: "pending", order: 1 });
     await t.run((ctx) => ctx.db.patch("rooms", roomId, { currentIssueId: first }));
 
-    await t.run((ctx) => VotingRound.start(ctx, { roomId, issueId: second }));
+    await onRoom(t, roomId, (ctx, room) => VotingRound.start(ctx, { room, issueId: second }));
 
     const room = await readRoom(t, roomId);
     expect(room?.currentIssueId).toBe(second);
@@ -651,7 +666,7 @@ describe("VotingRound.reset", () => {
     const a = await addMember(t, roomId);
     await rawVote(t, roomId, a); // stale vote from the revealed round
 
-    await t.run((ctx) => VotingRound.reset(ctx, roomId));
+    await onRoom(t, roomId, VotingRound.reset);
 
     const room = await readRoom(t, roomId);
     const issue = await t.run((ctx) => ctx.db.get("issues", issueId));
@@ -668,11 +683,11 @@ describe("VotingRound.reset", () => {
     const t = withComponents(convexTest(schema, modules));
     const roomId = await seedRoom(t);
     const issueId = await seedIssue(t, roomId, { status: "pending" });
-    await t.run((ctx) => VotingRound.start(ctx, { roomId, issueId })); // round 1, running
+    await onRoom(t, roomId, (ctx, room) => VotingRound.start(ctx, { room, issueId })); // round 1, running
     const a = await addMember(t, roomId);
     await rawVote(t, roomId, a);
 
-    await t.run((ctx) => VotingRound.reset(ctx, roomId));
+    await onRoom(t, roomId, VotingRound.reset);
 
     const ts = await timingFor(t, issueId);
     expect(await votesFor(t, roomId)).toHaveLength(0);
@@ -694,7 +709,7 @@ describe("VotingRound.reveal", () => {
     await rawVote(t, roomId, b, "5");
     await rawVote(t, roomId, c, "3");
 
-    await t.run((ctx) => VotingRound.reveal(ctx, roomId));
+    await onRoom(t, roomId, VotingRound.reveal);
 
     const room = await readRoom(t, roomId);
     const issue = await t.run((ctx) => ctx.db.get("issues", issueId));
@@ -720,7 +735,7 @@ describe("VotingRound.reveal", () => {
     await rawVote(t, roomId, b, "4");
     await rawVote(t, roomId, c, "6");
 
-    await t.run((ctx) => VotingRound.reveal(ctx, roomId));
+    await onRoom(t, roomId, VotingRound.reveal);
 
     const issue = await t.run((ctx) => ctx.db.get("issues", issueId));
     expect(issue?.voteStats?.average).toBe(4);
@@ -737,7 +752,7 @@ describe("VotingRound.reveal", () => {
     await rawVote(t, roomId, a, "5");
     await rawVote(t, roomId, b, "5");
 
-    await t.run((ctx) => VotingRound.reveal(ctx, roomId));
+    await onRoom(t, roomId, VotingRound.reveal);
 
     const snapshots = await t.run((ctx) =>
       ctx.db
@@ -763,7 +778,7 @@ describe("VotingRound.reveal", () => {
     await rawVote(t, roomId, b, "3");
     await rawVote(t, roomId, c, "8");
 
-    await t.run((ctx) => VotingRound.reveal(ctx, roomId));
+    await onRoom(t, roomId, VotingRound.reveal);
 
     const snapshots = await t.run((ctx) =>
       ctx.db
@@ -787,7 +802,7 @@ describe("VotingRound.reveal", () => {
     await rawVote(t, roomId, b, "5");
     await rawVote(t, roomId, c, "?"); // special card — must not count
 
-    await t.run((ctx) => VotingRound.reveal(ctx, roomId));
+    await onRoom(t, roomId, VotingRound.reveal);
 
     const issue = await t.run((ctx) => ctx.db.get("issues", issueId));
     expect(issue?.voteStats?.voteCount).toBe(2); // "?" excluded
@@ -801,7 +816,7 @@ describe("VotingRound.reveal", () => {
     const a = await addMember(t, roomId);
     await rawVote(t, roomId, a, "8");
 
-    await t.run((ctx) => VotingRound.reveal(ctx, roomId));
+    await onRoom(t, roomId, VotingRound.reveal);
 
     expect((await readRoom(t, roomId))?.isGameOver).toBe(true);
   });
@@ -813,11 +828,11 @@ describe("VotingRound.reveal", () => {
     const t = withComponents(convexTest(schema, modules));
     const roomId = await seedRoom(t);
     const issueId = await seedIssue(t, roomId, { status: "pending" });
-    await t.run((ctx) => VotingRound.start(ctx, { roomId, issueId })); // opens round 1
+    await onRoom(t, roomId, (ctx, room) => VotingRound.start(ctx, { room, issueId })); // opens round 1
     const a = await addMember(t, roomId);
     await rawVote(t, roomId, a, "?"); // special only → consensus null
 
-    await t.run((ctx) => VotingRound.reveal(ctx, roomId));
+    await onRoom(t, roomId, VotingRound.reveal);
 
     const ts = await t.run((ctx) =>
       ctx.db
@@ -836,7 +851,7 @@ describe("VotingRound.reveal", () => {
     await armCountdown(t, roomId, [memberId]);
     const scheduledId = (await readRoom(t, roomId))!.autoRevealScheduledId!;
 
-    await t.run((ctx) => VotingRound.reveal(ctx, roomId));
+    await onRoom(t, roomId, VotingRound.reveal);
 
     const room = await readRoom(t, roomId);
     const scheduled = await scheduledFns(t);
@@ -856,7 +871,7 @@ describe("VotingRound.cancelCountdown", () => {
     await armCountdown(t, roomId, [memberId]);
     const scheduledId = (await readRoom(t, roomId))!.autoRevealScheduledId!;
 
-    await t.run((ctx) => VotingRound.cancelCountdown(ctx, roomId));
+    await onRoom(t, roomId, VotingRound.cancelCountdown);
 
     const room = await readRoom(t, roomId);
     const scheduled = await scheduledFns(t);
@@ -875,9 +890,7 @@ describe("VotingRound.castVote", () => {
     const roomId = await seedRoom(t, { autoCompleteVoting: false });
     const a = await addMember(t, roomId);
 
-    await t.run((ctx) =>
-      VotingRound.castVote(ctx, { roomId, userId: a, cardLabel: "5", cardValue: 5 })
-    );
+    await castVote(t, roomId, a, "5");
 
     const votes = await votesFor(t, roomId);
     expect(votes).toHaveLength(1);
@@ -888,13 +901,9 @@ describe("VotingRound.castVote", () => {
     const t = withComponents(convexTest(schema, modules));
     const roomId = await seedRoom(t, { autoCompleteVoting: false });
     const a = await addMember(t, roomId);
-    await t.run((ctx) =>
-      VotingRound.castVote(ctx, { roomId, userId: a, cardLabel: "5", cardValue: 5 })
-    );
+    await castVote(t, roomId, a, "5");
 
-    await t.run((ctx) =>
-      VotingRound.castVote(ctx, { roomId, userId: a, cardLabel: "8", cardValue: 8 })
-    );
+    await castVote(t, roomId, a, "8");
 
     const votes = await votesFor(t, roomId);
     expect(votes).toHaveLength(1);
@@ -906,9 +915,7 @@ describe("VotingRound.castVote", () => {
     const roomId = await seedRoom(t, { autoCompleteVoting: true });
     const a = await addMember(t, roomId);
 
-    await t.run((ctx) =>
-      VotingRound.castVote(ctx, { roomId, userId: a, cardLabel: "5", cardValue: 5 })
-    );
+    await castVote(t, roomId, a, "5");
 
     expect((await readRoom(t, roomId))?.autoRevealCountdownStartedAt).toEqual(
       expect.any(Number)
@@ -921,14 +928,7 @@ describe("VotingRound.castVote", () => {
     const s = await addMember(t, roomId, { isSpectator: true });
 
     await expect(
-      t.run((ctx) =>
-        VotingRound.castVote(ctx, {
-          roomId,
-          userId: s,
-          cardLabel: "5",
-          cardValue: 5,
-        })
-      )
+      castVote(t, roomId, s, "5")
     ).rejects.toThrow(/spectator/i);
 
     expect(await votesFor(t, roomId)).toHaveLength(0);
@@ -945,7 +945,7 @@ describe("VotingRound.castVote", () => {
     const a = await addMember(t, roomId);
 
     await expect(
-      t.run((ctx) => VotingRound.castVote(ctx, { roomId, userId: a, cardLabel: "5" }))
+      castVote(t, roomId, a, "5")
     ).rejects.toThrow("Card is not in this room's voting scale");
     expect(await votesFor(t, roomId)).toHaveLength(0);
   });
@@ -956,9 +956,9 @@ describe("VotingRound.castVote", () => {
     const a = await addMember(t, roomId);
 
     await expect(
-      t.run((ctx) => VotingRound.castVote(ctx, { roomId, userId: a, cardLabel: "M" }))
+      castVote(t, roomId, a, "M")
     ).rejects.toThrow("Card is not in this room's voting scale");
-    await t.run((ctx) => VotingRound.castVote(ctx, { roomId, userId: a, cardLabel: "89" }));
+    await castVote(t, roomId, a, "89");
 
     expect((await votesFor(t, roomId)).map((v) => v.cardLabel)).toEqual(["89"]);
   });
@@ -975,9 +975,9 @@ describe("VotingRound.castVote", () => {
     const b = await addMember(t, roomId);
     const c = await addMember(t, roomId);
 
-    await t.run((ctx) => VotingRound.castVote(ctx, { roomId, userId: a, cardLabel: "3" }));
-    await t.run((ctx) => VotingRound.castVote(ctx, { roomId, userId: b, cardLabel: "Spike" }));
-    await t.run((ctx) => VotingRound.castVote(ctx, { roomId, userId: c, cardLabel: "?" }));
+    await castVote(t, roomId, a, "3");
+    await castVote(t, roomId, b, "Spike");
+    await castVote(t, roomId, c, "?");
 
     const valueOf = async (userId: Id<"users">) =>
       (await votesFor(t, roomId)).find((v) => v.userId === userId)?.cardValue;
@@ -993,11 +993,9 @@ describe("VotingRound.retractVote", () => {
     const t = withComponents(convexTest(schema, modules));
     const roomId = await seedRoom(t, { autoCompleteVoting: false });
     const a = await addMember(t, roomId);
-    await t.run((ctx) =>
-      VotingRound.castVote(ctx, { roomId, userId: a, cardLabel: "5", cardValue: 5 })
-    );
+    await castVote(t, roomId, a, "5");
 
-    await t.run((ctx) => VotingRound.retractVote(ctx, { roomId, userId: a }));
+    await onRoom(t, roomId, (ctx, room) => VotingRound.retractVote(ctx, { room, userId: a }));
 
     expect(await votesFor(t, roomId)).toHaveLength(0);
   });
@@ -1007,14 +1005,10 @@ describe("VotingRound.retractVote", () => {
     const roomId = await seedRoom(t, { autoCompleteVoting: true });
     const a = await addMember(t, roomId);
     const b = await addMember(t, roomId);
-    await t.run((ctx) =>
-      VotingRound.castVote(ctx, { roomId, userId: a, cardLabel: "5", cardValue: 5 })
-    );
-    await t.run((ctx) =>
-      VotingRound.castVote(ctx, { roomId, userId: b, cardLabel: "5", cardValue: 5 })
-    ); // all in -> armed
+    await castVote(t, roomId, a, "5");
+    await castVote(t, roomId, b, "5"); // all in -> armed
 
-    await t.run((ctx) => VotingRound.retractVote(ctx, { roomId, userId: a }));
+    await onRoom(t, roomId, (ctx, room) => VotingRound.retractVote(ctx, { room, userId: a }));
 
     const room = await readRoom(t, roomId);
     expect(room?.autoRevealCountdownStartedAt).toBeUndefined();
@@ -1060,7 +1054,7 @@ describe("the round refuses what its phase doesn't allow", () => {
     const roomId = await seedRoom(t, { autoCompleteVoting: true });
     const issueId = await seedIssue(t, roomId, { status: "pending" });
     const voters = [await addMember(t, roomId), await addMember(t, roomId)];
-    await t.run((ctx) => VotingRound.start(ctx, { roomId, issueId }));
+    await onRoom(t, roomId, (ctx, room) => VotingRound.start(ctx, { room, issueId }));
     return { roomId, issueId, voters };
   }
 
@@ -1109,12 +1103,12 @@ describe("the round refuses what its phase doesn't allow", () => {
     const { roomId, issueId, voters } = await startRound(t);
     await linkToJira(t, roomId, issueId);
     await armCountdown(t, roomId, voters); // both pick "5"
-    await t.run((ctx) => VotingRound.reveal(ctx, roomId));
+    await onRoom(t, roomId, VotingRound.reveal);
     expect(await jiraPushes(t)).toHaveLength(1);
     const revealed = await roundState(t, roomId);
 
     vi.setSystemTime(LATER);
-    await t.run((ctx) => VotingRound.reveal(ctx, roomId)); // a second facilitator's click
+    await onRoom(t, roomId, VotingRound.reveal); // a second facilitator's click
 
     expect(await roundState(t, roomId)).toEqual(revealed);
     expect(await jiraPushes(t)).toHaveLength(1);
@@ -1129,9 +1123,7 @@ describe("the round refuses what its phase doesn't allow", () => {
     const revealed = await roundState(t, roomId);
 
     vi.setSystemTime(LATER);
-    await t.run((ctx) =>
-      VotingRound.castVote(ctx, { roomId, userId: voters[0], cardLabel: "8", cardValue: 8 })
-    );
+    await castVote(t, roomId, voters[0], "8");
 
     expect(await roundState(t, roomId)).toEqual(revealed);
   });
@@ -1140,11 +1132,11 @@ describe("the round refuses what its phase doesn't allow", () => {
     const t = withComponents(convexTest(schema, modules));
     const { roomId, voters } = await startRound(t);
     await armCountdown(t, roomId, voters); // both pick "5"
-    await t.run((ctx) => VotingRound.reveal(ctx, roomId));
+    await onRoom(t, roomId, VotingRound.reveal);
     const revealed = await roundState(t, roomId);
 
     vi.setSystemTime(LATER);
-    await t.run((ctx) => VotingRound.retractVote(ctx, { roomId, userId: voters[0] }));
+    await onRoom(t, roomId, (ctx, room) => VotingRound.retractVote(ctx, { room, userId: voters[0] }));
 
     expect(await roundState(t, roomId)).toEqual(revealed);
   });
@@ -1152,13 +1144,11 @@ describe("the round refuses what its phase doesn't allow", () => {
   it("a second start of the issue being voted on keeps its votes and its one timed round", async () => {
     const t = withComponents(convexTest(schema, modules));
     const { roomId, issueId, voters } = await startRound(t); // one facilitator's start
-    await t.run((ctx) =>
-      VotingRound.castVote(ctx, { roomId, userId: voters[0], cardLabel: "5", cardValue: 5 })
-    );
+    await castVote(t, roomId, voters[0], "5");
     const voting = await roundState(t, roomId);
 
     vi.setSystemTime(LATER);
-    await t.run((ctx) => VotingRound.start(ctx, { roomId, issueId })); // the other's, a moment late
+    await onRoom(t, roomId, (ctx, room) => VotingRound.start(ctx, { room, issueId })); // the other's, a moment late
 
     expect(await roundState(t, roomId)).toEqual(voting);
   });
@@ -1309,7 +1299,7 @@ describe("VotingRound.setAutoComplete", () => {
       expect.any(Number)
     );
 
-    await t.run((ctx) => VotingRound.setAutoComplete(ctx, roomId, false));
+    await onRoom(t, roomId, (ctx, room) => VotingRound.setAutoComplete(ctx, room, false));
 
     const room = await readRoom(t, roomId);
     expect(room?.autoCompleteVoting).toBe(false);
@@ -1328,7 +1318,7 @@ describe("VotingRound.setAutoComplete", () => {
       (await readRoom(t, roomId))?.autoRevealCountdownStartedAt
     ).toBeUndefined();
 
-    await t.run((ctx) => VotingRound.setAutoComplete(ctx, roomId, true));
+    await onRoom(t, roomId, (ctx, room) => VotingRound.setAutoComplete(ctx, room, true));
 
     const room = await readRoom(t, roomId);
     expect(room?.autoCompleteVoting).toBe(true);
@@ -1347,7 +1337,7 @@ describe("VotingRound.setAutoComplete", () => {
     await addMember(t, roomId); // a second non-spectator who has not voted
     await rawVote(t, roomId, a);
 
-    await t.run((ctx) => VotingRound.setAutoComplete(ctx, roomId, true));
+    await onRoom(t, roomId, (ctx, room) => VotingRound.setAutoComplete(ctx, room, true));
 
     const room = await readRoom(t, roomId);
     expect(room?.autoCompleteVoting).toBe(true);
@@ -1364,18 +1354,18 @@ describe("VotingRound.setAutoComplete", () => {
     const a = await addMember(t, roomId);
     await rawVote(t, roomId, a);
 
-    await t.run((ctx) => VotingRound.setAutoComplete(ctx, roomId, true));
+    await onRoom(t, roomId, (ctx, room) => VotingRound.setAutoComplete(ctx, room, true));
     const armed = await readRoom(t, roomId);
     const T1 = armed!.autoRevealCountdownStartedAt!;
     const S1 = armed!.autoRevealScheduledId!;
 
-    await t.run((ctx) => VotingRound.setAutoComplete(ctx, roomId, false));
+    await onRoom(t, roomId, (ctx, room) => VotingRound.setAutoComplete(ctx, room, false));
     const scheduled = await scheduledFns(t);
     expect(scheduled.find((s) => s._id === S1)?.state.kind).toBe("canceled");
 
     // Re-arm at a later instant so the new token differs from the old one.
     vi.setSystemTime(BASE + 10_000);
-    await t.run((ctx) => VotingRound.setAutoComplete(ctx, roomId, true));
+    await onRoom(t, roomId, (ctx, room) => VotingRound.setAutoComplete(ctx, room, true));
     const T2 = (await readRoom(t, roomId))!.autoRevealCountdownStartedAt!;
     expect(T2).not.toBe(T1);
 

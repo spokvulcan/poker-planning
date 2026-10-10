@@ -71,3 +71,46 @@ describe("issues.startVoting", () => {
     expect(await as(t, "ann").query(api.issues.getCurrent, { roomId: roomA })).toBeNull();
   });
 });
+
+describe("a write addressed by an issue", () => {
+  // It lands in the issue's own room: the room-scoped step loads the issue and
+  // seats the caller in that room, whatever room the caller is in.
+
+  const WRITES = [
+    {
+      write: "updateTitle",
+      run: (who: ReturnType<typeof as>, issueId: Id<"issues">) =>
+        who.mutation(api.issues.updateTitle, { issueId, title: "Renamed" }),
+    },
+    {
+      write: "updateEstimate",
+      run: (who: ReturnType<typeof as>, issueId: Id<"issues">) =>
+        who.mutation(api.issues.updateEstimate, { issueId, finalEstimate: "8" }),
+    },
+    {
+      write: "remove",
+      run: (who: ReturnType<typeof as>, issueId: Id<"issues">) => who.mutation(api.issues.remove, { issueId }),
+    },
+  ];
+
+  it.each(WRITES)("$write refuses an issue from a room the caller isn't in, leaving it as it was", async ({ run }) => {
+    const t = convexTest(schema, modules);
+    const { issueB } = await seedTwoRooms(t);
+    const before = await issueRow(t, issueB);
+
+    await expect(run(as(t, "ann"), issueB)).rejects.toMatchObject({
+      data: { code: "forbidden", message: "Not a member of this room" },
+    });
+    expect(await issueRow(t, issueB)).toEqual(before);
+  });
+
+  it.each(WRITES)("$write refuses an issue that is gone as missing", async ({ run }) => {
+    const t = convexTest(schema, modules);
+    const { issueA } = await seedTwoRooms(t);
+    await as(t, "ann").mutation(api.issues.remove, { issueId: issueA });
+
+    await expect(run(as(t, "ann"), issueA)).rejects.toMatchObject({
+      data: { code: "missing", message: "Issue not found" },
+    });
+  });
+});

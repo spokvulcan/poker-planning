@@ -4,10 +4,7 @@ import * as Users from "./model/users";
 import * as AccountLifecycle from "./model/accountLifecycle";
 import { getMembership } from "./model/memberships";
 import { findUser, getCaller, requireCaller } from "./model/caller";
-import {
-  requireActingUser,
-  requireCan,
-} from "./model/auth";
+import { requireRoomWrite } from "./model/auth";
 
 // Get global user for the currently authenticated user
 export const getGlobalUser = query({
@@ -60,52 +57,42 @@ export const join = mutation({
 
 export const edit = mutation({
   args: {
-    userId: v.id("users"),
+    userId: v.optional(v.id("users")), // Ignored: the caller's own id, which old browsers still send
     roomId: v.id("rooms"),
     name: v.optional(v.string()),
     isSpectator: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
-    // Authenticated, in-room, and acting as this userId — the one guard.
-    await requireActingUser(ctx, args.roomId, args.userId, "Cannot edit another user");
-
-    await Users.editUser(ctx, {
-      userId: args.userId,
-      roomId: args.roomId,
-      name: args.name,
-      isSpectator: args.isSpectator,
-    });
+    const { room, membership } = await requireRoomWrite(ctx, args.roomId);
+    await Users.editUser(ctx, room, membership, { name: args.name, isSpectator: args.isSpectator });
   },
 });
 
 export const leave = mutation({
   args: {
-    userId: v.id("users"),
+    userId: v.optional(v.id("users")), // Ignored: the caller's own id, which old browsers still send
     roomId: v.id("rooms"),
   },
   handler: async (ctx, args) => {
-    // Authenticated, in-room, and acting as this userId — the one guard.
-    await requireActingUser(ctx, args.roomId, args.userId, "Cannot remove another user");
-
-    await Users.leaveRoom(ctx, args.userId, args.roomId);
+    const { room, user } = await requireRoomWrite(ctx, args.roomId);
+    await Users.leaveRoom(ctx, room, user._id);
   },
 });
 
 // Remove a user from a room (role-based: owner→anyone, facilitator→participants only)
 export const remove = mutation({
   args: {
-    userId: v.id("users"),
+    userId: v.id("users"), // The member taken out
     roomId: v.id("rooms"),
   },
   handler: async (ctx, args) => {
-    await requireCan(
+    const { room, target } = await requireRoomWrite(
       ctx,
       args.roomId,
       { kind: "relationship", verb: "remove" },
       args.userId
     );
-
-    await Users.leaveRoom(ctx, args.userId, args.roomId);
+    await Users.leaveRoom(ctx, room, target!.userId);
   },
 });
 
