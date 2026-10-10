@@ -2,9 +2,9 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useAction, useMutation, useQuery } from "convex/react";
-import { Loader2, Puzzle, ExternalLink } from "lucide-react";
+import { Loader2, Puzzle, ExternalLink, AlertTriangle } from "lucide-react";
 import { api } from "@/convex/_generated/api";
-import { Id } from "@/convex/_generated/dataModel";
+import { Doc, Id } from "@/convex/_generated/dataModel";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
@@ -31,6 +31,17 @@ interface JiraBoard {
   name: string;
   type: string;
 }
+
+/** Why the mapping's last webhook registration failed, as the reconcile recorded it. */
+const WEBHOOK_FAILURE_COPY: Record<
+  NonNullable<Doc<"integrationMappings">["jiraWebhookFailure"]>,
+  string
+> = {
+  missingSecret:
+    "Jira renames and deletions won't reach this room: the server has no Jira webhook secret configured.",
+  jiraError:
+    "Jira renames and deletions won't reach this room: Jira didn't accept the webhook. Save again to retry.",
+};
 
 export function IntegrationSettingsSection({
   roomId,
@@ -310,6 +321,18 @@ export function IntegrationSettingsSection({
           onCheckedChange={setAutoPush}
         />
       </div>
+
+      {mapping?.jiraWebhookFailure && (
+        <div
+          role="alert"
+          className="flex items-start gap-2 rounded-md px-3 py-2 bg-amber-50 dark:bg-status-warning-bg"
+        >
+          <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0 text-amber-600 dark:text-status-warning-fg" />
+          <span className="text-xs text-amber-700 dark:text-status-warning-fg">
+            {WEBHOOK_FAILURE_COPY[mapping.jiraWebhookFailure]}
+          </span>
+        </div>
+      )}
 
       {/* Save / Remove buttons */}
       <div className="flex gap-2 pt-1">

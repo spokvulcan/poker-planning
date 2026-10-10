@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PERSON_NAME } from "@/convex/constants";
 
 interface EditNameDialogProps {
   currentName: string;
@@ -40,15 +41,10 @@ export function EditNameDialog({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    const trimmedName = name.trim();
-
-    // Validation
-    if (!trimmedName) {
-      setError("Name is required");
-      return;
-    }
-    if (trimmedName.length > 50) {
-      setError("Name must be 50 characters or less");
+    // The rule the server keeps a name by, in its own words.
+    const checked = PERSON_NAME.check(name);
+    if (!checked.ok) {
+      setError(checked.message);
       return;
     }
 
@@ -56,7 +52,7 @@ export function EditNameDialog({
     setError(null);
 
     try {
-      await onSave(trimmedName);
+      await onSave(checked.value);
       onOpenChange(false);
     } catch {
       setError("Failed to update name. Please try again.");
@@ -80,7 +76,7 @@ export function EditNameDialog({
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="Enter your name"
-              maxLength={50}
+              maxLength={PERSON_NAME.maxLength}
               aria-invalid={!!error}
               disabled={isLoading}
             />

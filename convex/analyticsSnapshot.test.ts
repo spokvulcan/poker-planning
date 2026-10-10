@@ -397,7 +397,7 @@ describe("snapshot invalidation on account-level user events", () => {
     await refreshSnapshot(t, roomId);
     expect(await readSnapshot(t, roomId)).not.toBeNull();
 
-    await t.run((ctx) => Users.deleteUserByAuthUserId(ctx, "auth-gone"));
+    await t.withIdentity({ subject: "auth-gone" }).mutation(api.users.deleteUser, {});
 
     expect(await readSnapshot(t, roomId)).toBeNull();
     // The fallback scan no longer serves the deleted user's vote rows.

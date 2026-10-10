@@ -34,6 +34,7 @@ import {
   VotingScaleType,
   validateCustomScale,
 } from "@/convex/scales";
+import { ROOM_NAME } from "@/convex/constants";
 import { cn } from "@/lib/utils";
 
 // The one validator lives in convex/scales (throwing form, shared with the
@@ -210,6 +211,7 @@ export function CreateContent() {
                   <Input
                     id="room-name"
                     placeholder="e.g., Sprint 42 Planning"
+                    maxLength={ROOM_NAME.maxLength}
                     value={roomName}
                     onChange={(e) => setRoomName(e.target.value)}
                   />

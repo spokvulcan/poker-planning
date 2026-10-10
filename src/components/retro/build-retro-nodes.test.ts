@@ -198,6 +198,18 @@ describe("buildRetroNodes", () => {
       }),
     ]);
   });
+
+  it("draws a sent draft as its sticky, pending or landed, and as written again if the sticky is refused", () => {
+    const draft = { clientId: "draft-1", columnId: "c2", position: { x: 10, y: 20 }, text: "Standups run long" };
+    const pending = sticky(`${OPTIMISTIC_PREFIX}1`, { clientId: "draft-1", columnId: "c2", mine: true, text: "Standups run long" });
+    const landed = { ...pending, _id: "s1" as Id<"retroStickies"> };
+    const at = (stickies: StickyView[]) => stickyNodes(buildRetroNodes(input({ draft, board: board(stickies) })));
+
+    expect(at([pending]).map((n) => [n.id, n.data.sticky?._id])).toEqual([["draft-1", pending._id]]);
+    expect(at([landed]).map((n) => [n.id, n.data.sticky?._id])).toEqual([["draft-1", "s1"]]);
+    // Refused: Convex takes the pending sticky back, and the editor opens again on what it said.
+    expect(at([]).map((n) => n.data.draft)).toEqual([expect.objectContaining({ clientId: "draft-1", text: "Standups run long" })]);
+  });
 });
 
 describe("topicLabel", () => {
