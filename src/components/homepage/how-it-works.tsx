@@ -6,6 +6,7 @@ import { columnsFromTemplate, DEFAULT_TEMPLATE_ID } from "@/convex/retroTemplate
 import { STICKY_TONES } from "@/components/retro/sticky-colors";
 import { useLoopingScene, type Scene } from "@/hooks/use-looping-scene";
 import { HOW_IT_WORKS } from "./copy";
+import { PICK_A_CARD } from "./scenes";
 import { CeremonyTabs, CeremonyTabList, CeremonyTabPanel, type Ceremony } from "./ceremony-tabs";
 
 const POKER = HOW_IT_WORKS.poker.animation;
@@ -117,14 +118,9 @@ function InviteTeamAnimation() {
   )
 }
 
-const ESTIMATE: Scene<{ hovered: number | null; selected: number | null }> = [
-  { show: { hovered: null, selected: null }, hold: 1000 },
-  { show: { hovered: 2, selected: null }, hold: 400 }, // The card '3'
-  { show: { hovered: 2, selected: 2 }, hold: 2500 },
-];
-
 function EstimateAnimation() {
-  const { hovered, selected } = useLoopingScene(ESTIMATE);
+  // The third card is the '3'.
+  const { hovered, selected } = useLoopingScene(PICK_A_CARD);
 
   const cards = [1, 2, 3, 5];
 
@@ -295,17 +291,17 @@ const DISCUSS: Scene<number> = [
 
 /** The most-voted topic takes the spotlight, an owned action item appears under it and gets ticked. */
 function DiscussAnimation() {
-  const stage = useLoopingScene(DISCUSS);
+  const progress = useLoopingScene(DISCUSS);
 
   return (
     <div className="w-full flex flex-col items-center justify-center gap-4 h-full">
       <div className={`relative w-64 rounded-lg border-2 px-4 py-3 flex items-center justify-between gap-3 text-sm font-medium transition-all duration-500 ${PAPER[1]} ${
-        stage >= 1
+        progress >= 1
           ? "-translate-y-1 shadow-xl ring-2 ring-blue-500 ring-offset-2 ring-offset-gray-900 dark:ring-offset-zinc-900"
           : "shadow-sm"
       }`}>
         <span className={`absolute -top-3 left-3 h-6 px-2 rounded-full flex items-center bg-blue-500 text-white text-[11px] font-semibold shadow-sm transition-all duration-300 ${
-          stage >= 1 ? "opacity-100 scale-100" : "opacity-0 scale-90"
+          progress >= 1 ? "opacity-100 scale-100" : "opacity-0 scale-90"
         }`}>
           {RETRO.spotlight}
         </span>
@@ -321,12 +317,12 @@ function DiscussAnimation() {
         </span>
       </div>
       <div className={`w-64 rounded-xl bg-white text-gray-900 px-3 py-2.5 flex items-center gap-3 text-sm shadow-xl transition-all duration-500 ${
-        stage >= 2 ? "opacity-100 translate-y-0" : "opacity-0 translate-y-3"
+        progress >= 2 ? "opacity-100 translate-y-0" : "opacity-0 translate-y-3"
       }`}>
         <span className={`w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 transition-colors duration-300 ${
-          stage >= 3 ? "bg-emerald-500 border-emerald-500" : "border-gray-300"
+          progress >= 3 ? "bg-emerald-500 border-emerald-500" : "border-gray-300"
         }`}>
-          <Check className={`w-3 h-3 text-white transition-opacity duration-300 ${stage >= 3 ? "opacity-100" : "opacity-0"}`} strokeWidth={3} />
+          <Check className={`w-3 h-3 text-white transition-opacity duration-300 ${progress >= 3 ? "opacity-100" : "opacity-0"}`} strokeWidth={3} />
         </span>
         <span className="flex-1 min-w-0 truncate font-medium">{RETRO.action}</span>
         <span className="shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">{RETRO.owner}</span>
