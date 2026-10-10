@@ -81,8 +81,8 @@ export class HomePage {
     await safeClick(this.startGameButton.first());
     await this.page.waitForURL(/\/room\/new/);
 
-    // Click "Create Game" button on the create page
-    const createButton = this.page.getByRole("button", { name: /create game/i });
+    // Click "Start estimating" on the create page
+    const createButton = this.page.getByRole("button", { name: /start estimating/i });
     await expect(createButton).toBeVisible();
     await expect(createButton).toBeEnabled();
 

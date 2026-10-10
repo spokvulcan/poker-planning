@@ -84,7 +84,7 @@ _Avoid_: mode, game type, product (there is one product), session type
 
 **Planning poker**:
 The estimation ceremony: a **room** running **voting rounds** over **issues**. The user-facing name for `roomType: "canvas"`.
-_Avoid_: session (retired as a category word — it was poker rooms wearing a generic hat), game (survives only in legacy copy such as "Create New Game")
+_Avoid_: session (retired as a category word — it was poker rooms wearing a generic hat), game (survives only in legacy copy such as the default room name, "Game 3:41:02 PM")
 
 **Retro**:
 The reflection ceremony: a **room** of `roomType: "retro"` whose canvas is a shared whiteboard of **stickies** under **columns**, moved through four **steps**, and drawn with the poker room's canvas, chrome and join flow. "Retro" is the product word everywhere a user reads it; "retrospective" is reserved for long-form copy, titles and metadata.

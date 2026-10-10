@@ -4,43 +4,37 @@ import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { ArrowRight } from "lucide-react";
 
 import { SESSION_FAILED, useEnsureSession } from "@/hooks/useEnsureSession";
-import { Navbar } from "@/components/navbar";
-import { Footer } from "@/components/footer";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import {
-  Card,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-  CardContent,
-  CardFooter,
-} from "@/components/ui/card";
-import {
-  Field,
-  FieldLabel,
-  FieldDescription,
-  FieldError,
-  FieldGroup,
-} from "@/components/ui/field";
+import { CreatePage } from "@/components/create/create-page";
+import { ChoiceSection, type Choice } from "@/components/create/choice-section";
 import { toast } from "@/lib/toast";
 import { failureCopy } from "@/lib/refusal";
 import { runAct } from "@/lib/run-act";
 import { trackConversion } from "@/lib/analytics";
 import { useCopyRoomUrlToClipboard } from "@/hooks/use-copy-room-url-to-clipboard";
-import {
-  VOTING_SCALES,
-  VotingScaleType,
-  validateCustomScale,
-} from "@/convex/scales";
+import { SCALE_VALIDATION, VotingScaleType, validateCustomScale } from "@/convex/scales";
 import { ROOM_NAME } from "@/convex/constants";
-import { cn } from "@/lib/utils";
+import { CustomDeck, PresetDeck } from "./deck-table";
+
+type ScaleChoice = VotingScaleType | "custom";
+
+const SCALES: readonly Choice<ScaleChoice>[] = [
+  { value: "fibonacci", label: "Fibonacci" },
+  { value: "standard", label: "Standard" },
+  { value: "tshirt", label: "T-shirt" },
+  { value: "custom", label: "Custom" },
+];
+
+const DESCRIPTIONS: Record<ScaleChoice, string> = {
+  fibonacci: "The usual choice. Gaps widen as uncertainty grows.",
+  standard: "Fibonacci with half points and round big numbers.",
+  tshirt: "Rough sizing for roadmaps and early refinement.",
+  custom: `Your own deck: ${SCALE_VALIDATION.minCards} to ${SCALE_VALIDATION.maxCards} cards, up to ${SCALE_VALIDATION.maxCardLength} characters each.`,
+};
 
 // The one validator lives in convex/scales (throwing form, shared with the
-// backend); the form adapts it to inline error display.
+// backend); the page adapts it to a line under the table.
 function customScaleError(cards: string[]): string | null {
   try {
     validateCustomScale(cards);
@@ -50,22 +44,16 @@ function customScaleError(cards: string[]): string | null {
   }
 }
 
-const scaleOptions: {
-  type: VotingScaleType;
-  scale: (typeof VOTING_SCALES)[VotingScaleType];
-}[] = [
-  { type: "fibonacci", scale: VOTING_SCALES.fibonacci },
-  { type: "standard", scale: VOTING_SCALES.standard },
-  { type: "tshirt", scale: VOTING_SCALES.tshirt },
-];
-
+/**
+ * `/room/new`: a name (optional) and the cards to deal, then the board. The
+ * name field starts the room on Enter; the cards lie on a table below it.
+ */
 export function CreateContent() {
   const [roomName, setRoomName] = useState("");
-  const [selectedScale, setSelectedScale] = useState<VotingScaleType | "custom">(
-    "fibonacci"
-  );
-  const [customCards, setCustomCards] = useState("");
-  const [customError, setCustomError] = useState<string | null>(null);
+  const [scale, setScale] = useState<ScaleChoice>("fibonacci");
+  const [customCards, setCustomCards] = useState<string[]>([]);
+  // Whether the custom deck's field takes focus: for a click, not for arrow keys.
+  const [focusDeck, setFocusDeck] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
 
   const router = useRouter();
@@ -73,43 +61,13 @@ export function CreateContent() {
   const ensureSession = useEnsureSession();
   const { copyRoomUrlToClipboard } = useCopyRoomUrlToClipboard();
 
-  const handleScaleChange = (type: VotingScaleType | "custom") => {
-    setSelectedScale(type);
-    setCustomError(null);
-  };
-
-  const handleCustomCardsChange = (value: string) => {
-    setCustomCards(value);
-    if (value.trim()) {
-      const cards = value
-        .split(",")
-        .map((c) => c.trim())
-        .filter(Boolean);
-      setCustomError(customScaleError(cards));
-    } else {
-      setCustomError(null);
-    }
-  };
+  const customError = scale === "custom" ? customScaleError(customCards) : null;
+  const canCreate = !isCreating && customError === null;
 
   const handleCreate = useCallback(async () => {
     setIsCreating(true);
-    let votingScale: { type: VotingScaleType | "custom"; cards?: string[] };
-
-    if (selectedScale === "custom") {
-      const cards = customCards
-        .split(",")
-        .map((c) => c.trim())
-        .filter(Boolean);
-      const error = customScaleError(cards);
-      if (error) {
-        setCustomError(error);
-        setIsCreating(false);
-        return;
-      }
-      votingScale = { type: "custom", cards };
-    } else {
-      votingScale = { type: selectedScale };
-    }
+    const votingScale: { type: ScaleChoice; cards?: string[] } =
+      scale === "custom" ? { type: "custom", cards: customCards } : { type: scale };
 
     // A guest session, ready in Convex before the create that needs it.
     if (!(await runAct(ensureSession(), SESSION_FAILED))) {
@@ -141,240 +99,57 @@ export function CreateContent() {
         console.error("Failed to copy room URL to clipboard:", error);
       }
     }
-  }, [roomName, selectedScale, customCards, createRoom, ensureSession, router, copyRoomUrlToClipboard]);
+  }, [roomName, scale, customCards, createRoom, ensureSession, router, copyRoomUrlToClipboard]);
 
-  const getPreviewCards = (type: VotingScaleType | "custom") => {
-    if (type === "custom") {
-      if (!customCards.trim()) return ["?", "?", "?"];
-      return customCards
-        .split(",")
-        .map((c) => c.trim())
-        .filter(Boolean)
-        .slice(0, 8);
-    }
-    return VOTING_SCALES[type].cards.slice(0, 8);
-  };
-
-  const isCreateDisabled =
-    isCreating ||
-    (selectedScale === "custom" && (!!customError || !customCards.trim()));
+  const start = () => void handleCreate();
 
   return (
-    <div className="bg-white dark:bg-black min-h-screen flex flex-col">
-      <Navbar />
-
-      <main className="flex-1 relative isolate">
-        {/* Background pattern */}
-        <div className="absolute inset-0 -z-10 overflow-hidden">
-          <svg
-            className="absolute inset-0 h-full w-full stroke-gray-200 dark:stroke-white/10 [mask-image:radial-gradient(100%_100%_at_top_center,white,transparent)]"
-            aria-hidden="true"
-          >
-            <defs>
-              <pattern
-                id="create-pattern"
-                width={200}
-                height={200}
-                x="50%"
-                y={-1}
-                patternUnits="userSpaceOnUse"
-              >
-                <path d="M100 200V.5M.5 .5H200" fill="none" />
-              </pattern>
-            </defs>
-            <rect
-              width="100%"
-              height="100%"
-              strokeWidth={0}
-              fill="url(#create-pattern)"
-            />
-          </svg>
-        </div>
-
-        <div className="pt-28 pb-16 sm:pt-32 sm:pb-24">
-          <div className="mx-auto max-w-lg px-6">
-            {/* Form card */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-xl">Create New Game</CardTitle>
-                <CardDescription>
-                  Set up your planning poker session
-                </CardDescription>
-              </CardHeader>
-
-              <CardContent>
-                <FieldGroup>
-                {/* Room Name Field */}
-                <Field>
-                  <FieldLabel htmlFor="room-name">Room Name</FieldLabel>
-                  <Input
-                    id="room-name"
-                    placeholder="e.g., Sprint 42 Planning"
-                    maxLength={ROOM_NAME.maxLength}
-                    value={roomName}
-                    onChange={(e) => setRoomName(e.target.value)}
-                  />
-                  <FieldDescription>
-                    Leave empty for auto-generated name
-                  </FieldDescription>
-                </Field>
-
-                {/* Voting Scale Selection */}
-                <Field>
-                  <FieldLabel>Voting Scale</FieldLabel>
-                  <div className="space-y-3 mt-1">
-                    {/* Predefined scales */}
-                    {scaleOptions.map(({ type, scale }) => (
-                      <label
-                        key={type}
-                        className={cn(
-                          "flex flex-col gap-2 p-3 rounded-lg border cursor-pointer transition-colors",
-                          selectedScale === type
-                            ? "border-primary bg-primary/5"
-                            : "border-border hover:border-primary/50"
-                        )}
-                      >
-                        <div className="flex items-center gap-3">
-                          <input
-                            type="radio"
-                            name="scale"
-                            value={type}
-                            checked={selectedScale === type}
-                            onChange={() => handleScaleChange(type)}
-                            className="accent-primary"
-                          />
-                          <div className="flex-1">
-                            <div className="font-medium text-sm">
-                              {scale.label}
-                            </div>
-                            <div className="text-xs text-muted-foreground">
-                              {scale.description}
-                            </div>
-                          </div>
-                        </div>
-                        {/* Card preview */}
-                        <div className="flex gap-1 flex-wrap pl-6">
-                          {getPreviewCards(type).map((card, i) => (
-                            <span
-                              key={i}
-                              className="inline-flex items-center justify-center min-w-6 h-6 px-1.5 text-xs font-mono bg-muted rounded"
-                            >
-                              {card}
-                            </span>
-                          ))}
-                          {VOTING_SCALES[type].cards.length > 8 && (
-                            <span className="text-xs text-muted-foreground self-center">
-                              +{VOTING_SCALES[type].cards.length - 8}
-                            </span>
-                          )}
-                        </div>
-                      </label>
-                    ))}
-
-                    {/* Custom scale option */}
-                    <label
-                      className={cn(
-                        "flex flex-col gap-2 p-3 rounded-lg border cursor-pointer transition-colors",
-                        selectedScale === "custom"
-                          ? "border-primary bg-primary/5"
-                          : "border-border hover:border-primary/50"
-                      )}
-                    >
-                      <div className="flex items-center gap-3">
-                        <input
-                          type="radio"
-                          name="scale"
-                          value="custom"
-                          checked={selectedScale === "custom"}
-                          onChange={() => handleScaleChange("custom")}
-                          className="accent-primary"
-                        />
-                        <div className="flex-1">
-                          <div className="font-medium text-sm">Custom Scale</div>
-                          <div className="text-xs text-muted-foreground">
-                            Define your own card values
-                          </div>
-                        </div>
-                      </div>
-
-                      {selectedScale === "custom" && (
-                        <div className="pl-6 space-y-2">
-                          <div>
-                            <label
-                              htmlFor="custom-cards"
-                              className="text-xs text-muted-foreground"
-                            >
-                              Enter card values (comma-separated)
-                            </label>
-                            <Input
-                              id="custom-cards"
-                              placeholder="1, 2, 3, 5, 8, ?, ☕"
-                              value={customCards}
-                              onChange={(e) =>
-                                handleCustomCardsChange(e.target.value)
-                              }
-                              className="mt-1"
-                              aria-invalid={!!customError}
-                            />
-                            {customError && (
-                              <FieldError className="mt-1">{customError}</FieldError>
-                            )}
-                          </div>
-                          {/* Custom card preview */}
-                          {customCards.trim() && !customError && (
-                            <div className="flex gap-1 flex-wrap">
-                              {getPreviewCards("custom").map((card, i) => (
-                                <span
-                                  key={i}
-                                  className="inline-flex items-center justify-center min-w-6 h-6 px-1.5 text-xs font-mono bg-muted rounded"
-                                >
-                                  {card}
-                                </span>
-                              ))}
-                              {customCards.split(",").filter((c) => c.trim())
-                                .length > 8 && (
-                                <span className="text-xs text-muted-foreground self-center">
-                                  +
-                                  {customCards.split(",").filter((c) => c.trim())
-                                    .length - 8}
-                                </span>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </label>
-                  </div>
-                  <FieldDescription>
-                    Choose how your team estimates
-                  </FieldDescription>
-                </Field>
-              </FieldGroup>
-              </CardContent>
-
-              <CardFooter className="flex gap-3">
-                <Button
-                  variant="outline"
-                  className="flex-1"
-                  onClick={() => router.push("/")}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  className="flex-1"
-                  onClick={handleCreate}
-                  disabled={isCreateDisabled}
-                >
-                  {isCreating ? "Creating..." : "Create Game"}
-                  {!isCreating && <ArrowRight className="h-4 w-4 ml-2" />}
-                </Button>
-              </CardFooter>
-            </Card>
-          </div>
-        </div>
-      </main>
-
-      <Footer />
-    </div>
+    <CreatePage
+      ceremony="poker"
+      title="What are you estimating?"
+      subtitle="Name it and press Enter. You can change the rest on the board."
+      quickStart={{
+        id: "room-name",
+        label: "Room name",
+        placeholder: "Sprint 42 planning",
+        value: roomName,
+        maxLength: ROOM_NAME.maxLength,
+        onChange: setRoomName,
+        submitLabel: "Start estimating",
+        isSubmitting: isCreating,
+        canSubmit: canCreate,
+        onSubmit: start,
+      }}
+      caption={
+        customError && !isCreating
+          ? "Finish your deck below to start."
+          : "No name? It’s named after the time it starts. The invite link is copied for you."
+      }
+    >
+      <ChoiceSection
+        id="cards"
+        heading="Cards"
+        choices={SCALES}
+        value={scale}
+        onChange={(next, byPointer) => {
+          setScale(next);
+          setFocusDeck(byPointer);
+        }}
+        description={DESCRIPTIONS[scale]}
+      >
+        {scale === "custom" ? (
+          <CustomDeck
+            cards={customCards}
+            onChange={setCustomCards}
+            error={customError}
+            autoFocus={focusDeck}
+            canStart={canCreate}
+            onStart={start}
+          />
+        ) : (
+          <PresetDeck scale={scale} />
+        )}
+      </ChoiceSection>
+    </CreatePage>
   );
 }
