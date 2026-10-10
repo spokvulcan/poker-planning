@@ -44,7 +44,8 @@ The authentication system consists of three layers:
 | `convex/model/memberships.ts` | Room attendance: the one writer of `roomMemberships` |
 | `convex/model/ownership.ts` | Who owns a room: creation, transfer, a returning owner, the hand-off |
 | `convex/model/accountLifecycle.ts` | Deleting an account and linking a guest to an account, through every module's `UserRows` |
-| `convex/model/auth.ts` | Auth guard helpers (`requireAuth`, `requireAuthAs`, `requireAuthUser`, `getOptionalAuthUser`, `requireRoomMember`, `requireRoomReader`, `requireActingUser`, `requireCan`, `requireCanForUser`) |
+| `convex/model/caller.ts` | Who is calling: the one place the signed-in identity is read and the caller's `users` row looked up (`getCaller`, `requireCaller`, `requireUser`) |
+| `convex/model/auth.ts` | Auth guard helpers (`requireAuthAs`, `requireRoomMember`, `requireRoomReader`, `requireActingUser`, `requireCan`, `requireCanForUser`) |
 | `convex/email.ts` | Internal action that sends the Magic Link email via Resend (the only email AgileKit sends) |
 
 ### Frontend (Next.js)
@@ -53,8 +54,9 @@ The authentication system consists of three layers:
 |------|---------|
 | `src/lib/auth-client.ts` | BetterAuth client with anonymous and magic link plugins |
 | `src/lib/auth-server.ts` | Server-side auth helpers (`isAuthenticated`, `fetchAuthQuery`, etc.) for use in Server Components |
-| `src/app/auth/signin/page.tsx` | Dedicated Sign In Page for permanent account upgrade |
-| `src/app/auth/verify/page.tsx` | Magic Link Verification Page |
+| `src/app/(app)/layout.tsx` | The app shell, for every page but `/demo`: fetches the session's token on the server and mounts BetterAuth and the auth provider (`src/components/providers.tsx`) |
+| `src/app/(app)/auth/signin/page.tsx` | Dedicated Sign In Page for permanent account upgrade |
+| `src/app/(app)/auth/verify/page.tsx` | Magic Link Verification Page |
 | `src/app/api/auth/[...all]/route.ts` | Next.js API route handler |
 | `src/components/auth/auth-provider.tsx` | React context for auth state, and `whenAuth` for waiting on it |
 | `src/hooks/useEnsureSession.ts` | The session every guest way in goes through (see [Guest flow](#first-time-user-joining-a-room-guest)) |
@@ -97,14 +99,24 @@ Indexed by: `by_room`, `by_user`, `by_room_user`
 
 Every Convex mutation enforces authorization with a guard from `convex/model/auth.ts`. Handlers call the guard and never re-implement its checks inline. Never trust a client-supplied `userId` or `authUserId` without a guard that verifies it names the caller.
 
+### Who is calling (`convex/model/caller.ts`)
+
+One module answers who is calling. It is the only code that reads the signed-in identity (`ctx.auth`) or looks a `users` row up by `authUserId` (`convex/caller.test.ts` fails otherwise). Every guard below resolves the caller through it, and so does every query, mutation or action that needs the caller. It only reads: it never makes a row.
+
+| Function | Returns | Use when... |
+|----------|---------|-------------|
+| `getCaller(ctx)` | `{ identity, user } \| null` | Queries that should degrade gracefully: `null` when nobody is signed in, and `user` is `null` while the caller has no `users` row (a new guest before their first room) |
+| `requireCaller(ctx)` | `{ identity, user }` | The caller must be signed in, with or without a `users` row. Throws "Not authenticated" |
+| `requireUser(ctx)` | `{ identity, user }` | You need the caller's `users` row. Throws "Not authenticated", or "User not found" while they have none |
+| `findUser(ctx, authUserId)` | `user \| null` | Code that is told who the person is rather than asking: BetterAuth's hooks, and `users.join`, which names its own id |
+
+`identity.subject` is the BetterAuth user id, the row's `authUserId`. The first three work in any function context: an action has no database of its own, so it reads the row through one internal query (`users.userByAuthId`).
+
 ### Auth Helpers (`convex/model/auth.ts`)
 
 | Helper | Returns | Use when... |
 |--------|---------|-------------|
-| `requireAuth(ctx)` | auth identity (`subject` = authUserId) | You only need the caller signed in. Works in actions too: it only reads `ctx.auth` |
-| `requireAuthAs(ctx, authUserId)` | auth identity | The mutation still takes the caller's own `authUserId` (older browsers send it). Throws unless the caller is signed in as that id |
-| `requireAuthUser(ctx)` | `{ identity, user }` | You need the caller's `users` row |
-| `getOptionalAuthUser(ctx)` | `user \| null` | Queries that should degrade gracefully for unauthenticated users |
+| `requireAuthAs(ctx, authUserId)` | `{ identity, user }` | The mutation still takes the caller's own `authUserId` (older browsers send it). Throws unless the caller is signed in as that id |
 | `requireRoomMember(ctx, roomId)` | `{ identity, user, membership, room }` | **Room attendance**: the caller is in the room. For a write open to anyone in it. Returns the room it checked, so the handler never reads it again |
 | `requireRoomReader(ctx, roomId)` | `{ identity, user }` | **Room access** (ADR-0009): a read-only query on room-owned data. Passes a room member and nobody else (there are no Teams since ADR-0026), reading only the caller and their membership; returns neither the room nor a membership |
 | `requireActingUser(ctx, roomId, userId, message?)` | `{ identity, user, membership, room }` | **Acting-user guard**: the mutation takes a client-supplied `userId`. Authenticated, a room member, and the caller *is* `userId`; `message` is what it throws on the mismatch |
@@ -123,9 +135,9 @@ A guard's refusal is a coded refusal (`refusal()` in `convex/model/refusal.ts`),
 - **Room-scoped mutations gated by a permission** (issues, game flow, room settings, roles, retro steps and settings, action items, `users.remove`): `requireCan` with the category or relationship verb. An action context that already resolved the user uses `requireCanForUser`.
 - **Room-scoped mutations open to everyone in the room** (writing and moving retro stickies): `requireRoomMember`.
 - **Mutations that take the caller's own `authUserId`** (`users.join`, `users.ensureGlobalUser`): `requireAuthAs`.
-- **Global mutations acting on own data** (`editGlobalUser`, `deleteUser`): `requireAuth` or `requireAuthUser`.
+- **Global mutations acting on own data** (`editGlobalUser`, `deleteUser`): `requireCaller` or `requireUser`.
 - **Read-only queries on room-owned data** (canvas nodes, issue exports, the Jira mapping and issue links, the retro board and its action items): Use `requireRoomReader`. It answers "may you read this room?" rather than "are you in it?"; today both admit exactly the room's members, but the reader guard's return type carries no membership, so a read never leans on attendance (ADR-0009). Nor does it carry the room: a guard's reads join the read set of every query that takes it, so a query that needs the room reads it itself (the retro board), and a room patch, such as the activity clock every poker vote moves, re-runs only those. Every new query on room contents picks `requireRoomReader` or `requireRoomMember` deliberately; one that takes neither is a bug.
-- **Queries**: Use `getOptionalAuthUser` for graceful degradation, or derive `currentUserId` from `ctx.auth.getUserIdentity()` server-side (see `rooms.get` for the pattern).
+- **Queries**: Use `getCaller` for graceful degradation. It derives the caller server-side, never from a client-supplied id (see `rooms.get` for the pattern).
 
 ### Example: room-scoped mutation with userId (acting-user guard)
 
@@ -154,7 +166,8 @@ export const create = mutation({
   args: { roomId: v.id("rooms"), title: v.string() },
   handler: async (ctx, args) => {
     await requireCan(ctx, args.roomId, { kind: "category", category: "issueManagement" });
-    return await Issues.createIssue(ctx, args);
+    const admission = await Issues.admitIssue(ctx, args);
+    return admission.issueId;
   },
 });
 ```
@@ -258,7 +271,7 @@ Use this for pages that require authentication (e.g., dashboard). Client-side re
 
 Every guest way in goes through `useEnsureSession` (`src/hooks/useEnsureSession.ts`): joining a room from its link (above), "Continue as guest" on the sign-in page, and creating a poker room or a retro. It works in this order:
 
-- **It waits until BetterAuth's session and Convex's auth state have both loaded** before deciding whether there is a session. With the server-rendered token (`initialToken` in `src/app/layout.tsx`) Convex can load while BetterAuth's session is still on its way, and signing in anonymously over a live session is a BetterAuth 400 for a guest and a new guest for a permanent account.
+- **It waits until BetterAuth's session and Convex's auth state have both loaded** before deciding whether there is a session. With the server-rendered token (`initialToken` in `src/app/(app)/layout.tsx`) Convex can load while BetterAuth's session is still on its way, and signing in anonymously over a live session is a BetterAuth 400 for a guest and a new guest for a permanent account.
 - **It waits until Convex has the token** after signing in. A fresh session reaches BetterAuth before Convex, and the server takes no write from a caller it can't identify: `users.join` and `users.ensureGlobalUser` both take `requireAuthAs`.
 - **Only then does it write the users row.** Every caller but the join passes the default `createUser: true`, and the hook calls `users.ensureGlobalUser` with a generated guest name. That makes a row only when the caller has none; an existing row keeps its name. It runs on every call, not only for a fresh session, so a guest whose first row write (or join) failed still gets a row, which creating a room needs.
 - **The waits are the auth provider's** (`whenAuth`, see [Auth Provider Context](#auth-provider-context)), not the calling component's, so they finish even when the page unmounts the caller meanwhile. The room page swaps out the join dialog while Convex takes the new session.
@@ -295,7 +308,7 @@ A guest's users row has no `accountType`: `model/users.ts` can't tell from a mut
 
 ## Auth Provider Context
 
-The auth provider (`src/components/auth/auth-provider.tsx`) takes auth state from Convex (`useConvexAuth()`, which waits for token validation) and `authUserId` and `isAnonymous` from the BetterAuth session. It queries `users.getGlobalUser` for `email` and `accountType` once Convex has the session (never on `/demo`, ADR-0003).
+The auth provider (`src/components/auth/auth-provider.tsx`) takes auth state from Convex (`useConvexAuth()`, which waits for token validation) and `authUserId` and `isAnonymous` from the BetterAuth session. It queries `users.getGlobalUser` for `email` and `accountType` once Convex has the session. Only the app shell mounts it: `/demo` sits in its own route group, whose shell has no auth at all (ADR-0003).
 
 ```typescript
 interface AuthContextType {
@@ -320,7 +333,7 @@ type WhenAuth = (ready: (state: AuthSnapshot) => boolean, timeoutMs: number) => 
 
 `accountType` is the users row's, falling back to `"permanent"` when the session isn't anonymous. A guest's row leaves it unset, so for a guest it is `null`; tell a guest by `isAnonymous`.
 
-`whenAuth(ready, timeoutMs)` resolves with the first auth state `ready` accepts (at once if the current one does, else on the update that makes it hold) and rejects after `timeoutMs`. The provider holds the waiters (`createAuthWaiters` in `src/lib/auth-waiters.ts`) and feeds them every change of `authUserId`, `isSessionPending`, `isLoading` and `isAuthenticated`. It sits at the root, so a wait outlives the component that started it. Outside an `AuthProvider`, `whenAuth` rejects.
+`whenAuth(ready, timeoutMs)` resolves with the first auth state `ready` accepts (at once if the current one does, else on the update that makes it hold) and rejects after `timeoutMs`. The provider holds the waiters (`createAuthWaiters` in `src/lib/auth-waiters.ts`) and feeds them every change of `authUserId`, `isSessionPending`, `isLoading` and `isAuthenticated`. It sits in the app shell's layout, above the page, so a wait outlives the component that started it. Outside an `AuthProvider`, `whenAuth` rejects.
 
 ## Environment Variables
 

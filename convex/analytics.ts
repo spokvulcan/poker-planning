@@ -1,7 +1,7 @@
 import { query } from "./_generated/server";
 import { v } from "convex/values";
 import * as Analytics from "./model/analytics";
-import { requireAuth } from "./model/auth";
+import { requireCaller } from "./model/caller";
 
 const dateRangeValidator = v.optional(
   v.object({
@@ -16,10 +16,10 @@ export const getSummary = query({
     dateRange: dateRangeValidator,
   },
   handler: async (ctx, args) => {
-    const identity = await requireAuth(ctx);
+    const { user } = await requireCaller(ctx);
     return await Analytics.getDashboardSummary(
       ctx,
-      identity.subject,
+      user,
       args.dateRange
     );
   },
@@ -31,10 +31,10 @@ export const getSessions = query({
     dateRange: dateRangeValidator,
   },
   handler: async (ctx, args) => {
-    const identity = await requireAuth(ctx);
+    const { user } = await requireCaller(ctx);
     return await Analytics.getUserSessions(
       ctx,
-      identity.subject,
+      user,
       args.dateRange
     );
   },
@@ -46,10 +46,10 @@ export const getAgreementTrend = query({
     dateRange: dateRangeValidator,
   },
   handler: async (ctx, args) => {
-    const identity = await requireAuth(ctx);
+    const { user } = await requireCaller(ctx);
     return await Analytics.getAgreementTrend(
       ctx,
-      identity.subject,
+      user,
       args.dateRange
     );
   },
@@ -61,10 +61,10 @@ export const getVelocityStats = query({
     dateRange: dateRangeValidator,
   },
   handler: async (ctx, args) => {
-    const identity = await requireAuth(ctx);
+    const { user } = await requireCaller(ctx);
     return await Analytics.getVelocityStats(
       ctx,
-      identity.subject,
+      user,
       args.dateRange
     );
   },
@@ -76,10 +76,10 @@ export const getVoteDistribution = query({
     dateRange: dateRangeValidator,
   },
   handler: async (ctx, args) => {
-    const identity = await requireAuth(ctx);
+    const { user } = await requireCaller(ctx);
     return await Analytics.getVoteDistribution(
       ctx,
-      identity.subject,
+      user,
       args.dateRange
     );
   },
@@ -91,10 +91,10 @@ export const getTimeToConsensus = query({
     dateRange: dateRangeValidator,
   },
   handler: async (ctx, args) => {
-    const identity = await requireAuth(ctx);
+    const { user } = await requireCaller(ctx);
     return await Analytics.getTimeToConsensusStats(
       ctx,
-      identity.subject,
+      user,
       args.dateRange
     );
   },
@@ -106,10 +106,10 @@ export const getParticipationStats = query({
     dateRange: dateRangeValidator,
   },
   handler: async (ctx, args) => {
-    const identity = await requireAuth(ctx);
+    const { user } = await requireCaller(ctx);
     return await Analytics.getParticipationStats(
       ctx,
-      identity.subject,
+      user,
       args.dateRange
     );
   },
@@ -121,10 +121,10 @@ export const getPredictability = query({
     dateRange: dateRangeValidator,
   },
   handler: async (ctx, args) => {
-    const identity = await requireAuth(ctx);
+    const { user } = await requireCaller(ctx);
     return await Analytics.getPredictabilityScore(
       ctx,
-      identity.subject,
+      user,
       args.dateRange
     );
   },
@@ -136,10 +136,10 @@ export const getVoterAlignment = query({
     dateRange: dateRangeValidator,
   },
   handler: async (ctx, args) => {
-    const identity = await requireAuth(ctx);
+    const { user } = await requireCaller(ctx);
     return await Analytics.getVoterAlignment(
       ctx,
-      identity.subject,
+      user,
       args.dateRange
     );
   },

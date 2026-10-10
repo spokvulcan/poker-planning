@@ -6,11 +6,15 @@
  * Fetch orchestration (OAuth token exchange/refresh, Jira REST calls through
  * JiraClient, webhook registration) lives in the adapter; the db-side
  * invariants (connection upsert, mapping writes, webhook event dedup/apply)
- * live in model/integrations.ts and the handlers below delegate to it. The
+ * live in model/integrations.ts and the handlers below delegate to it. An
+ * imported Jira issue enters a room through the issue module's admission
+ * (model/issues.ts): the adapter only turns it into a title and a link. The
  * token-field contract (key validation, encrypt-on-write, decrypt-on-read,
  * expiry rule) lives in model/tokenVault.ts. Token freshness/refresh and
- * client construction live in jiraAuth.ts; the provider registry
- * (integrations/registry.ts) points at this adapter's actions.
+ * client construction live in jiraAuth.ts. What happens to a mapping's
+ * webhook is decided in jiraWebhookReconcile.ts, which the provider registry
+ * (integrations/registry.ts) points at; the webhook actions below carry its
+ * decisions out against Jira.
  */
 
 import {
@@ -20,38 +24,32 @@ import {
   internalQuery,
 } from "../_generated/server";
 import { internal } from "../_generated/api";
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { providerValidator } from "../schema";
 import { Doc, Id } from "../_generated/dataModel";
 import { ActionCtx } from "../_generated/server";
-import { requireAuth, requireCanForUser } from "../model/auth";
-import { JiraClient } from "./jiraClient";
+import { requireCanForUser } from "../model/auth";
+import { requireUser } from "../model/caller";
+import { JiraClient, JiraIssue } from "./jiraClient";
 import { buildJiraClient, requireJiraClientCredentials } from "./jiraAuth";
 import { applyJiraWebhookEvent } from "./jiraWebhook";
-import { cardNumericValue } from "../model/alignment";
-import { createIssueInRoom } from "../model/issues";
+import {
+  jiraWebhookReconcile,
+  recordRegistration,
+  registrationValidator,
+  wantedWebhookOf,
+  type Registration,
+  type WantedWebhook,
+} from "./jiraWebhookReconcile";
+import { cardNumericValue } from "../scales";
+import * as Issues from "../model/issues";
 import * as Integrations from "../model/integrations";
 import * as TokenVault from "../model/tokenVault";
-import { MAX_ISSUES_PER_ROOM } from "../constants";
+import type { Refusal } from "../model/refusal";
 
 // ---------------------------------------------------------------------------
 // Action preamble — the one chain from auth identity to a ready Jira client
 // ---------------------------------------------------------------------------
-
-/**
- * ActionCtx-compatible identity→user resolution: actions have no db access,
- * so the lookup goes through the internal query. Throws the same messages as
- * requireAuthUser ("Not authenticated" / "User not found").
- */
-async function requireActionUser(ctx: ActionCtx): Promise<Doc<"users">> {
-  const identity = await requireAuth(ctx);
-  const user: Doc<"users"> | null = await ctx.runQuery(
-    internal.integrations.jira.getUserByAuthId,
-    { authUserId: identity.subject }
-  );
-  if (!user) throw new Error("User not found");
-  return user;
-}
 
 async function getConnectionForUserId(
   ctx: ActionCtx,
@@ -70,7 +68,7 @@ async function getConnectionForUserId(
 async function requireJiraConnection(
   ctx: ActionCtx
 ): Promise<{ user: Doc<"users">; connection: Doc<"integrationConnections"> }> {
-  const user = await requireActionUser(ctx);
+  const { user } = await requireUser(ctx);
   const connection = await getConnectionForUserId(ctx, user._id);
   return { user, connection };
 }
@@ -133,76 +131,30 @@ export const updateTokens = internalMutation({
   },
 });
 
-export const createIssueWithLink = internalMutation({
+/** Hands one Jira issue, as a title and a link, to the issue module's admission. */
+export const admitIssue = internalMutation({
   args: {
     roomId: v.id("rooms"),
     title: v.string(),
-    provider: providerValidator,
-    externalId: v.string(),
-    externalUrl: v.string(),
+    link: v.object({
+      provider: providerValidator,
+      externalId: v.string(),
+      externalUrl: v.string(),
+    }),
   },
   handler: async (ctx, args) => {
-    // externalUrl is rendered as an anchor href in the room UI — only allow
-    // real web URLs so a malicious integration connection can't inject a
-    // javascript: link.
-    if (!args.externalUrl.startsWith("https://")) {
-      throw new Error("externalUrl must be an https:// URL");
-    }
-
-    // Dedup per-room: same Jira issue can exist in multiple rooms,
-    // but not twice in the same room.
-    const roomIssues = await ctx.db
-      .query("issues")
-      .withIndex("by_room", (q) => q.eq("roomId", args.roomId))
-      .collect();
-
-    // Cap check stays ahead of dedup so a full room errors even when this key
-    // was already imported; createIssueInRoom re-enforces it on creation.
-    if (roomIssues.length >= MAX_ISSUES_PER_ROOM) {
-      throw new Error(`Rooms are limited to ${MAX_ISSUES_PER_ROOM} issues`);
-    }
-
-    for (const issue of roomIssues) {
-      const link = await ctx.db
-        .query("issueLinks")
-        .withIndex("by_issue", (q) => q.eq("issueId", issue._id))
-        .first();
-      if (
-        link &&
-        link.provider === args.provider &&
-        link.externalId === args.externalId
-      ) {
-        return null; // Already imported in this room
-      }
-    }
-
-    const issueId = await createIssueInRoom(ctx, {
-      roomId: args.roomId,
-      title: args.title,
-    });
-
-    // Create bidirectional link (roomId-tagged so room-wide link fetches can
-    // use the by_room index instead of one by_issue query per issue)
-    await ctx.db.insert("issueLinks", {
-      issueId,
-      roomId: args.roomId,
-      provider: args.provider,
-      externalId: args.externalId,
-      externalUrl: args.externalUrl,
-      lastSyncedAt: Date.now(),
-    });
-
-    return issueId;
+    return await Issues.admitIssue(ctx, args);
   },
 });
 
-export const setMappingWebhook = internalMutation({
+/** registerWebhook's tail: hands the registration back to the reconcile. */
+export const recordWebhookRegistration = internalMutation({
   args: {
     mappingId: v.id("integrationMappings"),
-    webhookId: v.optional(v.string()),
+    registration: registrationValidator,
   },
   handler: async (ctx, args) => {
-    await Integrations.setMappingWebhook(ctx, args.mappingId, args.webhookId);
+    await recordRegistration(ctx, args.mappingId, args.registration);
   },
 });
 
@@ -281,7 +233,7 @@ export const connectJira = action({
     providerUserEmail: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const user = await requireActionUser(ctx);
+    const { user } = await requireUser(ctx);
 
     // The first token refresh posts the deployment's Jira credentials, so a
     // deployment without them refuses the connect now.
@@ -367,7 +319,7 @@ export const importIssues = action({
     roomId: v.id("rooms"),
     jiraIssueKeys: v.array(v.string()),
   },
-  handler: async (ctx, { roomId, jiraIssueKeys }) => {
+  handler: async (ctx, { roomId, jiraIssueKeys }): Promise<JiraImportResult> => {
     const { user, connection } = await requireJiraConnection(ctx);
 
     // Verify the caller is a member of the room with issue management
@@ -378,38 +330,86 @@ export const importIssues = action({
     });
 
     const client = await buildJiraClient(ctx, connection);
-    const siteUrl = connection.siteUrl ?? "";
-
-    let imported = 0;
-    let skipped = 0;
-    const errors: string[] = [];
-
-    for (const key of jiraIssueKeys) {
-      try {
-        const issue = await client.getIssue(key);
-        const result = await ctx.runMutation(
-          internal.integrations.jira.createIssueWithLink,
-          {
-            roomId,
-            title: `${issue.key} - ${issue.fields.summary}`,
-            provider: "jira",
-            externalId: issue.key,
-            externalUrl: `${siteUrl}/browse/${issue.key}`,
-          }
-        );
-        if (result) {
-          imported++;
-        } else {
-          skipped++;
-        }
-      } catch (error) {
-        errors.push(`${key}: ${error instanceof Error ? error.message : "Unknown error"}`);
-      }
-    }
-
-    return { imported, skipped, errors };
+    return await importIssuesWithClient(
+      client,
+      (candidate): Promise<Issues.Admission> =>
+        ctx.runMutation(internal.integrations.jira.admitIssue, { roomId, ...candidate }),
+      { keys: jiraIssueKeys, siteUrl: connection.siteUrl }
+    );
   },
 });
+
+/** What an import did with the selected keys. */
+export interface JiraImportResult {
+  imported: number;
+  /** Keys whose issue is already in the room. */
+  skipped: number;
+  /** Keys not imported, each with why, in words the import modal shows. */
+  refused: { key: string; reason: string }[];
+}
+
+/**
+ * The words a refused admission carries. A coded refusal keeps its message
+ * across the mutation boundary in production; any other error has only its
+ * own message to give.
+ */
+function refusalReason(error: unknown): string {
+  if (error instanceof ConvexError) {
+    const message = (error.data as Partial<Refusal> | undefined)?.message;
+    if (typeof message === "string" && message) return message;
+  }
+  return error instanceof Error ? error.message : "Unknown error";
+}
+
+/**
+ * The import itself, decoupled from ctx plumbing: each key is read from Jira,
+ * so the title and URL come from Jira rather than the client, and handed to
+ * the issue module's admission as a title and a link. A key that can't be
+ * linked, read or admitted is refused with why; the others still import.
+ */
+export async function importIssuesWithClient(
+  client: Pick<JiraClient, "getIssue">,
+  admit: (candidate: { title: string; link: Issues.IssueLink }) => Promise<Issues.Admission>,
+  args: { keys: string[]; siteUrl: string | undefined }
+): Promise<JiraImportResult> {
+  const { siteUrl } = args;
+  // Every link is a page on the connection's site: without one, none can be.
+  if (!siteUrl) {
+    const reason = "Your Jira connection has no site address; reconnect Jira";
+    return { imported: 0, skipped: 0, refused: args.keys.map((key) => ({ key, reason })) };
+  }
+
+  const result: JiraImportResult = { imported: 0, skipped: 0, refused: [] };
+  for (const key of args.keys) {
+    let issue: JiraIssue;
+    try {
+      issue = await client.getIssue(key);
+    } catch (error) {
+      console.warn(`Jira import: could not read ${key}:`, error);
+      result.refused.push({
+        key,
+        reason: "Couldn't be read from Jira (deleted, or not visible to you)",
+      });
+      continue;
+    }
+
+    try {
+      const admission = await admit({
+        title: `${issue.key} - ${issue.fields.summary}`,
+        link: {
+          provider: "jira",
+          externalId: issue.key,
+          externalUrl: `${siteUrl}/browse/${issue.key}`,
+        },
+      });
+      if (admission.kind === "admitted") result.imported++;
+      else result.skipped++;
+    } catch (error) {
+      result.refused.push({ key, reason: refusalReason(error) });
+    }
+  }
+  return result;
+}
 
 /**
  * The estimate push itself, decoupled from ctx plumbing: an already-built
@@ -527,13 +527,59 @@ export const cleanupOldWebhookEvents = internalMutation({
 });
 
 /**
- * Best-effort remote deregistration of one Jira webhook. The model schedules
- * this (through the provider registry) whenever a mapping or connection is
- * torn down, so the remote webhook is deleted instead of being orphaned until
- * its 30-day expiry. A failure is retried once after a delay (the connection
- * row still exists at that point, so the retry can authenticate); a webhook
- * that survives the retry is left to expire — logged here so the leak is
- * tracked rather than silent.
+ * Best-effort remote deletion of one Jira webhook, with the connection that
+ * made it. A failure is retried once after a delay (the connection row still
+ * exists at that point, so the retry can authenticate); a webhook that
+ * survives the retry, or whose connection is already gone, is left to its
+ * 30-day expiry — logged here so the leak is tracked rather than silent.
+ */
+async function deleteWebhook(
+  ctx: ActionCtx,
+  webhook: { connectionId: Id<"integrationConnections">; webhookId: string },
+  attemptsLeft: number
+): Promise<void> {
+  const connection = await ctx.runQuery(
+    internal.integrations.jira.getConnectionById,
+    { connectionId: webhook.connectionId }
+  );
+  if (!connection) {
+    console.warn(
+      `Jira connection ${webhook.connectionId} already removed; webhook ${webhook.webhookId} left to expire remotely`
+    );
+    return;
+  }
+
+  try {
+    const client = await buildJiraClient(ctx, connection);
+    await client.deleteWebhooks([webhook.webhookId]);
+    console.log(`Deregistered Jira webhook ${webhook.webhookId}`);
+  } catch (error) {
+    if (attemptsLeft > 0) {
+      console.warn(
+        `Failed to deregister Jira webhook ${webhook.webhookId}; retrying in 5 minutes:`,
+        error
+      );
+      await ctx.scheduler.runAfter(
+        5 * 60 * 1000,
+        internal.integrations.jira.deregisterWebhook,
+        {
+          connectionId: webhook.connectionId,
+          webhookId: webhook.webhookId,
+          attemptsLeft: attemptsLeft - 1,
+        }
+      );
+      return;
+    }
+    console.warn(
+      `Failed to deregister Jira webhook ${webhook.webhookId} (no retries left); left to expire remotely:`,
+      error
+    );
+  }
+}
+
+/**
+ * Deletes a webhook the reconcile (jiraWebhookReconcile.ts) let go of: a
+ * mapping that no longer wants it, or one whose row is gone.
  */
 export const deregisterWebhook = internalAction({
   args: {
@@ -542,44 +588,7 @@ export const deregisterWebhook = internalAction({
     attemptsLeft: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const connection = await ctx.runQuery(
-      internal.integrations.jira.getConnectionById,
-      { connectionId: args.connectionId }
-    );
-    if (!connection) {
-      console.warn(
-        `Jira connection ${args.connectionId} already removed; webhook ${args.webhookId} left to expire remotely`
-      );
-      return;
-    }
-
-    try {
-      const client = await buildJiraClient(ctx, connection);
-      await client.deleteWebhooks([args.webhookId]);
-      console.log(`Deregistered Jira webhook ${args.webhookId}`);
-    } catch (error) {
-      const attemptsLeft = args.attemptsLeft ?? 1;
-      if (attemptsLeft > 0) {
-        console.warn(
-          `Failed to deregister Jira webhook ${args.webhookId}; retrying in 5 minutes:`,
-          error
-        );
-        await ctx.scheduler.runAfter(
-          5 * 60 * 1000,
-          internal.integrations.jira.deregisterWebhook,
-          {
-            connectionId: args.connectionId,
-            webhookId: args.webhookId,
-            attemptsLeft: attemptsLeft - 1,
-          }
-        );
-        return;
-      }
-      console.warn(
-        `Failed to deregister Jira webhook ${args.webhookId} (no retries left); left to expire remotely:`,
-        error
-      );
-    }
+    await deleteWebhook(ctx, args, args.attemptsLeft ?? 1);
   },
 });
 
@@ -643,113 +652,111 @@ export const finalizeDisconnect = internalAction({
 // Webhook registration
 // ---------------------------------------------------------------------------
 
+/**
+ * Registers the webhook a mapping wants, after deleting the one it replaces
+ * (with the connection that made that one), and hands the outcome back to
+ * the reconcile, which records it or, when the mapping moved on meanwhile,
+ * lets it go. A failure is recorded on the mapping, where the room's settings
+ * show it, rather than thrown.
+ */
 export const registerWebhook = internalAction({
   args: {
     mappingId: v.id("integrationMappings"),
+    replacing: v.optional(
+      v.object({
+        connectionId: v.id("integrationConnections"),
+        webhookId: v.string(),
+      })
+    ),
   },
   handler: async (ctx, args) => {
+    if (args.replacing) await deleteWebhook(ctx, args.replacing, 1);
+
     const mapping = await ctx.runQuery(
       internal.integrations.jira.getMappingById,
       { mappingId: args.mappingId }
     );
-    if (!mapping || mapping.provider !== "jira" || !mapping.jiraProjectKey) {
-      return null;
-    }
+    const wanted = mapping ? wantedWebhookOf(mapping) : null;
+    // The mapping moved on before this ran; whatever moved it reconciled it.
+    if (!wanted) return;
 
+    const registration = await attemptRegistration(ctx, wanted);
+    await ctx.runMutation(internal.integrations.jira.recordWebhookRegistration, {
+      mappingId: args.mappingId,
+      registration,
+    });
+  },
+});
+
+async function attemptRegistration(
+  ctx: ActionCtx,
+  wanted: WantedWebhook
+): Promise<Registration> {
+  // Jira Cloud webhooks cannot send custom headers, so the shared secret
+  // travels in the registered URL. The endpoint rejects deliveries without
+  // it, so registration must not proceed when the secret is missing.
+  const webhookSecret = process.env.JIRA_WEBHOOK_SECRET;
+  if (!webhookSecret) {
+    console.error("JIRA_WEBHOOK_SECRET must be configured to register a Jira webhook");
+    return { kind: "failed", failure: "missingSecret", ...wanted };
+  }
+  const webhookUrl = `${process.env.CONVEX_SITE_URL}/webhooks/jira?secret=${encodeURIComponent(webhookSecret)}`;
+
+  try {
     const connection = await ctx.runQuery(
       internal.integrations.jira.getConnectionById,
-      { connectionId: mapping.connectionId }
+      { connectionId: wanted.connectionId }
     );
     if (!connection) throw new Error("Connection not found");
 
     const client = await buildJiraClient(ctx, connection);
-    // Jira Cloud webhooks cannot send custom headers, so the shared secret
-    // travels in the registered URL. The endpoint rejects deliveries without
-    // it, so registration must not proceed when the secret is missing.
-    const webhookSecret = process.env.JIRA_WEBHOOK_SECRET;
-    if (!webhookSecret) {
-      throw new Error(
-        "JIRA_WEBHOOK_SECRET must be configured to register a Jira webhook"
-      );
-    }
-    const webhookUrl = `${process.env.CONVEX_SITE_URL}/webhooks/jira?secret=${encodeURIComponent(webhookSecret)}`;
+    const webhookId = await client.registerWebhook(`project = ${wanted.projectKey}`, webhookUrl);
+    if (!webhookId) throw new Error("Jira registered no webhook");
+    console.log(`Registered Jira webhook ${webhookId}`);
+    return { kind: "registered", webhookId, ...wanted };
+  } catch (error) {
+    console.error("Failed to register Jira webhook:", error);
+    return { kind: "failed", failure: "jiraError", ...wanted };
+  }
+}
 
-    try {
-      if (mapping.jiraWebhookId) {
-        try {
-          await client.deleteWebhooks([mapping.jiraWebhookId]);
-        } catch (error) {
-          console.warn(
-            `Failed to delete old Jira webhook ${mapping.jiraWebhookId} for mapping ${mapping._id}:`,
-            error
-          );
-        }
-      }
+/** Jira mappings one step of the weekly renewal hands to the reconcile. */
+const WEBHOOK_RENEWAL_BATCH = 100;
 
-      const jqlFilter = `project = ${mapping.jiraProjectKey}`;
-      const webhookId = await client.registerWebhook(jqlFilter, webhookUrl);
-      await ctx.runMutation(internal.integrations.jira.setMappingWebhook, {
-        mappingId: mapping._id,
-        webhookId,
-      });
-      console.log(`Registered Jira webhook ${webhookId}`);
-      return webhookId;
-    } catch (error) {
-      console.error("Failed to register Jira webhook:", error);
-      throw error;
-    }
+/**
+ * The weekly renewal (cron refresh-jira-webhooks). Jira drops a webhook 30
+ * days after it is registered, so every Jira mapping goes to the reconcile as
+ * renewed: a wanted webhook is registered afresh (replacing the one on
+ * record, or retrying a failed registration) and a recorded one nobody wants
+ * is removed. Pages through the mappings, rescheduling itself until done.
+ */
+export const refreshJiraWebhooks = internalMutation({
+  args: {
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
   },
-});
-
-export const refreshJiraWebhooks = internalAction({
-  args: {},
-  handler: async (ctx) => {
-    // Get all Jira mappings and refresh their webhook registration
-    const allMappings = await ctx.runQuery(
-      internal.integrations.jira.getAllJiraMappings,
-      {}
-    );
-
-    for (const mapping of allMappings) {
-      try {
-        await ctx.runAction(internal.integrations.jira.registerWebhook, {
-          mappingId: mapping._id,
-        });
-      } catch (error) {
-        console.error(
-          `Failed to refresh webhook for mapping ${mapping._id}:`,
-          error
-        );
-      }
-    }
-  },
-});
-
-export const getAllJiraMappings = internalQuery({
-  args: {},
-  handler: async (ctx) => {
-    return await ctx.db
+  handler: async (ctx, args) => {
+    const batchSize = args.batchSize ?? WEBHOOK_RENEWAL_BATCH;
+    const { page, isDone, continueCursor } = await ctx.db
       .query("integrationMappings")
-      .withIndex("by_provider_autopush", (q) =>
-        q.eq("provider", "jira").eq("autoPushEstimates", true)
-      )
-      .collect();
+      .withIndex("by_provider_autopush", (q) => q.eq("provider", "jira"))
+      .paginate({ numItems: batchSize, cursor: args.cursor ?? null });
+
+    for (const mapping of page) {
+      await jiraWebhookReconcile.reconcile(ctx, { kind: "renewed", mapping });
+    }
+    if (!isDone) {
+      await ctx.scheduler.runAfter(0, internal.integrations.jira.refreshJiraWebhooks, {
+        cursor: continueCursor,
+        batchSize,
+      });
+    }
   },
 });
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-export const getUserByAuthId = internalQuery({
-  args: { authUserId: v.string() },
-  handler: async (ctx, args) => {
-    return await ctx.db
-      .query("users")
-      .withIndex("by_auth_user", (q) => q.eq("authUserId", args.authUserId))
-      .first();
-  },
-});
 
 /**
  * Verifies that the user may manage issues in the room. The calling action

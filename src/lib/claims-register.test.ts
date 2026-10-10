@@ -15,9 +15,9 @@ import { describe, it, expect } from "vitest";
 import * as homepage from "@/components/homepage/copy";
 import * as seo from "@/components/seo/copy";
 import * as site from "@/lib/site-copy";
-import * as features from "@/app/features/copy";
-import * as about from "@/app/about/copy";
-import * as pricing from "@/app/pricing/copy";
+import * as features from "@/app/(app)/features/copy";
+import * as about from "@/app/(app)/about/copy";
+import * as pricing from "@/app/(app)/pricing/copy";
 import { siteConfig } from "@/lib/site-config";
 import {
   DEFAULT_VOTES_PER_PERSON,
@@ -60,9 +60,8 @@ describe("metadata, features and about (spec §18.1, §18.2)", () => {
     expect(site.SITE.twitter.title).toBe(site.SITE.title);
   });
 
-  it("drops Planning Poker from the features page title and its Open Graph title", () => {
+  it("drops Planning Poker from the features page title, which titles its cards too", () => {
     expect(features.META.title).not.toMatch(/planning poker/i);
-    expect(features.META.openGraph.title).not.toMatch(/planning poker/i);
   });
 
   it("anchors the features page at #planning-poker and #retro", () => {

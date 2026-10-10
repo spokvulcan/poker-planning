@@ -1,6 +1,9 @@
 /**
- * Voting scale definitions for planning poker.
- * These define the available card values for different estimation methods.
+ * Voting scale definitions for planning poker, and the deck they deal.
+ * A scale is the cards a room stores, picked when it is created; the deck says
+ * what those cards mean: which are dealt, whether a label is a legal ballot,
+ * and what a card reads as a number. Pure, so the server and the browser read
+ * a card one way (CONTEXT.md: Deck).
  */
 
 export const VOTING_SCALES = {
@@ -97,19 +100,55 @@ export function validateCustomScale(cards: string[]): void {
   }
 }
 
-/** Special cards that should not be included in numeric calculations */
-export const SPECIAL_CARDS = ["∞", "?", "☕"];
-
-/** Default scale when none is specified (backward compatibility) */
+/**
+ * The one default scale: what a room that stores none deals (legacy rooms and
+ * the demo), and what a new room stores when its creator picks none.
+ */
 export const DEFAULT_SCALE = VOTING_SCALES.fibonacci;
 
-/** Helper to get a predefined scale by type */
-export function getScale(type: VotingScaleType): (typeof VOTING_SCALES)[VotingScaleType] {
-  return VOTING_SCALES[type];
+/** A room's deck: what its cards mean, read from its stored scale by `deckOf`. */
+export interface Deck {
+  /** The cards dealt, in the order the card row lays them out. */
+  readonly cards: readonly string[];
+  /**
+   * Whether results average the deck: a numeric deck shows an average and a
+   * median, and counts each voter's steps from the consensus.
+   */
+  readonly isNumeric: boolean;
+  /** Whether a label is a legal ballot: a card this deck deals. */
+  isLegalBallot(label: string): boolean;
 }
 
-/** Check if a card value is numeric (excludes special cards) */
-export function isNumericCard(cardLabel: string): boolean {
-  if (SPECIAL_CARDS.includes(cardLabel)) return false;
-  return !isNaN(parseFloat(cardLabel));
+/**
+ * The deck a room's stored scale deals. The one place a missing scale is
+ * resolved: a room that stores none deals the default.
+ */
+export function deckOf(scale?: Pick<VotingScale, "cards" | "isNumeric">): Deck {
+  const { cards, isNumeric }: Pick<Deck, "cards" | "isNumeric"> =
+    scale ?? DEFAULT_SCALE;
+  return { cards, isNumeric, isLegalBallot: (label) => cards.includes(label) };
+}
+
+/**
+ * The special cards: `∞` (too big to estimate), `?` (unsure) and `☕` (a
+ * break). Dealt and played like any other card, they estimate nothing: no
+ * consensus, average or alignment counts them, and they read as no number.
+ */
+const SPECIAL_CARDS: readonly string[] = ["∞", "?", "☕"];
+
+/** Whether a card is special: played, but an estimate of nothing. */
+export function isSpecialCard(label: string): boolean {
+  return SPECIAL_CARDS.includes(label);
+}
+
+/**
+ * What a label reads as a number: the ONE numeric reading. It needs no deck,
+ * so analytics shares it for final estimates, which can be free text. A
+ * special card, a word or a non-finite number such as "Infinity" reads as
+ * none: `undefined`, never NaN, so no stat can store NaN or an infinity.
+ */
+export function cardNumericValue(label: string): number | undefined {
+  if (isSpecialCard(label)) return undefined;
+  const value = Number.parseFloat(label);
+  return Number.isFinite(value) ? value : undefined;
 }

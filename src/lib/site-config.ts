@@ -32,6 +32,8 @@ export const siteConfig = {
   author: {
     name: "AgileKit Team",
   },
+  // A raster logo: Google reads Organization logos of at least 112x112px.
+  logo: `${SITE_ORIGIN}/logo-512.png`,
   blog: {
     title: "AgileKit Blog",
     description: BLOG_DESCRIPTION,

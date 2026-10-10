@@ -33,6 +33,7 @@ import { exportIssuesToCSV } from "@/utils/export-issues-csv";
 import { exportIssuesToJSON } from "@/utils/export-issues-json";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { EnhancedExportableIssue } from "@/convex/model/issues";
+import { ISSUE_TITLE } from "@/convex/constants";
 import { type ResolvedDecision, RESOLVED_ALLOWED } from "@/convex/permissions";
 import { denialTooltip, permissionProps } from "@/hooks/usePermissions";
 
@@ -359,6 +360,7 @@ const IssuesPanelContent: FC<IssuesPanelContentProps> = ({
                 <div className="relative group">
                   <Input
                     value={newIssueTitle}
+                    maxLength={ISSUE_TITLE.maxLength}
                     onChange={(e) => setNewIssueTitle(e.target.value)}
                     onKeyDown={handleKeyDown}
                     placeholder="Add new issue..."

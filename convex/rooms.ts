@@ -2,7 +2,8 @@ import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import * as Rooms from "./model/rooms";
 import * as VotingRound from "./model/votingRound";
-import { requireAuthUser, requireCan } from "./model/auth";
+import { requireCan } from "./model/auth";
+import { getCaller, requireUser } from "./model/caller";
 
 // Create a new room
 export const create = mutation({
@@ -23,7 +24,7 @@ export const create = mutation({
     ),
   },
   handler: async (ctx, args) => {
-    const { user } = await requireAuthUser(ctx);
+    const { user } = await requireUser(ctx);
     return await Rooms.createRoom(ctx, { ...args, owner: user });
   },
 });
@@ -36,16 +37,8 @@ export const get = query({
   handler: async (ctx, args) => {
     // Derive currentUserId from server-side auth context (not client-supplied)
     // to prevent vote privacy bypass
-    let currentUserId;
-    const identity = await ctx.auth.getUserIdentity();
-    if (identity) {
-      const appUser = await ctx.db
-        .query("users")
-        .withIndex("by_auth_user", (q) => q.eq("authUserId", identity.subject))
-        .first();
-      currentUserId = appUser?._id;
-    }
-    return await Rooms.getRoomWithRelatedData(ctx, args.roomId, currentUserId);
+    const caller = await getCaller(ctx);
+    return await Rooms.getRoomWithRelatedData(ctx, args.roomId, caller?.user?._id);
   },
 });
 

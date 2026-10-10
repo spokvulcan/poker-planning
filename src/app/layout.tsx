@@ -4,14 +4,14 @@ import { GoogleAnalytics } from "@next/third-parties/google";
 import { cookies } from "next/headers";
 
 import { Geist, Geist_Mono, Outfit } from "next/font/google";
-import { Providers } from "@/components/providers";
+import { ThemeProvider } from "next-themes";
 import { Toaster } from "sonner";
-import { getToken } from "@/lib/auth-server";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { isEmbeddedDocument } from "@/lib/embed";
 import { TopLevelOnly } from "@/components/top-level-only";
 import { AnalyticsConsentBanner } from "@/components/legal/analytics-consent";
 import { SITE } from "@/lib/site-copy";
-import { SITE_ORIGIN } from "@/lib/site-config";
+import { SITE_ORIGIN, siteConfig } from "@/lib/site-config";
 import { SITE_OPEN_GRAPH, SITE_TWITTER } from "@/lib/page-metadata";
 
 import "./globals.css";
@@ -38,9 +38,9 @@ export const metadata: Metadata = {
   },
   description: SITE.description,
   keywords: SITE.keywords,
-  authors: [{ name: "AgileKit Team" }],
-  creator: "AgileKit",
-  publisher: "AgileKit",
+  authors: [{ name: siteConfig.author.name }],
+  creator: siteConfig.name,
+  publisher: siteConfig.name,
   robots: {
     index: true,
     follow: true,
@@ -69,13 +69,15 @@ export const metadata: Metadata = {
   },
 };
 
+// What every page shares, the demo included. A page's backend comes from its
+// route group's layout: (app) fetches the session's token and mounts BetterAuth
+// and the auth provider, and (demo) has none of them (ADR-0003).
 export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
   const cookieStore = await cookies();
-  const initialToken = await getToken();
   const isEmbedded = await isEmbeddedDocument();
   const analyticsConsentValue = cookieStore.get("analytics_consent")?.value;
   const analyticsConsent =
@@ -94,8 +96,14 @@ export default async function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <Providers initialToken={initialToken}>
-          {children}
+        <ThemeProvider
+          defaultTheme="system"
+          storageKey="agilekit-theme"
+          attribute="class"
+          enableSystem
+          disableTransitionOnChange
+        >
+          <TooltipProvider>{children}</TooltipProvider>
           <Toaster />
           {!isEmbedded && (
             <TopLevelOnly>
@@ -103,7 +111,7 @@ export default async function RootLayout({
               {analyticsEnabled && <SpeedInsights />}
             </TopLevelOnly>
           )}
-        </Providers>
+        </ThemeProvider>
         {analyticsEnabled && process.env.NEXT_PUBLIC_GA_ID && (
           <TopLevelOnly>
             <GoogleAnalytics gaId={process.env.NEXT_PUBLIC_GA_ID} />

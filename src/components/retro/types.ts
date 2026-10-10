@@ -2,6 +2,7 @@ import type { Node } from "@xyflow/react";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { ActionItemView, Gif, StickyView } from "@/convex/model/retro";
 import type { ResolvedDecision } from "@/convex/permissions";
+import type { StepShows } from "@/convex/retroSteps";
 import type { RetroColumn, RetroStep, StickyColor } from "@/convex/retroTemplates";
 import type { TimerNodeType } from "@/components/room/types";
 
@@ -89,7 +90,8 @@ export type StickyNodeData = {
   sticky?: StickyView;
   draft?: Pick<StickyDraft, "clientId" | "text" | "gif">;
   color: StickyColor;
-  step: RetroStep;
+  /** What the retro's step shows everyone. */
+  shows: StepShows;
   editing: boolean;
   /** The viewer may change what it says (theirs, or a facilitator's call). */
   canEdit: boolean;

@@ -6,53 +6,66 @@
  * is added by registering a handler — not by editing the generic module.
  *
  * Jira is the only adapter today. The seam is deliberately narrow: a handler
- * is the set of capabilities the generic orchestration actually routes —
- * webhook registration/deregistration refs, the disconnect tail, the live
- * webhook id accessor, and token refresh. Anything provider-specific that no
- * generic caller needs (issue import, estimate push) stays inside the
- * adapter.
+ * is the set of capabilities the generic orchestration actually routes — the
+ * webhook reconcile, which decides what happens to a mapping's remote
+ * webhook, and token refresh. Anything provider-specific that no generic
+ * caller needs (issue import, estimate push) stays inside the adapter.
  *
- * The descriptor holds FunctionReferences (via the generated `internal`
- * object) plus plain functions from jiraAuth.ts — never an import of
- * jira.ts, which keeps the module graph acyclic: jira.ts → model → here.
+ * The descriptor holds plain functions from jiraAuth.ts and
+ * jiraWebhookReconcile.ts — never an import of jira.ts, which keeps the
+ * module graph acyclic: jira.ts → model → here.
  */
 
-import { FunctionReference } from "convex/server";
-import { ActionCtx } from "../_generated/server";
-import { internal } from "../_generated/api";
+import { ActionCtx, MutationCtx } from "../_generated/server";
 import { Doc, Id } from "../_generated/dataModel";
 import { refreshJiraToken } from "./jiraAuth";
+import { jiraWebhookReconcile } from "./jiraWebhookReconcile";
 
 export type IntegrationProvider = Doc<"integrationConnections">["provider"];
 
+/**
+ * What happened to a mapping. Each caller that changes or ends one hands its
+ * own case to the provider's webhook reconcile.
+ */
+export type MappingChange =
+  /** Saved from the room's settings: the row as it was (null when new) and as it is now. */
+  | {
+      kind: "saved";
+      before: Doc<"integrationMappings"> | null;
+      after: Doc<"integrationMappings">;
+    }
+  /** The weekly renewal of a mapping that stays. */
+  | { kind: "renewed"; mapping: Doc<"integrationMappings"> }
+  /**
+   * Deleted: removed from the room's settings, its room ended, or swept. The
+   * row is gone, so its record comes as data.
+   */
+  | { kind: "removed"; mapping: Doc<"integrationMappings"> };
+
+/**
+ * A provider's webhook reconcile: the one owner of each mapping's remote
+ * webhook. It compares the webhook a mapping wants with the one on record and
+ * registers, replaces or removes it.
+ */
+export interface WebhookReconcile {
+  reconcile(ctx: MutationCtx, change: MappingChange): Promise<void>;
+  /**
+   * A connection is going, its mappings (already deleted) with it: removes
+   * every webhook they had on record, then the connection row goes. "tail"
+   * when a webhook the connection made is live: the provider's disconnect
+   * tail deletes the row after deregistering with its credentials. "now" when
+   * the caller can delete the row at once.
+   */
+  disconnect(
+    ctx: MutationCtx,
+    connectionId: Id<"integrationConnections">,
+    mappings: Doc<"integrationMappings">[]
+  ): Promise<"now" | "tail">;
+}
+
 /** What the generic orchestration routes to a provider. */
 export interface IntegrationProviderHandler {
-  /** (Re-)registers a mapping's remote webhook; scheduled when a mapping save turns on auto-push. */
-  registerWebhook: FunctionReference<
-    "action",
-    "internal",
-    { mappingId: Id<"integrationMappings"> }
-  >;
-  /** Best-effort remote delete of one webhook; retries itself once via `attemptsLeft`. */
-  deregisterWebhook: FunctionReference<
-    "action",
-    "internal",
-    {
-      connectionId: Id<"integrationConnections">;
-      webhookId: string;
-      attemptsLeft?: number;
-    }
-  >;
-  /** Disconnect tail: deregisters every live webhook, then deletes the connection row. */
-  finalizeDisconnect: FunctionReference<
-    "action",
-    "internal",
-    { connectionId: Id<"integrationConnections">; webhookIds: string[] }
-  >;
-  /** Reads the live remote webhook id off a mapping row (a provider-specific column). */
-  webhookIdOf(mapping: Doc<"integrationMappings">): string | undefined;
-  /** Whether a mapping save carries everything webhook registration needs. */
-  hasWebhookTarget(args: { projectKey?: string }): boolean;
+  webhooks: WebhookReconcile;
   /** Refreshes one connection's tokens and returns the fresh access token. */
   refreshConnection(
     ctx: ActionCtx,
@@ -61,11 +74,7 @@ export interface IntegrationProviderHandler {
 }
 
 const jiraHandler: IntegrationProviderHandler = {
-  registerWebhook: internal.integrations.jira.registerWebhook,
-  deregisterWebhook: internal.integrations.jira.deregisterWebhook,
-  finalizeDisconnect: internal.integrations.jira.finalizeDisconnect,
-  webhookIdOf: (mapping) => mapping.jiraWebhookId,
-  hasWebhookTarget: (args) => !!args.projectKey,
+  webhooks: jiraWebhookReconcile,
   refreshConnection: (ctx, connection) => refreshJiraToken(ctx, connection),
 };
 

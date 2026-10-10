@@ -4,12 +4,11 @@ import * as Retro from "./model/retro";
 import * as Roles from "./model/roles";
 import { renameRoom } from "./model/rooms";
 import {
-  getOptionalAuthUser,
-  requireAuthUser,
   requireCan,
   requireRoomMember,
   requireRoomReader,
 } from "./model/auth";
+import { getCaller, requireUser } from "./model/caller";
 import {
   gifValidator,
   positionValidator,
@@ -34,7 +33,7 @@ async function memberSticky(ctx: MutationCtx, stickyId: Id<"retroStickies">) {
 export const create = mutation({
   args: { name: v.string(), templateId: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    const { user } = await requireAuthUser(ctx);
+    const { user } = await requireUser(ctx);
     return await Retro.createRetro(ctx, { name: args.name, templateId: args.templateId, owner: user });
   },
 });
@@ -43,7 +42,7 @@ export const create = mutation({
 export const listMine = query({
   args: {},
   handler: async (ctx) => {
-    const user = await getOptionalAuthUser(ctx);
+    const user = (await getCaller(ctx))?.user;
     if (!user) return [];
     return await Retro.listRetrosOf(ctx, user._id);
   },

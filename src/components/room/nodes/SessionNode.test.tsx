@@ -1,16 +1,37 @@
 /**
  * SessionNode — control selection is one switch over the round's phase
  * (issue #227, user stories 1, 2, 4, 8). Each phase renders exactly one
- * action control; the regression guard at the bottom pins the "revealed
- * wins" rule: a stray countdown timestamp must never animate a countdown
- * over a settled round.
+ * action control; the regression guard pins the "revealed wins" rule: a
+ * stray countdown timestamp must never animate a countdown over a settled
+ * round. Every control reads the viewer's decision for its permission
+ * category and asks the board's one actions object (#379).
  */
 import { describe, it, expect, afterEach, vi } from "vitest";
-import { render, screen, cleanup } from "@testing-library/react";
+import { render, screen, cleanup, fireEvent } from "@testing-library/react";
 import { ReactFlowProvider, type NodeProps } from "@xyflow/react";
 import { RESOLVED_ALLOWED } from "@/convex/permissions";
-import type { SessionNodeData, SessionNodeType } from "../types";
+import type { PokerBoardActions, SessionNodeData, SessionNodeType } from "../types";
 import { SessionNode } from "./SessionNode";
+
+const EVERYTHING_ALLOWED = {
+  revealCards: RESOLVED_ALLOWED,
+  gameFlow: RESOLVED_ALLOWED,
+  issueManagement: RESOLVED_ALLOWED,
+  roomSettings: RESOLVED_ALLOWED,
+};
+
+function boardActions(): PokerBoardActions {
+  return {
+    reveal: vi.fn(),
+    reset: vi.fn(),
+    toggleAutoComplete: vi.fn(),
+    cancelAutoReveal: vi.fn(),
+    selectCard: vi.fn(),
+    openIssues: vi.fn(),
+    updateNoteContent: vi.fn(async () => true),
+    deleteNote: vi.fn(),
+  };
+}
 
 function makeData(overrides: Partial<SessionNodeData> = {}): SessionNodeData {
   return {
@@ -22,9 +43,8 @@ function makeData(overrides: Partial<SessionNodeData> = {}): SessionNodeData {
     autoCompleteVoting: true,
     autoRevealCountdownStartedAt: null,
     currentIssue: null,
-    canRevealCards: RESOLVED_ALLOWED,
-    canControlGameFlow: RESOLVED_ALLOWED,
-    canChangeRoomSettings: RESOLVED_ALLOWED,
+    permissions: EVERYTHING_ALLOWED,
+    actions: boardActions(),
     ...overrides,
   };
 }
@@ -92,5 +112,32 @@ describe("SessionNode — one action control per phase", () => {
     // Let any (wrongly) armed ticking interval fire: still no countdown.
     vi.advanceTimersByTime(1000);
     expect(screen.queryByText(/tap to cancel/i)).toBeNull();
+  });
+});
+
+describe("SessionNode — the board's actions and the viewer's decisions", () => {
+  it("asks the board's actions for what each control does", () => {
+    const actions = boardActions();
+    renderSession(makeData({ phase: "voting", actions }));
+
+    fireEvent.click(screen.getByRole("button", { name: /reveal all votes/i }));
+    fireEvent.click(screen.getByRole("button", { name: /open issues panel/i }));
+    fireEvent.click(screen.getByRole("button", { name: /auto-reveal when all vote/i }));
+
+    expect(actions.reveal).toHaveBeenCalledTimes(1);
+    expect(actions.openIssues).toHaveBeenCalledTimes(1);
+    expect(actions.toggleAutoComplete).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps a control the viewer may not use disabled, and says why", () => {
+    const actions = boardActions();
+    const denied = { allowed: false as const, message: "Only facilitators and the owner can reveal cards." };
+    renderSession(makeData({ permissions: { ...EVERYTHING_ALLOWED, revealCards: denied }, actions }));
+
+    const reveal = screen.getByRole("button", { name: denied.message }) as HTMLButtonElement;
+    fireEvent.click(reveal);
+
+    expect(reveal.disabled).toBe(true);
+    expect(actions.reveal).not.toHaveBeenCalled();
   });
 });
