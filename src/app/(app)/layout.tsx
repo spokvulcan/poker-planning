@@ -1,4 +1,4 @@
-import { Providers } from "@/components/providers";
+import { AppProviders } from "@/components/providers";
 import { getToken } from "@/lib/auth-server";
 
 // The app shell, for every page but the demo. The session's token, fetched
@@ -10,5 +10,5 @@ export default async function AppLayout({
 }>) {
   const initialToken = await getToken();
 
-  return <Providers initialToken={initialToken}>{children}</Providers>;
+  return <AppProviders initialToken={initialToken}>{children}</AppProviders>;
 }

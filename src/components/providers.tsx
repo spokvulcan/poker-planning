@@ -17,7 +17,7 @@ const convex = convexUrl ? new ConvexReactClient(convexUrl) : null;
  * Convex signed in through BetterAuth, starting from the token the layout
  * fetched on the server, and the auth provider.
  */
-export function Providers({
+export function AppProviders({
   children,
   initialToken,
 }: {

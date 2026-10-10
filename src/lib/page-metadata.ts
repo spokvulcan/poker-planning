@@ -80,6 +80,17 @@ export const INDEXED_PATHS = Object.keys(LISTED).filter(
   (path): path is IndexedPath => LISTED[path] === "index",
 );
 
+/** The paths robots.txt keeps crawlers out of, in the list's order. */
+export const DISALLOWED_PATHS = Object.keys(LISTED).filter((path) => LISTED[path] === "disallow");
+
+/**
+ * A listed path as a robots.txt rule: up to its first dynamic segment, so
+ * "/room/[roomId]" is every room.
+ */
+export function robotsRuleOf(path: string): string {
+  return path.replace(/\[.*$/, "");
+}
+
 /** Whether a listed path decides `path`, compared segment by segment. */
 function decides(listed: string, path: string): boolean {
   const want = listed.split("/");

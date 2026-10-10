@@ -13,7 +13,7 @@ import sitemap from "./sitemap";
 import robots from "./robots";
 import { getAllSlugs } from "./(app)/blog/posts";
 import { SITE_ORIGIN } from "@/lib/site-config";
-import { indexingOf, PUBLIC_PATHS } from "@/lib/page-metadata";
+import { indexingOf, INDEXED_PATHS } from "@/lib/page-metadata";
 
 const APP_DIR = path.join(process.cwd(), "src", "app");
 
@@ -49,10 +49,6 @@ function crawlable(page: string): boolean {
   return longest(rule.allow) >= longest(rule.disallow);
 }
 
-const INDEXED = Object.entries(PUBLIC_PATHS)
-  .filter(([, indexing]) => indexing === "index")
-  .map(([listed]) => listed);
-
 describe("every public page", () => {
   const routes = pageRoutes();
 
@@ -64,7 +60,7 @@ describe("every public page", () => {
     expect(() => indexingOf(route)).not.toThrow();
   });
 
-  it.each(INDEXED)("%s, indexable, is a page the app serves and in the sitemap", async (listed) => {
+  it.each(INDEXED_PATHS)("%s, indexable, is a page the app serves and in the sitemap", async (listed) => {
     expect(routes).toContain(listed);
     const urls = (await sitemap()).map((entry) => entry.url);
     const pages = await pagesOf(listed);
