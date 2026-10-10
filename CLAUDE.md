@@ -41,6 +41,13 @@ npx playwright test -g "should create a new room"
 - **UI Primitives**: Base UI (`@base-ui/react`) - NOT Radix UI. Components like Dialog, DropdownMenu, etc. use Base UI primitives. Base UI does not support `asChild` pattern; use `render` prop instead (e.g., `<DropdownMenuItem render={<Link href="..." />}>`).
 - **Canvas**: @xyflow/react for the whiteboard interface
 
+### Route Groups
+
+`src/app/layout.tsx` is the shared root: fonts, theme, toaster, analytics consent and the frame check. Every page sits in a route group under it, and the group's layout supplies the backend:
+
+- `src/app/(app)/`: every page but the demo. Its layout fetches the session's token on the server and mounts BetterAuth and `AuthProvider`. New pages go here.
+- `src/app/(demo)/`: `/demo` only. A Convex client with no auth that never connects, so the Demo simulation costs the backend nothing (ADR-0003; `src/app/shells.test.tsx` holds it to that).
+
 ### Convex Backend Pattern
 
 The backend uses a two-layer architecture:
