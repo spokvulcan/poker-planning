@@ -371,11 +371,11 @@ test.describe("Room Creation Suite", () => {
       // Go straight to the creation form (the hero CTA is just a link there).
       await page.goto("/room/new");
 
-      const createButton = page.getByRole("button", { name: /create game/i });
+      const createButton = page.getByRole("button", { name: /start estimating/i });
       await expect(createButton).toBeVisible();
       await expect(createButton).toBeEnabled();
 
-      // Click "Create Game" 3 times without waiting. force:true skips the
+      // Click "Start estimating" 3 times without waiting. force:true skips the
       // actionability wait — the first click disables the button while creating,
       // so the burst exercises the idempotency guard rather than the form link.
       await Promise.all([

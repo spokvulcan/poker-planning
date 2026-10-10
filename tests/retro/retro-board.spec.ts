@@ -12,8 +12,8 @@ async function openRetro(browser: Browser): Promise<{ host: Page; url: string }>
   const host = await (await browser.newContext()).newPage();
   await mockClipboardAPI(host);
   await host.goto("/retro/new");
-  await host.getByLabel("Retro Name").fill("Sprint 42 retro");
-  await host.getByRole("button", { name: "Start Retro" }).click();
+  await host.getByLabel("Retro name").fill("Sprint 42 retro");
+  await host.getByRole("button", { name: "Start retro" }).click();
   await waitForRoomNavigation(host);
   await expect(host.getByTestId("retro-node")).toBeVisible();
   return { host, url: host.url() };

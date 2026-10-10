@@ -46,6 +46,16 @@ vi.mock("@/components/footer", () => ({ Footer: () => null }));
 import { AuthProvider } from "@/components/auth/auth-provider";
 import { CreateRetroContent } from "./create-content";
 
+// The choice control measures its options; jsdom has no ResizeObserver.
+vi.stubGlobal(
+  "ResizeObserver",
+  class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  }
+);
+
 const KEPT = "Kept on your account until you delete it.";
 const REMOVED = "Guest retros are removed after 5 quiet days.";
 

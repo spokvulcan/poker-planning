@@ -34,7 +34,7 @@ The fixed nodes are `canvasNodes` rows, positioned and saved like poker's: `retr
 
 ## 3. Creating and joining
 
-`/retro/new` takes an optional name (left empty, it becomes "Retro, Sep 24") and one of five templates, copied into the retro:
+`/retro/new` takes an optional name (left empty, it becomes "Retro, Sep 24") and one of five templates, picked from a row of short names over a preview of its columns, and copied into the retro:
 
 | Template | Columns |
 |---|---|
@@ -44,7 +44,7 @@ The fixed nodes are `canvasNodes` rows, positioned and saved like poker's: `retr
 | Liked, Learned, Lacked, Longed for | Liked, Learned, Lacked, Longed for |
 | Sailboat | Wind, Anchors, Rocks ahead, Island |
 
-A line under the form says whether the retro will be kept: "Kept on your account until you delete it." for a permanent account, otherwise that guest retros are removed after 5 quiet days, with a link to sign in. "Start Retro" signs a visitor in as a guest when they have no session (with a generated name), calls `retro.create`, copies the retro's link and opens it. The room starts at `write`, retained when the creator's account is permanent, with the retro node on top, the timer to its left, the pads in a row beneath and the action items at the end of the row. The creator joins through the room page's join gate like anyone else (automatically, since they have a name) and is owner because `ownerId` is theirs. A retro has no spectators: the join dialog hides the toggle and `joinRoom` stores `isSpectator: false`.
+A line under the name field says whether the retro will be kept: "Kept on your account until you delete it." for a permanent account, otherwise that guest retros are removed after 5 quiet days, with a link to sign in. "Start retro" (or Enter in the name field) signs a visitor in as a guest when they have no session (with a generated name), calls `retro.create`, copies the retro's link and opens it. The room starts at `write`, retained when the creator's account is permanent, with the retro node on top, the timer to its left, the pads in a row beneath and the action items at the end of the row. The creator joins through the room page's join gate like anyone else (automatically, since they have a name) and is owner because `ownerId` is theirs. A retro has no spectators: the join dialog hides the toggle and `joinRoom` stores `isSpectator: false`.
 
 ## 4. Steps
 
