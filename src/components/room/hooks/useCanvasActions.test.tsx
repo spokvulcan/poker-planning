@@ -16,19 +16,15 @@ import type { Id } from "@/convex/_generated/dataModel";
 
 // Hoisted recorder shared with the (hoisted) vi.mock factory below. Every
 // useMutation returns a recording function, so any backend write is observable.
-// `reject` flips every mutation to a rejected promise (for failure-path tests).
 const writes = vi.hoisted(() => ({
   calls: [] as { args: unknown }[],
-  reject: false,
 }));
 
 vi.mock("convex/react", () => ({
   useMutation: () => {
     const mutate = (args: unknown) => {
       writes.calls.push({ args });
-      return writes.reject
-        ? Promise.reject(new Error("mutation failed"))
-        : Promise.resolve(undefined);
+      return Promise.resolve(undefined);
     };
     return Object.assign(mutate, { withOptimisticUpdate: () => mutate });
   },
@@ -59,12 +55,10 @@ function invokeAll(actions: ReturnType<typeof useCanvasActions>) {
 
 beforeEach(() => {
   writes.calls = [];
-  writes.reject = false;
 });
 
 describe("useCanvasActions — demo no-op", () => {
   it("issues zero backend writes for every method under a demo context", async () => {
-    const setSelectedCardValue = vi.fn();
     const wrapper = ({ children }: { children: ReactNode }) =>
       createElement(DemoSimulationProvider, null, children);
 
@@ -73,8 +67,6 @@ describe("useCanvasActions — demo no-op", () => {
         useCanvasActions({
           roomId: DEMO_ROOM_ID,
           currentUserId: undefined,
-          selectedCardValue: null,
-          setSelectedCardValue,
         }),
       { wrapper },
     );
@@ -84,20 +76,16 @@ describe("useCanvasActions — demo no-op", () => {
     });
 
     expect(writes.calls).toEqual([]);
-    expect(setSelectedCardValue).not.toHaveBeenCalled();
   });
 });
 
 describe("useCanvasActions — identity stability", () => {
   it("keeps the actions object and every method stable across re-renders", () => {
-    const setSelectedCardValue = vi.fn();
     const { result, rerender } = renderHook(
       ({ userId }: { userId?: Id<"users"> }) =>
         useCanvasActions({
           roomId: ROOM_ID,
           currentUserId: userId,
-          selectedCardValue: null,
-          setSelectedCardValue,
         }),
       { initialProps: { userId: USER_ID as Id<"users"> | undefined } },
     );
@@ -116,39 +104,32 @@ describe("useCanvasActions — identity stability", () => {
   });
 
   it("invokes the latest closure through the stable method (real mode)", async () => {
-    const setSelectedCardValue = vi.fn();
     const { result, rerender } = renderHook(
       ({ userId }: { userId?: Id<"users"> }) =>
         useCanvasActions({
           roomId: ROOM_ID,
           currentUserId: userId,
-          selectedCardValue: null,
-          setSelectedCardValue,
         }),
       { initialProps: { userId: undefined as Id<"users"> | undefined } },
     );
 
     // With no user, selectCard is a guarded no-op.
     await act(async () => result.current.selectCard("8"));
-    expect(setSelectedCardValue).not.toHaveBeenCalled();
+    expect(writes.calls).toEqual([]);
 
     // After a user arrives, the same stable method runs the latest closure.
     rerender({ userId: USER_ID });
     await act(async () => result.current.selectCard("8"));
-    expect(setSelectedCardValue).toHaveBeenCalledWith("8");
-    expect(writes.calls.length).toBe(1);
+    expect(writes.calls).toEqual([{ args: { roomId: ROOM_ID, userId: USER_ID, cardLabel: "8" } }]);
   });
 });
 
 describe("useCanvasActions — selectCard value handling", () => {
   it("picks a card by its label alone: the server reads its value from the deck", async () => {
-    const setSelectedCardValue = vi.fn();
     const { result } = renderHook(() =>
       useCanvasActions({
         roomId: ROOM_ID,
         currentUserId: USER_ID,
-        selectedCardValue: null,
-        setSelectedCardValue,
       }),
     );
 
@@ -160,24 +141,5 @@ describe("useCanvasActions — selectCard value handling", () => {
       userId: USER_ID,
       cardLabel: "0.5",
     });
-  });
-
-  it("rolls back to the prior card value when the pick mutation fails", async () => {
-    writes.reject = true;
-    const setSelectedCardValue = vi.fn();
-    const { result } = renderHook(() =>
-      useCanvasActions({
-        roomId: ROOM_ID,
-        currentUserId: USER_ID,
-        // The user already has "5" highlighted.
-        selectedCardValue: "5",
-        setSelectedCardValue,
-      }),
-    );
-
-    await act(async () => result.current.selectCard("8"));
-
-    // Optimistic write to "8", then rollback to the prior "5" — never to null.
-    expect(setSelectedCardValue.mock.calls).toEqual([["8"], ["5"]]);
   });
 });
