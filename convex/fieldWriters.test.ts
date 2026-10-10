@@ -225,6 +225,19 @@ describe("a name a sign-in provider gives", () => {
     expect((await userRow(t, "google-user"))?.name).toBe("Maximiliana Alexandra Konstantinopoulou-Vanderbilt");
   });
 
+  it("is fitted, not refused, when the room page joins a room under the name a row made before the rule holds", async () => {
+    const t = withComponents(convexTest(schema, modules));
+    const { pokerId } = await seedRooms(t);
+    await seedNamedUser(t, "old-timer", LONG_GOOGLE_NAME.trim());
+
+    // The room page joins a person with a name under the one their row has.
+    await as(t, "old-timer").mutation(api.users.join, { roomId: pokerId, name: LONG_GOOGLE_NAME.trim() });
+
+    expect(await as(t, "old-timer").query(api.users.getMyMembership, { roomId: pokerId })).toMatchObject({
+      name: "Maximiliana Alexandra Konstantinopoulou-Vanderbilt",
+    });
+  });
+
   it("is fitted to the person-name rule when a guest with no name signs in", async () => {
     const t = withComponents(convexTest(schema, modules));
     await seedNamedUser(t, "guest", "", "anonymous");
