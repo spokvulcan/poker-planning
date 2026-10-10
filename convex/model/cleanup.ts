@@ -1,5 +1,6 @@
 import { MutationCtx } from "../_generated/server";
-import { Doc } from "../_generated/dataModel";
+import { Doc, Id } from "../_generated/dataModel";
+import * as Integrations from "./integrations";
 import { ORPHAN_SWEPT_TABLES, OrphanSweptTable, scheduleRoomDeletion } from "./roomAggregate";
 
 export interface RemoveInactiveRoomsResult {
@@ -68,13 +69,17 @@ export async function cleanupOrphanedData(ctx: MutationCtx): Promise<{
   // cascade empties them) but hold retained data; a daily full scan of them
   // against a fixed transaction budget is not worth its cost.
   const swept = {} as Record<OrphanSweptTable, number>;
+  const isOrphan = (doc: { roomId: Id<"rooms"> }) => !existingRoomIds.has(doc.roomId);
   await Promise.all(
     ORPHAN_SWEPT_TABLES.map(async (table) => {
-      swept[table] = await cleanupOrphanedRecords(
-        ctx,
-        table,
-        (doc) => !existingRoomIds.has(doc.roomId)
-      );
+      swept[table] =
+        table === "integrationMappings"
+          ? // A mapping is deleted by its own module, which hands its webhook
+            // to the provider's reconcile.
+            await cleanupOrphanedRecords(ctx, table, isOrphan, (mapping) =>
+              Integrations.deleteMapping(ctx, mapping)
+            )
+          : await cleanupOrphanedRecords(ctx, table, isOrphan);
     })
   );
 
@@ -113,14 +118,15 @@ export async function cleanupOrphanedData(ctx: MutationCtx): Promise<{
 async function cleanupOrphanedRecords<Table extends OrphanSweptTable | "issueLinks">(
   ctx: MutationCtx,
   tableName: Table,
-  isOrphan: (doc: Doc<Table>) => boolean
+  isOrphan: (doc: Doc<Table>) => boolean,
+  remove: (doc: Doc<Table>) => Promise<void> = (doc) => ctx.db.delete(tableName, doc._id)
 ): Promise<number> {
   const docs = await ctx.db.query(tableName).collect();
 
   const deletePromises: Promise<void>[] = [];
   for (const doc of docs) {
     if (isOrphan(doc)) {
-      deletePromises.push(ctx.db.delete(tableName, doc._id));
+      deletePromises.push(remove(doc));
     }
   }
 
