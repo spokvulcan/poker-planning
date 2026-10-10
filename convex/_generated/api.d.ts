@@ -68,6 +68,7 @@ import type * as presence from "../presence.js";
 import type * as retro from "../retro.js";
 import type * as retroLayout from "../retroLayout.js";
 import type * as retroSteps from "../retroSteps.js";
+import type * as retroStickyView from "../retroStickyView.js";
 import type * as retroTemplates from "../retroTemplates.js";
 import type * as retroTopics from "../retroTopics.js";
 import type * as roles from "../roles.js";
@@ -147,6 +148,7 @@ declare const fullApi: ApiFromModules<{
   retro: typeof retro;
   retroLayout: typeof retroLayout;
   retroSteps: typeof retroSteps;
+  retroStickyView: typeof retroStickyView;
   retroTemplates: typeof retroTemplates;
   retroTopics: typeof retroTopics;
   roles: typeof roles;
