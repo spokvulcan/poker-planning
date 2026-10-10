@@ -2,15 +2,12 @@
 
 import { Clock, TrendingDown, TrendingUp, Minus } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import type { TimeToConsensusStats } from "@/convex/analyticsMath";
 
 interface TimeToConsensusCardProps {
   averageMs: number | null;
   medianMs: number | null;
-  trendBySession: Array<{
-    date: string;
-    roomName: string;
-    averageMs: number;
-  }>;
+  trend: TimeToConsensusStats["trend"];
   isLoading?: boolean;
 }
 
@@ -41,7 +38,7 @@ function CardSkeleton() {
 export function TimeToConsensusCard({
   averageMs,
   medianMs,
-  trendBySession,
+  trend,
   isLoading,
 }: TimeToConsensusCardProps) {
   if (isLoading) {
@@ -63,31 +60,23 @@ export function TimeToConsensusCard({
     );
   }
 
-  // Compute trend from session data (compare first half vs second half)
+  // The read's trend: the later sessions against the earlier ones
   let TrendIcon = Minus;
   let trendText = "Stable";
   let trendColor = "text-muted-foreground";
 
-  if (trendBySession.length >= 2) {
-    const midpoint = Math.floor(trendBySession.length / 2);
-    const earlier = trendBySession.slice(0, midpoint);
-    const recent = trendBySession.slice(midpoint);
-
-    const earlierAvg =
-      earlier.reduce((s, d) => s + d.averageMs, 0) / earlier.length;
-    const recentAvg =
-      recent.reduce((s, d) => s + d.averageMs, 0) / recent.length;
-    const diffPct = ((recentAvg - earlierAvg) / earlierAvg) * 100;
-
-    if (diffPct < -10) {
-      TrendIcon = TrendingDown;
-      trendText = `${Math.round(Math.abs(diffPct))}% faster`;
-      trendColor = "text-green-600 dark:text-green-400";
-    } else if (diffPct > 10) {
-      TrendIcon = TrendingUp;
-      trendText = `${Math.round(diffPct)}% slower`;
-      trendColor = "text-amber-600 dark:text-amber-400";
-    }
+  if (trend.direction === "faster") {
+    TrendIcon = TrendingDown;
+    trendText =
+      trend.changePct === null
+        ? "Faster"
+        : `${Math.abs(trend.changePct)}% faster`;
+    trendColor = "text-green-600 dark:text-green-400";
+  } else if (trend.direction === "slower") {
+    TrendIcon = TrendingUp;
+    trendText =
+      trend.changePct === null ? "Slower" : `${trend.changePct}% slower`;
+    trendColor = "text-amber-600 dark:text-amber-400";
   }
 
   return (
