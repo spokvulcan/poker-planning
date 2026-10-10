@@ -22,6 +22,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { formatChartDay } from "./chart-day";
 
 interface AgreementDataPoint {
   date: string;
@@ -64,11 +65,6 @@ function aggregateByDate(
       count,
     }))
     .sort((a, b) => a.date.localeCompare(b.date));
-}
-
-function formatDate(dateStr: string): string {
-  const date = new Date(dateStr);
-  return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
 export function AgreementChart({ data, isLoading }: AgreementChartProps) {
@@ -190,7 +186,7 @@ export function AgreementChart({ data, isLoading }: AgreementChartProps) {
               dataKey="date"
               tickLine={false}
               axisLine={false}
-              tickFormatter={formatDate}
+              tickFormatter={formatChartDay}
               tickMargin={8}
             />
             <YAxis
@@ -202,7 +198,7 @@ export function AgreementChart({ data, isLoading }: AgreementChartProps) {
             <ChartTooltip
               content={
                 <ChartTooltipContent
-                  labelFormatter={(label) => formatDate(label as string)}
+                  labelFormatter={(label) => formatChartDay(label as string)}
                   formatter={(value) => [`${value}%`, "Agreement"]}
                 />
               }
