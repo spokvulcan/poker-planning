@@ -19,7 +19,7 @@ import {
   STICKY_WIDTH,
 } from "@/convex/retroLayout";
 import { buildTimerNode } from "@/components/room/hooks/buildCanvasNodes";
-import type { RetroBoardActions, RetroFlowNode, RetroMember } from "./types";
+import type { RetroBoardActions, RetroFlowNode, RetroMember, StickyDraft } from "./types";
 import { isOptimistic } from "./optimistic";
 import { topicOrder } from "./board-view";
 
@@ -36,7 +36,7 @@ export interface RetroNodesInput {
   items: ActionItemView[] | undefined;
   canvasNodes: CanvasNode[] | undefined;
   members: RetroMember[];
-  draft: { clientId: string; columnId: string; position: { x: number; y: number } } | null;
+  draft: StickyDraft | null;
   editingId: Id<"retroStickies"> | null;
   expandedIds: ReadonlySet<string>;
   actions: RetroBoardActions;
@@ -175,7 +175,10 @@ export function buildRetroNodes(input: RetroNodesInput): RetroFlowNode[] {
     });
   }
 
-  if (input.draft) {
+  // A sent draft is kept until its sticky lands, and that sticky, the same
+  // node, stands in for it; if Convex takes it back, the editor opens again.
+  const draftSent = stickies.some((s) => s.clientId === input.draft?.clientId);
+  if (input.draft && !draftSent) {
     nodes.push({
       id: input.draft.clientId,
       type: "sticky",
@@ -184,7 +187,7 @@ export function buildRetroNodes(input: RetroNodesInput): RetroFlowNode[] {
       draggable: false,
       zIndex: 20,
       data: {
-        draft: { clientId: input.draft.clientId },
+        draft: input.draft,
         color: colorOf.get(input.draft.columnId) ?? "yellow",
         shows,
         editing: true,

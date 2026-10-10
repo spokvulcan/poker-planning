@@ -29,12 +29,25 @@ export interface RetroBoardActions {
   copySummary: () => void;
   /** Resolves to whether the rename landed. */
   renameColumn: (columnId: string, title: string) => Promise<boolean>;
-  addActionItem: (text: string) => void;
+  /** Resolves to whether the item landed. */
+  addActionItem: (text: string) => Promise<boolean>;
   updateActionItem: (
     itemId: Id<"retroActionItems">,
     patch: { text?: string; done?: boolean; ownerId?: Id<"users"> | null }
   ) => void;
   deleteActionItem: (itemId: Id<"retroActionItems">) => void;
+}
+
+/**
+ * A sticky being written: its node key, its column and where it lands, and,
+ * once sent, what it says, so a refused one comes back as it was written.
+ */
+export interface StickyDraft {
+  clientId: string;
+  columnId: string;
+  position: { x: number; y: number };
+  text?: string;
+  gif?: Gif;
 }
 
 /** A person at the board, for owners and counts. */
@@ -75,7 +88,7 @@ export type PadNodeData = {
 export type StickyNodeData = {
   /** The sticky as the viewer may see it; a draft, not yet written, has neither. */
   sticky?: StickyView;
-  draft?: { clientId: string };
+  draft?: Pick<StickyDraft, "clientId" | "text" | "gif">;
   color: StickyColor;
   /** What the retro's step shows everyone. */
   shows: StepShows;
