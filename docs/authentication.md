@@ -152,7 +152,8 @@ export const create = mutation({
   args: { roomId: v.id("rooms"), title: v.string() },
   handler: async (ctx, args) => {
     await requireCan(ctx, args.roomId, { kind: "category", category: "issueManagement" });
-    return await Issues.createIssue(ctx, args);
+    const admission = await Issues.admitIssue(ctx, args);
+    return admission.issueId;
   },
 });
 ```
