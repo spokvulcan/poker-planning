@@ -212,12 +212,8 @@ function RetroCanvasInner({ roomData, currentUserId }: RetroCanvasProps): ReactE
     setStep: (step: RetroStep) => void runAct(m.setStep({ roomId, step }), FAILED),
     stepDiscussion: (direction) => void runAct(m.stepDiscussion({ roomId, direction }), FAILED),
     startNext: async () => {
-      try {
-        const next = await m.startNext({ roomId });
-        router.push(`/room/${next}`);
-      } catch {
-        toast.error("Couldn't start the next retro. Try again.");
-      }
+      const opening = m.startNext({ roomId });
+      if (await runAct(opening, "Couldn't start the next retro. Try again.")) router.push(`/room/${await opening}`);
     },
     copySummary: () => void copySummary(),
     renameColumn: (columnId, title) => runAct(m.updateColumn({ roomId, columnId, title }), FAILED),
