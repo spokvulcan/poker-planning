@@ -9,6 +9,7 @@
 import { MutationCtx } from "../_generated/server";
 import * as Integrations from "../model/integrations";
 import * as Rooms from "../model/rooms";
+import { ISSUE_TITLE } from "../constants";
 
 export interface ParsedJiraWebhookEvent {
   eventKey: string;
@@ -127,8 +128,9 @@ export async function applyJiraWebhookEvent(
     // Update issue title
     const issue = await ctx.db.get("issues", link.issueId);
     if (issue) {
+      // A tracker's title is fitted to the title rule, never refused.
       await ctx.db.patch("issues", link.issueId, {
-        title: `${event.issueKey} - ${event.issueSummary}`,
+        title: ISSUE_TITLE.fit(`${event.issueKey} - ${event.issueSummary}`),
       });
       // The title change feeds the room's analytics history — bump activity
       // through the chokepoint so a fresh analytics snapshot can't serve the

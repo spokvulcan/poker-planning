@@ -13,15 +13,16 @@ import type { UserRows } from "./userRows";
  * provider connections, room mappings, and webhook event dedup.
  *
  * Everything here is db-pure (MutationCtx only) — remote provider calls stay
- * in the integrations/<provider> adapter actions; this module schedules them
- * through the provider registry (integrations/registry.ts) keyed by the
- * connection's or mapping's `provider`, never by a hardcoded provider name.
- * Webhook *semantics* (what an event does to issues and links) live in the
- * adapter too; this module owns only the shared dedup table. The registered
- * wrappers in integrations.ts (public API) and integrations/jira.ts
- * (internal), and account deletion and linking (integrationUserRows, run by
- * model/accountLifecycle.ts), delegate here, so every writer of these tables
- * funnels through the same code.
+ * in the integrations/<provider> adapter actions. Whatever changes or ends a
+ * mapping hands it to its provider's webhook reconcile through the provider
+ * registry (integrations/registry.ts), keyed by the connection's or mapping's
+ * `provider`, never by a hardcoded provider name; the reconcile alone writes
+ * the mapping's webhook record. Webhook *semantics* (what an event does to
+ * issues and links) live in the adapter too; this module owns only the
+ * shared dedup table. The registered wrappers in integrations.ts (public API)
+ * and integrations/jira.ts (internal), and account deletion and linking
+ * (integrationUserRows, run by model/accountLifecycle.ts), delegate here, so
+ * every writer of these tables funnels through the same code.
  */
 
 // ---------------------------------------------------------------------------
@@ -192,9 +193,9 @@ export interface RoomMappingArgs {
  * Upserts the room's provider mapping (one per room), preserving the original
  * `createdAt` on update, and bumps the room's activity through the single
  * chokepoint (Rooms.updateRoomActivity) like every other user-initiated
- * mutation. When auto-push is enabled and the provider handler sees a
- * registration target, schedules webhook (re-)registration — the registration
- * action deletes any previous remote webhook before registering the new one.
+ * mutation. Then hands the row as it was and as it is to the provider's
+ * webhook reconcile, which registers, replaces or removes the mapping's
+ * webhook to match.
  */
 export async function saveRoomMapping(
   ctx: MutationCtx,
@@ -230,45 +231,19 @@ export async function saveRoomMapping(
   }
 
   await Rooms.updateRoomActivity(ctx, args.roomId);
-  await scheduleWebhookRegistration(ctx, args, mappingId);
+  const after = (await ctx.db.get("integrationMappings", mappingId))!;
+  await getProviderHandler(args.provider).webhooks.reconcile(ctx, {
+    kind: "saved",
+    before: existing,
+    after,
+  });
   return mappingId;
 }
 
-async function scheduleWebhookRegistration(
-  ctx: MutationCtx,
-  args: RoomMappingArgs,
-  mappingId: Id<"integrationMappings">
-): Promise<void> {
-  // Schedule webhook registration when auto-push is on and the provider
-  // handler sees a registration target in the mapping (for Jira, the project
-  // key).
-  const handler = getProviderHandler(args.provider);
-  if (args.autoPushEstimates && handler.hasWebhookTarget(args)) {
-    await ctx.scheduler.runAfter(0, handler.registerWebhook, { mappingId });
-  }
-}
-
 /**
- * Records the registered webhook on a mapping — or clears it when called
- * without an id. The registration timestamp is written iff an id is present,
- * so the pair never drifts. (The db columns keep the jira prefix; they are
- * the Jira adapter's webhook slot, read through its handler's webhookIdOf.)
- */
-export async function setMappingWebhook(
-  ctx: MutationCtx,
-  mappingId: Id<"integrationMappings">,
-  webhookId?: string
-): Promise<void> {
-  await ctx.db.patch("integrationMappings", mappingId, {
-    jiraWebhookId: webhookId,
-    jiraWebhookRegisteredAt: webhookId ? Date.now() : undefined,
-  });
-}
-
-/**
- * Removes the room's mapping (if any) and schedules deregistration of its
- * Jira webhook. The connection row survives the mapping, so the scheduled
- * action can still authenticate the remote delete.
+ * Removes the room's mapping (if any) from the room's settings, through
+ * deleteMapping. The connection row survives the mapping, so the webhook's
+ * removal can still authenticate with it.
  */
 export async function removeRoomMapping(
   ctx: MutationCtx,
@@ -280,8 +255,7 @@ export async function removeRoomMapping(
     .first();
 
   if (mapping) {
-    await ctx.db.delete("integrationMappings", mapping._id);
-    await scheduleWebhookDeregistration(ctx, mapping);
+    await deleteMapping(ctx, mapping);
     // Removing the room's integration mapping is user-initiated room
     // activity — route it through the single chokepoint.
     await Rooms.updateRoomActivity(ctx, roomId);
@@ -289,12 +263,29 @@ export async function removeRoomMapping(
 }
 
 /**
+ * Deletes a room's mapping row and hands the row, as data, to its provider's
+ * webhook reconcile, which removes the webhook on its record. Removing the
+ * mapping from the room's settings, the room cascade and the orphan sweep all
+ * delete through here; a disconnect hands its mappings over together
+ * (disconnectConnection). Bumps no activity: a room ending is not activity.
+ */
+export async function deleteMapping(
+  ctx: MutationCtx,
+  mapping: Doc<"integrationMappings">
+): Promise<void> {
+  await ctx.db.delete("integrationMappings", mapping._id);
+  await getProviderHandler(mapping.provider).webhooks.reconcile(ctx, {
+    kind: "removed",
+    mapping,
+  });
+}
+
+/**
  * The disconnect cascade: deletes every mapping on the connection, then hands
- * the live webhooks to the provider handler's finalizeDisconnect action,
- * which deregisters them and deletes the connection row only afterwards — the
- * ordering comes from that action's own awaits, not from same-tick
- * scheduled-job ordering (which Convex does not guarantee). With nothing to
- * deregister the row goes immediately.
+ * them to the provider's webhook reconcile. While a webhook the connection
+ * made is live, the reconcile's disconnect tail deletes the connection row
+ * after deregistering it with the row's credentials; with nothing live the
+ * row goes immediately.
  */
 export async function disconnectConnection(
   ctx: MutationCtx,
@@ -311,20 +302,13 @@ export async function disconnectConnection(
   if (!connection) return;
 
   // Every mapping of a connection shares the connection's provider, so the
-  // one handler reads all of their live webhook ids.
-  const handler = getProviderHandler(connection.provider);
-  const liveWebhookIds = mappings
-    .map((m) => handler.webhookIdOf(m))
-    .filter((id): id is string => !!id);
-
-  if (liveWebhookIds.length > 0) {
-    await ctx.scheduler.runAfter(0, handler.finalizeDisconnect, {
-      connectionId,
-      webhookIds: liveWebhookIds,
-    });
-  } else {
-    await ctx.db.delete("integrationConnections", connectionId);
-  }
+  // one reconcile takes all of them.
+  const row = await getProviderHandler(connection.provider).webhooks.disconnect(
+    ctx,
+    connectionId,
+    mappings
+  );
+  if (row === "now") await ctx.db.delete("integrationConnections", connectionId);
 }
 
 /** A person's provider connections: at most one per provider (saveConnection upserts). */
@@ -362,27 +346,6 @@ export const integrationUserRows: UserRows = {
     }
   },
 };
-
-/**
- * Schedules remote deregistration of a mapping's webhook via its provider
- * handler. Deleting the mapping row alone orphans the remote webhook — it
- * keeps POSTing until its remote expiry — so every mapping-removal path
- * (removeRoomMapping, the room cascade in model/roomAggregate) must go
- * through this.
- */
-export async function scheduleWebhookDeregistration(
-  ctx: MutationCtx,
-  mapping: Doc<"integrationMappings">
-): Promise<void> {
-  const handler = getProviderHandler(mapping.provider);
-  const webhookId = handler.webhookIdOf(mapping);
-  if (webhookId) {
-    await ctx.scheduler.runAfter(0, handler.deregisterWebhook, {
-      connectionId: mapping.connectionId,
-      webhookId,
-    });
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Webhook events

@@ -1,6 +1,6 @@
 import { QueryCtx, MutationCtx } from "../_generated/server";
 import { Doc, Id } from "../_generated/dataModel";
-import { refusal } from "./refusal";
+import { refusal, requireValid } from "./refusal";
 import { resolveRoomAction } from "./auth";
 import { getMembership } from "./memberships";
 import * as Canvas from "./canvas";
@@ -10,22 +10,25 @@ import type { UserRows } from "./userRows";
 import { ceremonyOf } from "../ceremony";
 import { RESOLVED_ALLOWED } from "../permissions";
 import {
+  ACTION_ITEM_TEXT,
+  COLUMN_EMOJI,
+  COLUMN_TITLE,
   columnsFromTemplate,
   DEFAULT_VOTES_PER_PERSON,
-  MAX_ACTION_TEXT_LENGTH,
   MAX_ACTIONS_PER_ROOM,
-  MAX_COLUMN_TITLE_LENGTH,
   MAX_COLUMNS,
   MAX_STICKIES_PER_ROOM,
-  MAX_STICKY_TEXT_LENGTH,
   MAX_VOTES_PER_PERSON,
   MIN_VOTES_PER_PERSON,
   nextColumnId,
   STICKY_COLORS,
+  STICKY_TEXT,
   type RetroColumn,
   type RetroStep,
   type StickyColor,
 } from "../retroTemplates";
+import { ROOM_NAME } from "../constants";
+import { cutTo } from "../fieldRule";
 import * as Topics from "../retroTopics";
 import {
   discussionOrder,
@@ -33,6 +36,7 @@ import {
   stepped,
   stepAllows,
   stepChange,
+  stepShows,
   stickyActAllowed,
   stickyEditDecision,
   walk,
@@ -97,12 +101,16 @@ export async function createRetro(ctx: MutationCtx, args: CreateRetroArgs): Prom
 
 /**
  * "Sprint 42 retro" follows "Sprint 41 retro"; a name without a number
- * gets one.
+ * gets one. A name at the room-name limit gives way before its number
+ * does: the words ahead of the number are cut to fit.
  */
 export function nextRetroName(name: string): string {
   const match = name.match(/^(.*?)(\d+)(\D*)$/);
-  if (match) return `${match[1]}${Number(match[2]) + 1}${match[3]}`;
-  return `${name} 2`;
+  const [head, rest] = match ? [match[1], `${Number(match[2]) + 1}${match[3]}`] : [`${name} `, "2"];
+  const words = head.trimEnd();
+  const gap = head.slice(words.length);
+  const room = Math.max(ROOM_NAME.maxLength - gap.length - rest.length, 0);
+  return ROOM_NAME.fit(`${cutTo(words, room).trimEnd()}${gap}${rest}`);
 }
 
 /**
@@ -224,8 +232,7 @@ export async function getBoard(
   viewerId: Id<"users">
 ): Promise<BoardView> {
   const retro = retroOf(room);
-  const hideOthers = retro.step === "write";
-  const showTotals = retro.step === "discuss" || retro.step === "done";
+  const { faceDown: hideOthers, totals: showTotals } = stepShows(retro.step);
   const [stickies, votes] = await Promise.all([
     stickiesOf(ctx, room._id),
     showTotals ? votesOf(ctx, room._id) : myVotesOf(ctx, room._id, viewerId),
@@ -447,22 +454,6 @@ export async function updateSettings(
   await updateRoomActivity(ctx, room);
 }
 
-function validateColumnTitle(title: string): string {
-  const trimmed = title.trim();
-  if (!trimmed) throw refusal("forbidden", "A column needs a title.");
-  if (trimmed.length > MAX_COLUMN_TITLE_LENGTH) {
-    throw refusal("forbidden", `Keep column titles under ${MAX_COLUMN_TITLE_LENGTH} characters.`);
-  }
-  return trimmed;
-}
-
-function validateEmoji(emoji: string): string {
-  const trimmed = emoji.trim();
-  // An emoji is a handful of code units (flags and ZWJ sequences included).
-  if (!trimmed || trimmed.length > 16) throw refusal("forbidden", "Pick one emoji.");
-  return trimmed;
-}
-
 export async function updateColumn(
   ctx: MutationCtx,
   room: Doc<"rooms">,
@@ -476,8 +467,8 @@ export async function updateColumn(
     column.id === columnId
       ? {
           ...column,
-          ...(patch.title !== undefined ? { title: validateColumnTitle(patch.title) } : {}),
-          ...(patch.emoji !== undefined ? { emoji: validateEmoji(patch.emoji) } : {}),
+          ...(patch.title !== undefined ? { title: requireValid(COLUMN_TITLE, patch.title) } : {}),
+          ...(patch.emoji !== undefined ? { emoji: requireValid(COLUMN_EMOJI, patch.emoji) } : {}),
           ...(patch.color !== undefined ? { color: patch.color } : {}),
         }
       : column
@@ -499,7 +490,7 @@ export async function addColumn(
   await ctx.db.patch("rooms", room._id, {
     retro: {
       ...retro,
-      columns: [...retro.columns, { id, title: validateColumnTitle(column.title), emoji: validateEmoji(column.emoji), color: column.color }],
+      columns: [...retro.columns, { id, title: requireValid(COLUMN_TITLE, column.title), emoji: requireValid(COLUMN_EMOJI, column.emoji), color: column.color }],
     },
   });
   await Canvas.columnAdded(ctx, room._id, id);
@@ -522,14 +513,6 @@ export async function removeColumn(ctx: MutationCtx, room: Doc<"rooms">, columnI
 }
 
 // --- Stickies --------------------------------------------------------------------
-
-function validateStickyText(text: string): string {
-  const trimmed = text.trim();
-  if (trimmed.length > MAX_STICKY_TEXT_LENGTH) {
-    throw refusal("forbidden", `Keep stickies under ${MAX_STICKY_TEXT_LENGTH} characters.`);
-  }
-  return trimmed;
-}
 
 function validateGif(gif: Gif): Gif {
   const url = normalizeGifUrl(gif.url);
@@ -598,7 +581,7 @@ export async function addSticky(
     .unique();
   if (existing) return existing._id;
   if (!retro.columns.some((c) => c.id === args.columnId)) throw refusal("missing", "That column is gone.");
-  const text = validateStickyText(args.text);
+  const text = requireValid(STICKY_TEXT, args.text);
   const gif = args.gif ? validateGif(args.gif) : undefined;
   if (!text && !gif) throw refusal("forbidden", "Write something or add a GIF.");
   const count = (await stickiesOf(ctx, room._id)).length;
@@ -627,7 +610,7 @@ export async function updateSticky(
 ): Promise<void> {
   const retro = retroOf(room);
   await requireStickyEditor(ctx, room, retro, sticky, membership);
-  const text = patch.text === undefined ? sticky.text : validateStickyText(patch.text);
+  const text = patch.text === undefined ? sticky.text : requireValid(STICKY_TEXT, patch.text);
   const gif = patch.gif === undefined ? sticky.gif : patch.gif === null ? undefined : validateGif(patch.gif);
   if (!text && !gif) throw refusal("forbidden", "A sticky needs words or a GIF.");
   if (patch.columnId !== undefined && !retro.columns.some((c) => c.id === patch.columnId)) {
@@ -871,15 +854,6 @@ export async function toggleVote(
 
 // --- Action items ----------------------------------------------------------------
 
-function validateActionText(text: string): string {
-  const trimmed = text.trim();
-  if (!trimmed) throw refusal("forbidden", "An action item needs a few words.");
-  if (trimmed.length > MAX_ACTION_TEXT_LENGTH) {
-    throw refusal("forbidden", `Keep action items under ${MAX_ACTION_TEXT_LENGTH} characters.`);
-  }
-  return trimmed;
-}
-
 async function requireOwnerInRoom(ctx: QueryCtx, roomId: Id<"rooms">, ownerId: Id<"users">): Promise<void> {
   if (!(await getMembership(ctx, roomId, ownerId))) {
     throw refusal("missing", "That person isn't in this retro.");
@@ -892,7 +866,7 @@ export async function addActionItem(
   args: { text: string; ownerId?: Id<"users"> }
 ): Promise<Id<"retroActionItems">> {
   retroOf(room);
-  const text = validateActionText(args.text);
+  const text = requireValid(ACTION_ITEM_TEXT, args.text);
   if ((await actionItemsOf(ctx, room._id)).length >= MAX_ACTIONS_PER_ROOM) {
     throw refusal("forbidden", "That's a lot of action items. Finish a few first.");
   }
@@ -920,7 +894,7 @@ export async function updateActionItem(
   const ownerId = patch.ownerId === undefined ? currentOwner : (patch.ownerId ?? undefined);
   await ctx.db.replace("retroActionItems", item._id, {
     ...rest,
-    ...(patch.text !== undefined ? { text: validateActionText(patch.text) } : {}),
+    ...(patch.text !== undefined ? { text: requireValid(ACTION_ITEM_TEXT, patch.text) } : {}),
     ...(patch.done !== undefined ? { done: patch.done } : {}),
     ...(ownerId ? { ownerId } : {}),
   });

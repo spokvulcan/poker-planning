@@ -2,46 +2,57 @@
  * Zero-reads guard (Module 4) — the test that proves the cost goal.
  *
  * Reducer unit tests cannot catch a subscription leaking through a hook or
- * component, so this guard renders the demo's canvas hooks inside the
- * DemoSimulationProvider with a mocked Convex client and asserts that none of
- * the demo/canvas/issues/presence subscriptions are opened: every such
- * `useQuery` is passed `"skip"`, and `usePresence` is never called at all.
- * (The timer opens no subscription at all anymore — its state arrives with the
- * canvas node data — so it is probed for regressions but lists no query.)
- * Directly protects user stories 12/14/17 (ADR-0003).
+ * component, so this guard renders the poker board (`RoomCanvas`, as /demo
+ * does) and the demo's other canvas hooks inside the DemoSimulationProvider
+ * with a mocked Convex client and asserts that none of the demo/canvas/
+ * issues/presence subscriptions are opened: every such `useQuery` is passed
+ * `"skip"`, and `usePresence` is never called at all. (The timer opens no
+ * subscription at all anymore — its state arrives with the canvas node data —
+ * so it is probed for regressions but lists no query.) Directly protects user
+ * stories 12/14/17 (ADR-0003).
  *
- * The root-subscription case is covered too: the root AuthProvider subscribes
- * `api.users.getGlobalUser` whenever a session is live, and AuthProvider sits
- * above DemoSimulationProvider, so the provider seam cannot gate it. The probe
- * renders AuthProvider over the demo tree with a live session and asserts the
- * subscription is skipped on the /demo route — and opened on a non-demo route.
+ * The shell is covered too: AuthProvider subscribes `api.users.getGlobalUser`
+ * whenever a session is live, on any route, so what keeps it off the demo is
+ * the shell: /demo's route group mounts no AuthProvider. The probe renders the
+ * real demo shell (the (demo) layout) over the demo tree with a live session
+ * and asserts nothing subscribes and the session is never read; AuthProvider,
+ * which the app shell mounts, opens the subscription for the same session.
  *
  * Single-channel sourcing (#214): the demo signal travels only through the
- * provider seam — the hooks take no `isDemoMode` prop and derive it from
- * context. So this guard renders them with NO `isDemoMode` prop and asserts the
- * bypass purely from being inside the provider; a companion case renders the
- * same hooks OUTSIDE the provider and asserts they behave as a real room (every
- * subscription opens). Together they pin that the signal and the Convex-bypass
- * branch on the same fact.
+ * provider seam — the board and the hooks take no `isDemoMode` prop and derive
+ * it from context. So this guard renders them with NO `isDemoMode` prop and
+ * asserts the bypass purely from being inside the provider; a companion case
+ * renders the same board and hooks OUTSIDE the provider and asserts they
+ * behave as a real room (every subscription opens). Together they pin that the
+ * signal and the Convex-bypass branch on the same fact.
  *
  * It renders with `react-dom/server` (no DOM/jsdom needed): hooks run during
  * render, which is exactly when `useQuery`/`usePresence` are invoked.
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterAll } from "vitest";
 
 // Hoisted capture buffers — referenced inside the (hoisted) vi.mock factories.
-const spy = vi.hoisted(() => ({
-  queries: [] as { query: unknown; args: unknown }[],
-  presenceCalled: false,
-  pathname: "/demo",
-}));
+const spy = vi.hoisted(() => {
+  // The demo shell builds its Convex client from it when it loads.
+  vi.stubEnv("NEXT_PUBLIC_CONVEX_URL", "https://zero-reads-123.convex.cloud");
+  return {
+    queries: [] as { query: unknown; args: unknown }[],
+    presenceCalled: false,
+    sessionReads: 0,
+  };
+});
 
-vi.mock("convex/react", () => ({
+vi.mock("convex/react", async (importOriginal) => ({
+  // The real client and provider, which the demo shell mounts.
+  ...(await importOriginal<typeof import("convex/react")>()),
   useQuery: (query: unknown, args: unknown) => {
     spy.queries.push({ query, args });
     return undefined; // demo data comes from context, not from Convex
   },
-  useMutation: () => async () => undefined,
+  useMutation: () => {
+    const mutate = async () => undefined;
+    return Object.assign(mutate, { withOptimisticUpdate: () => mutate });
+  },
   // A live session, so the AuthProvider probe exercises the authenticated case.
   useConvexAuth: () => ({ isAuthenticated: true, isLoading: false }),
 }));
@@ -53,17 +64,23 @@ vi.mock("@convex-dev/presence/react", () => ({
   },
 }));
 
+// AuthProvider's probe runs on the demo's own route, which must not matter.
 vi.mock("next/navigation", () => ({
-  usePathname: () => spy.pathname,
+  usePathname: () => "/demo",
 }));
 
 vi.mock("@/lib/auth-client", () => ({
   authClient: {
-    useSession: () => ({
-      data: { user: { id: "user-1", isAnonymous: false, email: "u@example.com" } },
-    }),
+    // A live session, which the demo shell must never read.
+    useSession: () => {
+      spy.sessionReads += 1;
+      return { data: { user: { id: "user-1", isAnonymous: false, email: "u@example.com" } } };
+    },
   },
 }));
+
+// The room's chrome; see the audit below.
+vi.mock("../canvas-navigation", () => ({ CanvasNavigation: () => null }));
 
 import { createElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -76,11 +93,12 @@ import {
   useDemoSimulation,
 } from "./DemoSimulationProvider";
 import { AuthProvider } from "@/components/auth/auth-provider";
-import { useCanvasNodes } from "../hooks/useCanvasNodes";
+import { RoomCanvas } from "../room-canvas";
 import { useIssues } from "../hooks/useIssues";
 import { useTimerSync } from "../hooks/use-timer-sync";
 import { useRoomPresence } from "@/hooks/useRoomPresence";
 import { DEMO_VIEWER_ID } from "../types";
+import DemoLayout from "@/app/(demo)/layout";
 
 // Every subscription reachable from the demo canvas. In demo mode all must be
 // bypassed; in a real room all must open. `api.issues.getForEnhancedExport`
@@ -92,8 +110,9 @@ const SUBSCRIPTIONS = [
   getFunctionName(api.issues.list),
 ];
 
-// The root subscription mounted above the demo tree (AuthProvider). It is
-// route-gated, not provider-gated, so it gets its own probe below.
+// The subscription the app shell mounts above every page (AuthProvider). The
+// shell, not the provider seam, keeps it off the demo, so it gets its own
+// probe below.
 const ROOT_SUBSCRIPTIONS = [getFunctionName(api.users.getGlobalUser)];
 
 // Names + args of the captured subscription calls (ignoring queries we don't
@@ -117,11 +136,15 @@ function capturedRootSubscriptions(): { name: string; args: unknown }[] {
     .filter((c) => ROOT_SUBSCRIPTIONS.includes(c.name));
 }
 
-// Calls every always-mounted Convex-subscribing hook reachable from the demo
-// canvas. The other demo-reachable subscriptions are guarded at their own site,
-// so they are deliberately outside this Probe's scope (audited 2026-08-03):
+// Renders the poker board, and calls every other always-mounted
+// Convex-subscribing hook reachable from the demo canvas. The other
+// demo-reachable subscriptions are guarded at their own site, so they are
+// deliberately outside this Probe's scope (audited 2026-08-03, and 2026-10-10
+// when the board's queries moved into RoomCanvas):
 //   - RoomCanvas/PlayerNode read `roomData` (a prop) — api.rooms.get
 //     is never called in demo mode.
+//   - CanvasNavigation (the room's chrome) is stubbed: its only subscribing
+//     part is the account menu (UserMenu), which the demo never draws.
 //   - issues-panel skips its integration queries in demo (derives the signal
 //     from `useIsDemoMode()`); its writes go through useIssueActions, which
 //     no-ops in demo (covered by useIssueActions.test.tsx). Its export flow
@@ -143,15 +166,9 @@ const STOPPED_TIMER_STATE = {
 };
 
 function useProbeHooks(roomId: Id<"rooms">, roomData: RoomWithRelatedData): void {
-  // The hooks take no `isDemoMode` prop: they read the demo signal from the
-  // provider seam, so what differs between the two cases is only whether the
-  // provider is mounted around them.
-  useCanvasNodes({
-    roomId,
-    roomData,
-    currentUserId: undefined,
-    selectedCardValue: null,
-  });
+  // The board and the hooks take no `isDemoMode` prop: they read the demo
+  // signal from the provider seam, so what differs between the two cases is
+  // only whether the provider is mounted around them.
   useIssues({ roomId });
   useRoomPresence(roomId, DEMO_VIEWER_ID, roomData.users);
   useTimerSync({
@@ -166,14 +183,15 @@ function DemoProbe(): ReactNode {
   const demo = useDemoSimulation();
   if (!demo) throw new Error("DemoProbe must render inside DemoSimulationProvider");
   useProbeHooks(demo.roomData.room._id, demo.roomData);
-  return null;
+  return createElement(RoomCanvas, { roomData: demo.roomData });
 }
 
 // A real room: no provider mounted, so `useDemoSimulation()` is null and the
-// hooks must subscribe. The exact data is irrelevant — `useQuery` fires
-// synchronously during `renderToStaticMarkup`, before any data round-trip — so
-// the double-cast to a minimal room shape is safe: nothing ever reads the
-// fields we omitted.
+// board and hooks must subscribe. The exact data is irrelevant — `useQuery`
+// fires synchronously during `renderToStaticMarkup`, before any data
+// round-trip, and the board draws nothing until its queries answer — so the
+// double-cast to a minimal room shape is safe: nothing reads the fields we
+// omitted.
 function RealRoomProbe(): ReactNode {
   const roomId = "real-room-id" as Id<"rooms">;
   const roomData = {
@@ -183,14 +201,14 @@ function RealRoomProbe(): ReactNode {
     isOwnerAbsent: false,
   } as unknown as RoomWithRelatedData;
   useProbeHooks(roomId, roomData);
-  return null;
+  // A member's board: a real room draws nothing for a viewer without one.
+  return createElement(RoomCanvas, { roomData, currentUserId: "user-1" as Id<"users"> });
 }
 
 describe("zero-reads guard: the demo signal is sourced from the provider seam", () => {
   beforeEach(() => {
     spy.queries.length = 0;
     spy.presenceCalled = false;
-    spy.pathname = "/demo";
   });
 
   it("skips every demo/canvas/issues query and never subscribes to presence inside the provider", () => {
@@ -218,28 +236,34 @@ describe("zero-reads guard: the demo signal is sourced from the provider seam", 
   });
 });
 
-describe("zero-reads guard: the root AuthProvider subscription is bypassed under /demo", () => {
+afterAll(() => {
+  vi.unstubAllEnvs();
+});
+
+describe("zero-reads guard: the demo shell mounts no auth", () => {
   beforeEach(() => {
     spy.queries.length = 0;
     spy.presenceCalled = false;
+    spy.sessionReads = 0;
   });
 
-  it("skips getGlobalUser on /demo even with a live session", () => {
-    spy.pathname = "/demo";
+  it("opens no subscription and never reads the session, even with one live", () => {
     renderToStaticMarkup(
       createElement(
-        AuthProvider,
+        DemoLayout,
         null,
         createElement(DemoSimulationProvider, null, createElement(DemoProbe)),
       ),
     );
 
-    const leaked = capturedRootSubscriptions().filter((c) => c.args !== "skip");
-    expect(leaked).toEqual([]);
+    // The demo tree rendered inside the shell and reached its subscriptions...
+    expect(capturedSubscriptions().length).toBeGreaterThan(0);
+    // ...and nothing under the shell subscribed.
+    expect(spy.queries.filter((c) => c.args !== "skip")).toEqual([]);
+    expect(spy.sessionReads).toBe(0);
   });
 
-  it("opens getGlobalUser on a non-demo route with a live session", () => {
-    spy.pathname = "/room/real-room-id";
+  it("AuthProvider, which only the app shell mounts, opens getGlobalUser for a live session on any route", () => {
     renderToStaticMarkup(
       createElement(AuthProvider, null, createElement(RealRoomProbe)),
     );

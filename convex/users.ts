@@ -1,30 +1,20 @@
-import { mutation, query, internalMutation } from "./_generated/server";
+import { mutation, query, internalMutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
 import * as Users from "./model/users";
+import * as AccountLifecycle from "./model/accountLifecycle";
+import { getMembership } from "./model/memberships";
+import { findUser, getCaller, requireCaller } from "./model/caller";
 import {
-  requireAuth,
   requireAuthAs,
   requireActingUser,
   requireCan,
-  getOptionalAuthUser,
 } from "./model/auth";
-
-function validateName(name: string): string {
-  const trimmed = name.trim();
-  if (!trimmed) {
-    throw new Error("Name is required");
-  }
-  if (trimmed.length > 50) {
-    throw new Error("Name must be 50 characters or less");
-  }
-  return trimmed;
-}
 
 // Get global user for the currently authenticated user
 export const getGlobalUser = query({
   args: {},
   handler: async (ctx) => {
-    return await getOptionalAuthUser(ctx);
+    return (await getCaller(ctx))?.user ?? null;
   },
 });
 
@@ -34,25 +24,21 @@ export const getMyMembership = query({
     roomId: v.id("rooms"),
   },
   handler: async (ctx, args) => {
-    const user = await getOptionalAuthUser(ctx);
+    const user = (await getCaller(ctx))?.user;
     if (!user) return null;
 
-    const result = await Users.getMembershipByAuthUserId(
-      ctx,
-      args.roomId,
-      user.authUserId
-    );
-    if (!result) return null;
+    const membership = await getMembership(ctx, args.roomId, user._id);
+    if (!membership) return null;
 
     // Return merged user + membership data for frontend
     return {
-      _id: result.user._id,
-      name: result.user.name,
-      avatarUrl: result.user.avatarUrl,
-      isSpectator: result.membership.isSpectator,
-      role: result.membership.role ?? ("participant" as const),
-      joinedAt: result.membership.joinedAt,
-      membershipId: result.membership._id,
+      _id: user._id,
+      name: user.name,
+      avatarUrl: user.avatarUrl,
+      isSpectator: membership.isSpectator,
+      role: membership.role ?? ("participant" as const),
+      joinedAt: membership.joinedAt,
+      membershipId: membership._id,
     };
   },
 });
@@ -69,7 +55,7 @@ export const join = mutation({
 
     return await Users.joinRoom(ctx, {
       roomId: args.roomId,
-      name: validateName(args.name),
+      name: args.name,
       isSpectator: args.isSpectator,
       authUserId: args.authUserId,
     });
@@ -90,7 +76,7 @@ export const edit = mutation({
     await Users.editUser(ctx, {
       userId: args.userId,
       roomId: args.roomId,
-      name: args.name !== undefined ? validateName(args.name) : undefined,
+      name: args.name,
       isSpectator: args.isSpectator,
     });
   },
@@ -133,12 +119,8 @@ export const editGlobalUser = mutation({
     name: v.string(),
   },
   handler: async (ctx, args) => {
-    const identity = await requireAuth(ctx);
-    await Users.updateGlobalUserName(
-      ctx,
-      identity.subject,
-      validateName(args.name)
-    );
+    const { user } = await requireCaller(ctx);
+    await Users.updateGlobalUserName(ctx, user, args.name);
   },
 });
 
@@ -146,8 +128,8 @@ export const editGlobalUser = mutation({
 export const deleteUser = mutation({
   args: {},
   handler: async (ctx) => {
-    const identity = await requireAuth(ctx);
-    await Users.deleteUserByAuthUserId(ctx, identity.subject);
+    const { user } = await requireCaller(ctx);
+    if (user) await AccountLifecycle.deleteAccount(ctx, user);
   },
 });
 
@@ -184,12 +166,12 @@ export const ensureGlobalUser = mutation({
     name: v.string(),
   },
   handler: async (ctx, args) => {
-    await requireAuthAs(ctx, args.authUserId);
+    const { user } = await requireAuthAs(ctx, args.authUserId);
 
-    if (await Users.getGlobalUserByAuthUserId(ctx, args.authUserId)) return;
+    if (user) return;
     await Users.findOrCreateGlobalUser(ctx, {
       authUserId: args.authUserId,
-      name: validateName(args.name),
+      name: args.name,
     });
   },
 });
@@ -204,5 +186,14 @@ export const linkAnonymousAccount = internalMutation({
   },
   handler: async (ctx, args) => {
     await Users.linkAnonymousToPermanent(ctx, args);
+  },
+});
+
+// The users row of the person signed in as `authUserId`: how an action, which
+// has no database of its own, finds its caller (model/caller.ts).
+export const userByAuthId = internalQuery({
+  args: { authUserId: v.string() },
+  handler: async (ctx, args) => {
+    return await findUser(ctx, args.authUserId);
   },
 });
