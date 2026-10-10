@@ -3,6 +3,7 @@ import { Id, Doc } from "../_generated/dataModel";
 import * as Canvas from "./canvas";
 import * as Rooms from "./rooms";
 import * as VotingRound from "./votingRound";
+import { refusal } from "./refusal";
 import {
   MAX_ISSUE_TITLE_LENGTH,
   MAX_ISSUES_PER_ROOM,
@@ -79,17 +80,81 @@ export async function getCurrentIssue(
   return await ctx.db.get("issues", room.currentIssueId);
 }
 
+/** Where an issue lives in a tracker: the provider, its key there, and its page. */
+export type IssueLink = Pick<Doc<"issueLinks">, "provider" | "externalId" | "externalUrl">;
+
 /**
- * Canonical issue creation, shared by local creates and integration imports:
- * enforces the per-room cap, allocates the next sequential ID, advances the
- * room counter exactly once, and appends after the current max order.
+ * What admitting an issue did: a new issue, or the room's issue that already
+ * holds the link (a tracker issue is in a room at most once).
  */
-export async function createIssueInRoom(
+export type Admission =
+  | { kind: "admitted"; issueId: Id<"issues"> }
+  | { kind: "alreadyInRoom"; issueId: Id<"issues"> };
+
+/**
+ * The room's issue holding this link, found through the room's links. A link
+ * whose issue is gone holds nothing: removeIssue leaves links to the daily
+ * orphan sweep.
+ *
+ * Rows written before `issueLinks.roomId` existed are invisible to by_room
+ * until backfillIssueLinksRoomId tags them, and the field is still optional,
+ * so nothing proves that has run in production. Until it is required, this
+ * link's untagged rows are read through by_external (a handful: one per room
+ * holding the tracker issue) and their issue says whose they are.
+ */
+async function issueHoldingLink(
+  ctx: QueryCtx,
+  roomId: Id<"rooms">,
+  link: IssueLink
+): Promise<Id<"issues"> | null> {
+  const roomLinks = await ctx.db
+    .query("issueLinks")
+    .withIndex("by_room", (q) => q.eq("roomId", roomId))
+    .collect();
+  for (const row of roomLinks) {
+    if (row.provider !== link.provider || row.externalId !== link.externalId) continue;
+    if (await ctx.db.get("issues", row.issueId)) return row.issueId;
+  }
+
+  const sameLink = await ctx.db
+    .query("issueLinks")
+    .withIndex("by_external", (q) =>
+      q.eq("provider", link.provider).eq("externalId", link.externalId)
+    )
+    .collect();
+  for (const row of sameLink) {
+    if (row.roomId !== undefined) continue;
+    const issue = await ctx.db.get("issues", row.issueId);
+    if (issue?.roomId === roomId) return issue._id;
+  }
+  return null;
+}
+
+/**
+ * The one way an issue enters a room's backlog, typed in the room or brought
+ * from a tracker with its link: the title rule, the per-room cap, a tracker
+ * issue at most once per room, the next sequential ID (the room counter
+ * advances exactly once), an order after the current last, and the link row.
+ * A full room or a link that isn't https is refused in words people see.
+ */
+export async function admitIssue(
   ctx: MutationCtx,
-  args: { roomId: Id<"rooms">; title: string }
-): Promise<Id<"issues">> {
+  args: { roomId: Id<"rooms">; title: string; link?: IssueLink }
+): Promise<Admission> {
   const room = await ctx.db.get("rooms", args.roomId);
   if (!room) throw new Error("Room not found");
+
+  if (args.link) {
+    // The room UI renders the link as an anchor href: only a real web URL,
+    // so a malicious integration connection can't inject a javascript: link.
+    if (!args.link.externalUrl.startsWith("https://")) {
+      throw refusal("forbidden", "Issue links must be https:// URLs");
+    }
+    // Ahead of the cap: a tracker issue already in a full room is reported
+    // as in the room, not refused.
+    const holder = await issueHoldingLink(ctx, args.roomId, args.link);
+    if (holder) return { kind: "alreadyInRoom", issueId: holder };
+  }
 
   // Get next sequential ID
   const nextNumber = (room.nextIssueNumber ?? 0) + 1;
@@ -100,7 +165,7 @@ export async function createIssueInRoom(
     .withIndex("by_room", (q) => q.eq("roomId", args.roomId))
     .collect();
   if (issues.length >= MAX_ISSUES_PER_ROOM) {
-    throw new Error(`Rooms are limited to ${MAX_ISSUES_PER_ROOM} issues`);
+    throw refusal("forbidden", `Rooms are limited to ${MAX_ISSUES_PER_ROOM} issues`);
   }
   const maxOrder = issues.length > 0 ? Math.max(...issues.map((i) => i.order)) : 0;
 
@@ -111,7 +176,7 @@ export async function createIssueInRoom(
   await Rooms.updateRoomActivity(ctx, args.roomId);
 
   // Create the issue
-  return await ctx.db.insert("issues", {
+  const issueId = await ctx.db.insert("issues", {
     roomId: args.roomId,
     sequentialId: nextNumber,
     title: validateIssueTitle(args.title),
@@ -119,16 +184,20 @@ export async function createIssueInRoom(
     createdAt: Date.now(),
     order: maxOrder + 1,
   });
-}
 
-/**
- * Creates a new issue with an auto-incremented sequential ID
- */
-export async function createIssue(
-  ctx: MutationCtx,
-  args: { roomId: Id<"rooms">; title: string }
-): Promise<Id<"issues">> {
-  return await createIssueInRoom(ctx, args);
+  if (args.link) {
+    // roomId-tagged so the room's links come from one by_room read.
+    await ctx.db.insert("issueLinks", {
+      issueId,
+      roomId: args.roomId,
+      provider: args.link.provider,
+      externalId: args.link.externalId,
+      externalUrl: args.link.externalUrl,
+      lastSyncedAt: Date.now(),
+    });
+  }
+
+  return { kind: "admitted", issueId };
 }
 
 /**

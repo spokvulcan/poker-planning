@@ -8,7 +8,6 @@ export const metadata: Metadata = pageMetadata({
     "Create a new planning poker session. Choose your voting scale and start estimating with your team.",
   path: "/room/new",
   social: {
-    title: "New Planning Poker Game | AgileKit",
     description: "Create a new planning poker session with your team.",
   },
 });

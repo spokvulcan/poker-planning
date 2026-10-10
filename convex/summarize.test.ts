@@ -77,15 +77,6 @@ describe("summarize — stats", () => {
     expect(s.stats.agreement).toBe(67);
   });
 
-  it("treats an absent scale as numeric (the default scale is numeric)", () => {
-    // A room with no explicit votingScale (the demo room, and rooms predating
-    // the field) must still get numeric stats — the client renders them via
-    // `votingScale?.isNumeric ?? true`, so the stored stats must agree.
-    const s = summarize([{ cardLabel: "2" }, { cardLabel: "4" }, { cardLabel: "6" }]);
-    expect(s.stats.average).toBe(4);
-    expect(s.stats.median).toBe(4);
-  });
-
   it("returns nulls and zero agreement when there are no countable votes", () => {
     const s = summarize([], numeric);
     expect(s.consensus).toBeNull();

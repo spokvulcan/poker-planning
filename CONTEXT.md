@@ -27,7 +27,7 @@ The backend adapter (`requireActingUser`) for "authenticated ∧ room member ∧
 _Avoid_: self-check, impersonation check
 
 **Room access**:
-May this person *read* this room's contents — today, exactly when they have **room attendance**. Still its own question with its own guard (`requireRoomReader`), which read-only queries on room contents take and which returns the room, never a membership (see [ADR-0009](docs/adr/0009-room-access-and-room-attendance-are-separate-guards.md)).
+May this person *read* this room's contents — today, exactly when they have **room attendance**. Still its own question with its own guard (`requireRoomReader`), which read-only queries on room contents take and which reads only the caller and their membership, returning neither the room nor a membership (see [ADR-0009](docs/adr/0009-room-access-and-room-attendance-are-separate-guards.md)).
 _Avoid_: visibility (that is the property being protected), read permission
 
 **Room attendance**:
@@ -147,7 +147,7 @@ The `discuss` step's walk through the **topics** that got votes, most votes firs
 _Avoid_: agenda, discussion walk (the team retro's snapshotted walk), coverage
 
 **Spotlight**:
-The one **topic** the **discussion** is on. A person who may run the retro moves it next or back along the order, or puts any revealed topic in it, voted for or not; everyone's view follows it. It stays on its topic when the topic is stacked onto another, and goes out when the topic leaves the board.
+The one **topic** the **discussion** is on. A person who may run the retro moves it next or back along the order, or puts any revealed topic in it, voted for or not; everyone's view follows it. Putting a topic in it works in `done` too, and keeps the retro done. It stays on its topic when the topic is stacked onto another, and goes out when the topic leaves the board or the retro moves to `write`, `vote` or `done`.
 _Avoid_: focus (fine in code), current topic, raise (the team retro's)
 
 **Action item**:
@@ -193,7 +193,7 @@ A round's derived lifecycle state — `voting`, `countingDown` (auto-reveal arme
 _Avoid_: game state, mode, idle; do not conflate with issue **status**, nor with a retro **step** (stored, and moved by a person)
 
 **Transition**:
-A control action that moves the **phase**: **start** (begin a round on a target), **reveal** (settle and compute results), **reset** (begin a fresh round on the same target), **abandon** (drop the issue target, falling back to a target-less **Quick Vote**, still `voting`). Gated by the **game flow** / **reveal cards** permission categories. Casting or retracting a vote is a participant action, not a transition, though it may arm or cancel the countdown.
+A control action that moves the **phase**: **start** (begin a round on a target), **reveal** (settle and compute results), **reset** (begin a fresh round on the same target), **abandon** (drop the issue target, falling back to a target-less **Quick Vote**, still `voting`). Gated by the **game flow** / **reveal cards** permission categories. Casting or retracting a vote is a participant action, not a transition, though it may arm or cancel the countdown. The **phase** says which can happen at all (`convex/phase.ts`), as a retro **step** does: a round reveals once, and its votes close at the reveal. A start reads its target's **status** instead, so the issue already being voted on isn't started again. Reset and abandon are open in every phase. The round refuses quietly, changing nothing, the way a stale scheduled reveal reveals nothing.
 _Avoid_: event, command
 
 **Auto-reveal countdown**:
@@ -208,8 +208,12 @@ _Avoid_: kick (the `remove` relationship action is one trigger, not the concept)
 The looping illustration on `/demo`. It is **not a room and runs no voting round** — there is no `rooms` row, no membership, no persisted vote, and the backend never participates. Bots, issues, and **phase** transitions are computed entirely on the viewer's machine and discarded. It *imitates* a round's **phase** lifecycle and reuses the one pure results computation (`summarize`) so its revealed numbers match a real round's, but it lives deliberately outside the **voting round** module's authority. Paused while its tab is hidden (see [ADR-0003](docs/adr/0003-demo-is-a-client-simulation.md)).
 _Avoid_: demo room (there is no room), demo game, bot round
 
+**Deck**:
+What a poker room's cards mean, read from its stored voting scale by `deckOf` (`convex/scales.ts`): which cards are dealt, whether a label is a legal ballot (a card the deck deals; the round refuses any other), and what a card reads as a number. A legacy room that stores no scale deals the default deck, Fibonacci, and so does the **demo simulation**; a new room stores it when its creator picks none, and it is defined once. The special cards `?`, `☕` and `∞` are dealt and played but estimate nothing: no consensus, average or alignment counts them. A card is read as a number in one place (`cardNumericValue`, where a literal "Infinity" reads as none): the round, `summarize`, alignment, the Jira push and the card row ask the deck, and analytics shares that reading without a deck, since a final estimate can be free text. No second parse may be introduced.
+_Avoid_: card set, card values; scale for anything but the stored setting a deck is read from
+
 **Voter alignment**:
-The per-voter distance-from-consensus picture (spec 04), persisted as `individualVotes` rows at reveal. Computed pure in `convex/model/alignment.ts` (`computeVoterAlignment`); the single card→numeric conversion (`cardNumericValue`) is shared by alignment, the round's cast-vote path, and the `summarize` results computation — no second parse may be introduced.
+The per-voter distance-from-consensus picture (spec 04), persisted as `individualVotes` rows at reveal. Computed pure in `convex/model/alignment.ts` (`computeVoterAlignment`), reading each card through the room's **deck**: steps from the consensus are counted only along a numeric deck.
 _Avoid_: agreement score (that is `voteStats.agreement` on the issue), deviation, spread
 
 ### Room activity
