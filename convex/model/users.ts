@@ -1,14 +1,16 @@
-import { MutationCtx, QueryCtx } from "../_generated/server";
+import { MutationCtx } from "../_generated/server";
 import { Id, Doc } from "../_generated/dataModel";
 import * as AccountLifecycle from "./accountLifecycle";
+import { findUser } from "./caller";
 import * as Memberships from "./memberships";
 import * as Rooms from "./rooms";
 
 /**
  * People: the app's `users` rows, one per person, each linked to an auth
- * identity (BetterAuth's user id). Which rooms a person is in is
- * memberships.ts's; how an account ends, deleted or folded into another,
- * is accountLifecycle.ts's.
+ * identity (BetterAuth's user id). Who is calling, and so which row is
+ * theirs, is caller.ts's. Which rooms a person is in is memberships.ts's;
+ * how an account ends, deleted or folded into another, is
+ * accountLifecycle.ts's.
  */
 
 export interface JoinRoomArgs {
@@ -32,7 +34,7 @@ export async function findOrCreateGlobalUser(
   ctx: MutationCtx,
   args: { authUserId: string; name: string }
 ): Promise<Id<"users">> {
-  const existingUser = await getGlobalUserByAuthUserId(ctx, args.authUserId);
+  const existingUser = await findUser(ctx, args.authUserId);
   if (existingUser) {
     // Update name if changed
     if (existingUser.name !== args.name) {
@@ -49,35 +51,6 @@ export async function findOrCreateGlobalUser(
     name: args.name,
     createdAt: Date.now(),
   });
-}
-
-/**
- * Gets a global user by authUserId (without room context)
- */
-export async function getGlobalUserByAuthUserId(
-  ctx: QueryCtx,
-  authUserId: string
-): Promise<Doc<"users"> | null> {
-  return await ctx.db
-    .query("users")
-    .withIndex("by_auth_user", (q) => q.eq("authUserId", authUserId))
-    .first();
-}
-
-/**
- * A person and their membership in a room, by auth identity; null when they
- * have no user row or aren't in the room.
- */
-export async function getMembershipByAuthUserId(
-  ctx: QueryCtx,
-  roomId: Id<"rooms">,
-  authUserId: string
-): Promise<{ user: Doc<"users">; membership: Doc<"roomMemberships"> } | null> {
-  const user = await getGlobalUserByAuthUserId(ctx, authUserId);
-  if (!user) return null;
-  const membership = await Memberships.getMembership(ctx, roomId, user._id);
-  if (!membership) return null;
-  return { user, membership };
 }
 
 /**
@@ -125,14 +98,13 @@ export async function leaveRoom(ctx: MutationCtx, userId: Id<"users">, roomId: I
 }
 
 /**
- * Updates a global user's name by authUserId
+ * Updates the caller's global name; throws for a caller with no user row yet
  */
 export async function updateGlobalUserName(
   ctx: MutationCtx,
-  authUserId: string,
+  user: Doc<"users"> | null,
   name: string
 ): Promise<void> {
-  const user = await getGlobalUserByAuthUserId(ctx, authUserId);
   if (!user) {
     throw new Error("User not found");
   }
@@ -154,7 +126,7 @@ export async function ensureGlobalUserFromAuth(
     avatarUrl?: string;
   }
 ): Promise<void> {
-  const existingUser = await getGlobalUserByAuthUserId(ctx, args.authUserId);
+  const existingUser = await findUser(ctx, args.authUserId);
 
   if (existingUser) {
     // User already exists (e.g., created by a race with joinRoom).
@@ -185,18 +157,10 @@ export async function syncGlobalUserAvatar(
   authUserId: string,
   avatarUrl: string
 ): Promise<void> {
-  const user = await getGlobalUserByAuthUserId(ctx, authUserId);
+  const user = await findUser(ctx, authUserId);
   if (user && user.avatarUrl !== avatarUrl) {
     await ctx.db.patch("users", user._id, { avatarUrl });
   }
-}
-
-/**
- * Deletes a person's account (on "Delete account", and on a guest's sign-out).
- */
-export async function deleteUserByAuthUserId(ctx: MutationCtx, authUserId: string): Promise<void> {
-  const user = await getGlobalUserByAuthUserId(ctx, authUserId);
-  if (user) await AccountLifecycle.deleteAccount(ctx, user);
 }
 
 /**
@@ -214,8 +178,8 @@ export async function linkAnonymousToPermanent(
     avatarUrl?: string;
   }
 ): Promise<void> {
-  const guest = await getGlobalUserByAuthUserId(ctx, args.oldAuthUserId);
+  const guest = await findUser(ctx, args.oldAuthUserId);
   if (!guest) return;
-  const account = await getGlobalUserByAuthUserId(ctx, args.newAuthUserId);
+  const account = await findUser(ctx, args.newAuthUserId);
   await AccountLifecycle.linkAccount(ctx, guest, account, args);
 }
