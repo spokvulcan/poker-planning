@@ -6,6 +6,7 @@ import { authClient } from "@/lib/auth-client";
 import { api } from "@/convex/_generated/api";
 import type { Doc } from "@/convex/_generated/dataModel";
 import { createAuthWaiters } from "@/lib/auth-waiters";
+import type { Viewer } from "./viewer";
 
 /** The auth state a sign-in waits on. */
 export interface AuthSnapshot {
@@ -23,27 +24,7 @@ export interface AuthSnapshot {
  */
 export type WhenAuth = (ready: (state: AuthSnapshot) => boolean, timeoutMs: number) => Promise<AuthSnapshot>;
 
-/**
- * Who is looking at the page: loading until Convex's auth state and the
- * caller's users row have answered, a visitor when nobody is signed in, else
- * signed in. A signed-in viewer has no row until their first room write
- * makes it (a guest who only continued as one) and is ready all the same:
- * no name, avatar or email yet, and not a permanent account.
- */
-export type Viewer =
-  | { status: "loading" }
-  | { status: "visitor" }
-  | {
-      status: "signedIn";
-      // The users row's, null while there is none
-      name: string | null;
-      avatarUrl: string | null;
-      email: string | null;
-      // Whether the users row says the account is permanent. A row with no
-      // kind (a guest's made before the server made rows) and no row at all
-      // are not a permanent account's
-      isPermanent: boolean;
-    };
+export type { SignedInViewer, Viewer } from "./viewer";
 
 /** The viewer, from Convex's auth state and the caller's users row (undefined until it answers). */
 function viewerOf(isLoading: boolean, isAuthenticated: boolean, row: Doc<"users"> | null | undefined): Viewer {

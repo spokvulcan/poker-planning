@@ -8,6 +8,7 @@ import { useAuth } from "@/components/auth/auth-provider";
 import { useSignOut } from "@/hooks/useSignOut";
 import { UserAvatar } from "@/components/user-menu/user-avatar";
 import { EditNameDialog } from "@/components/user-menu/edit-name-dialog";
+import { MenuProfile, MenuSignIn, menuName } from "@/components/user-menu/viewer-menu-items";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -29,8 +30,7 @@ import {
 } from "@/components/ui/sidebar";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { MoreHorizontalIcon } from "@hugeicons/core-free-icons";
-import { Moon, Sun, LogOut, UserPen, Monitor, LogIn } from "lucide-react";
-import Link from "next/link";
+import { Moon, Sun, LogOut, UserPen, Monitor } from "lucide-react";
 import { toast } from "@/lib/toast";
 
 export function NavUser() {
@@ -61,8 +61,8 @@ export function NavUser() {
     );
   }
 
-  const { avatarUrl, email, isPermanent } = viewer;
-  const userName = viewer.name || "Guest";
+  const { avatarUrl, email } = viewer;
+  const userName = menuName(viewer);
 
   const handleEditName = async (name: string) => {
     try {
@@ -104,28 +104,11 @@ export function NavUser() {
               align="end"
               sideOffset={4}
             >
-              <div className="flex items-center gap-3 px-2 py-2">
-                <UserAvatar name={userName} avatarUrl={avatarUrl} size="lg" />
-                <div className="flex min-w-0 flex-col">
-                  <span className="truncate text-sm font-medium">
-                    {userName}
-                  </span>
-                  <span className="text-xs text-muted-foreground">{email || "Guest"}</span>
-                </div>
-              </div>
+              <MenuProfile viewer={viewer} />
 
               <DropdownMenuSeparator />
 
-              {/* Sign in link - for anyone without a permanent account, shown first */}
-              {!isPermanent && (
-                <>
-                  <DropdownMenuItem render={<Link href="/auth/signin?from=/dashboard" />}>
-                    <LogIn className="mr-2 size-4" />
-                    Sign in
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                </>
-              )}
+              <MenuSignIn viewer={viewer} href="/auth/signin?from=/dashboard" />
 
               <DropdownMenuItem onClick={() => setEditDialogOpen(true)}>
                 <UserPen className="mr-2 size-4" />

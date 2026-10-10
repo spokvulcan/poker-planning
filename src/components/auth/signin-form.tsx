@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { authClient } from "@/lib/auth-client";
 import { useAuth } from "@/components/auth/auth-provider";
+import { accountKind } from "@/components/auth/viewer";
 import { useEnsureSession } from "@/hooks/useEnsureSession";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -29,7 +30,7 @@ export function SigninForm({ className, ...props }: React.ComponentProps<"div">)
   const searchParams = useSearchParams();
   const { viewer } = useAuth();
   // Signed in already, without a permanent account: the guest button only goes back
-  const isGuest = viewer.status === "signedIn" && !viewer.isPermanent;
+  const isGuest = accountKind(viewer) === "guest";
   const ensureSession = useEnsureSession();
 
   const rawFrom = searchParams.get("from") || "/";
