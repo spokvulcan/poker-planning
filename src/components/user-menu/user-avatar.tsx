@@ -34,8 +34,9 @@ export function UserAvatar({ name, avatarUrl, size = "md", className }: UserAvat
         alt={name}
         width={sizePixels[size]}
         height={sizePixels[size]}
+        // A muted circle until the photo loads, so it fills in rather than pops in
         className={cn(
-          "rounded-full object-cover",
+          "rounded-full bg-muted object-cover",
           sizeClasses[size],
           className
         )}

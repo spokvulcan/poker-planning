@@ -1,9 +1,10 @@
 /**
  * The two shells under the shared root layout. A page in the (app) group gets
- * the app shell: the session's token fetched on the server, BetterAuth and the
- * auth provider. /demo sits in the (demo) group, whose shell has a Convex
- * client and no auth, so the Demo simulation never reaches the backend
- * (ADR-0003), whatever the visitor's session, because of where its route sits.
+ * the app shell: the session's token and the viewer fetched on the server,
+ * BetterAuth and the auth provider. /demo sits in the (demo) group, whose
+ * shell has a Convex client and no auth, so the Demo simulation never reaches
+ * the backend (ADR-0003), whatever the visitor's session, because of where
+ * its route sits.
  *
  * Each test serves a whole document as Next would (the root layout around a
  * group's layout around a page) and loads it in jsdom with effects running.
@@ -93,11 +94,17 @@ const backend = vi.hoisted(() => {
   return backend;
 });
 
-// The server fetches the session's token through this module.
+// The server fetches the session's token, and reads the viewer with it,
+// through this module.
 vi.mock("@/lib/auth-server", () => ({
   getToken: async () => {
     backend.requests.push("server: /api/auth/convex/token");
     return backend.liveSession ? backend.token : null;
+  },
+  isAuthenticated: async () => backend.liveSession,
+  fetchAuthQuery: async () => {
+    backend.requests.push("server: /api/query");
+    return null;
   },
 }));
 
@@ -175,13 +182,14 @@ describe("the demo shell", () => {
 });
 
 describe("the app shell", () => {
-  it("fetches the token on the server, reads the session and connects, for a live session", async () => {
+  it("fetches the token and the viewer on the server, reads the session and connects, for a live session", async () => {
     backend.framed = false;
     backend.liveSession = true;
 
     await load(await serve(AppLayout, <p>An app page</p>));
 
     expect(backend.requests).toContain("server: /api/auth/convex/token");
+    expect(backend.requests).toContain("server: /api/query");
     expect(backend.requests).toContain("browser: /api/auth/get-session");
     expect(backend.sockets).toEqual([expect.stringMatching(/^wss:\/\/shells-test-123\.convex\.cloud\//)]);
   });
