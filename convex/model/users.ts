@@ -73,13 +73,31 @@ function sentName(user: Doc<"users"> | null, sent: string): string | undefined {
 async function makeUser(ctx: MutationCtx, caller: Caller, name?: string): Promise<Doc<"users">> {
   const { subject, email } = caller.identity;
   const accountType = sessionAccountType(caller);
-  const account =
-    accountType === "permanent" && email ? { email, name: providerName(caller.identity.name ?? "", email) } : null;
+  if (accountType === "permanent" && email) {
+    const named = name ?? (providerName(caller.identity.name ?? "", email) || guestName());
+    return await insertAccount(ctx, subject, { email, name: named });
+  }
   const userId = await ctx.db.insert("users", {
     authUserId: subject,
-    name: name ?? (account?.name || guestName()),
-    ...(account ? { email: account.email } : {}),
+    name: name ?? guestName(),
     ...(accountType ? { accountType } : {}),
+    createdAt: Date.now(),
+  });
+  return (await ctx.db.get("users", userId))!;
+}
+
+/** A permanent account's new row: its email, its avatar when the provider gives one, and its name. */
+async function insertAccount(
+  ctx: MutationCtx,
+  authUserId: string,
+  account: { email: string; name: string; avatarUrl?: string }
+): Promise<Doc<"users">> {
+  const userId = await ctx.db.insert("users", {
+    authUserId,
+    name: account.name,
+    email: account.email,
+    ...(account.avatarUrl ? { avatarUrl: account.avatarUrl } : {}),
+    accountType: "permanent",
     createdAt: Date.now(),
   });
   return (await ctx.db.get("users", userId))!;
@@ -145,14 +163,6 @@ export async function editUser(
 }
 
 /**
- * Updates the caller's global name, making their users row with it when they
- * have none yet.
- */
-export async function updateGlobalUserName(ctx: MutationCtx, name: string): Promise<void> {
-  await findOrMakeUser(ctx, name);
-}
-
-/**
  * The name a sign-in provider gives an account, fitted to the person-name
  * rule: its display name, or the email's local part when it has none, as
  * an account made by magic link has none.
@@ -181,13 +191,10 @@ export async function ensureGlobalUserFromAuth(
     return;
   }
 
-  await ctx.db.insert("users", {
-    authUserId: args.authUserId,
-    name: providerName(args.name, args.email),
+  await insertAccount(ctx, args.authUserId, {
     email: args.email,
+    name: providerName(args.name, args.email),
     avatarUrl: args.avatarUrl,
-    accountType: "permanent" as const,
-    createdAt: Date.now(),
   });
 }
 

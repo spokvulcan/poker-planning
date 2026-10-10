@@ -96,13 +96,14 @@ export const remove = mutation({
   },
 });
 
-// Edit global user (name only, no room context required)
+// Edit global user (name only, no room context required): the caller's row
+// takes the name, made with it when they have none yet
 export const editGlobalUser = mutation({
   args: {
     name: v.string(),
   },
   handler: async (ctx, args) => {
-    await Users.updateGlobalUserName(ctx, args.name);
+    await Users.findOrMakeUser(ctx, args.name);
   },
 });
 
