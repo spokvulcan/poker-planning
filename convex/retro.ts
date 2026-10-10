@@ -13,7 +13,7 @@ import {
   retroStepValidator,
   stickyColorValidator,
 } from "./schema";
-import { refusal } from "./model/refusal";
+import { refusal, refusalOf } from "./model/refusal";
 
 // --- Retros -------------------------------------------------------------------
 
@@ -289,13 +289,16 @@ export const updateActionItem = mutation({
 export const deleteActionItem = mutation({
   args: { itemId: v.id("retroActionItems") },
   handler: async (ctx, args) => {
-    // Already gone (a second click, say): nothing to do, where the step would refuse it as gone.
-    if (!(await ctx.db.get("retroActionItems", args.itemId))) return;
-    const { room, actionItem } = await requireRoomWrite(
+    // The step refuses an item that is gone as missing: deleting it again (a
+    // second click, say) has nothing left to do.
+    const write = await requireRoomWrite(
       ctx,
       { actionItem: args.itemId },
       { kind: "category", category: "actionManagement" }
-    );
-    await Retro.deleteActionItem(ctx, room, actionItem);
+    ).catch((error: unknown) => {
+      if (refusalOf(error)?.code === "missing") return null;
+      throw error;
+    });
+    if (write) await Retro.deleteActionItem(ctx, write.room, write.actionItem);
   },
 });

@@ -19,6 +19,19 @@ export function refusal(code: RefusalCode, message: string): ConvexError<Refusal
 }
 
 /**
+ * The refusal an error carries, or null for any other error: the one reader
+ * of a refusal's data, on the server and in the browser, which receives the
+ * ConvexError with its data intact.
+ */
+export function refusalOf(error: unknown): Refusal | null {
+  if (!(error instanceof ConvexError)) return null;
+  const data = error.data as Partial<Refusal> | null | undefined;
+  return typeof data?.code === "string" && typeof data.message === "string" && data.message
+    ? { code: data.code, message: data.message }
+    : null;
+}
+
+/**
  * What a person wrote into a text field, as the field's rule keeps it
  * (trimmed, say); refused in the rule's own words when it breaks the rule.
  */
