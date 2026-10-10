@@ -117,9 +117,7 @@ vi.mock("next/font/google", () => {
 // There is no app router in jsdom.
 vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(backend.framed ? "embed=true" : ""),
-  usePathname: () => "/demo",
-  useParams: () => ({}),
-  useRouter: () => ({ push: () => {}, replace: () => {}, refresh: () => {}, prefetch: () => {} }),
+  useRouter: () => ({ push: () => {} }),
 }));
 
 import RootLayout from "./layout";
