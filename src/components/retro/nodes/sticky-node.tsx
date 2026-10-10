@@ -57,7 +57,7 @@ function StickyEditor({
   onCommit,
   onCancel,
 }: {
-  /** The sticky's saved words (empty for a new sticky). */
+  /** The sticky's saved words, or what a refused new one said (empty for a new sticky). */
   text: string;
   initialGif?: Gif;
   tone: StickyTone;
@@ -353,8 +353,8 @@ export const StickyNode = memo(({ id, data, selected, dragging }: NodeProps<Stic
     >
       {inEditor ? (
         <StickyEditor
-          text={sticky?.text ?? ""}
-          initialGif={sticky?.gif}
+          text={draft?.text ?? sticky?.text ?? ""}
+          initialGif={draft?.gif ?? sticky?.gif}
           tone={tone}
           onCommit={(text, gif) =>
             draft ? actions.commitDraft(draft.clientId, text, gif) : sticky && actions.commitEdit(sticky._id, text, gif ?? null)
