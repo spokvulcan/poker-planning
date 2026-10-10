@@ -4,9 +4,8 @@ import { createContext, useContext, useEffect, useMemo, useState, ReactNode } fr
 import { useConvexAuth, useQuery } from "convex/react";
 import { authClient } from "@/lib/auth-client";
 import { api } from "@/convex/_generated/api";
-import type { Doc } from "@/convex/_generated/dataModel";
 import { createAuthWaiters } from "@/lib/auth-waiters";
-import type { Viewer } from "./viewer";
+import { viewerOf, type Viewer } from "./viewer";
 
 /** The auth state a sign-in waits on. */
 export interface AuthSnapshot {
@@ -26,20 +25,6 @@ export type WhenAuth = (ready: (state: AuthSnapshot) => boolean, timeoutMs: numb
 
 export type { SignedInViewer, Viewer } from "./viewer";
 
-/** The viewer, from Convex's auth state and the caller's users row (undefined until it answers). */
-function viewerOf(isLoading: boolean, isAuthenticated: boolean, row: Doc<"users"> | null | undefined): Viewer {
-  if (isLoading) return { status: "loading" };
-  if (!isAuthenticated) return { status: "visitor" };
-  if (row === undefined) return { status: "loading" };
-  return {
-    status: "signedIn",
-    name: row?.name ?? null,
-    avatarUrl: row?.avatarUrl ?? null,
-    email: row?.email ?? null,
-    isPermanent: row?.accountType === "permanent",
-  };
-}
-
 interface AuthContextType {
   // Auth loading state (from Convex - waits for token validation)
   isLoading: boolean;
@@ -58,7 +43,14 @@ const AuthContext = createContext<AuthContextType>({
   whenAuth: () => Promise.reject(new Error("No AuthProvider")),
 });
 
-export function AuthProvider({ children }: { children: ReactNode }) {
+export function AuthProvider({
+  children,
+  initialViewer,
+}: {
+  children: ReactNode;
+  // The viewer the server saw (server-viewer.ts), shown until Convex answers
+  initialViewer?: Viewer;
+}) {
   // Use Convex's auth state - this waits for token validation
   // Per docs: "Better Auth will reflect an authenticated user before Convex does"
   const { isAuthenticated, isLoading: convexAuthLoading } = useConvexAuth();
@@ -80,15 +72,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     isAuthenticated ? {} : "skip"
   );
 
+  const liveViewer = useMemo(
+    () => viewerOf(convexAuthLoading, isAuthenticated, globalUser),
+    [convexAuthLoading, isAuthenticated, globalUser],
+  );
+  // Until Convex first answers, the viewer the server saw stands in, so the
+  // first paint already draws who is looking. Once it has, Convex alone says,
+  // loading included while it checks a session that changed.
+  const [hasAnswered, setHasAnswered] = useState(false);
+  const answered = hasAnswered || liveViewer.status !== "loading";
+  if (answered && !hasAnswered) setHasAnswered(true);
+  const viewer = answered ? liveViewer : (initialViewer ?? liveViewer);
+
   // Memoize context value to prevent cascading re-renders in consumers
   const value = useMemo(
     () => ({
       isLoading: convexAuthLoading,
       isAuthenticated,
-      viewer: viewerOf(convexAuthLoading, isAuthenticated, globalUser),
+      viewer,
       whenAuth: waiters.when,
     }),
-    [convexAuthLoading, isAuthenticated, globalUser, waiters],
+    [convexAuthLoading, isAuthenticated, viewer, waiters],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

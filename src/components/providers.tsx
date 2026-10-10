@@ -3,6 +3,7 @@
 import { ConvexReactClient } from "convex/react";
 import { ConvexBetterAuthProvider, type AuthClient } from "@convex-dev/better-auth/react";
 import { AuthProvider } from "./auth/auth-provider";
+import type { Viewer } from "./auth/viewer";
 import { ConvexSetupRequired } from "./convex-setup-required";
 import { ReactNode } from "react";
 import { authClient } from "@/lib/auth-client";
@@ -15,14 +16,17 @@ const convex = convexUrl ? new ConvexReactClient(convexUrl) : null;
 /**
  * The app shell, which the (app) layout mounts for every page but the demo:
  * Convex signed in through BetterAuth, starting from the token the layout
- * fetched on the server, and the auth provider.
+ * fetched on the server, and the auth provider, starting from the viewer the
+ * layout read with it.
  */
 export function AppProviders({
   children,
   initialToken,
+  initialViewer,
 }: {
   children: ReactNode;
   initialToken?: string | null;
+  initialViewer?: Viewer;
 }) {
   if (!convex) {
     return <ConvexSetupRequired />;
@@ -41,7 +45,7 @@ export function AppProviders({
       authClient={authClient as unknown as AuthClient}
       initialToken={initialToken}
     >
-      <AuthProvider>{children}</AuthProvider>
+      <AuthProvider initialViewer={initialViewer}>{children}</AuthProvider>
     </ConvexBetterAuthProvider>
   );
 }

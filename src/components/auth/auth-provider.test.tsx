@@ -5,10 +5,12 @@
  * caller has no row until their first room write makes it, and is ready all
  * the same. The tests drive the provider's sources: Convex's auth state, the
  * caller's users row (users.getGlobalUser) and BetterAuth's session, which
- * has no say in the viewer: the account kind is the row's only.
+ * has no say in the viewer: the account kind is the row's only. Until Convex
+ * first answers, the viewer the server saw for the first paint stands in.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { cleanup, renderHook } from "@testing-library/react";
+import type { ReactNode } from "react";
 
 const sources = vi.hoisted(() => ({
   // Convex's auth state
@@ -34,6 +36,7 @@ vi.mock("@/lib/auth-client", () => ({
 }));
 
 import { AuthProvider, useAuth } from "./auth-provider";
+import type { Viewer } from "./viewer";
 
 /** A permanent account's row, made from its Google profile. */
 const ADA = {
@@ -58,6 +61,24 @@ const PERMANENT_SESSION = { user: { id: "auth-bob", isAnonymous: false, email: "
 function viewer() {
   return renderHook(() => useAuth().viewer, { wrapper: AuthProvider }).result.current;
 }
+
+/** The viewer, under a provider handed the one the server saw. */
+function viewerAfterServer(initialViewer: Viewer) {
+  return renderHook(() => useAuth().viewer, {
+    wrapper: ({ children }: { children: ReactNode }) => (
+      <AuthProvider initialViewer={initialViewer}>{children}</AuthProvider>
+    ),
+  });
+}
+
+/** What the server saw of Ada. */
+const ADA_ON_SERVER: Viewer = {
+  status: "signedIn",
+  name: "Ada Lovelace",
+  avatarUrl: "https://lh3.googleusercontent.com/a/ada",
+  email: "ada@example.com",
+  isPermanent: true,
+};
 
 beforeEach(() => {
   sources.isLoading = false;
@@ -117,8 +138,47 @@ describe("AuthProvider's viewer", () => {
   });
 });
 
+describe("AuthProvider's viewer, after the server's", () => {
+  it("is the one the server saw while Convex checks the session's token", () => {
+    sources.isLoading = true;
+    sources.isAuthenticated = false;
+
+    expect(viewerAfterServer(ADA_ON_SERVER).result.current).toEqual(ADA_ON_SERVER);
+  });
+
+  it("is the one the server saw while the caller's users row hasn't answered", () => {
+    expect(viewerAfterServer(ADA_ON_SERVER).result.current).toEqual(ADA_ON_SERVER);
+  });
+
+  it("is Convex's once it answers", () => {
+    const { result, rerender } = viewerAfterServer(ADA_ON_SERVER);
+
+    sources.row = { ...ADA, name: "Ada King" };
+    rerender();
+
+    expect(result.current).toMatchObject({ status: "signedIn", name: "Ada King" });
+  });
+
+  it("is a visitor when Convex finds nobody signed in, whatever the server saw", () => {
+    sources.isAuthenticated = false;
+
+    expect(viewerAfterServer(ADA_ON_SERVER).result.current).toEqual({ status: "visitor" });
+  });
+
+  it("goes by Convex alone once it has answered, loading included while it checks a session that changed", () => {
+    sources.row = ADA;
+    const { result, rerender } = viewerAfterServer({ status: "visitor" });
+
+    sources.isLoading = true;
+    rerender();
+
+    expect(result.current).toEqual({ status: "loading" });
+  });
+});
+
 // The rules the viewer exists for: only the auth provider subscribes to the
-// caller's users row, so no menu or page works out who is looking again, and
+// caller's users row, and the server reads it once for the first paint, so no
+// menu or page works out who is looking again, and
 // the account kind is the row's, so nothing reads BetterAuth's isAnonymous.
 // Every module under src/ as source text, but the tests.
 const modules = import.meta.glob(["../../**/*.{ts,tsx}", "!../../**/*.test.{ts,tsx}"], {
@@ -128,6 +188,7 @@ const modules = import.meta.glob(["../../**/*.{ts,tsx}", "!../../**/*.test.{ts,t
 }) as Record<string, string>;
 
 const PROVIDER = "./auth-provider.tsx";
+const SERVER = "./server-viewer.ts";
 
 /** A module's code, without its comments. */
 function code(path: string): string {
@@ -139,11 +200,14 @@ function code(path: string): string {
 }
 
 describe("who is looking", () => {
-  it("is read from the caller's users row by the auth provider only", () => {
+  it("is read from the caller's users row by the auth provider, and the server for the first paint, only", () => {
     const readsTheRow = (path: string) => /\bgetGlobalUser\b/.test(code(path));
     expect(readsTheRow(PROVIDER)).toBe(true);
+    expect(readsTheRow(SERVER)).toBe(true);
 
-    expect(Object.keys(modules).filter((path) => path !== PROVIDER && readsTheRow(path))).toEqual([]);
+    expect(Object.keys(modules).filter((path) => path !== PROVIDER && path !== SERVER && readsTheRow(path))).toEqual(
+      [],
+    );
   });
 
   it("never takes the account kind from BetterAuth's session", () => {

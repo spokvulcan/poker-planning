@@ -104,9 +104,19 @@ describe("UserMenu", () => {
     expect(screen.getByRole("link", { name: "Sign in" })).toBeTruthy();
   });
 
-  it("draws nothing while the viewer loads", () => {
+  it("is a skeleton of its trigger while the viewer loads", () => {
     render(<UserMenu />);
 
+    expect(screen.getByTestId("user-menu-skeleton")).toBeTruthy();
+    expect(screen.queryByTestId("user-menu-trigger")).toBeNull();
+    expect(screen.queryByRole("link", { name: "Sign in" })).toBeNull();
+  });
+
+  it("draws nothing for a visitor", () => {
+    mocks.viewer = { status: "visitor" };
+    render(<UserMenu />);
+
+    expect(screen.queryByTestId("user-menu-skeleton")).toBeNull();
     expect(screen.queryByTestId("user-menu-trigger")).toBeNull();
   });
 });

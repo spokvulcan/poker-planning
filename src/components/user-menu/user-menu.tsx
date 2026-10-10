@@ -1,41 +1,28 @@
 "use client";
 
-import { useState } from "react";
 import { useParams } from "next/navigation";
-import { useTheme } from "next-themes";
+import Link from "next/link";
 import { useMutation, useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
-import { rulesOf } from "@/convex/ceremony";
-import { useAuth } from "@/components/auth/auth-provider";
-import { useSignOut } from "@/hooks/useSignOut";
-import { UserAvatar } from "./user-avatar";
-import { EditNameDialog } from "./edit-name-dialog";
-import { MenuProfile, MenuSignIn, menuName } from "./viewer-menu-items";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-  DropdownMenuSub,
-  DropdownMenuSubTrigger,
-  DropdownMenuSubContent,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuGroup,
-} from "@/components/ui/dropdown-menu";
-import { Switch } from "@/components/ui/switch";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowDown01Icon } from "@hugeicons/core-free-icons";
-import { Moon, Sun, LogOut, UserPen, Monitor, Eye, LayoutDashboard, History, MessagesSquare } from "lucide-react";
-import Link from "next/link";
+import { Eye, LayoutDashboard, History, MessagesSquare } from "lucide-react";
+import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
+import { rulesOf } from "@/convex/ceremony";
+import { useAuth } from "@/components/auth/auth-provider";
+import { DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
+import { cn } from "@/lib/utils";
 import { toast } from "@/lib/toast";
+import { UserAvatar } from "./user-avatar";
+import { ViewerMenu, menuName } from "./viewer-menu";
+
+// The trigger's pill, which its skeleton shares so nothing moves when the viewer arrives
+const PILL = "flex items-center gap-2 rounded-full border bg-background px-2 py-1.5";
 
 export function UserMenu() {
   const { isAuthenticated, viewer } = useAuth();
-  const { theme, setTheme } = useTheme();
-  const [editDialogOpen, setEditDialogOpen] = useState(false);
 
   // Get roomId from URL params (if on a room page)
   const params = useParams();
@@ -54,29 +41,25 @@ export function UserMenu() {
   const roomData = useQuery(api.rooms.get, roomId ? { roomId } : "skip");
   const hasSpectators = roomData?.room ? rulesOf(roomData.room).spectators : false;
 
-  const editGlobalUser = useMutation(api.users.editGlobalUser);
   const editUser = useMutation(api.users.edit);
-  // The one sign-out policy (anonymous-account deletion included). Called
-  // above the early return below, per the rules of hooks.
-  const handleSignOut = useSignOut();
 
-  // A guest signed in with no users row yet gets the menu too, as "Guest".
-  if (viewer.status !== "signedIn") {
-    return null;
+  // A visitor has no menu (the navbar offers Sign in), and the trigger's
+  // skeleton stands in while the viewer loads. A guest signed in with no
+  // users row yet gets the menu, as "Guest".
+  if (viewer.status === "visitor") return null;
+  if (viewer.status === "loading") {
+    return (
+      <div data-testid="user-menu-skeleton" aria-hidden className={PILL}>
+        <Skeleton className="size-6 rounded-full" />
+        <Skeleton className="hidden h-4 w-16 sm:block" />
+        <HugeiconsIcon icon={ArrowDown01Icon} strokeWidth={2} className="size-4 text-muted-foreground" />
+      </div>
+    );
   }
 
-  const { avatarUrl } = viewer;
   const userName = menuName(viewer);
   const isInRoom = !!roomMembership;
   const isSpectator = roomMembership?.isSpectator ?? false;
-
-  const handleEditName = async (name: string) => {
-    try {
-      await editGlobalUser({ name });
-    } catch {
-      toast.error("Failed to update name. Please try again.");
-    }
-  };
 
   const handleSpectatorToggle = async (checked: boolean) => {
     if (!roomMembership || !roomId) return;
@@ -88,10 +71,17 @@ export function UserMenu() {
   };
 
   return (
-    <>
-      <DropdownMenu>
-        <DropdownMenuTrigger data-testid="user-menu-trigger" className="flex items-center gap-2 rounded-full border bg-background px-2 py-1.5 hover:bg-muted transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring">
-          <UserAvatar name={userName} avatarUrl={avatarUrl} size="sm" />
+    <ViewerMenu
+      viewer={viewer}
+      align="end"
+      className="w-56"
+      signInHref={roomId ? `/auth/signin?from=/room/${roomId}` : "/auth/signin"}
+      trigger={
+        <DropdownMenuTrigger
+          data-testid="user-menu-trigger"
+          className={cn(PILL, "hover:bg-muted transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring")}
+        >
+          <UserAvatar name={userName} avatarUrl={viewer.avatarUrl} size="sm" />
           <span className="text-sm font-medium max-w-24 truncate hidden sm:block">
             {userName}
           </span>
@@ -101,107 +91,44 @@ export function UserMenu() {
             className="size-4 text-muted-foreground"
           />
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-56">
-          <MenuProfile viewer={viewer} />
-
-          <DropdownMenuSeparator />
-
-          {/* Dashboard link */}
+      }
+      links={
+        <>
           <DropdownMenuItem render={<Link href="/dashboard" />}>
             <LayoutDashboard className="mr-2 size-4" />
             Dashboard
           </DropdownMenuItem>
-
-          {/* Planning poker sessions */}
           <DropdownMenuItem render={<Link href="/dashboard/sessions" />}>
             <History className="mr-2 size-4" />
             Planning poker
           </DropdownMenuItem>
-
-          {/* Retros */}
           <DropdownMenuItem render={<Link href="/dashboard/retros" />}>
             <MessagesSquare className="mr-2 size-4" />
             Retros
           </DropdownMenuItem>
-
-          <DropdownMenuSeparator />
-
-          <MenuSignIn viewer={viewer} href={roomId ? `/auth/signin?from=/room/${roomId}` : "/auth/signin"} />
-
-          {/* Edit name */}
-          <DropdownMenuItem onClick={() => setEditDialogOpen(true)}>
-            <UserPen className="mr-2 size-4" />
-            Edit name
-          </DropdownMenuItem>
-
-          {/* Spectator toggle - only where the ceremony has spectators */}
-          {isInRoom && hasSpectators && (
-            <div
-              data-testid="spectator-toggle-row"
-              className="flex items-center justify-between px-1.5 py-1 cursor-pointer rounded-md hover:bg-gray-100 dark:hover:bg-white/10"
-              onClick={() => handleSpectatorToggle(!isSpectator)}
-            >
-              <div className="flex items-center gap-2">
-                <Eye className="size-4" />
-                <span className="text-sm">Spectator</span>
-              </div>
-              <Switch
-                checked={isSpectator}
-                onCheckedChange={handleSpectatorToggle}
-                size="sm"
-                onClick={(e) => e.stopPropagation()}
-              />
+        </>
+      }
+      settings={
+        // Spectator toggle - only where the ceremony has spectators
+        isInRoom && hasSpectators && (
+          <div
+            data-testid="spectator-toggle-row"
+            className="flex items-center justify-between px-1.5 py-1 cursor-pointer rounded-md hover:bg-gray-100 dark:hover:bg-white/10"
+            onClick={() => handleSpectatorToggle(!isSpectator)}
+          >
+            <div className="flex items-center gap-2">
+              <Eye className="size-4" />
+              <span className="text-sm">Spectator</span>
             </div>
-          )}
-
-          {/* Appearance submenu */}
-          <DropdownMenuSub>
-            <DropdownMenuSubTrigger>
-              <span className="relative mr-2 size-4">
-                <Sun className="absolute size-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
-                <Moon className="absolute size-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
-              </span>
-              Appearance
-            </DropdownMenuSubTrigger>
-            <DropdownMenuSubContent>
-              <DropdownMenuGroup>
-                <DropdownMenuRadioGroup
-                  value={theme}
-                  onValueChange={(value) => setTheme(value)}
-                >
-                  <DropdownMenuRadioItem value="light">
-                    <Sun className="mr-2 size-4" />
-                    Light
-                  </DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="dark">
-                    <Moon className="mr-2 size-4" />
-                    Dark
-                  </DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="system">
-                    <Monitor className="mr-2 size-4" />
-                    System
-                  </DropdownMenuRadioItem>
-                </DropdownMenuRadioGroup>
-              </DropdownMenuGroup>
-            </DropdownMenuSubContent>
-          </DropdownMenuSub>
-
-          <DropdownMenuSeparator />
-
-          {/* Sign out */}
-          <DropdownMenuItem variant="destructive" onClick={handleSignOut}>
-            <LogOut className="mr-2 size-4" />
-            Sign out
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
-
-      <EditNameDialog
-        currentName={userName}
-        onSave={handleEditName}
-        open={editDialogOpen}
-        onOpenChange={setEditDialogOpen}
-      />
-    </>
+            <Switch
+              checked={isSpectator}
+              onCheckedChange={handleSpectatorToggle}
+              size="sm"
+              onClick={(e) => e.stopPropagation()}
+            />
+          </div>
+        )
+      }
+    />
   );
 }
