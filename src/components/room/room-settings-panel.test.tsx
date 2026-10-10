@@ -296,3 +296,11 @@ describe("RoomSettingsPanel — roster allowed for the owner", () => {
     expect(mocks.promoteFacilitator).not.toHaveBeenCalled();
   });
 });
+
+describe("RoomSettingsPanel — the room name", () => {
+  it("stops typing at the room name's limit", () => {
+    renderPanel("owner");
+
+    expect((screen.getByLabelText("Room Name") as HTMLInputElement).maxLength).toBe(100);
+  });
+});

@@ -115,7 +115,6 @@ function nodesInput(overrides?: Partial<CanvasNodesInput>): CanvasNodesInput {
     canvasNodes: [],
     currentIssue: null,
     viewerId: undefined,
-    selectedCardValue: null,
     isDemoMode: false,
     permissions: EVERYTHING_ALLOWED,
     actions: ACTIONS,
@@ -509,7 +508,7 @@ describe("buildCanvasNodes — voting-card row", () => {
         room: roomWithScale,
         members: [member("u1")],
         viewerId: viewer,
-        selectedCardValue: "2",
+        votes: [vote("u1", { cardLabel: "2" })],
       }),
     );
 
@@ -522,12 +521,29 @@ describe("buildCanvasNodes — voting-card row", () => {
     expect(cards.map((n) => n.position)).toEqual(computeVotingCardRow(3));
     expect(cards.map((n) => n.data.card.value)).toEqual(["1", "2", "3"]);
     expect(cards.map((n) => n.data.isSelected)).toEqual([false, true, false]);
-    expect(cards.map((n) => n.selected)).toEqual([false, true, false]);
     expect(cards.every((n) => n.draggable === false)).toBe(true);
     expect(cards.every((n) => n.data.isSelectable)).toBe(true);
     expect(cards.every((n) => n.data.actions === ACTIONS)).toBe(true);
     expect(cards.every((n) => n.data.userId === viewer)).toBe(true);
     expect(cards.every((n) => n.data.roomId === ROOM_ID)).toBe(true);
+  });
+
+  it("raises the viewer's own card only, never another member's", () => {
+    const revealed = (votes: SanitizedVote[]) =>
+      votingCards(
+        buildCanvasNodes(
+          nodesInput({
+            phase: "revealed",
+            room: roomWithScale,
+            members: [member("u1"), member("u2")],
+            viewerId: viewer,
+            votes,
+          }),
+        ),
+      ).map((n) => n.data.isSelected);
+
+    expect(revealed([vote("u2", { cardLabel: "3" }), vote("u1", { cardLabel: "1" })])).toEqual([true, false, false]);
+    expect(revealed([vote("u2", { cardLabel: "3" })])).toEqual([false, false, false]);
   });
 
   it("uses the default scale when the room has none", () => {

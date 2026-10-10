@@ -94,6 +94,17 @@ describe("IssueItem — start-voting denial copy", () => {
   });
 });
 
+describe("IssueItem — editing the title", () => {
+  it("stops typing at the issue title's limit", async () => {
+    renderItem({});
+
+    fireEvent.click(screen.getByRole("button", { name: "Issue actions" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Edit title" }));
+
+    expect((screen.getByDisplayValue("Write tests") as HTMLInputElement).maxLength).toBe(500);
+  });
+});
+
 describe("IssueItem — issue-management denial", () => {
   it("renders the actions button disabled with the denial message as tooltip and label", () => {
     const perms = computePermissions(

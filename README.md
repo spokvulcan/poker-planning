@@ -84,7 +84,7 @@ On Convex, set with `npx convex env set` (add `--prod` for production):
 | Variable | Used for |
 | --- | --- |
 | `BETTER_AUTH_SECRET` | Signing sessions. Required |
-| `SITE_URL` | Sign-in callbacks. Required in production, defaults to `http://localhost:3000` |
+| `SITE_URL` | Sign-in and Jira OAuth callbacks. Required in production, defaults to `http://localhost:3000` |
 | `RESEND_API_KEY` | Emailing sign-in links, sent from `EMAIL_FROM_ADDRESS` |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Google sign-in ([setup guide](docs/google-oauth-setup.md)) |
 | `JIRA_CLIENT_ID`, `JIRA_CLIENT_SECRET`, `JIRA_WEBHOOK_SECRET`, `TOKEN_ENCRYPTION_KEY` | Jira Cloud sync |
@@ -97,7 +97,6 @@ For Next.js, in `.env.local` or your host's settings:
 | `NEXT_PUBLIC_SITE_URL` | Your public URL |
 | `CONVEX_DEPLOY_KEY` | Deploying Convex from your host's build |
 | `GIPHY_API_KEY` | GIF search on stickies. Pasted GIPHY, Tenor and Imgur links work without it |
-| `JIRA_CLIENT_ID`, `JIRA_CLIENT_SECRET` | Connecting Jira |
 | `NEXT_PUBLIC_GA_ID` | Google Analytics |
 
 [`.env.example`](.env.example) has notes on most of them.

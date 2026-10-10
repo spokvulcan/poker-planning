@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
+import { ISSUE_TITLE } from "@/convex/constants";
 import { type ResolvedDecision, RESOLVED_ALLOWED } from "@/convex/permissions";
 import { denialTooltip, permissionProps } from "@/hooks/usePermissions";
 import { useIsDemoMode } from "./demo/DemoSimulationProvider";
@@ -138,6 +139,7 @@ export const IssueItem: FC<IssueItemProps> = ({
           <Input
             ref={titleInputRef}
             value={editedTitle}
+            maxLength={ISSUE_TITLE.maxLength}
             onChange={(e) => setEditedTitle(e.target.value)}
             onBlur={handleTitleSave}
             onKeyDown={handleTitleKeyDown}

@@ -49,8 +49,6 @@ export const ROOM_NAMES = {
 } as const;
 
 export const ERROR_MESSAGES = {
-  nameRequired: "Name is required",
-  nameTooLong: "Name must be less than 50 characters",
   roomNotFound: "Room not found",
   connectionLost: "Connection lost. Trying to reconnect...",
   votingInProgress: "Voting is already in progress",

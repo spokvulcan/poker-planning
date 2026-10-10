@@ -56,7 +56,6 @@ export interface CanvasNodesInput {
   currentIssue: { _id: Id<"issues">; title: string } | null;
   /** The viewing user; undefined for anonymous demo viewers. */
   viewerId?: Id<"users">;
-  selectedCardValue: string | null;
   isDemoMode: boolean;
   /** The viewer's decision for each of the room's permission categories. */
   permissions: Record<PokerPermissionCategory, ResolvedDecision>;
@@ -120,6 +119,9 @@ function buildVotingCardRow(input: CanvasNodesInput): CustomNodeType[] {
   const { cards } = deckOf(input.room.votingScale);
   const cardPositions = computeVotingCardRow(cards.length);
   const effectiveUserId = input.viewerId ?? DEMO_VIEWER_ID;
+  // The raised card is the viewer's own vote, which the server shows them
+  // before the reveal and a pick lands on at once.
+  const viewersCard = input.votes.find((v) => v.userId === input.viewerId)?.cardLabel;
 
   return cards.map((cardValue, index) => ({
     id: `card-${effectiveUserId}-${index}`,
@@ -130,10 +132,9 @@ function buildVotingCardRow(input: CanvasNodesInput): CustomNodeType[] {
       userId: effectiveUserId,
       roomId: input.roomId,
       isSelectable: input.phase !== "revealed" && !input.isDemoMode,
-      isSelected: cardValue === input.selectedCardValue,
+      isSelected: cardValue === viewersCard,
       actions: input.actions,
     },
-    selected: cardValue === input.selectedCardValue,
     draggable: false,
   }));
 }

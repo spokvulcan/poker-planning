@@ -1,6 +1,7 @@
 import { MutationCtx } from "../_generated/server";
 import { Doc } from "../_generated/dataModel";
 import { analyticsUserRows } from "./analytics";
+import { isGuest, type Caller } from "./caller";
 import { canvasUserRows } from "./canvas";
 import { integrationUserRows } from "./integrations";
 import { membershipUserRows } from "./memberships";
@@ -50,6 +51,16 @@ export function userRows(): readonly UserRows[] {
 export async function deleteAccount(ctx: MutationCtx, user: Doc<"users">): Promise<void> {
   for (const rows of userRows()) await rows.forget(ctx, user._id);
   await ctx.db.delete("users", user._id);
+}
+
+/**
+ * Signing out (CONTEXT.md: Guest): a guest's account goes with its session,
+ * deleted as above; a permanent account stays for when the person signs back
+ * in. The session's token tells them apart (caller.ts), so nothing the
+ * browser believes about the session can delete a permanent account.
+ */
+export async function signOut(ctx: MutationCtx, caller: Caller): Promise<void> {
+  if (isGuest(caller) && caller.user) await deleteAccount(ctx, caller.user);
 }
 
 /**

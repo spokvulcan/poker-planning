@@ -21,7 +21,7 @@ export interface PokerBoardActions {
   reset: () => void;
   toggleAutoComplete: () => void;
   cancelAutoReveal: () => void;
-  selectCard: (cardValue: string) => void;
+  selectCard: (cardLabel: string) => void;
   openIssues: () => void;
   /** Resolves to whether the note's text landed, for the field to keep it until it has. */
   updateNoteContent: (nodeId: string, content: string) => Promise<boolean>;
@@ -75,6 +75,7 @@ export type VotingCardNodeData = {
   userId: string;
   roomId: string;
   isSelectable: boolean;
+  /** Whether this card is the viewer's vote: the one thing that raises it. */
   isSelected: boolean;
   actions: PokerBoardActions;
 };
