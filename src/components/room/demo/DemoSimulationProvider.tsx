@@ -90,7 +90,7 @@ function buildRoom(state: DemoSimulationState): Doc<"rooms"> {
     // "session done" flag: reveal sets it true and the next round's reset clears
     // it (votingRound.ts reveal/reset), and phaseOf returns "revealed" iff it is
     // true. Mapping it from the reducer's `revealed` phase is what flips the
-    // cards and mounts the results node each cycle (useCanvasNodes), exactly as a
+    // cards and mounts the results node each cycle (RoomCanvas), exactly as a
     // real round does — always-false here would mean the demo never reveals.
     isGameOver: state.phase === "revealed",
     // While counting down, anchor the wall-clock start so the SessionNode's

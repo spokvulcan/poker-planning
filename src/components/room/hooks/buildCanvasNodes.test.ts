@@ -18,6 +18,7 @@ import { DEFAULT_SCALE } from "@/convex/scales";
 import {
   DEMO_VIEWER_ID,
   type CustomNodeType,
+  type PokerBoardActions,
   type VotingCardNodeType,
 } from "../types";
 import {
@@ -30,6 +31,25 @@ import {
 
 const ROOM_ID = "room-1" as Id<"rooms">;
 const ISSUE_ID = "issue-1" as Id<"issues">;
+
+/** The board's one frozen actions object: the builder only hands it on. */
+const ACTIONS: PokerBoardActions = {
+  reveal: () => {},
+  reset: () => {},
+  toggleAutoComplete: () => {},
+  cancelAutoReveal: () => {},
+  selectCard: () => {},
+  openIssues: () => {},
+  updateNoteContent: async () => true,
+  deleteNote: () => {},
+};
+
+const EVERYTHING_ALLOWED = {
+  revealCards: RESOLVED_ALLOWED,
+  gameFlow: RESOLVED_ALLOWED,
+  issueManagement: RESOLVED_ALLOWED,
+  roomSettings: RESOLVED_ALLOWED,
+};
 
 function member(id: string, overrides?: Partial<RoomUserData>): RoomUserData {
   return {
@@ -97,10 +117,8 @@ function nodesInput(overrides?: Partial<CanvasNodesInput>): CanvasNodesInput {
     viewerId: undefined,
     selectedCardValue: null,
     isDemoMode: false,
-    canRevealCards: RESOLVED_ALLOWED,
-    canControlGameFlow: RESOLVED_ALLOWED,
-    canChangeRoomSettings: RESOLVED_ALLOWED,
-    callbacks: {},
+    permissions: EVERYTHING_ALLOWED,
+    actions: ACTIONS,
     ...overrides,
   };
 }
@@ -288,41 +306,38 @@ describe("buildCanvasNodes — session node", () => {
     });
   });
 
-  it("passes resolved decisions through unaltered — allowed and denied alike", () => {
+  it("hands on the viewer's decisions by category, unaltered — allowed and denied alike", () => {
     const denied = { allowed: false as const, message: "Only the owner can do that" };
     const { data } = buildCanvasNodes(
       nodesInput({
         canvasNodes: [sessionCanvasNode()],
-        canRevealCards: denied,
-        canControlGameFlow: RESOLVED_ALLOWED,
-        canChangeRoomSettings: denied,
+        permissions: { ...EVERYTHING_ALLOWED, revealCards: denied, roomSettings: denied },
       }),
     )[0];
 
-    if (!("canRevealCards" in data)) throw new Error("expected session data");
-    expect(data.canRevealCards).toBe(denied);
-    expect(data.canControlGameFlow).toBe(RESOLVED_ALLOWED);
-    expect(data.canChangeRoomSettings).toBe(denied);
+    if (!("permissions" in data)) throw new Error("expected session data");
+    expect(data.permissions.revealCards).toBe(denied);
+    expect(data.permissions.gameFlow).toBe(RESOLVED_ALLOWED);
+    expect(data.permissions.roomSettings).toBe(denied);
   });
 
-  it("wires the session callbacks through by reference", () => {
-    const callbacks = {
-      onRevealCards: () => {},
-      onResetGame: () => {},
-      onToggleAutoComplete: () => {},
-      onCancelAutoReveal: () => {},
-      onOpenIssuesPanel: () => {},
-    };
+  it("keeps only the decisions of whatever permissions it is handed", () => {
+    // The browser's permissions also carry per-target functions, which would
+    // make node data unequal from one snapshot to the next.
+    const permissions = { ...EVERYTHING_ALLOWED, removeTarget: () => RESOLVED_ALLOWED };
     const { data } = buildCanvasNodes(
-      nodesInput({ canvasNodes: [sessionCanvasNode()], callbacks }),
+      nodesInput({ canvasNodes: [sessionCanvasNode()], permissions }),
     )[0];
 
-    if (!("canRevealCards" in data)) throw new Error("expected session data");
-    expect(data.onRevealCards).toBe(callbacks.onRevealCards);
-    expect(data.onResetGame).toBe(callbacks.onResetGame);
-    expect(data.onToggleAutoComplete).toBe(callbacks.onToggleAutoComplete);
-    expect(data.onCancelAutoReveal).toBe(callbacks.onCancelAutoReveal);
-    expect(data.onOpenIssuesPanel).toBe(callbacks.onOpenIssuesPanel);
+    if (!("permissions" in data)) throw new Error("expected session data");
+    expect(data.permissions).toEqual(EVERYTHING_ALLOWED);
+  });
+
+  it("hands the session node the board's one actions object", () => {
+    const { data } = buildCanvasNodes(nodesInput({ canvasNodes: [sessionCanvasNode()] }))[0];
+
+    if (!("permissions" in data)) throw new Error("expected session data");
+    expect(data.actions).toBe(ACTIONS);
   });
 
   it("falls back to the default session name and null current issue", () => {
@@ -419,37 +434,21 @@ describe("buildCanvasNodes — note node", () => {
     expect(nodes).toHaveLength(0);
   });
 
-  it("gives the note closures that capture its own node id and content state", () => {
-    const updates: [string, string][] = [];
-    const deletions: [string, boolean][] = [];
-    const build = (content: string) =>
+  it("hands the note the board's actions, building nothing for the note itself", () => {
+    const build = () =>
       buildCanvasNodes(
         nodesInput({
-          canvasNodes: [noteCanvasNode(ISSUE_ID, "note-current", content)],
+          canvasNodes: [noteCanvasNode(ISSUE_ID, "note-current", "draft")],
           currentIssue: { _id: ISSUE_ID, title: "Checkout flow" },
-          callbacks: {
-            onUpdateNoteContent: (nodeId, next) => {
-              updates.push([nodeId, next]);
-            },
-            onDeleteNote: (nodeId, hasContent) => deletions.push([nodeId, hasContent]),
-          },
         }),
       )[0];
 
-    const withContent = build("draft").data;
-    if (!("onUpdateContent" in withContent)) throw new Error("expected note data");
-    withContent.onUpdateContent("edited");
-    withContent.onDelete?.();
+    const note = build();
 
-    const empty = build("").data;
-    if (!("onUpdateContent" in empty)) throw new Error("expected note data");
-    empty.onDelete?.();
-
-    expect(updates).toEqual([["note-current", "edited"]]);
-    expect(deletions).toEqual([
-      ["note-current", true],
-      ["note-current", false],
-    ]);
+    expect(note.data).toMatchObject({ actions: ACTIONS });
+    // Built again from the same snapshot, it comes out equal: the whiteboard
+    // keeps the note it already has.
+    expect(build()).toEqual(note);
   });
 });
 
@@ -505,14 +504,12 @@ describe("buildCanvasNodes — voting-card row", () => {
   const viewer = "u1" as Id<"users">;
 
   it("renders one selectable card per scale value for a participant viewer", () => {
-    const onCardSelect = () => {};
     const nodes = buildCanvasNodes(
       nodesInput({
         room: roomWithScale,
         members: [member("u1")],
         viewerId: viewer,
         selectedCardValue: "2",
-        callbacks: { onCardSelect },
       }),
     );
 
@@ -528,7 +525,7 @@ describe("buildCanvasNodes — voting-card row", () => {
     expect(cards.map((n) => n.selected)).toEqual([false, true, false]);
     expect(cards.every((n) => n.draggable === false)).toBe(true);
     expect(cards.every((n) => n.data.isSelectable)).toBe(true);
-    expect(cards.every((n) => n.data.onCardSelect === onCardSelect)).toBe(true);
+    expect(cards.every((n) => n.data.actions === ACTIONS)).toBe(true);
     expect(cards.every((n) => n.data.userId === viewer)).toBe(true);
     expect(cards.every((n) => n.data.roomId === ROOM_ID)).toBe(true);
   });
@@ -557,12 +554,10 @@ describe("buildCanvasNodes — voting-card row", () => {
   });
 
   it("shows the row in demo mode under the demo viewer id, never selectable", () => {
-    const onCardSelect = () => {};
     const nodes = buildCanvasNodes(
       nodesInput({
         room: roomWithScale,
         isDemoMode: true,
-        callbacks: { onCardSelect },
       }),
     );
 
@@ -573,7 +568,6 @@ describe("buildCanvasNodes — voting-card row", () => {
       `card-${DEMO_VIEWER_ID}-2`,
     ]);
     expect(cards.every((n) => n.data.isSelectable === false)).toBe(true);
-    expect(cards.every((n) => n.data.onCardSelect === undefined)).toBe(true);
     expect(cards.every((n) => n.data.userId === DEMO_VIEWER_ID)).toBe(true);
   });
 
