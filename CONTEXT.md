@@ -231,8 +231,12 @@ The module (`convex/model/tokenVault.ts`) that owns the token-field contract for
 _Avoid_: encryption utils (the pure primitive is `convex/lib/encryption.ts` — the vault is the policy owner, not a second crypto implementation)
 
 **Integration provider registry**:
-The seam (`convex/integrations/registry.ts`) that maps a connection's `provider` to its adapter's handler — webhook lifecycle, token refresh, client construction. The generic integrations module (`convex/model/integrations.ts`) routes through it and never names a provider; an unregistered provider throws loudly rather than silently skipping. Adapter functions take their effects (fetch, clock, sleep) as injected dependencies so they are testable without faking globals. Jira is the sole adapter; GitHub (spec 07) is the planned second. See [ADR-0006](docs/adr/0006-integration-providers-sit-behind-a-registry.md).
+The seam (`convex/integrations/registry.ts`) that maps a connection's `provider` to its adapter's handler — its **webhook reconcile**, token refresh, client construction. The generic integrations module (`convex/model/integrations.ts`) routes through it and never names a provider; an unregistered provider throws loudly rather than silently skipping. Adapter functions take their effects (fetch, clock, sleep) as injected dependencies so they are testable without faking globals. Jira is the sole adapter; GitHub (spec 07) is the planned second. See [ADR-0006](docs/adr/0006-integration-providers-sit-behind-a-registry.md).
 _Avoid_: service layer, plugin, provider factory
+
+**Webhook reconcile**:
+The one owner of each room mapping's remote webhook, one per provider behind the **integration provider registry** (`convex/integrations/jiraWebhookReconcile.ts` for Jira). A mapping wants one webhook for its project while auto-push is on, made with the mapping's own connection; its record says which webhook is live, the connection that made it and the project it was made for. Everything that changes or ends a mapping hands over its case (saving it, the weekly renewal, removing it, its room ending, the orphan sweep, a disconnect), and the reconcile registers, replaces or removes the webhook, always deleting an old one with the connection that made it. A failed registration is recorded on the mapping, and the room's settings show it.
+_Avoid_: webhook sync, webhook manager
 
 ## Flagged ambiguities
 
