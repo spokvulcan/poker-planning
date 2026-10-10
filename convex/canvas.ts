@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import * as Canvas from "./model/canvas";
-import { requireRoomReader, requireActingUser } from "./model/auth";
+import { requireRoomReader, requireRoomWrite } from "./model/auth";
 import { positionValidator } from "./schema";
 
 // Get all canvas nodes for a room
@@ -19,10 +19,10 @@ export const moveNodes = mutation({
   args: {
     roomId: v.id("rooms"),
     moves: v.array(v.object({ nodeId: v.string(), position: positionValidator })),
-    userId: v.id("users"),
+    userId: v.optional(v.id("users")), // Ignored: the caller's own id, which old browsers still send
   },
   handler: async (ctx, args) => {
-    const { room, user } = await requireActingUser(ctx, args.roomId, args.userId);
+    const { room, user } = await requireRoomWrite(ctx, args.roomId);
     await Canvas.moveNodes(ctx, room, args.moves, user._id);
   },
 });
@@ -33,10 +33,10 @@ export const updateNodePosition = mutation({
     roomId: v.id("rooms"),
     nodeId: v.string(),
     position: positionValidator,
-    userId: v.id("users"),
+    userId: v.optional(v.id("users")), // Ignored: the caller's own id, which old browsers still send
   },
   handler: async (ctx, args) => {
-    const { room, user } = await requireActingUser(ctx, args.roomId, args.userId);
+    const { room, user } = await requireRoomWrite(ctx, args.roomId);
     await Canvas.moveNodes(ctx, room, [{ nodeId: args.nodeId, position: args.position }], user._id);
   },
 });
@@ -46,10 +46,10 @@ export const createNote = mutation({
   args: {
     roomId: v.id("rooms"),
     issueId: v.id("issues"),
-    userId: v.id("users"),
+    userId: v.optional(v.id("users")), // Ignored: the caller's own id, which old browsers still send
   },
   handler: async (ctx, args) => {
-    const { room, user } = await requireActingUser(ctx, args.roomId, args.userId);
+    const { room, user } = await requireRoomWrite(ctx, args.roomId);
     return await Canvas.createNote(ctx, room, args.issueId, user);
   },
 });
@@ -60,10 +60,10 @@ export const updateNoteContent = mutation({
     roomId: v.id("rooms"),
     nodeId: v.string(),
     content: v.string(),
-    userId: v.id("users"),
+    userId: v.optional(v.id("users")), // Ignored: the caller's own id, which old browsers still send
   },
   handler: async (ctx, args) => {
-    const { room, user } = await requireActingUser(ctx, args.roomId, args.userId);
+    const { room, user } = await requireRoomWrite(ctx, args.roomId);
     await Canvas.updateNote(ctx, room, args.nodeId, args.content, user);
   },
 });
@@ -73,10 +73,10 @@ export const deleteNote = mutation({
   args: {
     roomId: v.id("rooms"),
     nodeId: v.string(),
-    userId: v.id("users"),
+    userId: v.optional(v.id("users")), // Ignored: the caller's own id, which old browsers still send
   },
   handler: async (ctx, args) => {
-    const { room } = await requireActingUser(ctx, args.roomId, args.userId);
+    const { room } = await requireRoomWrite(ctx, args.roomId);
     await Canvas.deleteNote(ctx, room, args.nodeId);
   },
 });

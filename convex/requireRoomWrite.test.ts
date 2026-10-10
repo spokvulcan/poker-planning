@@ -193,3 +193,39 @@ describe.each(ADDRESSABLE)("a write addressed by the $entity it acts on", ({ tab
     });
   });
 });
+
+// The rule the step exists for: a room write's handler takes its room and its
+// caller from the step, and works neither out again by hand. The modules
+// whose writes are on the step, as source text.
+const sources = import.meta.glob(["./canvas.ts", "./timer.ts"], {
+  query: "?raw",
+  import: "default",
+  eager: true,
+}) as Record<string, string>;
+
+/** Each public write in a module's source, by name: its code up to the next export, comments left out. */
+function writesIn(source: string): [string, string][] {
+  const code = source
+    .split("\n")
+    .filter((line) => !/^\s*(\/\/|\/\*|\*)/.test(line))
+    .map((line) => line.replace(/(^|[^:])\/\/.*$/, "$1"))
+    .join("\n");
+  return [...code.matchAll(/export const (\w+) = mutation\(([\s\S]*?)(?=\nexport |$)/g)].map(
+    ([, name, body]) => [name, body]
+  );
+}
+
+/** Code that works out the caller or the room itself: another guard, the caller module, a room read or the user id sent. */
+const RESOLVES_ITSELF =
+  /\b(requireRoomMember|requireActingUser|requireCan|requireCanForUser|requireAuthAs|requireUser|requireCaller|getCaller)\(|\.get\(\s*["']rooms["']|args\.userId/;
+
+describe("the writes on the room-scoped step", () => {
+  it.each(Object.entries(sources))("in %s take their room and caller from it", (_, source) => {
+    const writes = writesIn(source);
+    expect(writes.length).toBeGreaterThan(0);
+    for (const [name, body] of writes) {
+      expect(body, name).toContain("requireRoomWrite(");
+      expect(body, name).not.toMatch(RESOLVES_ITSELF);
+    }
+  });
+});

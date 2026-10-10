@@ -7,6 +7,7 @@ import {
   calculateCurrentTime,
   formatTimerTime,
   validateTimerAction,
+  type TimerAction,
   type TimerState,
 } from "./timerState";
 import * as Timer from "./model/timer";
@@ -197,6 +198,13 @@ async function readTimerData(
   });
 }
 
+/** Runs a timer action as `userId`, handed the room as the timer writes hand it. */
+function runTimer(t: T, roomId: Id<"rooms">, action: TimerAction, userId: Id<"users">) {
+  return t.run(async (ctx) =>
+    Timer.updateTimerState(ctx, { room: (await ctx.db.get("rooms", roomId))!, nodeId: "timer", action, userId })
+  );
+}
+
 describe("Timer.updateTimerState", () => {
   afterEach(() => {
     vi.useRealTimers();
@@ -210,9 +218,7 @@ describe("Timer.updateTimerState", () => {
     const userId = await seedUser(t);
     await seedTimerNode(t, roomId);
 
-    await t.run((ctx) =>
-      Timer.updateTimerState(ctx, { roomId, nodeId: "timer", action: "start", userId })
-    );
+    await runTimer(t, roomId, "start", userId);
 
     expect(await readTimerData(t, roomId)).toEqual({
       startedAt: NOW,
@@ -229,11 +235,7 @@ describe("Timer.updateTimerState", () => {
     const userId = await seedUser(t);
     await seedTimerNode(t, roomId, stopped({ isRunning: true, startedAt: NOW }));
 
-    await expect(
-      t.run((ctx) =>
-        Timer.updateTimerState(ctx, { roomId, nodeId: "timer", action: "start", userId })
-      )
-    ).rejects.toThrow("Timer is already running");
+    await expect(runTimer(t, roomId, "start", userId)).rejects.toThrow("Timer is already running");
   });
 
   it("pause accumulates the running segment into elapsedSeconds", async () => {
@@ -244,14 +246,10 @@ describe("Timer.updateTimerState", () => {
 
     vi.setSystemTime(NOW);
     await seedTimerNode(t, roomId);
-    await t.run((ctx) =>
-      Timer.updateTimerState(ctx, { roomId, nodeId: "timer", action: "start", userId })
-    );
+    await runTimer(t, roomId, "start", userId);
 
     vi.setSystemTime(NOW + 90_500);
-    await t.run((ctx) =>
-      Timer.updateTimerState(ctx, { roomId, nodeId: "timer", action: "pause", userId })
-    );
+    await runTimer(t, roomId, "pause", userId);
 
     expect(await readTimerData(t, roomId)).toEqual({
       startedAt: null,
@@ -270,25 +268,17 @@ describe("Timer.updateTimerState", () => {
 
     vi.setSystemTime(NOW);
     await seedTimerNode(t, roomId);
-    await t.run((ctx) =>
-      Timer.updateTimerState(ctx, { roomId, nodeId: "timer", action: "start", userId })
-    );
+    await runTimer(t, roomId, "start", userId);
 
     // First cycle: run 60s, pause.
     vi.setSystemTime(NOW + 60_000);
-    await t.run((ctx) =>
-      Timer.updateTimerState(ctx, { roomId, nodeId: "timer", action: "pause", userId })
-    );
+    await runTimer(t, roomId, "pause", userId);
 
     // Second cycle: resume 90s later, run 30s, pause again.
     vi.setSystemTime(NOW + 150_000);
-    await t.run((ctx) =>
-      Timer.updateTimerState(ctx, { roomId, nodeId: "timer", action: "start", userId })
-    );
+    await runTimer(t, roomId, "start", userId);
     vi.setSystemTime(NOW + 180_000);
-    await t.run((ctx) =>
-      Timer.updateTimerState(ctx, { roomId, nodeId: "timer", action: "pause", userId })
-    );
+    await runTimer(t, roomId, "pause", userId);
 
     const data = await readTimerData(t, roomId);
     expect(data).toEqual({
@@ -308,11 +298,7 @@ describe("Timer.updateTimerState", () => {
     const userId = await seedUser(t);
     await seedTimerNode(t, roomId);
 
-    await expect(
-      t.run((ctx) =>
-        Timer.updateTimerState(ctx, { roomId, nodeId: "timer", action: "pause", userId })
-      )
-    ).rejects.toThrow("Timer is not running");
+    await expect(runTimer(t, roomId, "pause", userId)).rejects.toThrow("Timer is not running");
   });
 
   it("reset zeroes the accumulated time and stops the timer", async () => {
@@ -325,9 +311,7 @@ describe("Timer.updateTimerState", () => {
       stopped({ elapsedSeconds: 300, isRunning: true, startedAt: NOW })
     );
 
-    await t.run((ctx) =>
-      Timer.updateTimerState(ctx, { roomId, nodeId: "timer", action: "reset", userId })
-    );
+    await runTimer(t, roomId, "reset", userId);
 
     expect(await readTimerData(t, roomId)).toEqual({
       startedAt: null,
@@ -343,10 +327,6 @@ describe("Timer.updateTimerState", () => {
     const roomId = await seedRoom(t);
     const userId = await seedUser(t);
 
-    await expect(
-      t.run((ctx) =>
-        Timer.updateTimerState(ctx, { roomId, nodeId: "timer", action: "start", userId })
-      )
-    ).rejects.toThrow("Timer node not found");
+    await expect(runTimer(t, roomId, "start", userId)).rejects.toThrow("Timer node not found");
   });
 });

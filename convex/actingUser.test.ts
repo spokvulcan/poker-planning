@@ -108,22 +108,6 @@ describe("acting-user guard (requireActingUser)", () => {
     ).rejects.toThrow("You don't have access to this room");
   });
 
-  it("actor mismatch throws on updateNodePosition", async () => {
-    const t = convexTest(schema, modules);
-    const roomId = await seedRoom(t);
-    await addMember(t, roomId, "auth-a");
-    const userB = await addMember(t, roomId, "auth-b");
-    const asA = t.withIdentity({ subject: "auth-a" });
-    await expect(
-      asA.mutation(api.canvas.updateNodePosition, {
-        roomId,
-        nodeId: "session-current",
-        position: { x: 1, y: 1 },
-        userId: userB,
-      })
-    ).rejects.toThrow("Cannot act as another user");
-  });
-
   it("actor mismatch throws on pickCard", async () => {
     const t = convexTest(schema, modules);
     const roomId = await seedRoom(t);
