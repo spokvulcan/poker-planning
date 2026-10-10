@@ -4,6 +4,7 @@ import { describe, it, expect } from "vitest";
 import schema from "./schema";
 import { api } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
+import { seedUser, addMembership } from "./analytics.seeds";
 
 const modules = import.meta.glob("./**/*.*s");
 
@@ -40,11 +41,9 @@ async function seedVoter(
 
 /** Another voter, seated in the same room. */
 async function addVoter(t: T, roomId: Id<"rooms">, authUserId: string): Promise<Id<"users">> {
-  return t.run(async (ctx) => {
-    const userId = await ctx.db.insert("users", { authUserId, name: "U", createdAt: Date.now() });
-    await ctx.db.insert("roomMemberships", { roomId, userId, isSpectator: false, joinedAt: Date.now() });
-    return userId;
-  });
+  const userId = await seedUser(t, authUserId);
+  await addMembership(t, roomId, userId, Date.now());
+  return userId;
 }
 
 async function votesIn(t: T, roomId: Id<"rooms">) {

@@ -242,11 +242,12 @@ const RESOLVES_ITSELF =
   /\b(requireRoomMember|requireActingUser|requireCan|requireCanForUser|findOrMakeUser|requireUser|requireCaller|getCaller)\(|\.get\(\s*["']rooms["']|args\.userId/;
 
 /**
- * A write's code without the step's own call. The one user id a write may hand
- * on is the member a relationship verb acts on (whom `users.remove` takes
- * out), and only to the step, which loads that member.
+ * A write's code without the member a relationship verb acts on, where it is
+ * named to the step: the one user id a write may hand on (whom `users.remove`
+ * takes out), and only to the step, which loads that member.
  */
-const besideTheStep = (body: string) => body.replace(/requireRoomWrite\([^)]*\)/g, "");
+const withoutStepTarget = (body: string) =>
+  body.replace(/(requireRoomWrite\([^()]*),\s*args\.userId(?=\s*\))/g, "$1");
 
 describe("the writes on the room-scoped step", () => {
   it.each(Object.entries(sources))("in %s take their room and caller from it", (file, source) => {
@@ -254,7 +255,7 @@ describe("the writes on the room-scoped step", () => {
     expect(writes.length).toBeGreaterThan(0);
     for (const [name, body] of writes) {
       expect(body, name).toContain("requireRoomWrite(");
-      expect(besideTheStep(body), name).not.toMatch(RESOLVES_ITSELF);
+      expect(withoutStepTarget(body), name).not.toMatch(RESOLVES_ITSELF);
     }
   });
 });
