@@ -243,7 +243,7 @@ Use this for pages that require authentication (e.g., dashboard). Client-side re
 2. The auth provider's isAuthenticated (Convex's, from useConvexAuth) is false → JoinRoomDialog shown
 3. User enters a name and clicks Join
 4. JoinRoomDialog calls ensureSession({ createUser: false }) (useEnsureSession):
-   a. Waits for the auth provider's first load (isLoading false)
+   a. Waits until BetterAuth's session and Convex's auth state have both loaded (isSessionPending and isLoading false)
    b. No session → authClient.signIn.anonymous() creates the guest's session (cookie set)
    c. Waits until Convex has the session's token (isAuthenticated true)
    d. Writes no users row: the join writes it with the typed name
@@ -256,7 +256,7 @@ Use this for pages that require authentication (e.g., dashboard). Client-side re
 
 Every guest way in goes through `useEnsureSession` (`src/hooks/useEnsureSession.ts`): joining a room from its link (above), "Continue as guest" on the sign-in page, and creating a poker room or a retro. It works in this order:
 
-- **It waits for the auth provider's first load** before deciding whether there is a session, since signing in anonymously over a live session is a BetterAuth 400.
+- **It waits until BetterAuth's session and Convex's auth state have both loaded** before deciding whether there is a session. With the server-rendered token (`initialToken` in `src/app/layout.tsx`) Convex can load while BetterAuth's session is still on its way, and signing in anonymously over a live session is a BetterAuth 400 for a guest and a new guest for a permanent account.
 - **It waits until Convex has the token** after signing in. A fresh session reaches BetterAuth before Convex, and the server takes no write from a caller it can't identify: `users.join` and `users.ensureGlobalUser` both take `requireAuthAs`.
 - **Only then does it write the users row.** Every caller but the join passes the default `createUser: true`, and the hook calls `users.ensureGlobalUser` with a generated guest name. That makes a row only when the caller has none; an existing row keeps its name. It runs on every call, not only for a fresh session, so a guest whose first row write (or join) failed still gets a row, which creating a room needs.
 - **The waits are the auth provider's** (`whenAuth`, see [Auth Provider Context](#auth-provider-context)), not the calling component's, so they finish even when the page unmounts the caller meanwhile. The room page swaps out the join dialog while Convex takes the new session.
@@ -307,9 +307,10 @@ interface AuthContextType {
 }
 
 interface AuthSnapshot {
-  authUserId: string | null;
-  isLoading: boolean;
-  isAuthenticated: boolean;
+  authUserId: string | null;    // From BetterAuth's session: null means no session only once it has loaded
+  isSessionPending: boolean;    // Whether BetterAuth's session is still loading
+  isLoading: boolean;           // From Convex, as in AuthContextType
+  isAuthenticated: boolean;     // From Convex, as in AuthContextType
 }
 
 type WhenAuth = (ready: (state: AuthSnapshot) => boolean, timeoutMs: number) => Promise<AuthSnapshot>;
@@ -317,7 +318,7 @@ type WhenAuth = (ready: (state: AuthSnapshot) => boolean, timeoutMs: number) => 
 
 `accountType` is the users row's, falling back to `"permanent"` when the session isn't anonymous. A guest's row leaves it unset, so for a guest it is `null`; tell a guest by `isAnonymous`.
 
-`whenAuth(ready, timeoutMs)` resolves with the first auth state `ready` accepts (at once if the current one does, else on the update that makes it hold) and rejects after `timeoutMs`. The provider holds the waiters (`createAuthWaiters` in `src/lib/auth-waiters.ts`) and feeds them every change of `authUserId`, `isLoading` and `isAuthenticated`. It sits at the root, so a wait outlives the component that started it. Outside an `AuthProvider`, `whenAuth` rejects.
+`whenAuth(ready, timeoutMs)` resolves with the first auth state `ready` accepts (at once if the current one does, else on the update that makes it hold) and rejects after `timeoutMs`. The provider holds the waiters (`createAuthWaiters` in `src/lib/auth-waiters.ts`) and feeds them every change of `authUserId`, `isSessionPending`, `isLoading` and `isAuthenticated`. It sits at the root, so a wait outlives the component that started it. Outside an `AuthProvider`, `whenAuth` rejects.
 
 ## Environment Variables
 
