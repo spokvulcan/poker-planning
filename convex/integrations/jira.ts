@@ -30,7 +30,7 @@ import { requireAuth, requireCanForUser } from "../model/auth";
 import { JiraClient, JiraIssue } from "./jiraClient";
 import { buildJiraClient, requireJiraClientCredentials } from "./jiraAuth";
 import { applyJiraWebhookEvent } from "./jiraWebhook";
-import { cardNumericValue } from "../model/alignment";
+import { cardNumericValue } from "../scales";
 import * as Issues from "../model/issues";
 import * as Integrations from "../model/integrations";
 import * as TokenVault from "../model/tokenVault";

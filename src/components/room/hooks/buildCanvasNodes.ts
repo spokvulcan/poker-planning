@@ -20,7 +20,7 @@ import type { RoomUserData } from "@/convex/model/memberships";
 import type { ResolvedDecision } from "@/convex/permissions";
 import type { Phase } from "@/convex/phase";
 import { computeVotingCardRow } from "@/convex/canvasLayout";
-import { DEFAULT_SCALE } from "@/convex/scales";
+import { deckOf } from "@/convex/scales";
 import { DEMO_VIEWER_ID, type CustomNodeType, type TimerNodeType } from "../types";
 
 /** The room fields the nodes builder reads — a view, not the whole document. */
@@ -124,7 +124,7 @@ function buildVotingCardRow(input: CanvasNodesInput): CustomNodeType[] {
     : input.isDemoMode;
   if (!shouldShowVotingCards) return [];
 
-  const cards = input.room.votingScale?.cards ?? DEFAULT_SCALE.cards;
+  const { cards } = deckOf(input.room.votingScale);
   const cardPositions = computeVotingCardRow(cards.length);
   const effectiveUserId = input.viewerId ?? DEMO_VIEWER_ID;
 
@@ -235,7 +235,7 @@ function buildResultsNode(
     data: {
       votes: input.votes.filter((v) => v.hasVoted),
       users: input.members,
-      isNumericScale: input.room.votingScale?.isNumeric ?? true,
+      isNumericScale: deckOf(input.room.votingScale).isNumeric,
     },
     draggable: !node.isLocked,
   };
