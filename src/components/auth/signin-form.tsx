@@ -27,7 +27,9 @@ import { AlertCircle, CheckCircle2, Loader2 } from "lucide-react";
 export function SigninForm({ className, ...props }: React.ComponentProps<"div">) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { isAnonymous } = useAuth();
+  const { viewer } = useAuth();
+  // Signed in already, without a permanent account: the guest button only goes back
+  const isGuest = viewer.status === "signedIn" && !viewer.isPermanent;
   const ensureSession = useEnsureSession();
 
   const rawFrom = searchParams.get("from") || "/";
@@ -225,7 +227,7 @@ export function SigninForm({ className, ...props }: React.ComponentProps<"div">)
                 {loadingGuest ? (
                   <Loader2 className="mr-2 size-4 animate-spin" />
                 ) : null}
-                {isAnonymous ? "Cancel and return to room" : "Continue as guest"}
+                {isGuest ? "Cancel and return to room" : "Continue as guest"}
               </Button>
             </div>
           )}

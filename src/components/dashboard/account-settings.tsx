@@ -34,7 +34,8 @@ import {
  * signing out, so it gets a line saying so instead.
  */
 export function AccountSettings() {
-  const { accountType } = useAuth();
+  const { viewer } = useAuth();
+  const isPermanent = viewer.status === "signedIn" && viewer.isPermanent;
   const deleteAccount = useDeleteAccount();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -51,7 +52,7 @@ export function AccountSettings() {
 
   return (
     <div className="space-y-6">
-      {accountType !== "permanent" && (
+      {!isPermanent && (
         <Card data-testid="guest-account">
           <CardHeader>
             <CardTitle>{GUEST_ACCOUNT_TITLE}</CardTitle>
@@ -60,7 +61,7 @@ export function AccountSettings() {
         </Card>
       )}
 
-      {accountType === "permanent" && (
+      {isPermanent && (
         <Card data-testid="delete-account">
           <CardHeader>
             <CardTitle>{DELETE_ACCOUNT_SECTION_TITLE}</CardTitle>
