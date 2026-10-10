@@ -1,7 +1,8 @@
 /**
- * The Jira adapter's token operations with injected fetch/clock/vault key:
- * refresh round-trip (success + failure) and the freshness gate, driven
- * through the real code paths — no faked globals, no env vars.
+ * The Jira adapter's token operations with injected fetch/clock/vault
+ * key/client credentials: refresh round-trip (success + failure) and the
+ * freshness gate, driven through the real code paths — no faked globals, no
+ * env vars.
  */
 import { describe, it, expect, vi } from "vitest";
 import type { ActionCtx } from "../_generated/server";
@@ -11,6 +12,12 @@ import { getValidAccessToken, refreshJiraToken } from "./jiraAuth";
 
 // 64 lowercase hex chars — a valid vault key, injected explicitly.
 const TEST_KEY = "0123456789abcdef".repeat(4);
+
+// The Jira OAuth app's credentials, injected explicitly.
+const CREDENTIALS = {
+  clientId: "jira-client-id",
+  clientSecret: "jira-client-secret",
+};
 
 const PLAINTEXT_ACCESS = "plaintext-access-token!";
 const PLAINTEXT_REFRESH = "plaintext-refresh-token?";
@@ -72,6 +79,7 @@ describe("refreshJiraToken", () => {
       fetchImpl: fetchImpl as typeof fetch,
       now: () => NOW,
       keyHex: TEST_KEY,
+      credentials: CREDENTIALS,
     });
 
     expect(accessToken).toBe("new-access");
@@ -124,9 +132,35 @@ describe("refreshJiraToken", () => {
         fetchImpl: fetchImpl as typeof fetch,
         now: () => NOW,
         keyHex: TEST_KEY,
+        credentials: CREDENTIALS,
       })
     ).rejects.toThrow("Failed to refresh Jira token: 400 bad refresh");
     expect(runMutation).not.toHaveBeenCalled();
+  });
+
+  it("posts the Jira OAuth app's credentials with the refresh token", async () => {
+    const { ctx } = fakeCtx();
+    const connection = await fakeConnection(NOW - 1_000);
+    const fetchImpl = vi.fn(async () =>
+      tokenResponse({
+        access_token: "new-access",
+        refresh_token: "new-refresh",
+        expires_in: 3600,
+      })
+    );
+
+    await refreshJiraToken(ctx, connection, {
+      fetchImpl: fetchImpl as typeof fetch,
+      now: () => NOW,
+      keyHex: TEST_KEY,
+      credentials: CREDENTIALS,
+    });
+
+    const [, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
+    expect(JSON.parse(init.body as string)).toMatchObject({
+      client_id: "jira-client-id",
+      client_secret: "jira-client-secret",
+    });
   });
 });
 
@@ -164,6 +198,7 @@ describe("getValidAccessToken", () => {
       fetchImpl: fetchImpl as typeof fetch,
       now: () => NOW,
       keyHex: TEST_KEY,
+      credentials: CREDENTIALS,
     });
 
     expect(token).toBe("refreshed-access");

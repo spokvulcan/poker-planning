@@ -26,7 +26,7 @@ import { Doc, Id } from "../_generated/dataModel";
 import { ActionCtx } from "../_generated/server";
 import { requireAuth, requireCanForUser } from "../model/auth";
 import { JiraClient } from "./jiraClient";
-import { buildJiraClient } from "./jiraAuth";
+import { buildJiraClient, requireJiraClientCredentials } from "./jiraAuth";
 import { applyJiraWebhookEvent } from "./jiraWebhook";
 import { cardNumericValue } from "../model/alignment";
 import { createIssueInRoom } from "../model/issues";
@@ -282,6 +282,10 @@ export const connectJira = action({
   },
   handler: async (ctx, args) => {
     const user = await requireActionUser(ctx);
+
+    // The first token refresh posts the deployment's Jira credentials, so a
+    // deployment without them refuses the connect now.
+    requireJiraClientCredentials();
 
     // The siteUrl is stored and later concatenated into issue browse links
     // rendered as anchor hrefs. This action is public, so a client could
