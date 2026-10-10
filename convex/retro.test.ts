@@ -238,6 +238,8 @@ describe("the board — who sees what", () => {
 
     await as(t, "owner").mutation(api.retro.updateSettings, { roomId, showAuthors: true });
     expect((await seen(t, "bob", roomId, stickyId)).authorName).toBe("ann");
+    // Her own sticky too, as her browser shows a new one before the server answers.
+    expect((await seen(t, "ann", roomId, stickyId)).authorName).toBe("ann");
 
     // Back to writing: face-down again, and no name travels, not even to the author.
     await setStep(t, roomId, "write");

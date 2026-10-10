@@ -1,7 +1,9 @@
 /**
  * What one viewer sees of a sticky (CONTEXT.md: Face-down, Show authors,
  * Vote): the one projection of a sticky's row for whoever is looking. The
- * board read applies it to every sticky. Pure: no IO, no Convex runtime.
+ * board read applies it to every sticky, and the board's optimistic add to
+ * the viewer's own new sticky, so a sticky lands looking as the server's
+ * answer will. Pure: no IO, no Convex runtime.
  *
  * Face-down is decided from the retro's step, the room's and never the
  * viewer's (ADR-0026): while it is in Write, someone else's sticky reaches a
