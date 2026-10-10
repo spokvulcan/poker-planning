@@ -16,20 +16,11 @@ crons.interval(
   internal.integrations.tokenRefresh.refreshExpiringTokens
 );
 
-// Re-register Jira webhooks (they expire after 30 days), through each
-// mapping's webhook reconcile
-crons.weekly(
-  "refresh-jira-webhooks",
-  { dayOfWeek: "sunday", hourUTC: 2, minuteUTC: 0 },
-  internal.integrations.jira.refreshJiraWebhooks,
-  {}
-);
+// Weekly on Sunday at 2:23 AM UTC, re-register Jira webhooks (they expire
+// after 30 days), through each mapping's webhook reconcile
+crons.cron("refresh-jira-webhooks", "23 2 * * 0", internal.integrations.jira.refreshJiraWebhooks, {});
 
-// Clean up old webhook dedup events (>7 days)
-crons.daily(
-  "cleanup-webhook-events",
-  { hourUTC: 4, minuteUTC: 0 },
-  internal.integrations.jira.cleanupOldWebhookEvents
-);
+// Daily at 4:41 AM UTC, clean up old webhook dedup events (>7 days)
+crons.cron("cleanup-webhook-events", "41 4 * * *", internal.integrations.jira.cleanupOldWebhookEvents, {});
 
 export default crons;
