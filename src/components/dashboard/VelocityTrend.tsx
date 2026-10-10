@@ -1,6 +1,6 @@
 "use client";
 
-import { HelpCircle, TrendingUp, TrendingDown, Minus } from "lucide-react";
+import { HelpCircle } from "lucide-react";
 import {
   ComposedChart,
   Area,
@@ -28,7 +28,9 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import type { PredictabilityData } from "@/convex/analyticsMath";
 import { formatChartDay } from "./chart-day";
+import { trendView } from "./trend-view";
 
 interface SessionDataPoint {
   roomName: string;
@@ -41,7 +43,7 @@ interface SessionDataPoint {
 
 interface VelocityTrendProps {
   sessions: SessionDataPoint[];
-  velocityTrend: "increasing" | "stable" | "decreasing";
+  velocityTrend: PredictabilityData["velocityTrend"];
   isLoading?: boolean;
 }
 
@@ -71,24 +73,6 @@ function computeRollingAverage(
   });
 }
 
-const trendConfig = {
-  increasing: {
-    icon: TrendingUp,
-    label: "Velocity increasing",
-    className: "text-green-600 dark:text-green-400",
-  },
-  stable: {
-    icon: Minus,
-    label: "Velocity stable",
-    className: "text-muted-foreground",
-  },
-  decreasing: {
-    icon: TrendingDown,
-    label: "Velocity decreasing",
-    className: "text-amber-600 dark:text-amber-400",
-  },
-} as const;
-
 export function VelocityTrend({
   sessions,
   velocityTrend,
@@ -106,7 +90,7 @@ export function VelocityTrend({
     0
   );
 
-  const trend = trendConfig[velocityTrend];
+  const trend = trendView("velocity", velocityTrend);
   const TrendIcon = trend.icon;
 
   if (isLoading) {
@@ -183,10 +167,12 @@ export function VelocityTrend({
           <span>
             {totalPoints} points across {totalIssues} issues
           </span>
-          <span className={`flex items-center gap-1 ${trend.className}`}>
-            <TrendIcon className="h-3 w-3" />
-            {trend.label}
-          </span>
+          {trend.text && (
+            <span className={`flex items-center gap-1 ${trend.className}`}>
+              <TrendIcon className="h-3 w-3" />
+              {trend.text}
+            </span>
+          )}
         </CardDescription>
       </CardHeader>
       <CardContent className="flex-1 flex flex-col pb-6">

@@ -4,22 +4,6 @@ import * as AnalyticsMath from "../analyticsMath";
 import { rulesOf } from "../ceremony";
 import type { UserRows } from "./userRows";
 
-// The response shapes are owned by the pure projection module; re-exported
-// here so existing imports from this module keep working.
-export type {
-  AgreementDataPoint,
-  VoteDistributionItem,
-  TimeToConsensusStats,
-  VoterAlignmentUser,
-  VoterAlignmentScatterPoint,
-  VoterAlignmentData,
-  PredictabilitySession,
-  PredictabilityData,
-  DashboardSummary,
-  SessionSummary,
-  Dashboard,
-} from "../analyticsMath";
-
 export interface DateRange {
   from: number; // timestamp
   to: number; // timestamp

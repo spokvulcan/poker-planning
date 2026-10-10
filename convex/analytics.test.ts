@@ -47,7 +47,7 @@ describe("the dashboard read — every panel of the Overview from one read", () 
         averageAgreement: null,
       },
       sessions: [],
-      agreementTrend: { points: [], trend: { direction: "stable", changePct: null } },
+      agreementChart: { points: [], trend: { direction: "stable", changePct: null } },
       voteDistribution: [],
       timeToConsensus: {
         averageMs: null,
@@ -75,7 +75,7 @@ describe("the dashboard read — every panel of the Overview from one read", () 
     const asA = t.withIdentity({ subject: "auth-a" });
 
     const ranged = await asA.query(api.analytics.getDashboard, { dateRange: RANGE });
-    expect(ranged.agreementTrend.points.map((p) => p.issueTitle)).toEqual(["Issue 1"]);
+    expect(ranged.agreementChart.points.map((p) => p.issueTitle)).toEqual(["Issue 1"]);
     expect(ranged.predictability.sessions).toEqual([
       {
         roomName: "R",

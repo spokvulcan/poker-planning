@@ -152,7 +152,7 @@ describe("DashboardContent", () => {
   it("states the read's trend verdicts, not verdicts of its own", () => {
     spy.result = {
       ...DASHBOARD,
-      agreementTrend: {
+      agreementChart: {
         // The points climb day by day; the verdict is the read's, room against room.
         points: [
           { date: "2026-10-01", timestamp: Date.UTC(2026, 9, 1), agreement: 40, issueTitle: "Login", roomName: "Sprint 42 planning" },
@@ -174,7 +174,7 @@ describe("DashboardContent", () => {
   it("claims no size the read didn't state", () => {
     spy.result = {
       ...DASHBOARD,
-      agreementTrend: {
+      agreementChart: {
         points: [
           { date: "2026-10-01", timestamp: Date.UTC(2026, 9, 1), agreement: 40, issueTitle: "Login", roomName: "Sprint 42 planning" },
           { date: "2026-10-02", timestamp: Date.UTC(2026, 9, 2), agreement: 90, issueTitle: "Logout", roomName: "Sprint 42 planning" },
@@ -191,6 +191,26 @@ describe("DashboardContent", () => {
     renderOverview();
 
     expect(card("Agreement Trend").getByText("Team alignment over time")).toBeTruthy();
+    expect(card("Avg Time to Consensus").getByText("Slower")).toBeTruthy();
+  });
+
+  it("says a direction the read gave no size bare, the same in every panel", () => {
+    spy.result = {
+      ...DASHBOARD,
+      agreementChart: {
+        points: [
+          { date: "2026-10-01", timestamp: Date.UTC(2026, 9, 1), agreement: 40, issueTitle: "Login", roomName: "Sprint 42 planning" },
+        ],
+        trend: { direction: "declining", changePct: null },
+      },
+      timeToConsensus: {
+        ...DASHBOARD.timeToConsensus,
+        trend: { direction: "slower", changePct: null },
+      },
+    } satisfies Dashboard;
+    renderOverview();
+
+    expect(card("Agreement Trend").getByText("Trending down")).toBeTruthy();
     expect(card("Avg Time to Consensus").getByText("Slower")).toBeTruthy();
   });
 

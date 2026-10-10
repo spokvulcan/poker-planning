@@ -22,8 +22,9 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import type { AgreementTrendData } from "@/convex/analyticsMath";
+import type { AgreementChartData } from "@/convex/analyticsMath";
 import { formatChartDay } from "./chart-day";
+import { trendView } from "./trend-view";
 
 interface AgreementDataPoint {
   date: string;
@@ -35,7 +36,7 @@ interface AgreementDataPoint {
 
 interface AgreementChartProps {
   data: AgreementDataPoint[];
-  trend: AgreementTrendData["trend"];
+  trend: AgreementChartData["trend"];
   isLoading?: boolean;
 }
 
@@ -69,21 +70,11 @@ function aggregateByDate(
     .sort((a, b) => a.date.localeCompare(b.date));
 }
 
-/** The read's agreement trend in words; none when it compared nothing. */
-function describeTrend({
-  direction,
-  changePct,
-}: AgreementChartProps["trend"]): string {
-  if (changePct === null) return "";
-  if (direction === "improving") return `Trending up ${changePct}%`;
-  if (direction === "declining") return `Trending down ${Math.abs(changePct)}%`;
-  return "Stable trend";
-}
-
 export function AgreementChart({ data, trend, isLoading }: AgreementChartProps) {
   const aggregated = aggregateByDate(data);
   const hasData = aggregated.length > 0;
-  const trendText = describeTrend(trend);
+  // The read's agreement trend in words; none when it compared nothing.
+  const trendText = trendView("agreement", trend).text;
 
   if (isLoading) {
     return (
@@ -150,7 +141,7 @@ export function AgreementChart({ data, trend, isLoading }: AgreementChartProps) 
             </TooltipProvider>
           </CardTitle>
         <CardDescription>
-          {trendText || "Team alignment over time"}
+          {trendText ?? "Team alignment over time"}
         </CardDescription>
       </CardHeader>
       <CardContent className="flex-1 flex flex-col pb-6">
