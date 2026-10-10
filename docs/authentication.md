@@ -58,7 +58,7 @@ The authentication system consists of three layers:
 | `src/app/(app)/auth/signin/page.tsx` | Dedicated Sign In Page for permanent account upgrade |
 | `src/app/(app)/auth/verify/page.tsx` | Magic Link Verification Page |
 | `src/app/api/auth/[...all]/route.ts` | Next.js API route handler |
-| `src/components/auth/auth-provider.tsx` | React context for auth state, and `whenAuth` for waiting on it |
+| `src/components/auth/auth-provider.tsx` | React context for auth state and the viewer (who is looking, from their users row), and `whenAuth` for waiting on it |
 | `src/hooks/useEnsureSession.ts` | The session every guest way in goes through (see [Guest flow](#first-time-user-joining-a-room-guest)) |
 | `src/lib/auth-waiters.ts` | Promises on the changing auth state, held by the auth provider |
 
@@ -279,7 +279,7 @@ Use this for pages that require authentication (e.g., dashboard). Client-side re
 
 ```
 1. User visits /room/[roomId]
-2. The auth provider's isAuthenticated (Convex's, from useConvexAuth) is false → JoinRoomDialog shown
+2. The auth provider's viewer is a visitor (Convex's useConvexAuth says nobody is signed in) → JoinRoomDialog shown
 3. User enters a name and clicks Join
 4. JoinRoomDialog calls ensureSession() (useEnsureSession):
    a. Waits until BetterAuth's session and Convex's auth state have both loaded (isSessionPending and isLoading false)
@@ -299,7 +299,7 @@ Every guest way in goes through `useEnsureSession` (`src/hooks/useEnsureSession.
 - **It writes nothing.** The room write that follows (creating a room, joining one) makes the caller's users row when they have none ([The caller's users row](#the-callers-users-row-convexmodelusersts)). "Continue as guest" makes no row: a guest who only continues has none until their first room write.
 - **The waits are the auth provider's** (`whenAuth`, see [Auth Provider Context](#auth-provider-context)), not the calling component's, so they finish even when the page unmounts the caller meanwhile. The room page swaps out the join dialog while Convex takes the new session.
 
-A users row's `accountType` is what the session's token said when the row was made: `"anonymous"` for a guest, `"permanent"` for an account. A guest's row made before the server made rows has none, so the frontend goes by the BetterAuth session's `isAnonymous` to tell a guest. An account link turns a guest's row permanent.
+A users row's `accountType` is what the session's token said when the row was made: `"anonymous"` for a guest, `"permanent"` for an account. A guest's row made before the server made rows has none. The frontend takes the kind from the row only, and only a row that says `"permanent"` is a permanent account's ([Auth Provider Context](#auth-provider-context)). An account link turns a guest's row permanent.
 
 ### Account Link (Guest → Permanent Account)
 
@@ -351,18 +351,26 @@ The server tells a guest by the session's token (`isGuest`, see [Who is calling]
 
 ## Auth Provider Context
 
-The auth provider (`src/components/auth/auth-provider.tsx`) takes auth state from Convex (`useConvexAuth()`, which waits for token validation) and `authUserId` and `isAnonymous` from the BetterAuth session. It queries `users.getGlobalUser` for `email` and `accountType` once Convex has the session. Only the app shell mounts it: `/demo` sits in its own route group, whose shell has no auth at all (ADR-0003).
+The auth provider (`src/components/auth/auth-provider.tsx`) takes auth state from Convex (`useConvexAuth()`, which waits for token validation) and holds the app's one subscription to the caller's users row (`users.getGlobalUser`, once Convex has the session), which it hands out as the viewer. BetterAuth's session only feeds the waits (`whenAuth`). Only the app shell mounts it: `/demo` sits in its own route group, whose shell has no auth at all (ADR-0003).
 
 ```typescript
 interface AuthContextType {
-  authUserId: string | null;    // BetterAuth ID: whether there is a session (the server never takes it from the browser)
-  isAnonymous: boolean;         // Whether the session is anonymous (from BetterAuth)
   isLoading: boolean;           // Auth loading state (from Convex: waits for token validation)
   isAuthenticated: boolean;     // Whether Convex has validated the token
-  email: string | null;         // User email for permanent accounts; never a guest's
-  accountType: "anonymous" | "permanent" | null;
+  viewer: Viewer;               // Who is looking, with the name, avatar and kind of account their users row has
   whenAuth: WhenAuth;           // Waits for the auth state to reach a condition
 }
+
+type Viewer =
+  | { status: "loading" }       // Convex's auth state or the caller's users row hasn't answered yet
+  | { status: "visitor" }       // Nobody is signed in
+  | {
+      status: "signedIn";
+      name: string | null;      // The users row's, as are the avatar and email: null while there is none
+      avatarUrl: string | null;
+      email: string | null;
+      isPermanent: boolean;     // Whether the row says "permanent"
+    };
 
 interface AuthSnapshot {
   authUserId: string | null;    // From BetterAuth's session: null means no session only once it has loaded
@@ -374,7 +382,7 @@ interface AuthSnapshot {
 type WhenAuth = (ready: (state: AuthSnapshot) => boolean, timeoutMs: number) => Promise<AuthSnapshot>;
 ```
 
-`accountType` is the users row's, falling back to `"permanent"` when the session isn't anonymous. A guest whose row was made before the server made rows has none, and a guest with no row yet has no row to read, so for them it is `null`; tell a guest by `isAnonymous`.
+The viewer is the frontend's one answer to who is looking. The user menus (UserMenu, NavUser) and the room's join gate take the name and avatar from it and never subscribe to the row themselves, and whatever tells a permanent account apart (the Account tab, the retention note on `/retro/new`, the sign-in page's guest button) goes by `isPermanent`. The account kind is the row's only: neither BetterAuth's `isAnonymous` nor its session's email stands in for the row. A signed-in caller has no row until their first room write makes it (a guest who only continued as one, or a deleted account that came back), and is ready all the same, with no name, avatar or email, and not taken for a permanent account: the menus show them as "Guest" with Sign in, and the join gate asks their name rather than joining them under one. Nor is a row with no kind (a guest's made before the server made rows) taken for one. The server goes by the session's token instead: an account's first room write makes it a permanent row, or turns its row permanent.
 
 `whenAuth(ready, timeoutMs)` resolves with the first auth state `ready` accepts (at once if the current one does, else on the update that makes it hold) and rejects after `timeoutMs`. The provider holds the waiters (`createAuthWaiters` in `src/lib/auth-waiters.ts`) and feeds them every change of `authUserId`, `isSessionPending`, `isLoading` and `isAuthenticated`. It sits in the app shell's layout, above the page, so a wait outlives the component that started it. Outside an `AuthProvider`, `whenAuth` rejects.
 

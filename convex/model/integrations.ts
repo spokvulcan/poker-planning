@@ -268,7 +268,7 @@ export async function removeRoomMapping(
 /**
  * Deletes a room's mapping row and hands the row, as data, to its provider's
  * webhook reconcile, which removes the webhook on its record. Removing the
- * mapping from the room's settings, the room cascade and the orphan sweep all
+ * mapping from the room's settings and its room ending (the sweep's too) all
  * delete through here; a disconnect hands its mappings over together
  * (disconnectConnection). Bumps no activity: a room ending is not activity.
  */

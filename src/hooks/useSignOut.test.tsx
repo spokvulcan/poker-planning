@@ -11,7 +11,7 @@ import { renderHook } from "@testing-library/react";
 // Hoisted recorder shared with the (hoisted) vi.mock factories below, so the
 // server and session calls, in order, and every raised toast are observable.
 const spy = vi.hoisted(() => ({
-  auth: { isAnonymous: false, isLoading: false },
+  auth: { isLoading: false, viewer: { status: "loading" } } as Record<string, unknown>,
   order: [] as string[],
   serverFails: false,
   signOutError: null as { message: string } | null,
@@ -55,7 +55,7 @@ vi.mock("@/lib/toast", () => ({
 import { useSignOut } from "./useSignOut";
 
 beforeEach(() => {
-  spy.auth = { isAnonymous: false, isLoading: false };
+  spy.auth = { isLoading: false, viewer: { status: "loading" } };
   spy.order = [];
   spy.serverFails = false;
   spy.signOutError = null;
@@ -65,9 +65,15 @@ beforeEach(() => {
 
 describe("useSignOut", () => {
   it.each([
-    ["a guest's session", { isAnonymous: true, isLoading: false }],
-    ["a permanent account's session", { isAnonymous: false, isLoading: false }],
-    ["a session still loading", { isAnonymous: false, isLoading: true }],
+    [
+      "a guest's session",
+      { isLoading: false, viewer: { status: "signedIn", name: "Guest 4829", avatarUrl: null, email: null, isPermanent: false } },
+    ],
+    [
+      "a permanent account's session",
+      { isLoading: false, viewer: { status: "signedIn", name: "Ada", avatarUrl: null, email: "ada@example.com", isPermanent: true } },
+    ],
+    ["a session still loading", { isLoading: true, viewer: { status: "loading" } }],
   ])("signs out on the server, then clears %s", async (_, auth) => {
     spy.auth = auth;
     const { result } = renderHook(() => useSignOut());

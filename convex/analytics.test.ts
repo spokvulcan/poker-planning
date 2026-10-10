@@ -47,22 +47,23 @@ describe("the dashboard read — every panel of the Overview from one read", () 
         averageAgreement: null,
       },
       sessions: [],
-      agreementTrend: [],
+      agreementTrend: { points: [], trend: { direction: "stable", changePct: null } },
       voteDistribution: [],
       timeToConsensus: {
         averageMs: null,
         medianMs: null,
         outliers: [],
         trendBySession: [],
+        trend: { direction: "stable", changePct: null },
       },
       voterAlignment: { users: [], scatterPoints: [] },
       predictability: {
         predictabilityScore: null,
         sessions: [],
         averageVelocityPerSession: 0,
-        velocityTrend: "stable",
+        velocityTrend: { direction: "stable", changePct: null },
         averageAgreement: 0,
-        agreementTrend: "stable",
+        agreementTrend: { direction: "stable", changePct: null },
       },
     });
     expect(await ghost.query(api.analytics.getSessions, {})).toEqual([]);
@@ -74,7 +75,7 @@ describe("the dashboard read — every panel of the Overview from one read", () 
     const asA = t.withIdentity({ subject: "auth-a" });
 
     const ranged = await asA.query(api.analytics.getDashboard, { dateRange: RANGE });
-    expect(ranged.agreementTrend.map((p) => p.issueTitle)).toEqual(["Issue 1"]);
+    expect(ranged.agreementTrend.points.map((p) => p.issueTitle)).toEqual(["Issue 1"]);
     expect(ranged.predictability.sessions).toEqual([
       {
         roomName: "R",

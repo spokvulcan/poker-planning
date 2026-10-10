@@ -12,7 +12,7 @@ import { RESOLVED_ALLOWED, type ResolvedDecision } from "@/convex/permissions";
 import { columnsFromTemplate, type RetroStep } from "@/convex/retroTemplates";
 import { padPositions, RETRO_NODE_POSITION } from "@/convex/retroLayout";
 import { buildRetroEdges, buildRetroNodes, topicLabel, type RetroNodesInput } from "./build-retro-nodes";
-import { OPTIMISTIC_PREFIX } from "./optimistic";
+import { OPTIMISTIC_PREFIX } from "./board-view";
 import type { RetroBoardActions, StickyNodeData } from "./types";
 
 const DENIED: ResolvedDecision = { allowed: false, message: "Only facilitators and the owner can do this." };

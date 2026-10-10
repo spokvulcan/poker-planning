@@ -2,7 +2,7 @@ import { MutationCtx, QueryCtx } from "../_generated/server";
 import { Doc, Id } from "../_generated/dataModel";
 import { rulesOf } from "../ceremony";
 import { getMembership } from "./memberships";
-import { scheduleRoomDeletion } from "./roomAggregate";
+import { endRoom } from "./roomEnding";
 import type { UserRows } from "./userRows";
 
 /**
@@ -114,7 +114,7 @@ async function handOff(ctx: MutationCtx, room: Doc<"rooms">, leavingOwnerId: Id<
   if (heir) {
     await transferOwnership(ctx, room, heir.userId);
   } else if (!rulesOf(room).outlivesLoneOwner) {
-    await scheduleRoomDeletion(ctx, room._id);
+    await endRoom(ctx, room._id);
   }
 }
 

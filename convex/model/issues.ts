@@ -5,6 +5,7 @@ import * as Rooms from "./rooms";
 import * as VotingRound from "./votingRound";
 import { refusal, requireValid } from "./refusal";
 import { ISSUE_TITLE, MAX_ISSUES_PER_ROOM } from "../constants";
+import { formatDuration } from "../analyticsMath";
 
 export type IssueStatus = "pending" | "voting" | "completed";
 
@@ -74,7 +75,7 @@ export type Admission =
 /**
  * The room's issue holding this link, found through the room's links. A link
  * whose issue is gone holds nothing: an issue's links are deleted with it,
- * but earlier deletions left theirs to the daily orphan sweep.
+ * but earlier deletions left theirs, for the daily sweep to drop.
  *
  * Rows written before `issueLinks.roomId` existed are invisible to by_room
  * until backfillIssueLinksRoomId tags them, and the field is still optional,
@@ -304,14 +305,13 @@ export async function removeIssue(
 /**
  * Deletes an issue's row and its links: a link leaves with its issue. Links
  * are found by issue, so rows from before links carried their room go too.
- * Returns how many rows went. The rest of what an issue owns (its timing,
- * vote snapshots and note) is the caller's: removeIssue clears it issue by
- * issue, the room cascade room by room.
+ * The rest of what an issue owns (its timing, vote snapshots and note) is the
+ * caller's: removeIssue clears it issue by issue, a room's ending room by room.
  */
 export async function deleteIssueWithLinks(
   ctx: MutationCtx,
   issueId: Id<"issues">
-): Promise<number> {
+): Promise<void> {
   const links = await ctx.db
     .query("issueLinks")
     .withIndex("by_issue", (q) => q.eq("issueId", issueId))
@@ -320,7 +320,24 @@ export async function deleteIssueWithLinks(
     ...links.map((link) => ctx.db.delete("issueLinks", link._id)),
     ctx.db.delete("issues", issueId),
   ]);
-  return links.length + 1;
+}
+
+/**
+ * Of these links, drops the ones whose issue went before them: a link
+ * without its issue holds nothing. Earlier deletions left theirs behind, and
+ * the sweep brings them here; a link whose issue is still there stays.
+ */
+export async function dropLinksLeftBehind(
+  ctx: MutationCtx,
+  links: Doc<"issueLinks">[]
+): Promise<void> {
+  const gone = new Set<Id<"issues">>();
+  for (const issueId of new Set(links.map((link) => link.issueId))) {
+    if (!(await ctx.db.get("issues", issueId))) gone.add(issueId);
+  }
+  await Promise.all(
+    links.filter((link) => gone.has(link.issueId)).map((link) => ctx.db.delete("issueLinks", link._id))
+  );
 }
 
 /**
@@ -379,17 +396,6 @@ export async function reorderIssues(
 
   // Update room activity
   await Rooms.updateRoomActivity(ctx, room);
-}
-
-/**
- * Formats milliseconds into a human-readable duration string (e.g., "2m 34s")
- */
-function formatDurationMs(ms: number): string {
-  const totalSeconds = Math.round(ms / 1000);
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  if (minutes === 0) return `${seconds}s`;
-  return `${minutes}m ${seconds}s`;
 }
 
 /**
@@ -481,7 +487,7 @@ export async function getEnhancedIssuesForExport(
     // completed the issue — see completeTargetIssue in model/votingRound.ts)
     const timeToConsensusMs = issue.voteStats?.timeToConsensusMs ?? null;
     const timeToConsensusFormatted =
-      timeToConsensusMs !== null ? formatDurationMs(timeToConsensusMs) : null;
+      timeToConsensusMs !== null ? formatDuration(timeToConsensusMs) : null;
 
     // Voting rounds count
     const timestamps = timestampsByIssue.get(issueId) ?? [];
