@@ -65,12 +65,12 @@ export function TimeToConsensusCard({
       trend.changePct === null
         ? "Faster"
         : `${Math.abs(trend.changePct)}% faster`;
-    trendColor = "text-green-600 dark:text-green-400";
+    trendColor = "text-green-700 dark:text-status-success-fg";
   } else if (trend.direction === "slower") {
     TrendIcon = TrendingUp;
     trendText =
       trend.changePct === null ? "Slower" : `${trend.changePct}% slower`;
-    trendColor = "text-amber-600 dark:text-amber-400";
+    trendColor = "text-amber-700 dark:text-status-warning-fg";
   }
 
   return (
