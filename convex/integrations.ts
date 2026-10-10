@@ -9,16 +9,22 @@ import { providerValidator } from "./schema";
 import * as Integrations from "./model/integrations";
 import * as Issues from "./model/issues";
 import { requireRoomReader, requireRoomWrite } from "./model/auth";
-import { requireUser } from "./model/caller";
+import { getCaller, requireUser } from "./model/caller";
 
 // ---------------------------------------------------------------------------
 // Connection queries & mutations
 // ---------------------------------------------------------------------------
 
+/**
+ * The caller's connections, as Settings > Integrations lists them: none for
+ * nobody signed in, nor for a caller with no users row yet (a guest who only
+ * continued as one), who can't have connected anything.
+ */
 export const getConnections = query({
   args: {},
   handler: async (ctx) => {
-    const { user } = await requireUser(ctx);
+    const user = (await getCaller(ctx))?.user;
+    if (!user) return [];
     const connections = await ctx.db
       .query("integrationConnections")
       .withIndex("by_user_provider", (q) => q.eq("userId", user._id))

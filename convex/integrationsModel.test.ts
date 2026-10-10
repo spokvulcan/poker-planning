@@ -785,6 +785,28 @@ describe("the room's mapping, through its writes", () => {
   });
 });
 
+describe("getConnections (Settings > Integrations)", () => {
+  it("lists the caller's connections", async () => {
+    const t = convexTest(schema, modules);
+    const connectionId = await seedConnection(t, await seedUser(t, "auth-u"));
+
+    const connections = await t
+      .withIdentity({ subject: "auth-u" })
+      .query(api.integrations.getConnections, {});
+
+    expect(connections.map((c) => c._id)).toEqual([connectionId]);
+  });
+
+  it("has none for a signed-in caller with no users row yet, or for nobody signed in", async () => {
+    const t = convexTest(schema, modules);
+
+    // A guest who only continued as one has no row until their first room write.
+    const rowless = t.withIdentity({ subject: "auth-ghost" });
+    expect(await rowless.query(api.integrations.getConnections, {})).toEqual([]);
+    expect(await t.query(api.integrations.getConnections, {})).toEqual([]);
+  });
+});
+
 describe("toConnectionView", () => {
   it("never exposes encrypted token fields", async () => {
     const t = convexTest(schema, modules);

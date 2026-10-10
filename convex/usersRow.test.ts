@@ -101,6 +101,23 @@ describe("a signed-in caller's first room write", () => {
   });
 });
 
+describe("a signed-in caller before their first room write, with no row", () => {
+  it("gets every page's empty state: the dashboard, settings, their retros and a room they haven't joined", async () => {
+    const t = withComponents(convexTest(schema, modules));
+    const roomId = await guest(t, "ann").mutation(api.rooms.create, { name: "Planning" });
+    // A guest who only continued as one ("Continue as guest") has no row.
+    const bob = guest(t, "bob");
+
+    expect(await bob.query(api.users.getGlobalUser, {})).toBeNull();
+    expect(await bob.query(api.integrations.getConnections, {})).toEqual([]);
+    expect(await bob.query(api.retro.listMine, {})).toEqual([]);
+    expect(await bob.query(api.analytics.getSessions, {})).toEqual([]);
+    expect((await bob.query(api.analytics.getDashboard, {})).sessions).toEqual([]);
+    expect(await bob.query(api.users.getMyMembership, { roomId })).toBeNull();
+    expect((await bob.query(api.rooms.get, { roomId }))?.room.name).toBe("Planning");
+  });
+});
+
 describe("a room write by a permanent account whose row isn't a permanent account's", () => {
   it("turns the row permanent, with the token's email, keeping the retros it owns", async () => {
     const t = withComponents(convexTest(schema, modules));
