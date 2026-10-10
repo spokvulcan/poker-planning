@@ -72,8 +72,8 @@ export const createAuth = (ctx: GenericCtx<DataModel>) => {
             if (!("runMutation" in ctx)) return;
             const actionCtx = ctx as GenericActionCtx<DataModel>;
 
-            // Skip anonymous users — they get a Convex user record
-            // via ensureGlobalUser (guest sign-in) or joinRoom.
+            // Skip anonymous users: a guest's Convex user record is made on
+            // their first room write (model/users.ts findOrMakeUser).
             if ((user as Record<string, unknown>).isAnonymous) return;
 
             // Permanent account (Google OAuth, magic link): create Convex user

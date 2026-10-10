@@ -12,7 +12,7 @@ import type { ReactNode } from "react";
 
 const mocks = vi.hoisted(() => ({
   // One per session bootstrap started, each in flight until the test answers it.
-  sessions: [] as ((authUserId: string) => void)[],
+  sessions: [] as (() => void)[],
   joins: [] as unknown[],
 }));
 
@@ -25,7 +25,7 @@ vi.mock("convex/react", () => ({
 vi.mock("@/hooks/useEnsureSession", () => ({
   SESSION_FAILED: "Failed to create session. Please try again.",
   useEnsureSession: () => () =>
-    new Promise<string>((resolve) => {
+    new Promise<void>((resolve) => {
       mocks.sessions.push(resolve);
     }),
 }));
@@ -57,10 +57,8 @@ describe("JoinRoomDialog", () => {
     fireEvent.keyDown(name, { key: "Enter" });
     expect(mocks.sessions).toHaveLength(1);
 
-    await act(async () => mocks.sessions[0]("guest-1"));
-    expect(mocks.joins).toEqual([
-      { roomId: "room-1", name: "Ann", isSpectator: false, authUserId: "guest-1" },
-    ]);
+    await act(async () => mocks.sessions[0]());
+    expect(mocks.joins).toEqual([{ roomId: "room-1", name: "Ann", isSpectator: false }]);
   });
 
   it("stops typing at the person name's limit", () => {

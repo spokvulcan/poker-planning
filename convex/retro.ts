@@ -8,7 +8,8 @@ import {
   requireRoomMember,
   requireRoomReader,
 } from "./model/auth";
-import { getCaller, requireUser } from "./model/caller";
+import { getCaller } from "./model/caller";
+import * as Users from "./model/users";
 import {
   gifValidator,
   positionValidator,
@@ -33,8 +34,8 @@ async function memberSticky(ctx: MutationCtx, stickyId: Id<"retroStickies">) {
 export const create = mutation({
   args: { name: v.string(), templateId: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    const { user } = await requireUser(ctx);
-    return await Retro.createRetro(ctx, { name: args.name, templateId: args.templateId, owner: user });
+    const owner = await Users.findOrMakeUser(ctx);
+    return await Retro.createRetro(ctx, { name: args.name, templateId: args.templateId, owner });
   },
 });
 

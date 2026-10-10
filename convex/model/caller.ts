@@ -8,8 +8,8 @@ import type { Doc } from "../_generated/dataModel";
  * is the one place either is read. Every guard (model/auth.ts), and every
  * query, mutation or action that needs the caller, resolves them here, and
  * nothing else looks a person up by their auth id (caller.test.ts fails
- * otherwise). It only reads: a row is made when a person joins or creates a
- * room, or by the auth hooks (model/users.ts). Each function works in any
+ * otherwise). It only reads: a row is made on the caller's first room write,
+ * or by the auth hooks (model/users.ts). Each function works in any
  * function context; an action, which has no database of its own, reads the
  * row through one internal query.
  */
@@ -53,9 +53,30 @@ export async function requireUser(
 }
 
 /**
+ * What kind of account the caller has, as their session's token says:
+ * BetterAuth puts its user's fields in the token, `isAnonymous` among them,
+ * true for a guest ("anonymous") and false for a permanent account. A token
+ * without it says neither. The users row's kind isn't asked (a row can lack
+ * one).
+ */
+export function sessionAccountType(caller: Caller): Doc<"users">["accountType"] {
+  const { isAnonymous } = caller.identity;
+  if (isAnonymous === true) return "anonymous";
+  if (isAnonymous === false) return "permanent";
+  return undefined;
+}
+
+/**
+ * Whether the caller is a guest, as their session's token says. Only a token
+ * that says so makes a guest.
+ */
+export function isGuest(caller: Caller): boolean {
+  return sessionAccountType(caller) === "anonymous";
+}
+
+/**
  * The users row of the person signed in as `authUserId`, or null: for code
- * that is told who the person is rather than asking (BetterAuth's hooks, a
- * join that names its own id).
+ * that is told who the person is rather than asking (BetterAuth's hooks).
  */
 export async function findUser(
   ctx: QueryCtx,

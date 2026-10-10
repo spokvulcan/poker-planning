@@ -101,7 +101,7 @@ export function SigninForm({ className, ...props }: React.ComponentProps<"div">)
     setError(null);
     try {
       // Already a guest: this is cancel-and-return. Otherwise a new guest,
-      // with a user row so the user menu has a name to show.
+      // whose users row is made on their first room write.
       await ensureSession();
       router.push(from);
     } catch (err: unknown) {

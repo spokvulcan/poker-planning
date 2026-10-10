@@ -1,9 +1,10 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import * as Rooms from "./model/rooms";
+import * as Users from "./model/users";
 import * as VotingRound from "./model/votingRound";
 import { requireCan } from "./model/auth";
-import { getCaller, requireUser } from "./model/caller";
+import { getCaller } from "./model/caller";
 
 // Create a new room
 export const create = mutation({
@@ -24,8 +25,8 @@ export const create = mutation({
     ),
   },
   handler: async (ctx, args) => {
-    const { user } = await requireUser(ctx);
-    return await Rooms.createRoom(ctx, { ...args, owner: user });
+    const owner = await Users.findOrMakeUser(ctx);
+    return await Rooms.createRoom(ctx, { ...args, owner });
   },
 });
 

@@ -34,66 +34,96 @@ async function seedMixedHistory(t: T) {
   return { userId, roomId, inRange };
 }
 
-describe("completedIssueHistory — range semantics through the registered queries", () => {
-  it("windows issues on issue.votedAt: in-range kept, out-of-range and votedAt-less dropped", async () => {
+describe("the dashboard read — every panel of the Overview from one read", () => {
+  it("a viewer with no users row gets every panel's empty state", async () => {
+    const t = convexTest(schema, modules);
+    const ghost = t.withIdentity({ subject: "auth-ghost" }); // no users row
+
+    expect(await ghost.query(api.analytics.getDashboard, {})).toEqual({
+      summary: {
+        totalSessions: 0,
+        totalIssuesEstimated: 0,
+        totalStoryPoints: null,
+        averageAgreement: null,
+      },
+      sessions: [],
+      agreementTrend: [],
+      voteDistribution: [],
+      timeToConsensus: {
+        averageMs: null,
+        medianMs: null,
+        outliers: [],
+        trendBySession: [],
+      },
+      voterAlignment: { users: [], scatterPoints: [] },
+      predictability: {
+        predictabilityScore: null,
+        sessions: [],
+        averageVelocityPerSession: 0,
+        velocityTrend: "stable",
+        averageAgreement: 0,
+        agreementTrend: "stable",
+      },
+    });
+    expect(await ghost.query(api.analytics.getSessions, {})).toEqual([]);
+  });
+
+  it("the panels window on issue.votedAt: in-range kept, out-of-range and votedAt-less dropped", async () => {
     const t = convexTest(schema, modules);
     await seedMixedHistory(t);
     const asA = t.withIdentity({ subject: "auth-a" });
 
-    expect(await asA.query(api.analytics.getVelocityStats, { dateRange: RANGE })).toEqual([
-      { date: "2026-01-10", storyPoints: 5, issueCount: 1 },
+    const ranged = await asA.query(api.analytics.getDashboard, { dateRange: RANGE });
+    expect(ranged.agreementTrend.map((p) => p.issueTitle)).toEqual(["Issue 1"]);
+    expect(ranged.predictability.sessions).toEqual([
+      {
+        roomName: "R",
+        date: "2026-01-10",
+        estimatedPoints: 5,
+        issueCount: 1,
+        averageAgreement: 80,
+        averageTimeToConsensus: 0,
+      },
     ]);
 
     // Without a range every completed issue is history (the votedAt-less one
-    // still can't be day-bucketed, so velocity skips it — same as before).
-    expect(await asA.query(api.analytics.getVelocityStats, {})).toEqual([
-      { date: "2026-01-10", storyPoints: 5, issueCount: 1 },
-      { date: "2026-02-10", storyPoints: 8, issueCount: 1 },
+    // still can't be placed on the timeline, so predictability skips it).
+    const unranged = await asA.query(api.analytics.getDashboard, {});
+    expect(unranged.predictability.sessions).toEqual([
+      {
+        roomName: "R",
+        date: "2026-02-10",
+        estimatedPoints: 13,
+        issueCount: 2,
+        averageAgreement: 80,
+        averageTimeToConsensus: 0,
+      },
     ]);
   });
 
-  it("an unknown user short-circuits to defined empty results on every metric", async () => {
+  it("the header and session list window on membership.joinedAt while the panels window on votedAt", async () => {
     const t = convexTest(schema, modules);
-    const ghost = t.withIdentity({ subject: "auth-ghost" }); // no users row
+    const userId = await seedUser(t, "auth-a");
+    const roomId = await seedRoom(t);
+    await addMembership(t, roomId, userId, OUT); // joined outside the window
+    await seedIssue(t, roomId, { sequentialId: 1, votedAt: IN, finalEstimate: "5" });
+    const asA = t.withIdentity({ subject: "auth-a" });
 
-    expect(await ghost.query(api.analytics.getVelocityStats, {})).toEqual([]);
-    expect(await ghost.query(api.analytics.getAgreementTrend, {})).toEqual([]);
-    expect(await ghost.query(api.analytics.getVoteDistribution, {})).toEqual([]);
-    expect(await ghost.query(api.analytics.getSessions, {})).toEqual([]);
-    expect(await ghost.query(api.analytics.getParticipationStats, {})).toEqual({
-      totalSessions: 0,
-      totalIssuesVoted: 0,
-      totalVotesCast: 0,
-      averageVotesPerSession: 0,
-    });
-    expect(await ghost.query(api.analytics.getTimeToConsensus, {})).toEqual({
-      averageMs: null,
-      medianMs: null,
-      outliers: [],
-      trendBySession: [],
-    });
-    expect(await ghost.query(api.analytics.getVoterAlignment, {})).toEqual({
-      users: [],
-      scatterPoints: [],
-    });
-    expect(await ghost.query(api.analytics.getPredictability, {})).toEqual({
-      predictabilityScore: null,
-      sessions: [],
-      averageVelocityPerSession: 0,
-      velocityTrend: "stable",
-      averageAgreement: 0,
-      agreementTrend: "stable",
-    });
-    expect(await ghost.query(api.analytics.getSummary, {})).toEqual({
+    // Documented split: the header and session list are membership-tenure
+    // (joinedAt), the panels are votedAt-windowed across all of the user's rooms.
+    const ranged = await asA.query(api.analytics.getDashboard, { dateRange: RANGE });
+    expect(ranged.summary).toEqual({
       totalSessions: 0,
       totalIssuesEstimated: 0,
       totalStoryPoints: null,
       averageAgreement: null,
     });
+    expect(ranged.sessions).toEqual([]);
+    expect(ranged.voteDistribution).toEqual([{ value: "5", count: 1, percentage: 100 }]);
   });
 });
 
-describe("getVoteDistribution honors the date range (bug fix)", () => {
+describe("the vote distribution honors the date range (bug fix)", () => {
   it("a range now excludes out-of-range AND votedAt-less issues", async () => {
     const t = convexTest(schema, modules);
     await seedMixedHistory(t);
@@ -102,9 +132,8 @@ describe("getVoteDistribution honors the date range (bug fix)", () => {
     // Old behavior: the votedAt-less "13" leaked into ranged results, and the
     // out-of-range "8" was filtered — the copies disagreed. Now uniform:
     // a range windows on issue.votedAt, so only "5" remains.
-    expect(
-      await asA.query(api.analytics.getVoteDistribution, { dateRange: RANGE })
-    ).toEqual([{ value: "5", count: 1, percentage: 100 }]);
+    const ranged = await asA.query(api.analytics.getDashboard, { dateRange: RANGE });
+    expect(ranged.voteDistribution).toEqual([{ value: "5", count: 1, percentage: 100 }]);
   });
 
   it("without a range every completed issue is counted (unchanged)", async () => {
@@ -112,7 +141,7 @@ describe("getVoteDistribution honors the date range (bug fix)", () => {
     await seedMixedHistory(t);
     const asA = t.withIdentity({ subject: "auth-a" });
 
-    expect(await asA.query(api.analytics.getVoteDistribution, {})).toEqual([
+    expect((await asA.query(api.analytics.getDashboard, {})).voteDistribution).toEqual([
       { value: "5", count: 1, percentage: 33 },
       { value: "8", count: 1, percentage: 33 },
       { value: "13", count: 1, percentage: 33 },
@@ -120,8 +149,9 @@ describe("getVoteDistribution honors the date range (bug fix)", () => {
   });
 });
 
-describe("getParticipationStats counts real votes from individualVotes (bug fix)", () => {
-  async function seedParticipation(t: T) {
+describe("voter alignment through the read", () => {
+  it("counts each real vote snapshot, windowed on the vote's own votedAt (bug fix)", async () => {
+    const t = convexTest(schema, modules);
     const userId = await seedUser(t, "auth-a");
     const roomId = await seedRoom(t);
     await addMembership(t, roomId, userId, IN);
@@ -134,50 +164,18 @@ describe("getParticipationStats counts real votes from individualVotes (bug fix)
     await seedVote(t, { roomId, issueId: i2, userId, cardLabel: "5", votedAt: IN });
     await seedVote(t, { roomId, issueId: i2, userId, cardLabel: "8", votedAt: IN });
     await seedVote(t, { roomId, issueId: i2, userId, cardLabel: "8", votedAt: OUT });
-  }
-
-  it("totalVotesCast is the real snapshot count, not the completed-issue count", async () => {
-    const t = convexTest(schema, modules);
-    await seedParticipation(t);
     const asA = t.withIdentity({ subject: "auth-a" });
 
-    // Old behavior: totalVotesCast === totalIssuesVoted (2) — knowingly fake.
-    expect(await asA.query(api.analytics.getParticipationStats, { dateRange: RANGE })).toEqual({
-      totalSessions: 1,
-      totalIssuesVoted: 2,
-      totalVotesCast: 5,
-      averageVotesPerSession: 5,
-    });
+    // The old participation counter faked votes with the completed-issue
+    // count (2); the votes are the individualVotes snapshots themselves.
+    const ranged = await asA.query(api.analytics.getDashboard, { dateRange: RANGE });
+    expect(ranged.voterAlignment.users.map((u) => u.totalVotes)).toEqual([5]);
 
     // Without a range the out-of-range snapshot counts too.
-    expect(await asA.query(api.analytics.getParticipationStats, {})).toEqual({
-      totalSessions: 1,
-      totalIssuesVoted: 2,
-      totalVotesCast: 6,
-      averageVotesPerSession: 6,
-    });
+    const unranged = await asA.query(api.analytics.getDashboard, {});
+    expect(unranged.voterAlignment.users.map((u) => u.totalVotes)).toEqual([6]);
   });
 
-  it("totalSessions windows on membership.joinedAt while activity windows on votedAt", async () => {
-    const t = convexTest(schema, modules);
-    const userId = await seedUser(t, "auth-a");
-    const roomId = await seedRoom(t);
-    await addMembership(t, roomId, userId, OUT); // joined outside the window
-    await seedIssue(t, roomId, { sequentialId: 1, votedAt: IN, finalEstimate: "5" });
-    const asA = t.withIdentity({ subject: "auth-a" });
-
-    // Documented split: the session count is membership-tenure (joinedAt),
-    // issue/vote activity is votedAt-windowed across all of the user's rooms.
-    expect(await asA.query(api.analytics.getParticipationStats, { dateRange: RANGE })).toEqual({
-      totalSessions: 0,
-      totalIssuesVoted: 1,
-      totalVotesCast: 0,
-      averageVotesPerSession: 0,
-    });
-  });
-});
-
-describe("getVoterAlignment through the aggregate", () => {
   it("resolves names and windows votes on the vote's own votedAt", async () => {
     const t = convexTest(schema, modules);
     const viewer = await seedUser(t, "auth-a");
@@ -191,24 +189,24 @@ describe("getVoterAlignment through the aggregate", () => {
     await seedVote(t, { roomId, issueId: i1, userId: ada, cardLabel: "8", consensusLabel: "5", deltaSteps: 1, votedAt: OUT });
 
     const asA = t.withIdentity({ subject: "auth-a" });
-    const ranged = await asA.query(api.analytics.getVoterAlignment, { dateRange: RANGE });
-    expect(ranged.users).toEqual([
+    const ranged = await asA.query(api.analytics.getDashboard, { dateRange: RANGE });
+    expect(ranged.voterAlignment.users).toEqual([
       { userId: ada, userName: "Ada", totalVotes: 1, agreesWithConsensus: 1, agreementRate: 100, averageDelta: 0, tendency: "aligned" },
       { userId: bob, userName: "Bob", totalVotes: 1, agreesWithConsensus: 0, agreementRate: 0, averageDelta: -1, tendency: "under" },
     ]);
 
     // Without a range Ada's out-of-range vote joins her stats.
-    const unranged = await asA.query(api.analytics.getVoterAlignment, {});
-    expect(unranged.users.find((u) => u.userId === ada)).toMatchObject({
+    const unranged = await asA.query(api.analytics.getDashboard, {});
+    expect(unranged.voterAlignment.users.find((u) => u.userId === ada)).toMatchObject({
       totalVotes: 2,
       averageDelta: 0.5,
     });
   });
 });
 
-describe("getUserSessions keeps membership-tenure semantics", () => {
-  it("a range filters on joinedAt while per-session stats stay room-lifetime", async () => {
-    const t = convexTest(schema, modules);
+describe("the session list keeps membership-tenure semantics", () => {
+  /** Room A joined in RANGE, room B outside it; every issue voted outside it. */
+  async function seedTwoRooms(t: T) {
     const userId = await seedUser(t, "auth-a");
     const roomA = await seedRoom(t, "A");
     const roomB = await seedRoom(t, "B");
@@ -219,11 +217,16 @@ describe("getUserSessions keeps membership-tenure semantics", () => {
     await seedIssue(t, roomA, { sequentialId: 1, votedAt: OUT, finalEstimate: "5", voteStats: { agreement: 80, voteCount: 2 } });
     await seedIssue(t, roomA, { sequentialId: 2, votedAt: OUT, finalEstimate: "3" });
     await seedIssue(t, roomB, { sequentialId: 1, votedAt: OUT, finalEstimate: "8" });
+  }
+
+  it("a range filters on joinedAt while per-session stats stay room-lifetime", async () => {
+    const t = convexTest(schema, modules);
+    await seedTwoRooms(t);
     const asA = t.withIdentity({ subject: "auth-a" });
 
-    const ranged = await asA.query(api.analytics.getSessions, { dateRange: RANGE });
-    expect(ranged).toHaveLength(1);
-    expect(ranged[0]).toMatchObject({
+    const ranged = await asA.query(api.analytics.getDashboard, { dateRange: RANGE });
+    expect(ranged.sessions).toHaveLength(1);
+    expect(ranged.sessions[0]).toMatchObject({
       roomName: "A",
       joinedAt: IN,
       issuesCompleted: 2,
@@ -231,9 +234,27 @@ describe("getUserSessions keeps membership-tenure semantics", () => {
       averageAgreement: 80,
       participantCount: 1,
     });
+    // The header totals the same rows.
+    expect(ranged.summary).toEqual({
+      totalSessions: 1,
+      totalIssuesEstimated: 2,
+      totalStoryPoints: 8,
+      averageAgreement: 80,
+    });
 
-    const unranged = await asA.query(api.analytics.getSessions, {});
-    expect(unranged.map((s) => s.roomName).sort()).toEqual(["A", "B"]);
+    const unranged = await asA.query(api.analytics.getDashboard, {});
+    expect(unranged.sessions.map((s) => s.roomName).sort()).toEqual(["A", "B"]);
+  });
+
+  it("the Sessions page reads the Overview's session list", async () => {
+    const t = convexTest(schema, modules);
+    await seedTwoRooms(t);
+    const asA = t.withIdentity({ subject: "auth-a" });
+
+    for (const args of [{}, { dateRange: RANGE }]) {
+      const { sessions } = await asA.query(api.analytics.getDashboard, args);
+      expect(await asA.query(api.analytics.getSessions, args)).toEqual(sessions);
+    }
   });
 });
 
@@ -249,9 +270,10 @@ describe("retros never count towards poker analytics", () => {
     await seedIssue(t, pokerId, { sequentialId: 1, votedAt: IN, finalEstimate: "5" });
     const asA = t.withIdentity({ subject: "auth-a" });
 
-    const sessions = await asA.query(api.analytics.getSessions, {});
-    expect(sessions.map((s) => s.roomName)).toEqual(["Poker"]);
-    expect((await asA.query(api.analytics.getSummary, {})).totalSessions).toBe(1);
-    expect((await asA.query(api.analytics.getParticipationStats, {})).totalSessions).toBe(1);
+    const dashboard = await asA.query(api.analytics.getDashboard, {});
+    expect(dashboard.sessions.map((s) => s.roomName)).toEqual(["Poker"]);
+    expect(dashboard.summary.totalSessions).toBe(1);
+    expect(dashboard.predictability.sessions.map((s) => s.roomName)).toEqual(["Poker"]);
+    expect((await asA.query(api.analytics.getSessions, {})).map((s) => s.roomName)).toEqual(["Poker"]);
   });
 });

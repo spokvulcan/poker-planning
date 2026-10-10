@@ -5,10 +5,10 @@ import schema from "./schema";
 import { api } from "./_generated/api";
 import { type T, seedRoom, seedUser, addMembership } from "./analytics.seeds";
 
-// The two mutations a guest's first write goes through take the caller's
-// authUserId as an argument (older browsers still send it). The session
-// bootstrap waits until Convex has the session before either runs, so both
-// refuse a caller they can't identify, or one who names someone else.
+// Two mutations still take the caller's authUserId, which older browsers
+// send: join, and ensureGlobalUser, which only older browsers call before a
+// create. Both accept it and ignore it, acting for whoever is signed in, and
+// refuse a caller they can't identify.
 
 const modules = import.meta.glob("./**/*.*s");
 
@@ -23,10 +23,13 @@ const userRow = (t: T, authUserId: string) =>
   );
 
 describe("ensureGlobalUser", () => {
-  it("makes a signed-in guest's user row", async () => {
+  it("makes a signed-in guest's row as creating a room would, ignoring the name it is sent", async () => {
     const t = convexTest(schema, modules);
-    await as(t, "guest").mutation(api.users.ensureGlobalUser, { authUserId: "guest", name: "Otter" });
-    expect((await userRow(t, "guest"))?.name).toBe("Otter");
+    const guest = t.withIdentity({ subject: "guest", isAnonymous: true });
+    await guest.mutation(api.users.ensureGlobalUser, { authUserId: "guest", name: "Otter" });
+    const row = await guest.query(api.users.getGlobalUser, {});
+    expect(row).toMatchObject({ accountType: "anonymous" });
+    expect(row?.name).toMatch(/^Guest \d{4}$/);
   });
 
   it("leaves an existing row's name alone", async () => {
@@ -44,12 +47,11 @@ describe("ensureGlobalUser", () => {
     expect(await userRow(t, "guest")).toBeNull();
   });
 
-  it("refuses a caller naming someone else", async () => {
+  it("ignores the authUserId it is sent, making the row of whoever is signed in", async () => {
     const t = convexTest(schema, modules);
     await seedUser(t, "victim", "Victim");
-    await expect(
-      as(t, "mallory").mutation(api.users.ensureGlobalUser, { authUserId: "victim", name: "Pwned" })
-    ).rejects.toThrow("Auth identity mismatch");
+    await as(t, "mallory").mutation(api.users.ensureGlobalUser, { authUserId: "victim", name: "Pwned" });
+    expect(await as(t, "mallory").query(api.users.getGlobalUser, {})).not.toBeNull();
     expect((await userRow(t, "victim"))?.name).toBe("Victim");
   });
 });
@@ -78,13 +80,20 @@ describe("join", () => {
     ).rejects.toThrow("Not authenticated");
   });
 
-  it("refuses a caller naming someone else", async () => {
+  it("joins without the authUserId older browsers send", async () => {
+    const t = convexTest(schema, modules);
+    const roomId = await seedRoom(t);
+    await as(t, "guest").mutation(api.users.join, { roomId, name: "Ada" });
+    expect(await as(t, "guest").query(api.users.getMyMembership, { roomId })).toMatchObject({ name: "Ada" });
+  });
+
+  it("ignores the authUserId it is sent, joining whoever is signed in", async () => {
     const t = convexTest(schema, modules);
     const roomId = await seedRoom(t);
     await seedUser(t, "victim", "Victim");
-    await expect(
-      as(t, "mallory").mutation(api.users.join, { roomId, name: "Pwned", authUserId: "victim" })
-    ).rejects.toThrow("Auth identity mismatch");
+    await as(t, "mallory").mutation(api.users.join, { roomId, name: "Pwned", authUserId: "victim" });
+    expect(await as(t, "mallory").query(api.users.getMyMembership, { roomId })).toMatchObject({ name: "Pwned" });
     expect((await userRow(t, "victim"))?.name).toBe("Victim");
+    expect(await as(t, "victim").query(api.users.getMyMembership, { roomId })).toBeNull();
   });
 });
