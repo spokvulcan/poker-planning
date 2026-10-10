@@ -136,7 +136,7 @@ A guard's refusal is a coded refusal (`refusal()` in `convex/model/refusal.ts`),
 - **Room-scoped mutations gated by a permission** (issues, game flow, room settings, roles, retro steps and settings, action items, `users.remove`): `requireCan` with the category or relationship verb. An action context that already resolved the user uses `requireCanForUser`.
 - **Room-scoped mutations open to everyone in the room** (writing and moving retro stickies): `requireRoomMember`.
 - **Mutations that take the caller's own `authUserId`** (`users.join`, `users.ensureGlobalUser`): `requireAuthAs`.
-- **Global mutations acting on own data** (`editGlobalUser`, `deleteUser`, `signOut`): `requireCaller` or `requireUser`.
+- **Global mutations acting on own data** (`editGlobalUser`, `deleteUser`): `requireCaller` or `requireUser`. `signOut` takes `getCaller` instead: with nobody signed in it has nothing to delete, and must not keep the browser from clearing its session.
 - **Read-only queries on room-owned data** (canvas nodes, issue exports, the Jira mapping and issue links, the retro board and its action items): Use `requireRoomReader`. It answers "may you read this room?" rather than "are you in it?"; today both admit exactly the room's members, but the reader guard's return type carries no membership, so a read never leans on attendance (ADR-0009). Nor does it carry the room: a guard's reads join the read set of every query that takes it, so a query that needs the room reads it itself (the retro board), and a room patch, such as the activity clock every poker vote moves, re-runs only those. Every new query on room contents picks `requireRoomReader` or `requireRoomMember` deliberately; one that takes neither is a bug.
 - **Queries**: Use `getCaller` for graceful degradation. It derives the caller server-side, never from a client-supplied id (see `rooms.get` for the pattern).
 
@@ -317,6 +317,8 @@ A guest's users row has no `accountType`: `model/users.ts` can't tell from a mut
      room it owns is handed off (ADR-0029), and every module lets go of what
      it keeps about them (ADR-0030)
    - A permanent account is kept for when the person signs back in
+   - With nobody signed in (Convex has no token, a missing or expired one,
+     while BetterAuth's session lives on) there is nothing to delete
 3. authClient.signOut() clears the BetterAuth session. When step 2 fails, the
    session is kept and the person can try again
 ```

@@ -135,11 +135,14 @@ export const deleteUser = mutation({
 });
 
 // Sign out: deletes the caller's account only when they are a guest; a
-// permanent account is kept. The browser calls it before clearing its session.
+// permanent account is kept. With nobody signed in there is nothing to
+// delete, and the browser, which calls it before clearing its session, still
+// clears it.
 export const signOut = mutation({
   args: {},
   handler: async (ctx) => {
-    await AccountLifecycle.signOut(ctx, await requireCaller(ctx));
+    const caller = await getCaller(ctx);
+    if (caller) await AccountLifecycle.signOut(ctx, caller);
   },
 });
 

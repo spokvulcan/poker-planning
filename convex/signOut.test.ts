@@ -58,6 +58,16 @@ describe("signing out", () => {
     expect(await session(t, "returning", false).query(api.users.getGlobalUser, {})).toMatchObject({ _id: userId });
   });
 
+  it("deletes nothing with nobody signed in, so the browser can still clear its session", async () => {
+    const t = withComponents(convexTest(schema, modules));
+    // Convex has no token (a missing or expired one) while BetterAuth's session lives on.
+    const guestId = await seedUser(t, "guest");
+
+    await t.mutation(api.users.signOut, {});
+
+    expect(await session(t, "guest", true).query(api.users.getGlobalUser, {})).toMatchObject({ _id: guestId });
+  });
+
   it("deletes nobody whose session doesn't say it is a guest's", async () => {
     const t = withComponents(convexTest(schema, modules));
     const userId = await seedUser(t, "unsaid");
