@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { internalQuery, mutation } from "./_generated/server";
-import { requireAuth } from "./model/auth";
+import { requireCaller } from "./model/caller";
 import { recentGifUsage, recordGifSearch } from "./model/gifUsage";
 
 /**
@@ -10,7 +10,7 @@ import { recentGifUsage, recordGifSearch } from "./model/gifUsage";
 export const record = mutation({
   args: { rateLimited: v.boolean() },
   handler: async (ctx, args) => {
-    await requireAuth(ctx);
+    await requireCaller(ctx);
     await recordGifSearch(ctx, args.rateLimited);
   },
 });

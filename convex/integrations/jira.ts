@@ -26,7 +26,8 @@ import { ConvexError, v } from "convex/values";
 import { providerValidator } from "../schema";
 import { Doc, Id } from "../_generated/dataModel";
 import { ActionCtx } from "../_generated/server";
-import { requireAuth, requireCanForUser } from "../model/auth";
+import { requireCanForUser } from "../model/auth";
+import { requireUser } from "../model/caller";
 import { JiraClient, JiraIssue } from "./jiraClient";
 import { buildJiraClient, requireJiraClientCredentials } from "./jiraAuth";
 import { applyJiraWebhookEvent } from "./jiraWebhook";
@@ -39,21 +40,6 @@ import type { Refusal } from "../model/refusal";
 // ---------------------------------------------------------------------------
 // Action preamble — the one chain from auth identity to a ready Jira client
 // ---------------------------------------------------------------------------
-
-/**
- * ActionCtx-compatible identity→user resolution: actions have no db access,
- * so the lookup goes through the internal query. Throws the same messages as
- * requireAuthUser ("Not authenticated" / "User not found").
- */
-async function requireActionUser(ctx: ActionCtx): Promise<Doc<"users">> {
-  const identity = await requireAuth(ctx);
-  const user: Doc<"users"> | null = await ctx.runQuery(
-    internal.integrations.jira.getUserByAuthId,
-    { authUserId: identity.subject }
-  );
-  if (!user) throw new Error("User not found");
-  return user;
-}
 
 async function getConnectionForUserId(
   ctx: ActionCtx,
@@ -72,7 +58,7 @@ async function getConnectionForUserId(
 async function requireJiraConnection(
   ctx: ActionCtx
 ): Promise<{ user: Doc<"users">; connection: Doc<"integrationConnections"> }> {
-  const user = await requireActionUser(ctx);
+  const { user } = await requireUser(ctx);
   const connection = await getConnectionForUserId(ctx, user._id);
   return { user, connection };
 }
@@ -236,7 +222,7 @@ export const connectJira = action({
     providerUserEmail: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const user = await requireActionUser(ctx);
+    const { user } = await requireUser(ctx);
 
     // The first token refresh posts the deployment's Jira credentials, so a
     // deployment without them refuses the connect now.
@@ -743,16 +729,6 @@ export const getAllJiraMappings = internalQuery({
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-export const getUserByAuthId = internalQuery({
-  args: { authUserId: v.string() },
-  handler: async (ctx, args) => {
-    return await ctx.db
-      .query("users")
-      .withIndex("by_auth_user", (q) => q.eq("authUserId", args.authUserId))
-      .first();
-  },
-});
 
 /**
  * Verifies that the user may manage issues in the room. The calling action
