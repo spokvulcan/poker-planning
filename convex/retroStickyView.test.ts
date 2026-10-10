@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { RetroStep } from "./retroTemplates";
-import { stickyView, type StickyRow, type Viewer } from "./retroStickyView";
+import { stickyView, type RetroViewer, type StickyRow } from "./retroStickyView";
 
 // What one viewer sees of a sticky: the projection the board read applies to
 // every sticky, and the board's optimistic add to the viewer's own new one.
@@ -29,7 +29,7 @@ function annsSticky(extra: Partial<StickyRow> = {}): StickyRow {
 }
 
 /** `viewerId` looking at a retro in `step`, with nothing voted for. */
-function viewer(viewerId: Id<"users">, step: RetroStep, showAuthors: boolean, extra: Partial<Viewer> = {}): Viewer {
+function viewer(viewerId: Id<"users">, step: RetroStep, showAuthors: boolean, extra: Partial<RetroViewer> = {}): RetroViewer {
   return {
     retro: { step, showAuthors },
     viewerId,

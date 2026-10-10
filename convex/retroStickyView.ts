@@ -51,7 +51,7 @@ export interface StickyView {
 }
 
 /** Who is looking, at which retro, and what was read for them. */
-export interface Viewer {
+export interface RetroViewer {
   /** The retro's step and show-authors setting: the room's, never the viewer's. */
   retro: { step: RetroStep; showAuthors: boolean };
   viewerId: Id<"users">;
@@ -64,12 +64,12 @@ export interface Viewer {
 }
 
 /** Whether stickies carry their authors' names: once revealed, and only while the retro shows authors. */
-export function authorsShown(retro: Viewer["retro"]): boolean {
+export function authorsShown(retro: RetroViewer["retro"]): boolean {
   return retro.showAuthors && !stepShows(retro.step).faceDown;
 }
 
 /** A sticky as `viewer` may see it. */
-export function stickyView(sticky: StickyRow, viewer: Viewer): StickyView {
+export function stickyView(sticky: StickyRow, viewer: RetroViewer): StickyView {
   const shows = stepShows(viewer.retro.step);
   const mine = sticky.authorId === viewer.viewerId;
   const hidden = shows.faceDown && !mine;

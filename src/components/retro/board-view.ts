@@ -16,7 +16,7 @@ import type { ActionItemView, BoardView, Gif, RetroState, StickyView } from "@/c
 import { ACTION_ITEM_TEXT, STICKY_TEXT, type RetroColumn, type RetroStep } from "@/convex/retroTemplates";
 import * as Topics from "@/convex/retroTopics";
 import { discussionOrder, stepShows, walk, withSpotlight } from "@/convex/retroSteps";
-import { stickyView, type StickyRow, type Viewer } from "@/convex/retroStickyView";
+import { stickyView, type RetroViewer, type StickyRow } from "@/convex/retroStickyView";
 
 type StickyId = Id<"retroStickies">;
 
@@ -58,7 +58,7 @@ export type NewSticky = Pick<StickyRow, "clientId" | "columnId" | "position" | "
 export function applyNewSticky(
   board: BoardView,
   sticky: NewSticky,
-  by: { viewerId: Id<"users">; retro: Viewer["retro"]; members: readonly Member[] }
+  by: { viewerId: Id<"users">; retro: RetroViewer["retro"]; members: readonly Member[] }
 ): BoardView {
   const text = STICKY_TEXT.check(sticky.text);
   if (!text.ok) return board;
