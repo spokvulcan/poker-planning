@@ -45,7 +45,7 @@ The authentication system consists of three layers:
 | `convex/model/ownership.ts` | Who owns a room: creation, transfer, a returning owner, the hand-off |
 | `convex/model/accountLifecycle.ts` | Deleting an account and linking a guest to an account, through every module's `UserRows` |
 | `convex/model/caller.ts` | Who is calling: the one place the signed-in identity is read and the caller's `users` row looked up (`getCaller`, `requireCaller`, `requireUser`) |
-| `convex/model/auth.ts` | Auth guard helpers (`requireRoomMember`, `requireRoomReader`, `requireRoomWrite`, `requireActingUser`, `requireCan`, `requireCanForUser`) |
+| `convex/model/auth.ts` | Auth guard helpers (`requireRoomMember`, `requireRoomReader`, `requireRoomWrite`, `requireCanForUser`) |
 | `convex/email.ts` | Internal action that sends the Magic Link email via Resend (the only email AgileKit sends) |
 
 ### Frontend (Next.js)
@@ -97,7 +97,7 @@ Indexed by: `by_room`, `by_user`, `by_room_user`
 
 ## Authorization Guards
 
-Every Convex mutation enforces authorization with a guard from `convex/model/auth.ts`. Handlers call the guard and never re-implement its checks inline. Never trust a client-supplied `userId` or `authUserId` without a guard that verifies it names the caller.
+Every Convex mutation enforces authorization with a guard from `convex/model/auth.ts`. Handlers call the guard and never re-implement its checks inline. Who is calling comes from the session, never from a `userId` or `authUserId` the client sends: the writes that still accept the caller's own id ignore it, and presence's heartbeat, the one handler that compares one, checks it against the caller the room-scoped step seats.
 
 ### Who is calling (`convex/model/caller.ts`)
 
@@ -128,21 +128,19 @@ The users model is also the only place a row turns permanent (`convex/usersRow.t
 |--------|---------|-------------|
 | `requireRoomMember(ctx, roomId)` | `{ identity, user, membership, room }` | **Room attendance**: the caller is in the room. The room-scoped step checks it, and a write open to anyone in the room takes the step with no `spec`. Returns the room it checked, so the handler never reads it again |
 | `requireRoomReader(ctx, roomId)` | `{ identity, user }` | **Room access** (ADR-0009): a read-only query on room-owned data. Passes a room member and nobody else (there are no Teams since ADR-0026), reading only the caller and their membership; returns neither the room nor a membership |
-| `requireRoomWrite(ctx, address, spec?, targetUserId?)` | `{ user, membership, room, target? }` and the addressed entity | **The room-scoped step** a room write starts with. `address` is the room, or the one issue, sticky or action item the write acts on (`{ issue: issueId }`, handed back as `issue`), whose own room the write lands in. The caller must be in that room (attendance); a `spec` adds the permission guard, as in `requireCan`. The caller is whoever is signed in: no `userId` a client sends is compared |
-| `requireActingUser(ctx, roomId, userId, message?)` | `{ identity, user, membership, room }` | **Acting-user guard**: the mutation acts as a client-supplied `userId` (presence, the one left). Authenticated, a room member, and the caller *is* `userId`; `message` is what it throws on the mismatch |
-| `requireCan(ctx, roomId, spec, targetUserId?)` | `{ identity, user, membership, room, target? }` | **Permission guard** on its own: the decision for a permission category or a relationship verb. Throws the resolved decision's message on denial. A room write gets the same guard from the step's `spec` |
-| `requireCanForUser(ctx, user, roomId, spec, targetUserId?)` | `{ user, membership, room, target? }` | The same permission guard for a caller that resolved the user outside `ctx.auth`, such as an action (the Jira integration) calling in through an internal query |
+| `requireRoomWrite(ctx, address, spec?, targetUserId?)` | `{ user, membership, room, target? }` and the addressed entity | **The room-scoped step** a room write starts with. `address` is the room, or the one issue, sticky or action item the write acts on (`{ issue: issueId }`, handed back as `issue`), whose own room the write lands in. The caller must be in that room (attendance); a `spec` adds the permission guard. The caller is whoever is signed in: the step compares no `userId` a client sends |
+| `requireCanForUser(ctx, user, roomId, spec, targetUserId?)` | `{ user, membership, room, target? }` | **Permission guard** for a caller that resolved the user outside `ctx.auth`, such as an action (the Jira integration) calling in through an internal query: the decision for a permission category or a relationship verb. Throws the resolved decision's message on denial. A room write gets the same guard from the step's `spec` |
 
 `spec` names what the caller asks to do: `{ kind: "category", category }` (`issueManagement`, `gameFlow`, `stageFlow`, `retroSettings`, ...) or `{ kind: "relationship", verb }`, where `verb` is `remove`, `promote`, `demote`, `transfer`, `changePerms` or `delete`. `remove`, `promote` and `demote` need `targetUserId`: the guard loads the target's membership so the permission decision can weigh the target's role. A category from the other ceremony throws (ADR-0013). Identity rules (self-transfer, the authoritative `ownerId`) are not the guard's; they stay with the write, after it (`Roles.transferOwnership`).
 
-`requireCan` and `requireCanForUser` share one IO assembly, so both reach the same decision and throw the same messages. `resolveRoomAction` is that assembly returning the decision instead of throwing, for a caller whose denial depends on the target (someone else's retro sticky).
+The step's `spec` and `requireCanForUser` share one IO assembly, so both reach the same decision and throw the same messages. `resolveRoomAction` is that assembly returning the decision instead of throwing, for a caller whose denial depends on the target (someone else's retro sticky).
 
-A guard's refusal is a coded refusal (`refusal()` in `convex/model/refusal.ts`), a `ConvexError` whose message the browser shows as written, because production redacts a plain Error's message (ADR-0031): a denied decision is `forbidden` with the resolved decision's message, a caller outside the room is `forbidden`, and a category from the other ceremony, or an issue, sticky or action item a write is addressed by that is gone, is `missing`. Not being signed in, a missing room or target, and the acting-user mismatch still throw plain Errors: they are caller errors, not refusals.
+A guard's refusal is a coded refusal (`refusal()` in `convex/model/refusal.ts`), a `ConvexError` whose message the browser shows as written, because production redacts a plain Error's message (ADR-0031): a denied decision is `forbidden` with the resolved decision's message, a caller outside the room is `forbidden`, and a category from the other ceremony, or an issue, sticky or action item a write is addressed by that is gone, is `missing`. Not being signed in, a missing room or target, and a presence heartbeat naming someone other than the caller still throw plain Errors: they are caller errors, not refusals.
 
 ### Which guard to use
 
-- **Room writes on the room-scoped step** (every room write but joining a room and presence: the canvas, the timer, votes, the round's transitions, issues, roles and permissions, room settings and the Jira mapping, `users.edit`, `users.leave` and `users.remove`, and the retro's): `requireRoomWrite`, with the permission spec where the write is gated by one, and none where everyone in the room may write (the canvas, the timer, a vote, a member's own edit or leave, writing and moving retro stickies). The handler takes the room, the caller and the entity it acts on from the step and never works them out itself, and hands the model the rows it loaded; the `userId` these writes still accept from old browsers is ignored.
-- **Room-scoped mutations that take a `userId`** (presence): `requireActingUser`. It is the one place the authenticated + member + acting-as-`userId` check lives; never rebuild it from `requireRoomMember` and a `user._id` comparison.
+- **Room writes on the room-scoped step** (every room write but joining a room: the canvas, the timer, votes, the round's transitions, issues, roles and permissions, room settings and the Jira mapping, `users.edit`, `users.leave` and `users.remove`, the retro's, and presence's heartbeat): `requireRoomWrite`, with the permission spec where the write is gated by one, and none where everyone in the room may write (the canvas, the timer, a vote, a member's own edit or leave, writing and moving retro stickies). The handler takes the room, the caller and the entity it acts on from the step and never works them out itself, and hands the model the rows it loaded; the `userId` these writes still accept from old browsers is ignored.
+- **Presence's heartbeat**, which names its user, takes the step and then checks that `userId` against the caller the step seats, throwing "Cannot heartbeat as another user" on a mismatch. The presence component lists whoever a heartbeat names, and the presence hook finds itself in that list by the id it sends, so the heartbeat checks the id where every other write ignores it: it is the one handler that compares a client-supplied `userId`.
 - **Actions gated by a permission** (the Jira import): `requireCanForUser`, through an internal query, for a caller that resolved the user outside `ctx.auth`. A room write names its permission to the step instead, which runs the same guard.
 - **Global ways in, which make the caller's row** (`rooms.create`, `retro.create`, `users.join`, `users.editGlobalUser`, `users.ensureGlobalUser`): `findOrMakeUser` from the users model, not a guard. `users.join` and `users.ensureGlobalUser` still accept the `authUserId` older browsers send, and ignore it.
 - **Global mutations acting on own data** (`deleteUser`): `requireCaller` or `requireUser`. `signOut` takes `getCaller` instead: with nobody signed in it has nothing to delete, and must not keep the browser from clearing its session.
@@ -169,15 +167,18 @@ export const moveNodes = mutation({
 
 A write addressed by the entity it acts on names that instead of a room, and gets it back loaded, with the room it is in: `const { issue, room } = await requireRoomWrite(ctx, { issue: args.issueId }, { kind: "category", category: "issueManagement" })`. One that is gone is refused as `missing`, and one from a room the caller isn't in is refused like any write to that room.
 
-### Example: presence, which takes a userId (acting-user guard)
+### Example: presence, which checks the userId it is sent
 
 ```typescript
-import { requireActingUser } from "./model/auth";
+import { requireRoomWrite } from "./model/auth";
 
 export const heartbeat = mutation({
   args: { roomId: v.string(), userId: v.string(), sessionId: v.string(), interval: v.number() },
   handler: async (ctx, { roomId, userId, sessionId, interval }) => {
-    await requireActingUser(ctx, roomId as Id<"rooms">, userId as Id<"users">, "Cannot heartbeat as another user");
+    const { user } = await requireRoomWrite(ctx, roomId as Id<"rooms">);
+    if (user._id !== userId) {
+      throw new Error("Cannot heartbeat as another user");
+    }
     return await presence.heartbeat(ctx, roomId, userId, sessionId, interval);
   },
 });

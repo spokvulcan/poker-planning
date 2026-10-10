@@ -3,13 +3,12 @@ import { convexTest } from "convex-test";
 import { describe, it, expect } from "vitest";
 import schema from "./schema";
 import type { Id } from "./_generated/dataModel";
-import { requireCan, requireRoomMember } from "./model/auth";
+import { requireRoomMember, requireRoomWrite } from "./model/auth";
 import { type T, seedRoom, seedUser as addUser, addMembership } from "./analytics.seeds";
 
 // Room attendance: `requireRoomMember` answers "is this person in this
-// room?" for every write on a room, directly or under the acting-user and
-// permission guards, and hands back the room it checked so no handler reads
-// the room again.
+// room?" for every write on a room, under the room-scoped step, and hands
+// back the room it checked so no handler reads the room again.
 
 const modules = import.meta.glob("./**/*.*s");
 
@@ -85,13 +84,13 @@ describe("the guards built on room attendance read the room once", () => {
     expect(metrics.documentsRead.used).toBe(3);
   });
 
-  it("the permission guard decides on the room the attendance guard loaded", async () => {
+  it("the step's permission guard decides on the room the attendance guard loaded", async () => {
     const t = convexTest(schema, modules);
     const roomId = await seedRoom(t); // no permissions set: every category is open to everyone
     await addMember(t, roomId, "auth-m");
 
     const metrics = await t.withIdentity({ subject: "auth-m" }).run(async (ctx) => {
-      await requireCan(ctx, roomId, { kind: "category", category: "roomSettings" });
+      await requireRoomWrite(ctx, roomId, { kind: "category", category: "roomSettings" });
       return await ctx.meta.getTransactionMetrics();
     });
 

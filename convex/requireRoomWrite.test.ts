@@ -239,7 +239,7 @@ const ADDRESSED = /v\.id\(\s*["'](rooms|issues|retroStickies|retroActionItems)["
 
 /** Code that works out the caller or the room itself: another guard, the caller module, a room read or the user id sent. */
 const RESOLVES_ITSELF =
-  /\b(requireRoomMember|requireActingUser|requireCan|requireCanForUser|findOrMakeUser|requireUser|requireCaller|getCaller)\(|\.get\(\s*["']rooms["']|args\.userId/;
+  /\b(requireRoomMember|requireCanForUser|findOrMakeUser|requireUser|requireCaller|getCaller)\(|\.get\(\s*["']rooms["']|args\.userId/;
 
 /**
  * A write's code without the member a relationship verb acts on, where it is
