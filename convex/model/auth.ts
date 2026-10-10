@@ -14,7 +14,7 @@ import { isRoomOwnerAbsent } from "./permissions";
 import { getMembership } from "./memberships";
 import { refusal } from "./refusal";
 import { NOT_THIS_CEREMONY } from "../ceremony";
-import { requireCaller, requireUser, type Caller } from "./caller";
+import { requireUser } from "./caller";
 
 /**
  * The caller's auth identity (model/caller.ts).
@@ -23,22 +23,6 @@ import { requireCaller, requireUser, type Caller } from "./caller";
 interface AuthIdentity {
   subject: string;
   [key: string]: unknown;
-}
-
-/**
- * Returns the caller (model/caller.ts), or throws unless they are signed in
- * as `authUserId`. For mutations that still take the caller's authUserId as
- * an argument (older browsers send it): the argument must name the caller.
- */
-export async function requireAuthAs(
-  ctx: QueryCtx | MutationCtx,
-  authUserId: string
-): Promise<Caller> {
-  const caller = await requireCaller(ctx);
-  if (caller.identity.subject !== authUserId) {
-    throw new Error("Auth identity mismatch");
-  }
-  return caller;
 }
 
 /**
