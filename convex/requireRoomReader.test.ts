@@ -182,6 +182,25 @@ describe("room-owned reads take the reader guard", () => {
     expect(await asMember.query(api.retro.actionItems, { roomId })).toEqual([]);
   });
 
+  it("a non-member cannot read the room's Jira mapping or issue links; a member can", async () => {
+    const t = convexTest(schema, modules);
+    const roomId = await seedRoom(t);
+    await addMember(t, roomId, "auth-m");
+    await addUser(t, "auth-x");
+    const asMember = t.withIdentity({ subject: "auth-m" });
+    const asOutsider = t.withIdentity({ subject: "auth-x" });
+
+    await expect(asOutsider.query(api.integrations.getRoomMapping, { roomId })).rejects.toThrow(
+      "You don't have access to this room"
+    );
+    await expect(asOutsider.query(api.integrations.getIssueLinks, { roomId })).rejects.toThrow(
+      "You don't have access to this room"
+    );
+
+    expect(await asMember.query(api.integrations.getRoomMapping, { roomId })).toBeNull();
+    expect(await asMember.query(api.integrations.getIssueLinks, { roomId })).toEqual({});
+  });
+
   it("an unauthenticated caller cannot read any of the three", async () => {
     const t = convexTest(schema, modules);
     const roomId = await seedRoom(t);
