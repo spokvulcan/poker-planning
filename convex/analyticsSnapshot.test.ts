@@ -71,6 +71,14 @@ async function refreshSnapshot(t: T, roomId: Id<"rooms">): Promise<void> {
   await t.run((ctx) => Analytics.refreshRoomAnalyticsSnapshot(ctx, roomId));
 }
 
+/** The vote distribution panel of auth-a's dashboard, over all time. */
+async function distributionOf(t: T) {
+  const dashboard = await t
+    .withIdentity({ subject: "auth-a" })
+    .query(api.analytics.getDashboard, {});
+  return dashboard.voteDistribution;
+}
+
 describe("snapshot write path — round completion", () => {
   it("reveal with consensus upserts the room's snapshot with the completed history", async () => {
     const t = withComponents(convexTest(schema, modules));
@@ -172,40 +180,26 @@ describe("snapshot read path — fallback vs snapshot equivalence", () => {
     return { viewer, roomId };
   }
 
-  /** Runs all 9 registered analytics queries as auth-a, ranged and unranged. */
-  async function runAllQueries(t: T) {
+  /** Runs the dashboard read and the session list as auth-a, ranged and unranged. */
+  async function readAll(t: T) {
     const asA = t.withIdentity({ subject: "auth-a" });
     return {
-      summary: await asA.query(api.analytics.getSummary, {}),
-      summaryRanged: await asA.query(api.analytics.getSummary, { dateRange: RANGE }),
+      dashboard: await asA.query(api.analytics.getDashboard, {}),
+      dashboardRanged: await asA.query(api.analytics.getDashboard, { dateRange: RANGE }),
       sessions: await asA.query(api.analytics.getSessions, {}),
       sessionsRanged: await asA.query(api.analytics.getSessions, { dateRange: RANGE }),
-      agreementTrend: await asA.query(api.analytics.getAgreementTrend, {}),
-      agreementTrendRanged: await asA.query(api.analytics.getAgreementTrend, { dateRange: RANGE }),
-      velocity: await asA.query(api.analytics.getVelocityStats, {}),
-      velocityRanged: await asA.query(api.analytics.getVelocityStats, { dateRange: RANGE }),
-      distribution: await asA.query(api.analytics.getVoteDistribution, {}),
-      distributionRanged: await asA.query(api.analytics.getVoteDistribution, { dateRange: RANGE }),
-      timeToConsensus: await asA.query(api.analytics.getTimeToConsensus, {}),
-      timeToConsensusRanged: await asA.query(api.analytics.getTimeToConsensus, { dateRange: RANGE }),
-      participation: await asA.query(api.analytics.getParticipationStats, {}),
-      participationRanged: await asA.query(api.analytics.getParticipationStats, { dateRange: RANGE }),
-      predictability: await asA.query(api.analytics.getPredictability, {}),
-      predictabilityRanged: await asA.query(api.analytics.getPredictability, { dateRange: RANGE }),
-      alignment: await asA.query(api.analytics.getVoterAlignment, {}),
-      alignmentRanged: await asA.query(api.analytics.getVoterAlignment, { dateRange: RANGE }),
     };
   }
 
-  it("all 9 queries return identical results from the fallback scan and the snapshot", async () => {
+  it("every panel and the session list are identical from the fallback scan and the snapshot", async () => {
     const t = withComponents(convexTest(schema, modules));
     const { roomId } = await seedRichHistory(t);
 
-    const fallback = await runAllQueries(t);
+    const fallback = await readAll(t);
     expect(await readSnapshot(t, roomId)).toBeNull(); // fallback path
 
     await refreshSnapshot(t, roomId);
-    const fromSnapshot = await runAllQueries(t);
+    const fromSnapshot = await readAll(t);
 
     expect(fromSnapshot).toEqual(fallback);
   });
@@ -225,9 +219,7 @@ describe("snapshot read path — fallback vs snapshot equivalence", () => {
       await Promise.all(issues.map((i) => ctx.db.delete("issues", i._id)));
     });
 
-    const asA = t.withIdentity({ subject: "auth-a" });
-    const distribution = await asA.query(api.analytics.getVoteDistribution, {});
-    expect(distribution.length).toBeGreaterThan(0);
+    expect((await distributionOf(t)).length).toBeGreaterThan(0);
   });
 });
 
@@ -248,8 +240,7 @@ describe("stale snapshot — history-changing writes outside completion", () => 
 
     vi.setSystemTime(BASE + 1_000);
     await refreshSnapshot(t, roomId);
-    const asA = t.withIdentity({ subject: "auth-a" });
-    expect(await asA.query(api.analytics.getVoteDistribution, {})).toEqual([
+    expect(await distributionOf(t)).toEqual([
       { value: "5", count: 1, percentage: 100 },
     ]);
 
@@ -257,7 +248,7 @@ describe("stale snapshot — history-changing writes outside completion", () => 
     vi.setSystemTime(BASE + 2_000);
     await t.run((ctx) => Issues.removeIssue(ctx, issueId));
 
-    expect(await asA.query(api.analytics.getVoteDistribution, {})).toEqual([]);
+    expect(await distributionOf(t)).toEqual([]);
   });
 
   it("editing a completed issue's estimate invalidates the snapshot", async () => {
@@ -282,8 +273,7 @@ describe("stale snapshot — history-changing writes outside completion", () => 
       Issues.updateIssueEstimate(ctx, { issueId, finalEstimate: "8" })
     );
 
-    const asA = t.withIdentity({ subject: "auth-a" });
-    expect(await asA.query(api.analytics.getVoteDistribution, {})).toEqual([
+    expect(await distributionOf(t)).toEqual([
       { value: "8", count: 1, percentage: 100 },
     ]);
   });
@@ -312,9 +302,8 @@ describe("stale snapshot — history-changing writes outside completion", () => 
     const i2 = await seedIssue(t, roomId, { sequentialId: 2, status: "pending" });
     await playRound(t, roomId, i2, userId, "8");
 
-    const asA = t.withIdentity({ subject: "auth-a" });
     // Tied counts enumerate in JS numeric-key order, not insertion order.
-    expect(await asA.query(api.analytics.getVoteDistribution, {})).toEqual([
+    expect(await distributionOf(t)).toEqual([
       { value: "8", count: 1, percentage: 50 },
       { value: "13", count: 1, percentage: 50 },
     ]);
