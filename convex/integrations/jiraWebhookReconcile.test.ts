@@ -3,7 +3,7 @@
  * mapping wants, what its record says, and what reconciling the two does.
  * The wiring (which caller hands over which case, which scheduled action a
  * decision lands on) is covered in integrationsModel.test.ts and
- * roomAggregate.test.ts.
+ * roomEnding.test.ts.
  */
 import { describe, it, expect } from "vitest";
 import type { Doc, Id } from "../_generated/dataModel";

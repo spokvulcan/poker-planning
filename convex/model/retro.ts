@@ -5,7 +5,7 @@ import { resolveRoomAction } from "./auth";
 import { getMembership } from "./memberships";
 import * as Canvas from "./canvas";
 import { openRoom, updateRoomActivity } from "./rooms";
-import { scheduleRoomDeletion } from "./roomAggregate";
+import { endRoom } from "./roomEnding";
 import type { UserRows } from "./userRows";
 import { ceremonyOf } from "../ceremony";
 import { RESOLVED_ALLOWED } from "../permissions";
@@ -869,10 +869,10 @@ export async function deleteActionItem(
 
 // --- Deletion --------------------------------------------------------------------
 
-/** Deletes the whole retro through the room cascade. */
+/** Deletes the whole retro: its room ends (model/roomEnding.ts). */
 export async function deleteRetro(ctx: MutationCtx, room: Doc<"rooms">): Promise<void> {
   retroOf(room);
-  await scheduleRoomDeletion(ctx, room._id);
+  await endRoom(ctx, room._id);
 }
 
 // --- Accounts --------------------------------------------------------------------

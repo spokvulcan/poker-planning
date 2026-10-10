@@ -156,7 +156,7 @@ export function sanitizeVotes(
 /**
  * The single chokepoint for room activity writes (ADR-0005). Every
  * user-initiated mutation touching room-scoped state routes its bump through
- * here, so the cleanup cascade's inactivity window (model/cleanup.ts)
+ * here, so the sweep's inactivity window (model/roomEnding.ts)
  * reflects real use — a room worked only via its timer or canvas must not
  * read as abandoned.
  *

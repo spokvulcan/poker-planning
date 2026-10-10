@@ -219,8 +219,16 @@ _Avoid_: agreement score (that is `voteStats.agreement` on the issue), deviation
 ### Room activity
 
 **Room activity** (`lastActivityAt`):
-The room's liveness clock — the field the cleanup cascade reads to delete rooms silent for five days, unless they are **retained**. Written only through the model-layer chokepoint `Rooms.updateRoomActivity`: every user-initiated model mutation calls it (voting, issues, canvas, timer, roles, integration mappings, every retro write), and endpoint handlers never patch the field directly. Internal effects (relayout, countdown arm/cancel, scheduled cascades) do not bump — their initiating mutation already did. The chokepoint also owns the clock's *precision*: exact for a poker room, whose analytics freshness compares it exactly, and **coarse** — written at most once an hour — for a retro room, whose readers (the sweep and the dashboard's last-activity time) need nothing finer. Reads and presence never are. See [ADR-0005](docs/adr/0005-room-activity-has-one-model-layer-chokepoint.md) and [ADR-0018](docs/adr/0018-the-activity-chokepoint-owns-the-clocks-precision.md).
+The room's liveness clock — the field the **sweep** reads to end rooms silent for five days, unless they are **retained**. Written only through the model-layer chokepoint `Rooms.updateRoomActivity`: every user-initiated model mutation calls it (voting, issues, canvas, timer, roles, integration mappings, every retro write), and endpoint handlers never patch the field directly. Internal effects (relayout, countdown arm/cancel, the steps of a **room ending**) do not bump — their initiating mutation already did. The chokepoint also owns the clock's *precision*: exact for a poker room, whose analytics freshness compares it exactly, and **coarse** — written at most once an hour — for a retro room, whose readers (the sweep and the dashboard's last-activity time) need nothing finer. Reads and presence never are. See [ADR-0005](docs/adr/0005-room-activity-has-one-model-layer-chokepoint.md) and [ADR-0018](docs/adr/0018-the-activity-chokepoint-owns-the-clocks-precision.md).
 _Avoid_: touch point, heartbeat, keep-alive
+
+**Room ending**:
+A room going, with everything it owns: when its owner deletes a **retro**, at a **hand-off** with nobody to hand it to, in the **sweep**, or in the admin wipe. One module ends rooms (`convex/model/roomEnding.ts`), a bounded step at a time; only the owners with a rule of their own let go of their rows themselves: an issue goes with its links, a mapping's webhook through the **webhook reconcile**, and presence in its component.
+_Avoid_: cascade, room aggregate, cleanup
+
+**Sweep**:
+The daily job that ends what is stale, a page at a time: each room not **retained** after five days without **room activity**, and whatever a room deleted some other way left behind, whose **room ending** it finishes.
+_Avoid_: cleanup, orphan sweep, orphan net
 
 ### Analytics
 
@@ -239,7 +247,7 @@ The seam (`convex/integrations/registry.ts`) that maps a connection's `provider`
 _Avoid_: service layer, plugin, provider factory
 
 **Webhook reconcile**:
-The one owner of each room mapping's remote webhook, one per provider behind the **integration provider registry** (`convex/integrations/jiraWebhookReconcile.ts` for Jira). A mapping wants one webhook for its project while auto-push is on, made with the mapping's own connection; its record says which webhook is live, the connection that made it and the project it was made for. Everything that changes or ends a mapping hands over its case (saving it, the weekly renewal, removing it, its room ending, the orphan sweep, a disconnect), and the reconcile registers, replaces or removes the webhook, always deleting an old one with the connection that made it. A failed registration is recorded on the mapping, and the room's settings show it.
+The one owner of each room mapping's remote webhook, one per provider behind the **integration provider registry** (`convex/integrations/jiraWebhookReconcile.ts` for Jira). A mapping wants one webhook for its project while auto-push is on, made with the mapping's own connection; its record says which webhook is live, the connection that made it and the project it was made for. Everything that changes or ends a mapping hands over its case (saving it, the weekly renewal, removing it, its **room ending**, a disconnect), and the reconcile registers, replaces or removes the webhook, always deleting an old one with the connection that made it. A failed registration is recorded on the mapping, and the room's settings show it.
 _Avoid_: webhook sync, webhook manager
 
 ## Flagged ambiguities

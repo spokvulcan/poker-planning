@@ -1,7 +1,7 @@
 /**
  * The provider registry: pure descriptor tests. The end-to-end routing (which
  * scheduled action a model write lands on) is covered in
- * integrationsModel.test.ts / roomAggregate.test.ts via the scheduled-jobs
+ * integrationsModel.test.ts / roomEnding.test.ts via the scheduled-jobs
  * assertions, and the Jira webhook reconcile's decisions in
  * jiraWebhookReconcile.test.ts.
  */
