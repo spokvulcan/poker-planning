@@ -8,7 +8,8 @@ import { v } from "convex/values";
 import { providerValidator } from "./schema";
 import * as Integrations from "./model/integrations";
 import * as Issues from "./model/issues";
-import { requireAuthUser, requireRoomReader, requireCan } from "./model/auth";
+import { requireRoomReader, requireCan } from "./model/auth";
+import { requireUser } from "./model/caller";
 
 // ---------------------------------------------------------------------------
 // Connection queries & mutations
@@ -17,7 +18,7 @@ import { requireAuthUser, requireRoomReader, requireCan } from "./model/auth";
 export const getConnections = query({
   args: {},
   handler: async (ctx) => {
-    const { user } = await requireAuthUser(ctx);
+    const { user } = await requireUser(ctx);
     const connections = await ctx.db
       .query("integrationConnections")
       .withIndex("by_user_provider", (q) => q.eq("userId", user._id))
@@ -31,7 +32,7 @@ export const getConnections = query({
 export const disconnect = mutation({
   args: { connectionId: v.id("integrationConnections") },
   handler: async (ctx, args) => {
-    const { user } = await requireAuthUser(ctx);
+    const { user } = await requireUser(ctx);
     const connection = await ctx.db.get("integrationConnections", args.connectionId);
     if (!connection || connection.userId !== user._id) {
       throw new Error("Connection not found");
@@ -104,7 +105,7 @@ export const saveRoomMapping = mutation({
     await requireCan(ctx, args.roomId, { kind: "category", category: "roomSettings" });
 
     // Verify the connection belongs to the current user
-    const { user } = await requireAuthUser(ctx);
+    const { user } = await requireUser(ctx);
     const connection = await ctx.db.get("integrationConnections", args.connectionId);
     if (!connection || connection.userId !== user._id) {
       throw new Error("Connection not found");

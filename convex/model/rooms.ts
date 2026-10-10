@@ -4,7 +4,8 @@ import * as Canvas from "./canvas";
 import * as Memberships from "./memberships";
 import * as Ownership from "./ownership";
 import { DEFAULT_SCALE, VOTING_SCALES, VotingScaleType, validateCustomScale } from "../scales";
-import { MAX_ROOM_NAME_LENGTH } from "../constants";
+import { ROOM_NAME } from "../constants";
+import { requireValid } from "./refusal";
 import { rulesOf } from "../ceremony";
 import { isRoomOwnerAbsent } from "./permissions";
 
@@ -16,20 +17,6 @@ export interface CreateRoomArgs {
     type: VotingScaleType | "custom";
     cards?: string[]; // Required only for custom type
   };
-}
-
-/**
- * Validates a room name (trims, enforces non-empty and a length cap).
- */
-export function validateRoomName(name: string): string {
-  const trimmed = name.trim();
-  if (!trimmed) {
-    throw new Error("Room name is required");
-  }
-  if (trimmed.length > MAX_ROOM_NAME_LENGTH) {
-    throw new Error(`Room name must be ${MAX_ROOM_NAME_LENGTH} characters or less`);
-  }
-  return trimmed;
 }
 
 export interface SanitizedVote extends Doc<"votes"> {
@@ -86,7 +73,7 @@ export async function openRoom(ctx: MutationCtx, owner: Doc<"users">, fields: Ro
   const now = Date.now();
   const roomId = await ctx.db.insert("rooms", {
     ...fields,
-    name: validateRoomName(fields.name),
+    name: requireValid(ROOM_NAME, fields.name),
     createdAt: now,
     lastActivityAt: now,
     ...Ownership.initialOwnership(fields, owner),
@@ -201,6 +188,6 @@ export async function renameRoom(
   ctx: MutationCtx,
   args: { roomId: Id<"rooms">; name: string }
 ): Promise<void> {
-  await ctx.db.patch("rooms", args.roomId, { name: validateRoomName(args.name) });
+  await ctx.db.patch("rooms", args.roomId, { name: requireValid(ROOM_NAME, args.name) });
   await updateRoomActivity(ctx, args.roomId);
 }

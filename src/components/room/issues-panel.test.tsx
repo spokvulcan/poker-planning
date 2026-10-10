@@ -131,3 +131,11 @@ describe("IssuesPanel — Quick Vote switch and the game-flow decision", () => {
     expect(mocks.switchToQuickVote).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("IssuesPanel — adding an issue", () => {
+  it("stops typing at the issue title's limit", () => {
+    renderPanel(RESOLVED_ALLOWED);
+
+    expect((screen.getByPlaceholderText("Add new issue...") as HTMLInputElement).maxLength).toBe(500);
+  });
+});

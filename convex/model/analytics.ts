@@ -75,17 +75,12 @@ export interface RoomHistory {
 /**
  * Gets all planning poker room memberships for a user with room details.
  * Retros are a different ceremony and never count towards poker analytics.
+ * A viewer with no users row yet (model/caller.ts) has none.
  */
 export async function getUserMemberships(
   ctx: QueryCtx,
-  authUserId: string
+  user: Doc<"users"> | null
 ): Promise<Array<{ membership: Doc<"roomMemberships">; room: Doc<"rooms"> }>> {
-  // Find global user
-  const user = await ctx.db
-    .query("users")
-    .withIndex("by_auth_user", (q) => q.eq("authUserId", authUserId))
-    .first();
-
   if (!user) return [];
 
   // Get all memberships
@@ -130,10 +125,10 @@ export async function getUserMemberships(
  */
 export async function completedIssueHistory(
   ctx: QueryCtx,
-  authUserId: string,
+  user: Doc<"users"> | null,
   dateRange?: DateRange
 ): Promise<RoomHistory[]> {
-  const history = await roomHistories(ctx, authUserId);
+  const history = await roomHistories(ctx, user);
   if (!dateRange) return history;
   return history.map((h) => ({
     ...h,
@@ -222,9 +217,9 @@ async function collectRoomHistoryRecords(
  */
 async function roomHistories(
   ctx: QueryCtx,
-  authUserId: string
+  user: Doc<"users"> | null
 ): Promise<RoomHistory[]> {
-  const membershipsWithRooms = await getUserMemberships(ctx, authUserId);
+  const membershipsWithRooms = await getUserMemberships(ctx, user);
 
   return Promise.all(
     membershipsWithRooms.map(async ({ membership, room }) => {
@@ -374,14 +369,14 @@ function votesInRange(
  */
 export async function getUserSessions(
   ctx: QueryCtx,
-  authUserId: string,
+  user: Doc<"users"> | null,
   dateRange?: DateRange
 ): Promise<SessionSummary[]> {
   // No range on the aggregate: a session row reports the room's lifetime
   // issue stats. The range instead windows on membership.joinedAt — session
   // history is a membership-tenure view ("rooms I joined in this window"),
   // and joinedAt is a displayed field of each row.
-  const history = await completedIssueHistory(ctx, authUserId);
+  const history = await completedIssueHistory(ctx, user);
 
   const filtered = dateRange
     ? history.filter(
@@ -418,10 +413,10 @@ export async function getUserSessions(
  */
 export async function getAgreementTrend(
   ctx: QueryCtx,
-  authUserId: string,
+  user: Doc<"users"> | null,
   dateRange?: DateRange
 ): Promise<AnalyticsMath.AgreementDataPoint[]> {
-  const history = await completedIssueHistory(ctx, authUserId, dateRange);
+  const history = await completedIssueHistory(ctx, user, dateRange);
   return AnalyticsMath.agreementTrend(flattenIssues(history));
 }
 
@@ -430,10 +425,10 @@ export async function getAgreementTrend(
  */
 export async function getVelocityStats(
   ctx: QueryCtx,
-  authUserId: string,
+  user: Doc<"users"> | null,
   dateRange?: DateRange
 ): Promise<AnalyticsMath.VelocityDataPoint[]> {
-  const history = await completedIssueHistory(ctx, authUserId, dateRange);
+  const history = await completedIssueHistory(ctx, user, dateRange);
   return AnalyticsMath.velocityByDay(flattenIssues(history));
 }
 
@@ -442,10 +437,10 @@ export async function getVelocityStats(
  */
 export async function getVoteDistribution(
   ctx: QueryCtx,
-  authUserId: string,
+  user: Doc<"users"> | null,
   dateRange?: DateRange
 ): Promise<AnalyticsMath.VoteDistributionItem[]> {
-  const history = await completedIssueHistory(ctx, authUserId, dateRange);
+  const history = await completedIssueHistory(ctx, user, dateRange);
   return AnalyticsMath.voteDistribution(
     history.flatMap((h) => h.completedIssues)
   );
@@ -456,10 +451,10 @@ export async function getVoteDistribution(
  */
 export async function getParticipationStats(
   ctx: QueryCtx,
-  authUserId: string,
+  user: Doc<"users"> | null,
   dateRange?: DateRange
 ): Promise<AnalyticsMath.ParticipationStats> {
-  const history = await completedIssueHistory(ctx, authUserId, dateRange);
+  const history = await completedIssueHistory(ctx, user, dateRange);
 
   // totalSessions is membership-tenure: sessions joined within the window.
   const totalSessions = dateRange
@@ -491,10 +486,10 @@ export async function getParticipationStats(
  */
 export async function getTimeToConsensusStats(
   ctx: QueryCtx,
-  authUserId: string,
+  user: Doc<"users"> | null,
   dateRange?: DateRange
 ): Promise<AnalyticsMath.TimeToConsensusStats> {
-  const history = await completedIssueHistory(ctx, authUserId, dateRange);
+  const history = await completedIssueHistory(ctx, user, dateRange);
   return AnalyticsMath.timeToConsensus(flattenIssues(history));
 }
 
@@ -503,10 +498,10 @@ export async function getTimeToConsensusStats(
  */
 export async function getDashboardSummary(
   ctx: QueryCtx,
-  authUserId: string,
+  user: Doc<"users"> | null,
   dateRange?: DateRange
 ): Promise<AnalyticsMath.DashboardSummary> {
-  const sessions = await getUserSessions(ctx, authUserId, dateRange);
+  const sessions = await getUserSessions(ctx, user, dateRange);
   return AnalyticsMath.dashboardSummary(sessions);
 }
 
@@ -515,10 +510,10 @@ export async function getDashboardSummary(
  */
 export async function getVoterAlignment(
   ctx: QueryCtx,
-  authUserId: string,
+  user: Doc<"users"> | null,
   dateRange?: DateRange
 ): Promise<AnalyticsMath.VoterAlignmentData> {
-  const history = await completedIssueHistory(ctx, authUserId, dateRange);
+  const history = await completedIssueHistory(ctx, user, dateRange);
   const votes = votesInRange(history, dateRange);
 
   // Batch-resolve user names
@@ -538,10 +533,10 @@ export async function getVoterAlignment(
  */
 export async function getPredictabilityScore(
   ctx: QueryCtx,
-  authUserId: string,
+  user: Doc<"users"> | null,
   dateRange?: DateRange
 ): Promise<AnalyticsMath.PredictabilityData> {
-  const history = await completedIssueHistory(ctx, authUserId, dateRange);
+  const history = await completedIssueHistory(ctx, user, dateRange);
   return AnalyticsMath.predictability(
     history.map(({ room, completedIssues }) => ({
       roomId: room._id,

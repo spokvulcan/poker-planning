@@ -17,7 +17,8 @@ import { as, join, seedUser } from "./people.seeds";
 // votes and the discussion walk, action items, the next retro, columns, and
 // who may do what at the default permissions. The pure rules are tested on
 // their own: topics and votes in retroTopics.test.ts, steps and the walk in
-// retroSteps.test.ts, GIF links in gifLinks.test.ts.
+// retroSteps.test.ts, who sees what of a sticky in retroStickyView.test.ts,
+// GIF links in gifLinks.test.ts.
 
 const modules = import.meta.glob("./**/*.*s");
 
@@ -187,6 +188,8 @@ describe("retro.create", () => {
 });
 
 describe("the board — who sees what", () => {
+  // The whole table is the sticky projection's (retroStickyView.test.ts);
+  // these prove the board read applies it to the rows it reads.
   it("while writing, someone else's sticky is face-down: its place, never its words, GIF or author", async () => {
     const t = withComponents(convexTest(schema, modules));
     const { roomId } = await seedRetro(t);
@@ -235,6 +238,8 @@ describe("the board — who sees what", () => {
 
     await as(t, "owner").mutation(api.retro.updateSettings, { roomId, showAuthors: true });
     expect((await seen(t, "bob", roomId, stickyId)).authorName).toBe("ann");
+    // Her own sticky too, as her browser shows a new one before the server answers.
+    expect((await seen(t, "ann", roomId, stickyId)).authorName).toBe("ann");
 
     // Back to writing: face-down again, and no name travels, not even to the author.
     await setStep(t, roomId, "write");
@@ -900,6 +905,29 @@ describe("retro.startNext", () => {
     // Asking again follows the link rather than opening another.
     expect(await owner.mutation(api.retro.startNext, { roomId })).toBe(nextId);
     expect(await t.run((ctx) => ctx.db.query("rooms").collect())).toHaveLength(2);
+  });
+
+  it("opens the next retro from a name at the room-name limit, its number moved on and the words before it cut to fit", async () => {
+    const t = withComponents(convexTest(schema, modules));
+    await seedUser(t, "owner", "permanent");
+    const owner = as(t, "owner");
+    // 100 characters, the limit; "100" is a digit longer than "99".
+    const roomId = await owner.mutation(api.retro.create, { name: `${"x".repeat(97)} 99` });
+
+    const nextId = await owner.mutation(api.retro.startNext, { roomId });
+
+    expect((await t.run((ctx) => ctx.db.get("rooms", nextId)))!.name).toBe(`${"x".repeat(96)} 100`);
+  });
+
+  it("numbers the next retro of a name at the limit that has no number", async () => {
+    const t = withComponents(convexTest(schema, modules));
+    await seedUser(t, "owner", "permanent");
+    const owner = as(t, "owner");
+    const roomId = await owner.mutation(api.retro.create, { name: "x".repeat(100) });
+
+    const nextId = await owner.mutation(api.retro.startNext, { roomId });
+
+    expect((await t.run((ctx) => ctx.db.get("rooms", nextId)))!.name).toBe(`${"x".repeat(98)} 2`);
   });
 });
 
