@@ -5,8 +5,9 @@
  * says whether Convex has the session's token. With the server-rendered
  * token Convex can load before BetterAuth's session, so the bootstrap
  * decides nothing until both have. A fresh guest session reaches BetterAuth
- * before Convex, so the bootstrap writes nothing and answers nothing until
- * Convex has it: the server refuses a write from a caller it can't identify.
+ * before Convex, so the bootstrap answers only once Convex has it: the room
+ * write that follows needs a caller the server can identify. It writes
+ * nothing itself; the server makes the caller's users row on that write.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, cleanup, renderHook } from "@testing-library/react";
@@ -43,14 +44,12 @@ vi.mock("convex/react", async () => {
       return { isLoading: auth.isLoading, isAuthenticated: auth.isAuthenticated };
     },
     useQuery: () => undefined,
+    // Any write the bootstrap made would show up here.
     useMutation: () => async () => {
-      auth.calls.push("ensureGlobalUser");
+      auth.calls.push("write");
     },
   };
 });
-
-// The provider keeps its users-row read off /demo (ADR-0003).
-vi.mock("next/navigation", () => ({ usePathname: () => "/" }));
 
 vi.mock("@/lib/auth-client", async () => {
   const { useSyncExternalStore } = await import("react");
@@ -96,39 +95,24 @@ afterEach(() => {
 });
 
 describe("useEnsureSession", () => {
-  it("signs a visitor in as a guest, and writes their user row only once Convex has the session", async () => {
+  it("signs a visitor in as a guest, and answers only once Convex has the session, writing nothing", async () => {
     const { result } = renderEnsureSession();
-    let answered: string | undefined;
+    let answered = false;
 
     let pending!: Promise<void>;
     await act(async () => {
-      pending = result.current().then((id) => {
-        answered = id;
+      pending = result.current().then(() => {
+        answered = true;
       });
     });
     expect(auth.calls).toEqual(["signIn"]);
-    expect(answered).toBeUndefined();
+    expect(answered).toBe(false);
 
     auth.authUserId = "guest-1";
     auth.isAuthenticated = true;
     await act(async () => authChanged());
     await act(async () => pending);
-    expect(auth.calls).toEqual(["signIn", "ensureGlobalUser"]);
-    expect(answered).toBe("guest-1");
-  });
-
-  it("writes no user row for a join, which writes its own", async () => {
-    const { result } = renderEnsureSession();
-
-    let pending!: Promise<string>;
-    await act(async () => {
-      pending = result.current({ createUser: false });
-    });
-    auth.authUserId = "guest-1";
-    auth.isAuthenticated = true;
-    await act(async () => authChanged());
-
-    await expect(pending).resolves.toBe("guest-1");
+    expect(answered).toBe(true);
     expect(auth.calls).toEqual(["signIn"]);
   });
 
@@ -137,7 +121,7 @@ describe("useEnsureSession", () => {
     auth.isLoading = true;
     const { result } = renderEnsureSession();
 
-    let pending!: Promise<string>;
+    let pending!: Promise<void>;
     await act(async () => {
       pending = result.current();
     });
@@ -150,8 +134,8 @@ describe("useEnsureSession", () => {
     auth.isAuthenticated = true;
     await act(async () => authChanged());
 
-    await expect(pending).resolves.toBe("user-1");
-    expect(auth.calls).toEqual(["ensureGlobalUser"]);
+    await expect(pending).resolves.toBeUndefined();
+    expect(auth.calls).toEqual([]);
   });
 
   it("decides nothing while BetterAuth's session loads, though Convex has loaded from the server-rendered token", async () => {
@@ -159,7 +143,7 @@ describe("useEnsureSession", () => {
     auth.isAuthenticated = true;
     const { result } = renderEnsureSession();
 
-    let pending!: Promise<string>;
+    let pending!: Promise<void>;
     await act(async () => {
       pending = result.current();
     });
@@ -170,17 +154,17 @@ describe("useEnsureSession", () => {
     auth.authUserId = "user-1";
     await act(async () => authChanged());
 
-    await expect(pending).resolves.toBe("user-1");
-    expect(auth.calls).toEqual(["ensureGlobalUser"]);
+    await expect(pending).resolves.toBeUndefined();
+    expect(auth.calls).toEqual([]);
   });
 
   it("decides nothing while Convex's auth state loads, though BetterAuth's session has loaded", async () => {
     auth.isLoading = true;
     const { result } = renderEnsureSession();
 
-    let pending!: Promise<string>;
+    let pending!: Promise<void>;
     await act(async () => {
-      pending = result.current({ createUser: false });
+      pending = result.current();
     });
     expect(auth.calls).toEqual([]);
 
@@ -192,27 +176,17 @@ describe("useEnsureSession", () => {
     auth.authUserId = "guest-1";
     auth.isAuthenticated = true;
     await act(async () => authChanged());
-    await expect(pending).resolves.toBe("guest-1");
+    await expect(pending).resolves.toBeUndefined();
   });
 
-  it("answers at once for a session Convex already has, making sure it has a user row", async () => {
+  it("answers at once for a session Convex already has, writing nothing", async () => {
     auth.authUserId = "user-1";
     auth.isAuthenticated = true;
     const { result } = renderEnsureSession();
 
-    await expect(result.current()).resolves.toBe("user-1");
-    expect(auth.calls).toEqual(["ensureGlobalUser"]);
-  });
-
-  it("writes nothing for a join over a session Convex already has", async () => {
-    auth.authUserId = "user-1";
-    auth.isAuthenticated = true;
-    const { result } = renderEnsureSession();
-
-    await expect(result.current({ createUser: false })).resolves.toBe("user-1");
+    await expect(result.current()).resolves.toBeUndefined();
     expect(auth.calls).toEqual([]);
   });
-
 
   it("gives up with the session message when Convex never takes the session", async () => {
     const { result } = renderEnsureSession();
@@ -239,7 +213,7 @@ describe("useEnsureSession", () => {
     }
     const { result, rerender } = renderHook(() => useEnsureSession(), { wrapper: Page });
 
-    let pending!: Promise<string>;
+    let pending!: Promise<void>;
     await act(async () => {
       pending = result.current();
     });
@@ -249,7 +223,7 @@ describe("useEnsureSession", () => {
     auth.isAuthenticated = true;
     await act(async () => authChanged());
 
-    await expect(pending).resolves.toBe("guest-1");
-    expect(auth.calls).toEqual(["signIn", "ensureGlobalUser"]);
+    await expect(pending).resolves.toBeUndefined();
+    expect(auth.calls).toEqual(["signIn"]);
   });
 });

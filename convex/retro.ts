@@ -4,7 +4,8 @@ import * as Retro from "./model/retro";
 import * as Roles from "./model/roles";
 import { renameRoom } from "./model/rooms";
 import { requireRoomReader, requireRoomWrite } from "./model/auth";
-import { getCaller, requireUser } from "./model/caller";
+import { getCaller } from "./model/caller";
+import * as Users from "./model/users";
 import {
   gifValidator,
   positionValidator,
@@ -20,8 +21,8 @@ import { refusal } from "./model/refusal";
 export const create = mutation({
   args: { name: v.string(), templateId: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    const { user } = await requireUser(ctx);
-    return await Retro.createRetro(ctx, { name: args.name, templateId: args.templateId, owner: user });
+    const owner = await Users.findOrMakeUser(ctx);
+    return await Retro.createRetro(ctx, { name: args.name, templateId: args.templateId, owner });
   },
 });
 

@@ -224,7 +224,7 @@ const ADDRESSED = /v\.id\(\s*["'](rooms|issues|retroStickies|retroActionItems)["
 
 /** Code that works out the caller or the room itself: another guard, the caller module, a room read or the user id sent. */
 const RESOLVES_ITSELF =
-  /\b(requireRoomMember|requireActingUser|requireCan|requireCanForUser|requireAuthAs|requireUser|requireCaller|getCaller)\(|\.get\(\s*["']rooms["']|args\.userId/;
+  /\b(requireRoomMember|requireActingUser|requireCan|requireCanForUser|findOrMakeUser|requireUser|requireCaller|getCaller)\(|\.get\(\s*["']rooms["']|args\.userId/;
 
 describe("the writes on the room-scoped step", () => {
   it.each(Object.entries(sources))("in %s take their room and caller from it", (_, source) => {

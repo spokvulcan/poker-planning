@@ -315,8 +315,8 @@ describe("dropVoter — a roster exit reconciles the round", () => {
 
     // A latecomer joins as a participant after the countdown is armed: the room
     // is no longer all-in, but admission deliberately does not reconcile.
-    await t.run((ctx) =>
-      Users.joinRoom(ctx, { roomId, name: "C", authUserId: "auth-latecomer" })
+    await t.withIdentity({ subject: "auth-latecomer" }).run((ctx) =>
+      Users.joinRoom(ctx, { roomId, name: "C" })
     );
     expect((await readRoom(t, roomId))?.autoRevealCountdownStartedAt).toBe(token);
 

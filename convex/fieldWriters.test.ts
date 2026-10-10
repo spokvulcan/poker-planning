@@ -82,11 +82,6 @@ const WRITERS: { writer: string; rule: FieldRule; write: (t: T, s: Seeded, value
     write: (t, _s, name) => as(t, "ann").mutation(api.users.editGlobalUser, { name }),
   },
   {
-    writer: "users.ensureGlobalUser",
-    rule: PERSON_NAME,
-    write: (t, _s, name) => as(t, "newcomer").mutation(api.users.ensureGlobalUser, { authUserId: "newcomer", name }),
-  },
-  {
     writer: "rooms.create",
     rule: ROOM_NAME,
     write: (t, _s, name) => as(t, "owner").mutation(api.rooms.create, { name }),
@@ -219,6 +214,15 @@ describe("a name a sign-in provider gives", () => {
     });
 
     expect((await userRow(t, "magic-user"))?.name).toBe("dr.maximiliana.alexandra.konstantinopoulou.vanderb");
+  });
+
+  it("is fitted to the person-name rule when the account's first room write makes its row", async () => {
+    const t = withComponents(convexTest(schema, modules));
+    const session = t.withIdentity({ subject: "google-user", isAnonymous: false, email: "max@example.com", name: LONG_GOOGLE_NAME });
+
+    await session.mutation(api.rooms.create, { name: "Planning" });
+
+    expect((await userRow(t, "google-user"))?.name).toBe("Maximiliana Alexandra Konstantinopoulou-Vanderbilt");
   });
 
   it("is fitted to the person-name rule when a guest with no name signs in", async () => {
