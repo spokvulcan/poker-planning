@@ -18,27 +18,14 @@ import {
   stickyColorValidator,
 } from "./schema";
 import { refusal } from "./model/refusal";
-import type { Doc, Id } from "./_generated/dataModel";
+import type { Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 
-type MemberRoom = { user: Doc<"users">; membership: Doc<"roomMemberships">; room: Doc<"rooms"> };
-
-/** The room a retro write lands in, loaded after the attendance guard. */
-async function memberRoom(ctx: MutationCtx, roomId: Id<"rooms">): Promise<MemberRoom> {
-  const { user, membership } = await requireRoomMember(ctx, roomId);
-  const room = await ctx.db.get("rooms", roomId);
-  if (!room) throw refusal("missing", "This retro is gone.");
-  return { user, membership, room };
-}
-
 /** A sticky and the room it lives in, for writes addressed by sticky. */
-async function memberSticky(
-  ctx: MutationCtx,
-  stickyId: Id<"retroStickies">
-): Promise<MemberRoom & { sticky: Doc<"retroStickies"> }> {
+async function memberSticky(ctx: MutationCtx, stickyId: Id<"retroStickies">) {
   const sticky = await ctx.db.get("retroStickies", stickyId);
   if (!sticky) throw refusal("missing", "That sticky is gone.");
-  return { ...(await memberRoom(ctx, sticky.roomId)), sticky };
+  return { ...(await requireRoomMember(ctx, sticky.roomId)), sticky };
 }
 
 // --- Retros -------------------------------------------------------------------
@@ -197,7 +184,7 @@ export const addSticky = mutation({
     position: positionValidator,
   },
   handler: async (ctx, { roomId, ...args }) => {
-    const { user, room } = await memberRoom(ctx, roomId);
+    const { user, room } = await requireRoomMember(ctx, roomId);
     return await Retro.addSticky(ctx, room, user, args);
   },
 });
@@ -221,7 +208,7 @@ export const moveStickies = mutation({
     moves: v.array(v.object({ stickyId: v.id("retroStickies"), position: positionValidator })),
   },
   handler: async (ctx, args) => {
-    const { room } = await memberRoom(ctx, args.roomId);
+    const { room } = await requireRoomMember(ctx, args.roomId);
     await Retro.moveStickies(ctx, room, args.moves);
   },
 });
@@ -233,7 +220,7 @@ export const measureStickies = mutation({
     heights: v.array(v.object({ stickyId: v.id("retroStickies"), height: v.number() })),
   },
   handler: async (ctx, args) => {
-    const { user, room } = await memberRoom(ctx, args.roomId);
+    const { user, room } = await requireRoomMember(ctx, args.roomId);
     await Retro.measureStickies(ctx, room, user, args.heights);
   },
 });

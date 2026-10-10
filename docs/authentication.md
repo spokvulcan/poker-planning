@@ -105,9 +105,9 @@ Every Convex mutation enforces authorization with a guard from `convex/model/aut
 | `requireAuthAs(ctx, authUserId)` | auth identity | The mutation still takes the caller's own `authUserId` (older browsers send it). Throws unless the caller is signed in as that id |
 | `requireAuthUser(ctx)` | `{ identity, user }` | You need the caller's `users` row |
 | `getOptionalAuthUser(ctx)` | `user \| null` | Queries that should degrade gracefully for unauthenticated users |
-| `requireRoomMember(ctx, roomId)` | `{ identity, user, membership }` | **Room attendance**: the caller is in the room. For a write open to anyone in it |
+| `requireRoomMember(ctx, roomId)` | `{ identity, user, membership, room }` | **Room attendance**: the caller is in the room. For a write open to anyone in it. Returns the room it checked, so the handler never reads it again |
 | `requireRoomReader(ctx, roomId)` | `{ identity, user, room }` | **Room access** (ADR-0009): a read-only query on room-owned data. Passes a room member and nobody else (there are no Teams since ADR-0026); never returns a membership |
-| `requireActingUser(ctx, roomId, userId, message?)` | `{ identity, user, membership }` | **Acting-user guard**: the mutation takes a client-supplied `userId`. Authenticated, a room member, and the caller *is* `userId`; `message` is what it throws on the mismatch |
+| `requireActingUser(ctx, roomId, userId, message?)` | `{ identity, user, membership, room }` | **Acting-user guard**: the mutation takes a client-supplied `userId`. Authenticated, a room member, and the caller *is* `userId`; `message` is what it throws on the mismatch |
 | `requireCan(ctx, roomId, spec, targetUserId?)` | `{ identity, user, membership, room, target? }` | **Permission guard**: the mutation is gated by a permission category or a relationship verb. Throws the resolved decision's message on denial |
 | `requireCanForUser(ctx, user, roomId, spec, targetUserId?)` | `{ user, membership, room, target? }` | The same permission guard for a caller that resolved the user outside `ctx.auth`, such as an action (the Jira integration) calling in through an internal query |
 
