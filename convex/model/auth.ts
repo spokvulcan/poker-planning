@@ -1,4 +1,4 @@
-import { QueryCtx, MutationCtx, ActionCtx } from "../_generated/server";
+import { QueryCtx, MutationCtx } from "../_generated/server";
 import { Id, Doc } from "../_generated/dataModel";
 import {
   PermissionCategory,
@@ -13,9 +13,10 @@ import {
 import { isRoomOwnerAbsent } from "./permissions";
 import { getMembership } from "./memberships";
 import { NOT_THIS_CEREMONY } from "../ceremony";
+import { requireCaller, requireUser, type Caller } from "./caller";
 
 /**
- * Auth identity returned by ctx.auth.getUserIdentity().
+ * The caller's auth identity (model/caller.ts).
  * identity.subject is the BetterAuth user ID (authUserId).
  */
 interface AuthIdentity {
@@ -24,68 +25,19 @@ interface AuthIdentity {
 }
 
 /**
- * Requires authentication. Throws if the user is not authenticated.
- * Returns the auth identity (identity.subject = authUserId).
- * Works in any function context — it only reads ctx.auth, which actions
- * have too.
- */
-export async function requireAuth(
-  ctx: QueryCtx | MutationCtx | ActionCtx
-): Promise<AuthIdentity> {
-  const identity = await ctx.auth.getUserIdentity();
-  if (!identity) {
-    throw new Error("Not authenticated");
-  }
-  return identity;
-}
-
-/**
- * Returns the caller's identity, or throws unless they are signed in as
- * `authUserId`. For mutations that still take the caller's authUserId as an
- * argument (older browsers send it): the argument must name the caller.
+ * Returns the caller (model/caller.ts), or throws unless they are signed in
+ * as `authUserId`. For mutations that still take the caller's authUserId as
+ * an argument (older browsers send it): the argument must name the caller.
  */
 export async function requireAuthAs(
   ctx: QueryCtx | MutationCtx,
   authUserId: string
-): Promise<AuthIdentity> {
-  const identity = await requireAuth(ctx);
-  if (identity.subject !== authUserId) {
+): Promise<Caller> {
+  const caller = await requireCaller(ctx);
+  if (caller.identity.subject !== authUserId) {
     throw new Error("Auth identity mismatch");
   }
-  return identity;
-}
-
-/**
- * Returns the authenticated user's app-level record, or throws.
- * Use for mutations that require a known user.
- */
-export async function requireAuthUser(
-  ctx: QueryCtx | MutationCtx
-): Promise<{ identity: AuthIdentity; user: Doc<"users"> }> {
-  const identity = await requireAuth(ctx);
-  const user = await ctx.db
-    .query("users")
-    .withIndex("by_auth_user", (q) => q.eq("authUserId", identity.subject))
-    .first();
-  if (!user) {
-    throw new Error("User not found");
-  }
-  return { identity, user };
-}
-
-/**
- * Returns the authenticated user's app-level record, or null if not authenticated
- * or no user record exists. Use for queries that should gracefully degrade.
- */
-export async function getOptionalAuthUser(
-  ctx: QueryCtx | MutationCtx
-): Promise<Doc<"users"> | null> {
-  const identity = await ctx.auth.getUserIdentity();
-  if (!identity) return null;
-  return await ctx.db
-    .query("users")
-    .withIndex("by_auth_user", (q) => q.eq("authUserId", identity.subject))
-    .first();
+  return caller;
 }
 
 /**
@@ -100,7 +52,7 @@ export async function requireRoomMember(
   user: Doc<"users">;
   membership: Doc<"roomMemberships">;
 }> {
-  const { identity, user } = await requireAuthUser(ctx);
+  const { identity, user } = await requireUser(ctx);
   const membership = await ctx.db
     .query("roomMemberships")
     .withIndex("by_room_user", (q) =>
@@ -127,7 +79,7 @@ export async function requireRoomReader(
   user: Doc<"users">;
   room: Doc<"rooms">;
 }> {
-  const { identity, user } = await requireAuthUser(ctx);
+  const { identity, user } = await requireUser(ctx);
   const [room, membership] = await Promise.all([
     ctx.db.get("rooms", roomId),
     getMembership(ctx, roomId, user._id),
