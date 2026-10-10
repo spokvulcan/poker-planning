@@ -13,12 +13,12 @@ import { PERSON_NAME } from "../constants";
  * identity (BetterAuth's user id). Who is calling, and so which row is
  * theirs, is caller.ts's; the row is made here, on the caller's first room
  * write or by the auth hooks, and this is the only place a row turns
- * permanent (usersRow.test.ts fails otherwise). Which rooms a person is in is
- * memberships.ts's; how an account ends, deleted or folded into another, is
- * accountLifecycle.ts's. Every name a users row gets passes the person-name
- * rule (constants.ts) here: one a person typed is refused when it breaks the
- * rule; one a sign-in provider gives, or the one a row made before the rule
- * already holds, is fitted to it.
+ * permanent (the lint fails otherwise: eslint.config.mjs). Which rooms a
+ * person is in is memberships.ts's; how an account ends, deleted or folded
+ * into another, is accountLifecycle.ts's. Every name a users row gets passes
+ * the person-name rule (constants.ts) here: one a person typed is refused
+ * when it breaks the rule; one a sign-in provider gives, or the one a row
+ * made before the rule already holds, is fitted to it.
  */
 
 export interface JoinRoomArgs {

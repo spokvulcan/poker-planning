@@ -9,8 +9,8 @@ import { type T, seedUser } from "./analytics.seeds";
 
 // A person's users row is the server's to make (model/users.ts): a signed-in
 // caller's first room write makes it, whatever the browser did first, of the
-// kind their session's token says, and the users model is the only place a
-// row is made or turns permanent.
+// kind their session's token says. That the users model is the only place a
+// row is made or turns permanent, the lint holds (eslint.config.mjs).
 
 const modules = import.meta.glob("./**/*.*s");
 
@@ -157,35 +157,5 @@ describe("an account link", () => {
       email: "ada@example.com",
       accountType: "permanent",
     });
-  });
-});
-
-// The rule the users model keeps: a users row is made, and a row turns
-// permanent, only there, so neither an account link nor the auth hooks write
-// a row's kind some other way. Every module under convex/ as source text, but
-// the tests and generated code.
-const sources = import.meta.glob(
-  ["./**/*.ts", "!./**/*.test.ts", "!./**/*.seeds.ts", "!./_generated/**"],
-  { query: "?raw", import: "default", eager: true }
-) as Record<string, string>;
-
-/** Makes a users row, or writes "permanent" as a row's kind, in code (not in comments). */
-function makesOrTurnsPermanent(source: string): boolean {
-  const code = source
-    .split("\n")
-    .filter((line) => !/^\s*(\/\/|\/\*|\*)/.test(line))
-    .map((line) => line.replace(/(^|[^:])\/\/.*$/, "$1"))
-    .join("\n");
-  return /insert\(\s*["']users["']|accountType:\s*["']permanent["']/.test(code);
-}
-
-describe("making a users row and turning one permanent", () => {
-  it("happen only in the users model", () => {
-    expect(makesOrTurnsPermanent(sources["./model/users.ts"])).toBe(true);
-
-    const elsewhere = Object.keys(sources).filter(
-      (path) => path !== "./model/users.ts" && makesOrTurnsPermanent(sources[path])
-    );
-    expect(elsewhere).toEqual([]);
   });
 });
