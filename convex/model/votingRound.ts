@@ -6,6 +6,7 @@ import * as Canvas from "./canvas";
 import * as Votes from "./votes";
 import * as Analytics from "./analytics";
 import { getMembership } from "./memberships";
+import { refusal } from "./refusal";
 import { cardNumericValue, computeVoterAlignment } from "./alignment";
 import { summarize, VoteStatsSummary } from "../summarize";
 import { DEFAULT_SCALE, VotingScale } from "../scales";
@@ -514,7 +515,7 @@ export async function castVote(ctx: MutationCtx, args: CastVoteArgs): Promise<vo
   // flow into vote stats, exports, and auto-pushed Jira estimates.
   const room = await ctx.db.get("rooms", args.roomId);
   if (!room) throw new Error("Room not found");
-  if (!rulesOf(room).votingRounds) throw new Error(NOT_THIS_CEREMONY);
+  if (!rulesOf(room).votingRounds) throw refusal("missing", NOT_THIS_CEREMONY);
   const scale = room.votingScale ?? DEFAULT_SCALE;
   const scaleCards: readonly string[] = scale.cards;
   if (!scaleCards.includes(args.cardLabel)) {
