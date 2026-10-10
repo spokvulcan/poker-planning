@@ -5,18 +5,23 @@
  * The optimistic updates apply these, so the board moves the moment a person
  * acts, by the same rules the server applies a moment later: the topic and
  * step rules (convex/retroTopics.ts, convex/retroSteps.ts), the sticky
- * projection (convex/retroStickyView.ts) and the text fields' rules
- * (convex/retroTemplates.ts). A new row wears a stand-in id until the
- * server's arrives. Where a browser can't know something, such as other
- * people's duplicate votes or the discussion's first topic before the totals
- * show, it leaves that to the server's answer rather than guess. Pure.
+ * projection (convex/retroStickyView.ts), the text fields' rules
+ * (convex/retroTemplates.ts) and the optional fields' (convex/retroFields.ts).
+ * A new row wears a stand-in id until the server's arrives. Where a browser
+ * can't know something, such as other people's duplicate votes, who else
+ * has written, or the discussion's first topic before the totals show, it
+ * leaves that to the server's answer rather than guess. Pure.
  */
+import type { FunctionArgs } from "convex/server";
+import type { api } from "@/convex/_generated/api";
 import type { Id, TableNames } from "@/convex/_generated/dataModel";
-import type { ActionItemView, BoardView, Gif, RetroState, StickyView } from "@/convex/model/retro";
+import type { ActionItemView, BoardView, RetroState, StickyView } from "@/convex/model/retro";
+import { edited, ownedBy } from "@/convex/retroFields";
 import { ACTION_ITEM_TEXT, STICKY_TEXT, type RetroColumn, type RetroStep } from "@/convex/retroTemplates";
 import * as Topics from "@/convex/retroTopics";
 import { discussionOrder, stepShows, walk, withSpotlight } from "@/convex/retroSteps";
 import { stickyView, type RetroViewer, type StickyRow } from "@/convex/retroStickyView";
+import type { RetroMember } from "./types";
 
 type StickyId = Id<"retroStickies">;
 
@@ -31,12 +36,6 @@ export function isOptimistic(id: string): boolean {
 /** A new row's stand-in id, from a key the client made for it. */
 function pendingId<T extends TableNames>(key: string): Id<T> {
   return `${OPTIMISTIC_PREFIX}${key}` as Id<T>;
-}
-
-/** Someone in the retro, as `rooms.get` lists them: how an author or an owner is named. */
-export interface Member {
-  _id: Id<"users">;
-  name: string;
 }
 
 /** The discussion's order of topics, from the totals the board carries from Discuss on. */
@@ -58,7 +57,7 @@ export type NewSticky = Pick<StickyRow, "clientId" | "columnId" | "position" | "
 export function applyNewSticky(
   board: BoardView,
   sticky: NewSticky,
-  by: { viewerId: Id<"users">; retro: RetroViewer["retro"]; members: readonly Member[] }
+  by: { viewerId: Id<"users">; retro: RetroViewer["retro"]; members: readonly RetroMember[] }
 ): BoardView {
   const text = STICKY_TEXT.check(sticky.text);
   if (!text.ok) return board;
@@ -81,12 +80,7 @@ export function applyNewSticky(
 }
 
 /** An edit of a sticky, as its update sends it: `gif: null` takes the GIF off. */
-export interface StickyEdit {
-  stickyId: StickyId;
-  text?: string;
-  gif?: Gif | null;
-  columnId?: string;
-}
+export type StickyEdit = FunctionArgs<typeof api.retro.updateSticky>;
 
 /**
  * An edit of a sticky's words, GIF or column, on the board a browser sees:
@@ -101,7 +95,7 @@ export function applyStickyEdit(board: BoardView, edit: StickyEdit): BoardView {
     stickies: board.stickies.map((sticky) => {
       if (sticky._id !== edit.stickyId) return sticky;
       const { gif: current, ...rest } = sticky;
-      const gif = edit.gif === undefined ? current : (edit.gif ?? undefined);
+      const gif = edited(current, edit.gif);
       return {
         ...rest,
         ...(text?.ok ? { text: text.value } : {}),
@@ -185,22 +179,13 @@ export interface NewActionItem {
 }
 
 /** An edit of an action item, as its update sends it: `ownerId: null` leaves it unowned. */
-export interface ActionItemEdit {
-  itemId: Id<"retroActionItems">;
-  text?: string;
-  done?: boolean;
-  ownerId?: Id<"users"> | null;
-}
+export type ActionItemEdit = FunctionArgs<typeof api.retro.updateActionItem>;
 
-/** An item's owner, named as the room lists them, the way the action items read names them. */
-function ownedBy(
-  ownerId: Id<"users"> | undefined,
-  members: readonly Member[]
-): Pick<ActionItemView, "ownerId" | "ownerName"> {
-  if (!ownerId) return {};
-  const name = members.find((member) => member._id === ownerId)?.name;
-  return name === undefined ? { ownerId } : { ownerId, ownerName: name };
-}
+/** How the room lists a person, by whom an item's owner is named. */
+const nameIn =
+  (members: readonly RetroMember[]) =>
+  (ownerId: Id<"users">): string | undefined =>
+    members.find((member) => member._id === ownerId)?.name;
 
 /**
  * A new action item at the end of the list a browser sees: its words as the
@@ -210,7 +195,7 @@ function ownedBy(
 export function applyNewActionItem(
   items: ActionItemView[],
   item: NewActionItem,
-  members: readonly Member[]
+  members: readonly RetroMember[]
 ): ActionItemView[] {
   const text = ACTION_ITEM_TEXT.check(item.text);
   if (!text.ok) return items;
@@ -220,7 +205,7 @@ export function applyNewActionItem(
       _id: pendingId<"retroActionItems">(item.key),
       text: text.value,
       done: false,
-      ...ownedBy(item.ownerId, members),
+      ...ownedBy(item.ownerId, nameIn(members)),
       carriedOver: false,
       createdAt: item.createdAt,
     },
@@ -235,19 +220,20 @@ export function applyNewActionItem(
 export function applyActionItemEdit(
   items: ActionItemView[],
   edit: ActionItemEdit,
-  members: readonly Member[]
+  members: readonly RetroMember[]
 ): ActionItemView[] {
   const text = edit.text === undefined ? undefined : ACTION_ITEM_TEXT.check(edit.text);
   if ((text && !text.ok) || !items.some((item) => item._id === edit.itemId)) return items;
   return items.map((item) => {
     if (item._id !== edit.itemId) return item;
-    const edited = {
+    const changed = {
       ...item,
       ...(text?.ok ? { text: text.value } : {}),
       ...(edit.done !== undefined ? { done: edit.done } : {}),
     };
-    if (edit.ownerId === undefined) return edited;
-    const { ownerId: _ownerId, ownerName: _ownerName, ...unowned } = edited;
-    return { ...unowned, ...ownedBy(edit.ownerId ?? undefined, members) };
+    // An owner the edit leaves out keeps the name the read gave it.
+    if (edit.ownerId === undefined) return changed;
+    const { ownerId: _ownerId, ownerName: _ownerName, ...unowned } = changed;
+    return { ...unowned, ...ownedBy(edited(item.ownerId, edit.ownerId), nameIn(members)) };
   });
 }

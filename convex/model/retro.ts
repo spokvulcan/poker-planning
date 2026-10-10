@@ -46,6 +46,7 @@ import {
   type StepChange,
 } from "../retroSteps";
 import { normalizeGifUrl } from "../gifLinks";
+import { edited, ownedBy } from "../retroFields";
 import { FACE_DOWN_HEIGHT, settleOnReveal, STICKY_MIN_HEIGHT } from "../retroLayout";
 import { authorsShown, stickyView, type StickyView } from "../retroStickyView";
 import type { Position } from "../canvasLayout";
@@ -268,7 +269,7 @@ export async function getActionItems(ctx: QueryCtx, roomId: Id<"rooms">): Promis
       _id: item._id,
       text: item.text,
       done: item.done,
-      ...(item.ownerId ? { ownerId: item.ownerId, ownerName: names.get(item.ownerId) } : {}),
+      ...ownedBy(item.ownerId, (ownerId) => names.get(ownerId)),
       carriedOver: item.carriedOver ?? false,
       createdAt: item.createdAt,
     }))
@@ -570,7 +571,7 @@ export async function updateSticky(
   const retro = retroOf(room);
   await requireStickyEditor(ctx, room, retro, sticky, membership);
   const text = patch.text === undefined ? sticky.text : requireValid(STICKY_TEXT, patch.text);
-  const gif = patch.gif === undefined ? sticky.gif : patch.gif === null ? undefined : validateGif(patch.gif);
+  const gif = edited(sticky.gif, patch.gif && validateGif(patch.gif));
   if (!text && !gif) throw refusal("forbidden", "A sticky needs words or a GIF.");
   if (patch.columnId !== undefined && !retro.columns.some((c) => c.id === patch.columnId)) {
     throw refusal("missing", "That column is gone.");
@@ -850,7 +851,7 @@ export async function updateActionItem(
 ): Promise<void> {
   if (patch.ownerId) await requireOwnerInRoom(ctx, room._id, patch.ownerId);
   const { ownerId: currentOwner, ...rest } = item;
-  const ownerId = patch.ownerId === undefined ? currentOwner : (patch.ownerId ?? undefined);
+  const ownerId = edited(currentOwner, patch.ownerId);
   await ctx.db.replace("retroActionItems", item._id, {
     ...rest,
     ...(patch.text !== undefined ? { text: requireValid(ACTION_ITEM_TEXT, patch.text) } : {}),
