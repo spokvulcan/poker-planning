@@ -30,7 +30,7 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { ActionItemView, BoardView, RetroState, StickyView } from "@/convex/model/retro";
 import { columnsFromTemplate } from "@/convex/retroTemplates";
-import { isOptimistic } from "./board-view";
+import { isOptimistic } from "@/lib/optimistic-id";
 import { useRetroMutations } from "./use-retro-mutations";
 
 type Query = FunctionReference<"query">;

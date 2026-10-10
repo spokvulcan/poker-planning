@@ -2,15 +2,11 @@
 
 import { Check } from "lucide-react";
 import { useLoopingScene, type Scene } from "@/hooks/use-looping-scene";
-
-const REALTIME_VOTING: Scene<{ hovered: number | null; selected: number | null }> = [
-  { show: { hovered: null, selected: null }, hold: 1000 },
-  { show: { hovered: 2, selected: null }, hold: 400 }, // Card '5'
-  { show: { hovered: 2, selected: 2 }, hold: 2500 },
-];
+import { PICK_A_CARD } from "@/components/homepage/scenes";
 
 export function RealtimeVotingAnimation() {
-  const { hovered, selected } = useLoopingScene(REALTIME_VOTING);
+  // The third card is the '5'.
+  const { hovered, selected } = useLoopingScene(PICK_A_CARD);
 
   const cards = [1, 3, 5, 8];
 

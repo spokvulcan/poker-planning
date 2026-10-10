@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type { FieldRule } from "./fieldRule";
 import { DISCUSSION_NOTE, ISSUE_TITLE, PERSON_NAME, ROOM_NAME } from "./constants";
-import { ACTION_ITEM_TEXT, COLUMN_EMOJI, COLUMN_TITLE, STICKY_TEXT } from "./retroTemplates";
+import { ACTION_ITEM_TEXT, COLUMN_EMOJI, COLUMN_TITLE, GIF_TITLE, STICKY_TEXT } from "./retroTemplates";
 
 // Every text field's rule, in one table: how long it may be, whether blank
 // is refused, whether spaces around it count, and the words a refusal uses.
@@ -84,6 +84,15 @@ const ROWS: Row[] = [
     limit: 300,
     blank: "An action item needs a few words.",
     tooLong: "Keep action items to 300 characters.",
+    trims: true,
+  },
+  {
+    field: "GIF title",
+    rule: GIF_TITLE,
+    limit: 140,
+    // A GIF its source gave no title shows without one.
+    blank: null,
+    tooLong: "Keep GIF titles to 140 characters.",
     trims: true,
   },
 ];

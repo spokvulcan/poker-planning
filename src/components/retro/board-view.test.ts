@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { ActionItemView, BoardView, RetroState, StickyView } from "@/convex/model/retro";
-import { MAX_STICKY_TEXT_LENGTH } from "@/convex/retroTemplates";
+import { STICKY_TEXT } from "@/convex/retroTemplates";
 import { remove, stack, unstack } from "@/convex/retroTopics";
 import {
   applyActionItemEdit,
@@ -11,9 +11,9 @@ import {
   applyTopicChange,
   applyVoteToggle,
   applyWalk,
-  isOptimistic,
   topicOrder,
 } from "./board-view";
+import { isOptimistic } from "@/lib/optimistic-id";
 
 // What a browser sees of the retro, moved by the same topic, step and field
 // rules the server applies: what the optimistic updates show before the
@@ -180,7 +180,7 @@ describe("a new sticky", () => {
 
   it("shows nothing when its words would be refused", () => {
     const before = board([]);
-    const tooLong = { ...written, text: "x".repeat(MAX_STICKY_TEXT_LENGTH + 1) };
+    const tooLong = { ...written, text: "x".repeat(STICKY_TEXT.maxLength + 1) };
 
     expect(applyNewSticky(before, tooLong, { viewerId: ME, retro, members })).toBe(before);
   });
@@ -209,7 +209,7 @@ describe("a sticky edit", () => {
   });
 
   it("shows nothing when the words would be refused or the sticky is gone", () => {
-    expect(applyStickyEdit(before, { stickyId: id("x"), text: "x".repeat(MAX_STICKY_TEXT_LENGTH + 1) })).toBe(before);
+    expect(applyStickyEdit(before, { stickyId: id("x"), text: "x".repeat(STICKY_TEXT.maxLength + 1) })).toBe(before);
     expect(applyStickyEdit(before, { stickyId: id("gone"), text: "Standups run long" })).toBe(before);
   });
 });

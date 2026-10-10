@@ -10,7 +10,8 @@ import { as, join, seedUser } from "./people.seeds";
 
 // An issue's link to its tracker (model/issues.ts). A Jira issue can be
 // imported into several rooms on purpose, so a change in Jira reaches that
-// key's issue in every one of them; and a link leaves with its issue.
+// key's issue in every one of them, but never the same key on another Jira
+// site; and a link leaves with its issue.
 
 const modules = import.meta.glob("./**/*.*s");
 
@@ -21,23 +22,42 @@ async function openRoom(t: T, name: string): Promise<Id<"rooms">> {
   return roomId;
 }
 
+/** The Jira site the rooms' issues come from, unless a test names another. */
+const SITE = "https://team.atlassian.net";
+
 /** Brings a Jira issue into the room the way an import hands it over: a title and a link. */
-const importJiraIssue = (t: T, roomId: Id<"rooms">, key: string, summary = "Old summary") =>
+const importJiraIssue = (
+  t: T,
+  roomId: Id<"rooms">,
+  key: string,
+  summary = "Old summary",
+  site = SITE
+) =>
   t.mutation(internal.integrations.jira.admitIssue, {
     roomId,
     title: `${key} - ${summary}`,
-    link: { provider: "jira", externalId: key, externalUrl: `https://team.atlassian.net/browse/${key}` },
+    link: { provider: "jira", externalId: key, externalUrl: `${site}/browse/${key}` },
   });
 
 let jiraTimestamp = 1_700_000_000_000;
 
-/** One Jira event about an issue, as the webhook boundary parses a delivery of it. */
+/**
+ * One Jira event about an issue, as the webhook boundary parses a delivery of
+ * it from the site whose webhook delivered it.
+ */
 function jiraEvent(
   eventType: "jira:issue_updated" | "jira:issue_deleted",
   issueKey: string,
-  issueSummary?: string
+  issueSummary?: string,
+  site = SITE
 ) {
-  return { eventKey: `jira:10001:${jiraTimestamp++}`, eventType, issueKey, issueSummary };
+  return {
+    eventKey: `jira:${site}:10001:${jiraTimestamp++}`,
+    eventType,
+    site,
+    issueKey,
+    issueSummary,
+  };
 }
 
 /** Processes one delivery of the event, as the webhook route does. */
@@ -114,6 +134,60 @@ describe("a Jira issue renamed", () => {
   });
 });
 
+describe("the same key on two Jira sites", () => {
+  // Two teams on Jira sites of their own each have a SCRUM-1, in rooms of their own.
+  const OTHER_SITE = "https://other-team.atlassian.net";
+
+  it("retitles only the issue from the site the rename came from", async () => {
+    const t = convexTest(schema, modules);
+    await seedUser(t, "ann");
+    const ours = await openRoom(t, "Ours");
+    const theirs = await openRoom(t, "Theirs");
+    await importJiraIssue(t, ours, "SCRUM-1");
+    await importJiraIssue(t, theirs, "SCRUM-1", "Old summary", OTHER_SITE);
+
+    await deliver(t, jiraEvent("jira:issue_updated", "SCRUM-1", "New summary"));
+
+    expect(await titles(t, ours)).toEqual(["SCRUM-1 - New summary"]);
+    expect(await titles(t, theirs)).toEqual(["SCRUM-1 - Old summary"]);
+  });
+
+  it("unlinks only the issue from the site the deletion came from", async () => {
+    const t = convexTest(schema, modules);
+    await seedUser(t, "ann");
+    const ours = await openRoom(t, "Ours");
+    const theirs = await openRoom(t, "Theirs");
+    await importJiraIssue(t, ours, "SCRUM-1");
+    await importJiraIssue(t, theirs, "SCRUM-1", "Old summary", OTHER_SITE);
+
+    await deliver(t, jiraEvent("jira:issue_deleted", "SCRUM-1", undefined, OTHER_SITE));
+
+    expect(await linkedKeys(t, ours)).toEqual(["SCRUM-1"]);
+    expect(await linkedKeys(t, theirs)).toEqual([]);
+  });
+
+  it("leaves alone a link whose import knew no site, whichever site a change comes from", async () => {
+    const t = convexTest(schema, modules);
+    await seedUser(t, "ann");
+    const roomId = await openRoom(t, "Room");
+    const { issueId } = await importJiraIssue(t, roomId, "SCRUM-1");
+    // Imports by a connection without a site address once linked to "/browse/KEY".
+    await t.run(async (ctx) => {
+      const link = await ctx.db
+        .query("issueLinks")
+        .withIndex("by_issue", (q) => q.eq("issueId", issueId))
+        .unique();
+      await ctx.db.patch("issueLinks", link!._id, { externalUrl: "/browse/SCRUM-1" });
+    });
+
+    await deliver(t, jiraEvent("jira:issue_updated", "SCRUM-1", "New summary"));
+    await deliver(t, jiraEvent("jira:issue_deleted", "SCRUM-1"));
+
+    expect(await titles(t, roomId)).toEqual(["SCRUM-1 - Old summary"]);
+    expect(await linkedKeys(t, roomId)).toEqual(["SCRUM-1"]);
+  });
+});
+
 describe("following a tracker change (Issues.followTrackerChange)", () => {
   it("keeps the title when the tracker's title fits the title rule as nothing", async () => {
     const t = convexTest(schema, modules);
@@ -125,7 +199,7 @@ describe("following a tracker change (Issues.followTrackerChange)", () => {
     await t.run((ctx) =>
       Issues.followTrackerChange(
         ctx,
-        { provider: "jira", externalId: "PROJ-1" },
+        { provider: "jira", externalId: "PROJ-1", externalUrl: `${SITE}/browse/PROJ-1` },
         { kind: "retitled", title: "   " }
       )
     );

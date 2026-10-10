@@ -10,6 +10,7 @@ import { useAuth } from "@/components/auth/auth-provider";
 import { useSignOut } from "@/hooks/useSignOut";
 import { UserAvatar } from "./user-avatar";
 import { EditNameDialog } from "./edit-name-dialog";
+import { MenuProfile, MenuSignIn, menuName } from "./viewer-menu-items";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -26,7 +27,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowDown01Icon } from "@hugeicons/core-free-icons";
-import { Moon, Sun, LogOut, UserPen, Monitor, Eye, LayoutDashboard, LogIn, History, MessagesSquare } from "lucide-react";
+import { Moon, Sun, LogOut, UserPen, Monitor, Eye, LayoutDashboard, History, MessagesSquare } from "lucide-react";
 import Link from "next/link";
 import type { Id } from "@/convex/_generated/dataModel";
 import { toast } from "@/lib/toast";
@@ -64,8 +65,8 @@ export function UserMenu() {
     return null;
   }
 
-  const { avatarUrl, email, isPermanent } = viewer;
-  const userName = viewer.name || "Guest";
+  const { avatarUrl } = viewer;
+  const userName = menuName(viewer);
   const isInRoom = !!roomMembership;
   const isSpectator = roomMembership?.isSpectator ?? false;
 
@@ -101,14 +102,7 @@ export function UserMenu() {
           />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-56">
-          {/* Profile header */}
-          <div className="flex items-center gap-3 px-2 py-2">
-            <UserAvatar name={userName} avatarUrl={avatarUrl} size="lg" />
-            <div className="flex flex-col min-w-0">
-              <span className="text-sm font-medium truncate">{userName}</span>
-              <span className="text-xs text-muted-foreground">{email || "Guest"}</span>
-            </div>
-          </div>
+          <MenuProfile viewer={viewer} />
 
           <DropdownMenuSeparator />
 
@@ -132,16 +126,7 @@ export function UserMenu() {
 
           <DropdownMenuSeparator />
 
-          {/* Sign in link - for anyone without a permanent account, shown first */}
-          {!isPermanent && (
-            <>
-              <DropdownMenuItem render={<Link href={roomId ? `/auth/signin?from=/room/${roomId}` : "/auth/signin"} />}>
-                <LogIn className="mr-2 size-4" />
-                Sign in
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-            </>
-          )}
+          <MenuSignIn viewer={viewer} href={roomId ? `/auth/signin?from=/room/${roomId}` : "/auth/signin"} />
 
           {/* Edit name */}
           <DropdownMenuItem onClick={() => setEditDialogOpen(true)}>

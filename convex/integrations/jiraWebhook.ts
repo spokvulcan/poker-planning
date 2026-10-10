@@ -1,10 +1,11 @@
 /**
- * The Jira adapter's inbound webhook boundary: shared-secret verification and
- * payload parsing for deliveries to /webhooks/jira (verifyAndParseJiraWebhook,
- * pure) plus the event application (applyJiraWebhookEvent, model-layer). The
- * generic integrations module owns only the dedup table — what a Jira event
- * *means* lives here, with the rest of the adapter, and the issue module
- * applies it to the issues holding the link.
+ * The Jira adapter's inbound webhook boundary: the address a webhook is
+ * registered at (jiraWebhookAddress), shared-secret verification and payload
+ * parsing for deliveries to it (verifyAndParseJiraWebhook, pure) plus the
+ * event application (applyJiraWebhookEvent, model-layer). The generic
+ * integrations module owns only the dedup table — what a Jira event *means*
+ * lives here, with the rest of the adapter, and the issue module applies it
+ * to the issues holding the link.
  */
 
 import { MutationCtx } from "../_generated/server";
@@ -14,8 +15,38 @@ import * as Issues from "../model/issues";
 export interface ParsedJiraWebhookEvent {
   eventKey: string;
   eventType: string;
+  /** The Jira site the delivering webhook was registered on. */
+  site: string;
   issueKey: string;
   issueSummary?: string;
+}
+
+/** An imported Jira issue's title: its key and its summary. */
+export function jiraIssueTitle(key: string, summary: string): string {
+  return `${key} - ${summary}`;
+}
+
+/**
+ * An imported Jira issue's link: its key, and its page on the site it was
+ * imported from. The page says which site the issue is on, so the same key
+ * on two sites is two links.
+ */
+export function jiraIssueLink(site: string, key: string): Issues.IssueLink {
+  return { provider: "jira", externalId: key, externalUrl: `${site}/browse/${key}` };
+}
+
+/**
+ * The address a mapping's webhook is registered at, for the site of the
+ * connection registering it. Jira Cloud webhooks cannot send custom headers,
+ * so the shared secret travels in it, and so does the site: a delivery says
+ * which site it comes from only by the address it was sent to.
+ */
+export function jiraWebhookAddress(
+  deploymentUrl: string | undefined,
+  args: { secret: string; site: string }
+): string {
+  const query = new URLSearchParams({ secret: args.secret, site: args.site });
+  return `${deploymentUrl}/webhooks/jira?${query}`;
 }
 
 export type JiraWebhookVerification =
@@ -62,12 +93,21 @@ export async function verifyAndParseJiraWebhook(
     );
     return { ok: false, response: new Response("Forbidden", { status: 403 }) };
   }
-  const token =
-    request.headers.get("x-hub-secret") ??
-    new URL(request.url).searchParams.get("secret");
+  const address = new URL(request.url).searchParams;
+  const token = request.headers.get("x-hub-secret") ?? address.get("secret");
   if (!token || !(await timingSafeEqual(token, webhookSecret))) {
     console.warn("Jira webhook rejected: invalid secret");
     return { ok: false, response: new Response("Forbidden", { status: 403 }) };
+  }
+
+  // A webhook registered before its address named its site says nothing of
+  // where the issue lives, and a change applied to the same key on another
+  // site would rewrite another team's issue. The weekly renewal registers it
+  // again at an address that names the site.
+  const site = address.get("site");
+  if (!site) {
+    console.warn("Jira webhook skipped: its address names no site");
+    return { ok: false, response: new Response(null, { status: 200 }) };
   }
 
   const payload = await request.json();
@@ -80,7 +120,8 @@ export async function verifyAndParseJiraWebhook(
 
   // Build a stable dedup key. Use Jira's own timestamp field which is
   // consistent across retries of the same delivery. Never fall back to
-  // Date.now() — that would make retries non-deduplicable.
+  // Date.now() — that would make retries non-deduplicable. Issue ids are
+  // numbered per site, so the key names the site too.
   if (!payload.timestamp) {
     console.warn("Jira webhook missing timestamp, skipping");
     return { ok: false, response: new Response(null, { status: 200 }) };
@@ -89,8 +130,9 @@ export async function verifyAndParseJiraWebhook(
   return {
     ok: true,
     event: {
-      eventKey: `jira:${issue.id}:${payload.timestamp}`,
+      eventKey: `jira:${site}:${issue.id}:${payload.timestamp}`,
       eventType,
+      site,
       issueKey: issue.key,
       issueSummary: issue.fields?.summary,
     },
@@ -100,12 +142,13 @@ export async function verifyAndParseJiraWebhook(
 /**
  * Applies a verified Jira delivery. The generic module records the event key
  * (dedup), then the event becomes a tracker change the issue module follows
- * to that key's issue in every room: `jira:issue_updated` retitles them;
- * `jira:issue_deleted` unlinks them but keeps the AgileKit issues.
+ * to that key's issue on the event's site, in every room:
+ * `jira:issue_updated` retitles them; `jira:issue_deleted` unlinks them but
+ * keeps the AgileKit issues. The same key on another site is another issue.
  *
- * The event key names no room. Each mapped room's webhook delivers the same
- * event, and the first delivery already reaches every room, so the rest are
- * duplicates.
+ * The event key names no room. Each room mapped to the site's project has a
+ * webhook delivering the same event, and the first delivery already reaches
+ * every room, so the rest are duplicates.
  */
 export async function applyJiraWebhookEvent(
   ctx: MutationCtx,
@@ -118,11 +161,11 @@ export async function applyJiraWebhookEvent(
   });
   if (!isNew) return;
 
-  const link = { provider: "jira", externalId: event.issueKey } as const;
+  const link = jiraIssueLink(event.site, event.issueKey);
   if (event.eventType === "jira:issue_updated" && event.issueSummary) {
     await Issues.followTrackerChange(ctx, link, {
       kind: "retitled",
-      title: `${event.issueKey} - ${event.issueSummary}`,
+      title: jiraIssueTitle(event.issueKey, event.issueSummary),
     });
   }
   if (event.eventType === "jira:issue_deleted") {

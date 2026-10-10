@@ -16,11 +16,11 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { UserAvatar } from "@/components/user-menu/user-avatar";
 import { permissionProps } from "@/hooks/usePermissions";
-import { MAX_ACTION_TEXT_LENGTH } from "@/convex/retroTemplates";
+import { ACTION_ITEM_TEXT } from "@/convex/retroTemplates";
 import { ACTIONS_WIDTH } from "@/convex/retroLayout";
 import type { ActionItemView } from "@/convex/model/retro";
 import type { ActionsNodeData, RetroBoardActions, RetroMember } from "../types";
-import { isOptimistic } from "../board-view";
+import { isOptimistic } from "@/lib/optimistic-id";
 
 function ActionRow({
   item,
@@ -199,7 +199,7 @@ export const ActionsNode = memo(({ data, selected }: NodeProps<Node<ActionsNodeD
                 void add();
               }
             }}
-            maxLength={MAX_ACTION_TEXT_LENGTH}
+            maxLength={ACTION_ITEM_TEXT.maxLength}
             disabled={!canManage.allowed}
             placeholder="Add an action item"
             aria-label="New action item"

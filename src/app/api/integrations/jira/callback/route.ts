@@ -2,7 +2,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { fetchAuthAction } from "@/lib/auth-server";
 import { api } from "@/convex/_generated/api";
-import { jiraRefusalCode } from "../refusal";
+import { jiraConnectFailed, jiraRefusalCode } from "../refusal";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -11,11 +11,11 @@ export async function GET(request: Request) {
   const error = searchParams.get("error");
 
   if (error) {
-    redirect("/dashboard/settings?tab=integrations&error=jira_denied");
+    redirect(jiraConnectFailed("jira_denied"));
   }
 
   if (!code || !state) {
-    redirect("/dashboard/settings?tab=integrations&error=jira_invalid");
+    redirect(jiraConnectFailed("jira_invalid"));
   }
 
   // Verify CSRF state
@@ -24,7 +24,7 @@ export async function GET(request: Request) {
   cookieStore.delete("jira_oauth_state");
 
   if (!storedState || storedState !== state) {
-    redirect("/dashboard/settings?tab=integrations&error=jira_state_mismatch");
+    redirect(jiraConnectFailed("jira_state_mismatch"));
   }
 
   try {
@@ -33,11 +33,7 @@ export async function GET(request: Request) {
     await fetchAuthAction(api.integrations.jira.connectJira, { code });
   } catch (err) {
     console.error("Failed to connect Jira:", err);
-    redirect(
-      `/dashboard/settings?tab=integrations&error=${
-        jiraRefusalCode(err) ?? "jira_store_failed"
-      }`
-    );
+    redirect(jiraConnectFailed(jiraRefusalCode(err) ?? "jira_store_failed"));
   }
 
   redirect("/dashboard/settings?tab=integrations&connected=jira");

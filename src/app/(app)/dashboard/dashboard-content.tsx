@@ -61,7 +61,7 @@ export function DashboardContent() {
   const {
     summary,
     sessions,
-    agreementTrend,
+    agreementChart,
     voteDistribution,
     timeToConsensus,
     voterAlignment,
@@ -95,9 +95,9 @@ export function DashboardContent() {
           <PredictabilityGauge
             score={predictability.predictabilityScore}
             averageVelocityPerSession={predictability.averageVelocityPerSession}
-            velocityTrend={predictability.velocityTrend.direction}
+            velocityTrend={predictability.velocityTrend}
             averageAgreement={predictability.averageAgreement}
-            agreementTrend={predictability.agreementTrend.direction}
+            agreementTrend={predictability.agreementTrend}
             isLoading={isLoading}
           />
           <VoterAlignmentChart
@@ -109,8 +109,8 @@ export function DashboardContent() {
         {/* Agreement + Consensus Charts */}
         <div className="mb-8 grid gap-6 lg:grid-cols-2">
           <AgreementChart
-            data={agreementTrend.points}
-            trend={agreementTrend.trend}
+            data={agreementChart.points}
+            trend={agreementChart.trend}
             isLoading={isLoading}
           />
           <ConsensusOutliers
@@ -128,7 +128,7 @@ export function DashboardContent() {
           />
           <VelocityTrend
             sessions={predictability.sessions}
-            velocityTrend={predictability.velocityTrend.direction}
+            velocityTrend={predictability.velocityTrend}
             isLoading={isLoading}
           />
           <VoteDistribution data={voteDistribution} isLoading={isLoading} />

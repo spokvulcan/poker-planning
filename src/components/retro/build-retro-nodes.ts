@@ -20,7 +20,8 @@ import {
 } from "@/convex/retroLayout";
 import { buildTimerNode } from "@/components/room/hooks/buildCanvasNodes";
 import type { RetroBoardActions, RetroFlowNode, RetroMember, StickyDraft } from "./types";
-import { isOptimistic, topicOrder } from "./board-view";
+import { isOptimistic } from "@/lib/optimistic-id";
+import { topicOrder } from "./board-view";
 
 export interface RetroNodesInput {
   roomId: Id<"rooms">;

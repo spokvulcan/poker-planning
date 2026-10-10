@@ -30,10 +30,14 @@ import {
  * the board before the server answers: a new sticky appears where it was
  * written, a drop stays where it was dropped, a vote dot sticks at once, the
  * step and the spotlight move on the click. Each update reads this retro's
- * cached queries, asks board-view.ts what the write does to them (the rules
- * the server applies), and writes back only what changed; none is shown for
- * an act the step would refuse. Convex rolls an update back by itself if the
- * server refuses.
+ * cached queries, works out what the write does to them by the rules the
+ * server applies, and writes back only what changed; none is shown for an
+ * act the step would refuse. What a write does to the board, the action
+ * items and the walk is board-view.ts's; whether the step lets an act happen
+ * at all, the step change itself and where the spotlight follows a topic are
+ * read here from the step and topic rules (convex/retroSteps.ts,
+ * convex/retroTopics.ts), as the server's model reads them. Convex rolls an
+ * update back by itself if the server refuses.
  */
 export function useRetroMutations(roomId: Id<"rooms">, viewerId: Id<"users">) {
   const boardOf = (store: OptimisticLocalStore) => store.getQuery(api.retro.board, { roomId });

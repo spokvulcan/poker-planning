@@ -7,12 +7,11 @@ import { useDemoSimulation } from "../demo/DemoSimulationProvider";
 import { applyCardPick } from "../room-view";
 import { useStableActions } from "@/hooks/useStableActions";
 import { useMoveCanvasNodes } from "@/components/whiteboard/use-move-canvas-nodes";
-import { runAct } from "@/lib/run-act";
+import { MOVE_FAILED, runAct, WRITE_FAILED } from "@/lib/run-act";
 
-// What a failed write shows when the server sent no refusal of its own.
-const FAILED = "That didn't go through. Try again.";
+// What a failed write shows when the server sent no refusal of its own, past
+// the words both boards share (WRITE_FAILED, MOVE_FAILED).
 const VOTE_FAILED = "That vote didn't count. Try again.";
-const MOVE_FAILED = "That move didn't save.";
 const NOTE_FAILED = "That note didn't save.";
 
 /**
@@ -28,7 +27,6 @@ export interface CanvasActions {
   cancelAutoReveal: () => void;
   /** Writes the viewer's vote, whose card rises at once: Convex lowers it again if the server refuses. */
   selectCard: (cardLabel: string) => void;
-  /** Resolves once the write has landed (or failed), so a note knows when its text is saved. */
   /** Resolves to whether the note's text landed, for the field to keep it until it has. */
   updateNoteContent: (nodeId: string, content: string) => Promise<boolean>;
   createNote: (issueId: Id<"issues">) => void;
@@ -83,19 +81,19 @@ export function useCanvasActions({
   const impl: CanvasActions = {
     reveal: async () => {
       if (isDemo) return;
-      await runAct(showCards({ roomId }), FAILED);
+      await runAct(showCards({ roomId }), WRITE_FAILED);
     },
     reset: async () => {
       if (isDemo) return;
-      await runAct(resetGame({ roomId }), FAILED);
+      await runAct(resetGame({ roomId }), WRITE_FAILED);
     },
     toggleAutoComplete: async () => {
       if (isDemo) return;
-      await runAct(toggleAutoCompleteMutation({ roomId }), FAILED);
+      await runAct(toggleAutoCompleteMutation({ roomId }), WRITE_FAILED);
     },
     cancelAutoReveal: async () => {
       if (isDemo) return;
-      await runAct(cancelAutoRevealCountdown({ roomId }), FAILED);
+      await runAct(cancelAutoRevealCountdown({ roomId }), WRITE_FAILED);
     },
     selectCard: async (cardLabel: string) => {
       if (isDemo || !currentUserId) return;
@@ -107,11 +105,11 @@ export function useCanvasActions({
     },
     createNote: async (issueId: Id<"issues">) => {
       if (isDemo || !currentUserId) return;
-      await runAct(createNoteMutation({ roomId, issueId }), FAILED);
+      await runAct(createNoteMutation({ roomId, issueId }), WRITE_FAILED);
     },
     deleteNote: async (nodeId: string) => {
       if (isDemo || !currentUserId) return;
-      await runAct(deleteNoteMutation({ roomId, nodeId }), FAILED);
+      await runAct(deleteNoteMutation({ roomId, nodeId }), WRITE_FAILED);
     },
     moveNodes: async (moves) => {
       if (isDemo || !currentUserId || moves.length === 0) return;
@@ -119,7 +117,7 @@ export function useCanvasActions({
     },
     removeUser: async (userId: Id<"users">) => {
       if (isDemo) return;
-      await runAct(removeUserMutation({ userId, roomId }), FAILED);
+      await runAct(removeUserMutation({ userId, roomId }), WRITE_FAILED);
     },
   };
 

@@ -148,6 +148,7 @@ describe("applyJiraWebhookEvent (via processJiraWebhook)", () => {
     const event = {
       eventKey: "jira:10001:1700000000000",
       eventType: "jira:issue_updated",
+      site: "https://team.atlassian.net",
       issueKey: "PROJ-1",
       issueSummary: "First summary",
     };
@@ -177,6 +178,7 @@ describe("applyJiraWebhookEvent (via processJiraWebhook)", () => {
     await t.mutation(internal.integrations.jira.processJiraWebhook, {
       eventKey: "jira:10001:1700000000002",
       eventType: "jira:issue_updated",
+      site: "https://team.atlassian.net",
       issueKey: "PROJ-1",
       issueSummary: "New summary",
     });
@@ -194,6 +196,7 @@ describe("applyJiraWebhookEvent (via processJiraWebhook)", () => {
     await t.mutation(internal.integrations.jira.processJiraWebhook, {
       eventKey: "jira:10001:1700000000003",
       eventType: "jira:issue_updated",
+      site: "https://team.atlassian.net",
       issueKey: "PROJ-1",
       issueSummary: "x".repeat(600),
     });
@@ -212,6 +215,7 @@ describe("applyJiraWebhookEvent (via processJiraWebhook)", () => {
     await t.mutation(internal.integrations.jira.processJiraWebhook, {
       eventKey: "jira:10001:1700000000001",
       eventType: "jira:issue_deleted",
+      site: "https://team.atlassian.net",
       issueKey: "PROJ-1",
     });
 
@@ -778,6 +782,28 @@ describe("the room's mapping, through its writes", () => {
 
     await t.withIdentity({ subject: "auth-ann" }).mutation(api.integrations.removeRoomMapping, { roomId });
     expect(await mappingOf(t, roomId)).toBeNull();
+  });
+});
+
+describe("getConnections (Settings > Integrations)", () => {
+  it("lists the caller's connections", async () => {
+    const t = convexTest(schema, modules);
+    const connectionId = await seedConnection(t, await seedUser(t, "auth-u"));
+
+    const connections = await t
+      .withIdentity({ subject: "auth-u" })
+      .query(api.integrations.getConnections, {});
+
+    expect(connections.map((c) => c._id)).toEqual([connectionId]);
+  });
+
+  it("has none for a signed-in caller with no users row yet, or for nobody signed in", async () => {
+    const t = convexTest(schema, modules);
+
+    // A guest who only continued as one has no row until their first room write.
+    const rowless = t.withIdentity({ subject: "auth-ghost" });
+    expect(await rowless.query(api.integrations.getConnections, {})).toEqual([]);
+    expect(await t.query(api.integrations.getConnections, {})).toEqual([]);
   });
 });
 

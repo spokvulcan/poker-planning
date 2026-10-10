@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  agreementTrend,
+  agreementPoints,
   voteDistribution,
   timeToConsensus,
   voterAlignment,
@@ -29,9 +29,9 @@ function entry(roomName: string, i: HistoryIssue, roomId = roomName): RoomIssue 
   return { roomId, roomName, issue: i };
 }
 
-describe("agreementTrend", () => {
+describe("agreementPoints", () => {
   it("maps issues with an agreement to points sorted by timestamp", () => {
-    const points = agreementTrend([
+    const points = agreementPoints([
       entry("B", issue({ title: "later", votedAt: DAY2, voteStats: { agreement: 60 } })),
       entry("A", issue({ title: "earlier", votedAt: DAY1, voteStats: { agreement: 80 } })),
     ]);
@@ -42,7 +42,7 @@ describe("agreementTrend", () => {
   });
 
   it("skips issues without a votedAt or an agreement", () => {
-    const points = agreementTrend([
+    const points = agreementPoints([
       entry("A", issue({ votedAt: undefined, voteStats: { agreement: 80 } })),
       entry("A", issue({ voteStats: undefined })),
     ]);
@@ -50,7 +50,7 @@ describe("agreementTrend", () => {
   });
 
   it("returns a defined empty result for empty history", () => {
-    expect(agreementTrend([])).toEqual([]);
+    expect(agreementPoints([])).toEqual([]);
   });
 });
 
@@ -524,9 +524,9 @@ describe("dashboard", () => {
       voterNames: {},
     });
 
-    expect(d.agreementTrend.trend).toEqual({ direction: "declining", changePct: -22 });
-    expect(d.agreementTrend.trend).toEqual(d.predictability.agreementTrend);
-    expect(d.agreementTrend.points.map((p) => p.agreement)).toEqual([40, 90, 90, 100]);
+    expect(d.agreementChart.trend).toEqual({ direction: "declining", changePct: -22 });
+    expect(d.agreementChart.trend).toEqual(d.predictability.agreementTrend);
+    expect(d.agreementChart.points.map((p) => p.agreement)).toEqual([40, 90, 90, 100]);
   });
 });
 

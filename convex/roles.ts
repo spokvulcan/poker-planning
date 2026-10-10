@@ -1,5 +1,6 @@
 import { mutation } from "./_generated/server";
 import { v } from "convex/values";
+import * as Memberships from "./model/memberships";
 import * as Roles from "./model/roles";
 import { requireRoomWrite } from "./model/auth";
 import { pokerPermissionsValidator } from "./schema";
@@ -16,7 +17,7 @@ export const promoteFacilitator = mutation({
       { kind: "relationship", verb: "promote" },
       args.targetUserId
     );
-    await Roles.promoteFacilitator(ctx, room, target!);
+    await Memberships.setRole(ctx, room, target!, "facilitator");
   },
 });
 
@@ -32,7 +33,7 @@ export const demoteFacilitator = mutation({
       { kind: "relationship", verb: "demote" },
       args.targetUserId
     );
-    await Roles.demoteFacilitator(ctx, room, target!);
+    await Memberships.setRole(ctx, room, target!, "participant");
   },
 });
 

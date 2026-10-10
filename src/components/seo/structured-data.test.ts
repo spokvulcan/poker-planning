@@ -5,7 +5,7 @@
 import { createElement, type ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, it, expect } from "vitest";
-import { BlogPostingSchema, OrganizationSchema, WebSiteSchema } from "./structured-data";
+import { BlogPostingSchema, OrganizationSchema, WebApplicationSchema, WebSiteSchema } from "./structured-data";
 import { pageMetadata } from "@/lib/page-metadata";
 import { siteConfig } from "@/lib/site-config";
 
@@ -35,6 +35,10 @@ describe("structured data", () => {
     expect(card.openGraph).toMatchObject({ authors: ["AgileKit Team"] });
   });
 
+  it("credits the web application to the author the page heads name", () => {
+    expect(jsonLd(createElement(WebApplicationSchema)).author.name).toBe(siteConfig.author.name);
+  });
+
   it("shows the site's logo for the organization and as a post's publisher", () => {
     const organization = jsonLd(createElement(OrganizationSchema));
     const post = jsonLd(createElement(BlogPostingSchema, POST));
@@ -48,6 +52,7 @@ describe("structured data", () => {
       .openGraph as { siteName: string };
     expect(siteName).toBe(siteConfig.name);
     expect(jsonLd(createElement(WebSiteSchema)).name).toBe(siteConfig.name);
+    expect(jsonLd(createElement(WebApplicationSchema)).name).toBe(siteConfig.name);
     expect(jsonLd(createElement(OrganizationSchema)).name).toBe(siteConfig.name);
     expect(jsonLd(createElement(BlogPostingSchema, POST)).publisher.name).toBe(siteConfig.name);
   });

@@ -59,8 +59,8 @@ const createRoom = useMutation(api.rooms.create);
 
 Both ceremonies are drawn on one whiteboard (`src/components/whiteboard/whiteboard.tsx`). It owns React Flow's node buffer, saving drops (one `canvas.moveNodes` write per drop, with an optimistic update), keyboard nudges, Delete, dropping one node onto another, fitting and following a node. Each ceremony is an adapter that derives its nodes from the server and says what the gestures mean:
 
-- **Planning poker**: `src/components/room/room-canvas.tsx`. Node types in `src/components/room/nodes/` (PlayerNode, SessionNode, TimerNode, VotingCardNode, ResultsNode, NoteNode), built in `hooks/buildCanvasNodes.ts`; nodes take their writes from one frozen `PokerBoardActions` object, as the retro's do. The `CustomNodeType` union is in `src/components/room/types.ts`
-- **Retro**: `src/components/retro/retro-canvas.tsx`. Nodes built in `build-retro-nodes.ts`; writes in `use-retro-mutations.ts` are optimistic updates that apply the same pure rules as the server (`convex/retroTopics.ts`, `convex/retroSteps.ts`)
+- **Planning poker**: `src/components/room/room-canvas.tsx`. Node types in `src/components/room/nodes/` (PlayerNode, SessionNode, TimerNode, VotingCardNode, ResultsNode, NoteNode), built in `hooks/buildCanvasNodes.ts`; nodes take their writes from one frozen `PokerBoardActions` object, as the retro's do. The TimerNode, on both boards, writes through `hooks/useTimerActions.ts`. The `CustomNodeType` union is in `src/components/room/types.ts`
+- **Retro**: `src/components/retro/retro-canvas.tsx`. Nodes built in `build-retro-nodes.ts`; writes in `use-retro-mutations.ts` are optimistic updates that apply the server's own pure rules (`convex/retroTopics.ts`, `convex/retroSteps.ts`, `convex/retroStickyView.ts`), most of them through `board-view.ts`; `use-sticky-draft.ts` holds a sticky being written until its add lands
 - **Node state** synced via Convex (`canvasNodes` table), written only by `convex/model/canvas.ts`
 - **Text over shared data** (notes, names, stickies) goes through `useLiveText` (`src/hooks/use-live-text.ts`), which never overwrites what someone is typing
 

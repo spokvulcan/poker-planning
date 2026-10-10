@@ -111,21 +111,28 @@ function RoomCanvasInner({ roomData, currentUserId, isEmbedded = false }: RoomCa
   const [pendingNote, setPendingNote] = useState<string | null>(null);
   const [pendingPlayers, setPendingPlayers] = useState<PendingPlayer[]>(NO_PLAYERS);
 
-  // Everything a node can ask for, frozen: node data never churns on a handler.
-  const actions = useStableActions<PokerBoardActions>({
-    reveal: writes.reveal,
-    reset: writes.reset,
-    toggleAutoComplete: writes.toggleAutoComplete,
-    cancelAutoReveal: writes.cancelAutoReveal,
-    selectCard: writes.selectCard,
-    openIssues,
-    updateNoteContent: writes.updateNoteContent,
-    deleteNote: (nodeId) => {
+  // The board's own Delete for a note, frozen: an empty note goes at once.
+  const { deleteNote } = useStableActions({
+    deleteNote: (nodeId: string) => {
       const note = canvasNodes?.find((node) => node.nodeId === nodeId);
       if (note?.type === "note" && note.data.content) setPendingNote(nodeId);
       else writes.deleteNote(nodeId);
     },
   });
+
+  // Everything a node can ask for, built once from handlers that keep their
+  // identity (the canvas writes, opening the issues, the Delete above): node
+  // data never churns on a handler.
+  const [actions] = useState<PokerBoardActions>(() => ({
+    reveal: writes.reveal,
+    reset: writes.reset,
+    toggleAutoComplete: writes.toggleAutoComplete,
+    cancelAutoReveal: writes.cancelAutoReveal,
+    selectCard: writes.selectCard,
+    updateNoteContent: writes.updateNoteContent,
+    openIssues,
+    deleteNote,
+  }));
 
   // What the board's gestures mean here, a Delete's confirmation included,
   // frozen like the node actions.

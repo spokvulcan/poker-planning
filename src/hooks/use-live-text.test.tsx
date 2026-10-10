@@ -14,7 +14,9 @@ function Field(props: LiveTextOptions & { onResult?: (landed: boolean) => void }
       <input aria-label="field" ref={field} value={text.value} onChange={(e) => text.setValue(e.target.value)} />
       <button onClick={() => void text.commit().then((landed) => props.onResult?.(landed))}>commit</button>
       <button onClick={text.revert}>revert</button>
-      <output aria-label="state">{`${text.dirty ? "dirty" : "clean"} ${text.unsaved ? "unsaved" : "saved"}`}</output>
+      <output aria-label="state">
+        {`${text.dirty ? "dirty" : "clean"} ${text.refused ? "refused" : text.unsaved ? "unsaved" : "saved"}`}
+      </output>
       <output aria-label="can commit">{String(text.canCommit)}</output>
     </>
   );
@@ -100,7 +102,7 @@ describe("a field saved on commit (a name)", () => {
 
     expect(results).toEqual([false]);
     expect(field.input.value).toBe("Sprint 42");
-    expect(field.state()).toBe("dirty unsaved");
+    expect(field.state()).toBe("dirty refused");
   });
 
   it("keeps what's typed when the save resolves to false, as runAct does on a refusal", async () => {
@@ -112,7 +114,23 @@ describe("a field saved on commit (a name)", () => {
 
     expect(results).toEqual([false]);
     expect(field.input.value).toBe("Sprint 42");
+    expect(field.state()).toBe("dirty refused");
+  });
+
+  it("is saving again when a refused value is committed again", async () => {
+    const { saves, save } = heldSaves();
+    const field = renderField({ value: "Sprint 41", save });
+
+    field.type("Sprint 42");
+    await field.commit();
+    await saves[0].fail();
+    await field.commit();
+
+    expect(saves.map((s) => s.value)).toEqual(["Sprint 42", "Sprint 42"]);
     expect(field.state()).toBe("dirty unsaved");
+    field.serverHas("Sprint 42");
+    await saves[1].land();
+    expect(field.state()).toBe("clean saved");
   });
 });
 
@@ -193,6 +211,33 @@ describe("a field saved as it's typed (a note)", () => {
     await saves[0].land();
 
     expect(field.input.value).toBe("ab");
+    expect(field.state()).toBe("dirty unsaved");
+  });
+
+  it("stops saving once a save is refused, keeping what's typed, until the next edit", async () => {
+    const { saves, save } = heldSaves();
+    const field = renderField({ value: "", save, autosaveMs: 500 });
+
+    field.type("far too long");
+    act(() => vi.advanceTimersByTime(500));
+    expect(field.state()).toBe("dirty unsaved");
+    await saves[0].fail();
+    expect(field.input.value).toBe("far too long");
+    expect(field.state()).toBe("dirty refused");
+
+    field.type("shorter");
+    expect(field.state()).toBe("dirty unsaved");
+  });
+
+  it("is still saving when a save is refused after more was typed", async () => {
+    const { saves, save } = heldSaves();
+    const field = renderField({ value: "", save, autosaveMs: 500 });
+
+    field.type("a");
+    act(() => vi.advanceTimersByTime(500));
+    field.type("ab");
+    await saves[0].fail();
+
     expect(field.state()).toBe("dirty unsaved");
   });
 

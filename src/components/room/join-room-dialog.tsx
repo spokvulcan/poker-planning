@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { runAct } from "@/lib/run-act";
 import { toast } from "@/lib/toast";
 
 interface JoinRoomDialogProps {
@@ -34,8 +35,10 @@ export function JoinRoomDialog({ roomId, roomName, roomType }: JoinRoomDialogPro
   const handleJoin = async () => {
     // One join at a time: Enter gets here even while the button is disabled.
     if (isJoining) return;
-    if (!userName.trim()) {
-      toast.error("Please enter your name");
+    // The rule the server keeps a name by, in its own words.
+    const checked = PERSON_NAME.check(userName);
+    if (!checked.ok) {
+      toast.error(checked.message);
       return;
     }
 
@@ -43,24 +46,14 @@ export function JoinRoomDialog({ roomId, roomName, roomType }: JoinRoomDialogPro
     try {
       // A session Convex already has. The join makes the users row, with
       // the typed name, when this is the person's first room.
-      try {
-        await ensureSession();
-      } catch (error) {
-        toast.error(error instanceof Error ? error.message : SESSION_FAILED);
-        return;
-      }
+      if (!(await runAct(ensureSession(), SESSION_FAILED))) return;
 
-      await joinRoom({
-        roomId,
-        name: userName,
-        isSpectator,
-      });
-
-      // No need to set state - existingMembership query will auto-update
-      // and room-content.tsx will re-render with the new membership
-    } catch (error) {
-      console.error("Failed to join room:", error);
-      toast.error(`Failed to join ${noun.toLowerCase()}`);
+      // No need to set state on success - existingMembership query will
+      // auto-update and room-content.tsx will re-render with the new membership
+      await runAct(
+        joinRoom({ roomId, name: checked.value, isSpectator }),
+        `Failed to join ${noun.toLowerCase()}`
+      );
     } finally {
       setIsJoining(false);
     }

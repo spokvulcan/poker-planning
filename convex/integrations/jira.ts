@@ -25,7 +25,7 @@ import {
   query,
 } from "../_generated/server";
 import { internal } from "../_generated/api";
-import { ConvexError, v } from "convex/values";
+import { v } from "convex/values";
 import { providerValidator } from "../schema";
 import { Doc, Id } from "../_generated/dataModel";
 import { ActionCtx } from "../_generated/server";
@@ -37,11 +37,16 @@ import {
   buildJiraClient,
   connectJiraWithCode,
 } from "./jiraAuth";
-import { applyJiraWebhookEvent } from "./jiraWebhook";
 import {
-  jiraWebhookReconcile,
+  applyJiraWebhookEvent,
+  jiraIssueLink,
+  jiraIssueTitle,
+  jiraWebhookAddress,
+} from "./jiraWebhook";
+import {
   recordRegistration,
   registrationValidator,
+  renewWebhook,
   wantedWebhookOf,
   type Registration,
   type WantedWebhook,
@@ -49,7 +54,7 @@ import {
 import { cardNumericValue } from "../scales";
 import * as Issues from "../model/issues";
 import * as Integrations from "../model/integrations";
-import type { Refusal } from "../model/refusal";
+import { refusalOf } from "../model/refusal";
 
 // ---------------------------------------------------------------------------
 // Action preamble — the one chain from auth identity to a ready Jira client
@@ -331,11 +336,7 @@ export interface JiraImportResult {
  * own message to give.
  */
 function refusalReason(error: unknown): string {
-  if (error instanceof ConvexError) {
-    const message = (error.data as Partial<Refusal> | undefined)?.message;
-    if (typeof message === "string" && message) return message;
-  }
-  return error instanceof Error ? error.message : "Unknown error";
+  return refusalOf(error)?.message ?? (error instanceof Error ? error.message : "Unknown error");
 }
 
 /**
@@ -372,12 +373,8 @@ export async function importIssuesWithClient(
 
     try {
       const admission = await admit({
-        title: `${issue.key} - ${issue.fields.summary}`,
-        link: {
-          provider: "jira",
-          externalId: issue.key,
-          externalUrl: `${siteUrl}/browse/${issue.key}`,
-        },
+        title: jiraIssueTitle(issue.key, issue.fields.summary),
+        link: jiraIssueLink(siteUrl, issue.key),
       });
       if (admission.kind === "admitted") result.imported++;
       else result.skipped++;
@@ -488,6 +485,7 @@ export const processJiraWebhook = internalMutation({
   args: {
     eventKey: v.string(),
     eventType: v.string(),
+    site: v.string(),
     issueKey: v.string(),
     issueSummary: v.optional(v.string()),
   },
@@ -670,14 +668,13 @@ async function attemptRegistration(
   wanted: WantedWebhook
 ): Promise<Registration> {
   // Jira Cloud webhooks cannot send custom headers, so the shared secret
-  // travels in the registered URL. The endpoint rejects deliveries without
-  // it, so registration must not proceed when the secret is missing.
+  // travels in the registered address. The endpoint rejects deliveries
+  // without it, so registration must not proceed when the secret is missing.
   const webhookSecret = process.env.JIRA_WEBHOOK_SECRET;
   if (!webhookSecret) {
     console.error("JIRA_WEBHOOK_SECRET must be configured to register a Jira webhook");
     return { kind: "failed", failure: "missingSecret", ...wanted };
   }
-  const webhookUrl = `${process.env.CONVEX_SITE_URL}/webhooks/jira?secret=${encodeURIComponent(webhookSecret)}`;
 
   try {
     const connection = await ctx.runQuery(
@@ -685,7 +682,14 @@ async function attemptRegistration(
       { connectionId: wanted.connectionId }
     );
     if (!connection) throw new Error("Connection not found");
+    // The address names the site the webhook watches; without it, no
+    // delivery could say which site's issues it is about.
+    if (!connection.siteUrl) throw new Error("Connection has no site address");
 
+    const webhookUrl = jiraWebhookAddress(process.env.CONVEX_SITE_URL, {
+      secret: webhookSecret,
+      site: connection.siteUrl,
+    });
     const client = await buildJiraClient(ctx, connection);
     const webhookId = await client.registerWebhook(`project = ${wanted.projectKey}`, webhookUrl);
     if (!webhookId) throw new Error("Jira registered no webhook");
@@ -702,10 +706,11 @@ const WEBHOOK_RENEWAL_BATCH = 100;
 
 /**
  * The weekly renewal (cron refresh-jira-webhooks). Jira drops a webhook 30
- * days after it is registered, so every Jira mapping goes to the reconcile as
- * renewed: a wanted webhook is registered afresh (replacing the one on
- * record, or retrying a failed registration) and a recorded one nobody wants
- * is removed. Pages through the mappings, rescheduling itself until done.
+ * days after it is registered, so every Jira mapping goes to the reconcile's
+ * renewal (renewWebhook): a wanted webhook is registered afresh (replacing
+ * the one on record, or retrying a failed registration) and a recorded one
+ * nobody wants is removed. Pages through the mappings, rescheduling itself
+ * until done.
  */
 export const refreshJiraWebhooks = internalMutation({
   args: {
@@ -720,7 +725,7 @@ export const refreshJiraWebhooks = internalMutation({
       .paginate({ numItems: batchSize, cursor: args.cursor ?? null });
 
     for (const mapping of page) {
-      await jiraWebhookReconcile.reconcile(ctx, { kind: "renewed", mapping });
+      await renewWebhook(ctx, mapping);
     }
     if (!isDone) {
       await ctx.scheduler.runAfter(0, internal.integrations.jira.refreshJiraWebhooks, {

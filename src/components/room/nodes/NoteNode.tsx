@@ -106,10 +106,15 @@ export const NoteNode = memo(
                 </>
               )}
             </span>
-            {text.unsaved && (
-              <span className="text-xs text-amber-500 dark:text-amber-400 animate-pulse">
-                Saving...
-              </span>
+            {/* A refused save has said why in a toast; the words stay until the next edit. */}
+            {text.refused ? (
+              <span className="text-xs text-red-700 dark:text-status-error-fg">Not saved</span>
+            ) : (
+              text.unsaved && (
+                <span className="text-xs text-amber-500 dark:text-amber-400 animate-pulse">
+                  Saving...
+                </span>
+              )
             )}
           </div>
         </div>

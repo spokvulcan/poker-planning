@@ -147,7 +147,7 @@ The `discuss` step's walk through the **topics** that got votes, most votes firs
 _Avoid_: agenda, discussion walk (the team retro's snapshotted walk), coverage
 
 **Spotlight**:
-The one **topic** the **discussion** is on. A person who may run the retro moves it next or back along the order, or puts any revealed topic in it, voted for or not; everyone's view follows it. Putting a topic in it works in `done` too, and keeps the retro done. It stays on its topic when the topic is stacked onto another, and goes out when the topic leaves the board or the retro moves to `write`, `vote` or `done`.
+The one **topic** the **discussion** is on. A person who may run the retro moves it next or back along the order, or puts any revealed topic in it, voted for or not, which from `vote` opens the discussion; everyone's view follows it. It stays on its topic when the topic is stacked onto another, and goes out when the topic leaves the board or the retro moves to `write` or `vote`. In `done` it is neither drawn nor moved: it stays where the walk was, so going back to `discuss` resumes the walk there.
 _Avoid_: focus (fine in code), current topic, raise (the team retro's)
 
 **Action item**:
@@ -247,7 +247,7 @@ The seam (`convex/integrations/registry.ts`) that maps a connection's `provider`
 _Avoid_: service layer, plugin, provider factory
 
 **Webhook reconcile**:
-The one owner of each room mapping's remote webhook, one per provider behind the **integration provider registry** (`convex/integrations/jiraWebhookReconcile.ts` for Jira). A mapping wants one webhook for its project while auto-push is on, made with the mapping's own connection; its record says which webhook is live, the connection that made it and the project it was made for. Everything that changes or ends a mapping hands over its case (saving it, the weekly renewal, removing it, its **room ending**, a disconnect), and the reconcile registers, replaces or removes the webhook, always deleting an old one with the connection that made it. A failed registration is recorded on the mapping, and the room's settings show it.
+The one owner of each room mapping's remote webhook, one per provider behind the **integration provider registry** (`convex/integrations/jiraWebhookReconcile.ts` for Jira). A mapping wants one webhook for its project while auto-push is on, made with the mapping's own connection at an address naming that connection's Jira site, so what it delivers reaches only that site's issues (the same key on another site is another issue); its record says which webhook is live, the connection that made it and the project it was made for. Everything that changes or ends a mapping hands over its case (saving it, the weekly renewal, removing it, its **room ending**, a disconnect), and the reconcile registers, replaces or removes the webhook, always deleting an old one with the connection that made it. A failed registration is recorded on the mapping, and the room's settings show it.
 _Avoid_: webhook sync, webhook manager
 
 ## Flagged ambiguities

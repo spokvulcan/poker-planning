@@ -25,14 +25,23 @@ function boardActions(): PokerBoardActions {
   };
 }
 
-/** The board's actions, with note saves that land only when the test says so. */
+/**
+ * The board's actions, with note saves that land, or are refused (the
+ * board's write runner has toasted why and resolves false), only when the
+ * test says so.
+ */
 function heldSaves() {
-  const saves: { nodeId: string; content: string; land: () => Promise<void> }[] = [];
+  const saves: { nodeId: string; content: string; land: () => Promise<void>; refuse: () => Promise<void> }[] = [];
   const actions: PokerBoardActions = {
     ...boardActions(),
     updateNoteContent: (nodeId, content) =>
       new Promise<boolean>((resolve) => {
-        saves.push({ nodeId, content, land: () => act(async () => resolve(true)) });
+        saves.push({
+          nodeId,
+          content,
+          land: () => act(async () => resolve(true)),
+          refuse: () => act(async () => resolve(false)),
+        });
       }),
   };
   return { saves, actions };
@@ -63,6 +72,7 @@ function renderNote(data: Partial<NoteNodeData>) {
     },
     debounce: () => act(() => vi.advanceTimersByTime(500)),
     saving: () => screen.queryByText("Saving...") !== null,
+    notSaved: () => screen.queryByText("Not saved") !== null,
   };
 }
 
@@ -156,6 +166,26 @@ describe("NoteNode — its limit", () => {
     const note = renderNote({ content: "" });
 
     expect(note.textarea.maxLength).toBe(10000);
+  });
+});
+
+describe("NoteNode — a refused save", () => {
+  it("says the note isn't saved, rather than saving forever, and keeps what was typed until the next edit", async () => {
+    const { saves, actions } = heldSaves();
+    const note = renderNote({ content: "", actions });
+
+    note.type("Risks: auth");
+    note.debounce();
+    expect(note.saving()).toBe(true);
+    await saves[0].refuse();
+
+    expect(note.textarea.value).toBe("Risks: auth");
+    expect(note.saving()).toBe(false);
+    expect(note.notSaved()).toBe(true);
+
+    note.type("Risks: auth, perf");
+    expect(note.saving()).toBe(true);
+    expect(note.notSaved()).toBe(false);
   });
 });
 

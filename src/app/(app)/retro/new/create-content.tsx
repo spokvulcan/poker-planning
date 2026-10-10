@@ -7,6 +7,7 @@ import { useMutation } from "convex/react";
 import { ArrowRight } from "lucide-react";
 import { api } from "@/convex/_generated/api";
 import { useAuth } from "@/components/auth/auth-provider";
+import { accountKind } from "@/components/auth/viewer";
 import { Navbar } from "@/components/navbar";
 import { Footer } from "@/components/footer";
 import { Button } from "@/components/ui/button";
@@ -36,7 +37,7 @@ export function CreateRetroContent() {
   const router = useRouter();
   const { viewer } = useAuth();
   // A retro a permanent account creates is retained: the five-day sweep leaves it alone
-  const isRetained = viewer.status === "signedIn" && viewer.isPermanent;
+  const isRetained = accountKind(viewer) === "permanent";
   const ensureSession = useEnsureSession();
   const createRetro = useMutation(api.retro.create);
   const { copyRoomUrlToClipboard } = useCopyRoomUrlToClipboard();

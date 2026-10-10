@@ -29,11 +29,11 @@ describe("stepAllows and stepShows", () => {
     stackOthers: { write: false, vote: true, discuss: true, done: true },
     unstackOthers: { write: false, vote: true, discuss: true, done: true },
     vote: { write: false, vote: true, discuss: false, done: false },
-    spotlight: { write: false, vote: true, discuss: true, done: true },
+    spotlight: { write: false, vote: true, discuss: true, done: false },
     walk: { write: false, vote: false, discuss: true, done: false },
     "shows faceDown": { write: true, vote: false, discuss: false, done: false },
     "shows totals": { write: false, vote: false, discuss: true, done: true },
-    "shows spotlight": { write: false, vote: false, discuss: true, done: true },
+    "shows spotlight": { write: false, vote: false, discuss: true, done: false },
   };
 
   for (const [row, byStep] of Object.entries(table) as [keyof typeof table, Record<RetroStep, boolean>][]) {
@@ -111,14 +111,15 @@ describe("stepChange", () => {
     expect(stepChange("write", "discuss")!.spotlight).toBe("first");
   });
 
-  it("back from Done, takes the discussion to whatever was put in the spotlight there", () => {
+  it("keeps the spotlight where the walk was when the retro is finished, and back from Done", () => {
+    expect(stepChange("discuss", "done")!.spotlight).toBe("keep");
     expect(stepChange("done", "discuss")!.spotlight).toBe("keep");
   });
 
-  it("takes the spotlight off when going back to Write or Vote, and when the retro is finished", () => {
+  it("takes the spotlight off when going back to Write or Vote", () => {
     expect(stepChange("discuss", "vote")!.spotlight).toBe("clear");
     expect(stepChange("done", "write")!.spotlight).toBe("clear");
-    expect(stepChange("discuss", "done")!.spotlight).toBe("clear");
+    expect(stepChange("done", "vote")!.spotlight).toBe("clear");
   });
 });
 
@@ -136,6 +137,14 @@ describe("stepped", () => {
     expect(stepped(retro, spotlightStepChange("vote"), "b")).toEqual({ ...retro, step: "discuss", focusStickyId: "b" });
   });
 
+  it("resumes the walk where it was when the retro goes back from Done to Discuss", () => {
+    const discussing = { ...retro, step: "discuss" as RetroStep, focusStickyId: "b" };
+
+    const finished = stepped(discussing, stepChange("discuss", "done"));
+    expect(finished).toEqual({ ...discussing, step: "done" });
+    expect(stepped(finished, stepChange("done", "discuss"))).toEqual(discussing);
+  });
+
   it("leaves the state as it was when nothing changes", () => {
     const discussing = { ...retro, step: "discuss" as RetroStep, focusStickyId: "a" };
 
@@ -144,10 +153,9 @@ describe("stepped", () => {
 });
 
 describe("spotlightStepChange", () => {
-  it("moves the retro to the discussion, unless it's done or there already", () => {
+  it("moves the retro to the discussion, unless it's there already", () => {
     expect(spotlightStepChange("vote")).toMatchObject({ to: "discuss", reveal: false });
     expect(spotlightStepChange("discuss")).toBeNull();
-    expect(spotlightStepChange("done")).toBeNull();
   });
 
   it("would be a reveal from Write, so no path can leave Write without one", () => {
@@ -156,7 +164,7 @@ describe("spotlightStepChange", () => {
 
   it("leaves the retro where the spotlight is drawn, from every step that takes it", () => {
     const taking = STEPS.filter((step) => stepAllows(step, "spotlight").allowed);
-    expect(taking).toEqual(["vote", "discuss", "done"]);
+    expect(taking).toEqual(["vote", "discuss"]);
     for (const from of taking) {
       expect(stepShows(spotlightStepChange(from)?.to ?? from).spotlight).toBe(true);
     }

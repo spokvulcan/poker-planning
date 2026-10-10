@@ -17,7 +17,8 @@ import { PERSON_NAME } from "../constants";
  * memberships.ts's; how an account ends, deleted or folded into another, is
  * accountLifecycle.ts's. Every name a users row gets passes the person-name
  * rule (constants.ts) here: one a person typed is refused when it breaks the
- * rule, one a sign-in provider gives is fitted to it.
+ * rule; one a sign-in provider gives, or the one a row made before the rule
+ * already holds, is fitted to it.
  */
 
 export interface JoinRoomArgs {
@@ -40,14 +41,13 @@ export interface EditUserArgs {
  * name its provider gave, anyone else's a guest name. A row the token says is
  * a permanent account's, but which isn't yet (a deleted account came back as
  * a guest's before the server made rows), turns permanent. `name` is one the
- * person just typed, joining a room or renaming themselves: the row is made
- * with it, or takes it, and it's refused when it breaks the person-name rule.
- * Throws "Not authenticated".
+ * person sent, joining a room or renaming themselves: the row is made with
+ * it, or takes it (see sentName). Throws "Not authenticated".
  */
 export async function findOrMakeUser(ctx: MutationCtx, typedName?: string): Promise<Doc<"users">> {
   const caller = await requireCaller(ctx);
-  const name = typedName === undefined ? undefined : requireValid(PERSON_NAME, typedName);
   const { user } = caller;
+  const name = typedName === undefined ? undefined : sentName(user, typedName);
   if (!user) return await makeUser(ctx, caller, name);
   const turnsPermanent = sessionAccountType(caller) === "permanent" && user.accountType !== "permanent";
   const renamed = name !== undefined && name !== user.name;
@@ -57,17 +57,47 @@ export async function findOrMakeUser(ctx: MutationCtx, typedName?: string): Prom
   return (await ctx.db.get("users", user._id))!;
 }
 
+/**
+ * A name the caller sent for their row. One they typed is refused when it
+ * breaks the person-name rule. The one their row already holds, sent back as
+ * the room page's automatic join does, is fitted to the rule instead: a row
+ * made before the rule can hold a longer one, and its owner never typed it
+ * here.
+ */
+function sentName(user: Doc<"users"> | null, sent: string): string | undefined {
+  if (user && sent === user.name) return PERSON_NAME.fit(sent) || undefined;
+  return requireValid(PERSON_NAME, sent);
+}
+
 /** A new users row for the caller, of the kind their session's token says. */
 async function makeUser(ctx: MutationCtx, caller: Caller, name?: string): Promise<Doc<"users">> {
   const { subject, email } = caller.identity;
   const accountType = sessionAccountType(caller);
-  const account =
-    accountType === "permanent" && email ? { email, name: providerName(caller.identity.name ?? "", email) } : null;
+  if (accountType === "permanent" && email) {
+    const named = name ?? (providerName(caller.identity.name ?? "", email) || guestName());
+    return await insertAccount(ctx, subject, { email, name: named });
+  }
   const userId = await ctx.db.insert("users", {
     authUserId: subject,
-    name: name ?? (account?.name || guestName()),
-    ...(account ? { email: account.email } : {}),
+    name: name ?? guestName(),
     ...(accountType ? { accountType } : {}),
+    createdAt: Date.now(),
+  });
+  return (await ctx.db.get("users", userId))!;
+}
+
+/** A permanent account's new row: its email, its avatar when the provider gives one, and its name. */
+async function insertAccount(
+  ctx: MutationCtx,
+  authUserId: string,
+  account: { email: string; name: string; avatarUrl?: string }
+): Promise<Doc<"users">> {
+  const userId = await ctx.db.insert("users", {
+    authUserId,
+    name: account.name,
+    email: account.email,
+    ...(account.avatarUrl ? { avatarUrl: account.avatarUrl } : {}),
+    accountType: "permanent",
     createdAt: Date.now(),
   });
   return (await ctx.db.get("users", userId))!;
@@ -133,14 +163,6 @@ export async function editUser(
 }
 
 /**
- * Updates the caller's global name, making their users row with it when they
- * have none yet.
- */
-export async function updateGlobalUserName(ctx: MutationCtx, name: string): Promise<void> {
-  await findOrMakeUser(ctx, name);
-}
-
-/**
  * The name a sign-in provider gives an account, fitted to the person-name
  * rule: its display name, or the email's local part when it has none, as
  * an account made by magic link has none.
@@ -169,13 +191,10 @@ export async function ensureGlobalUserFromAuth(
     return;
   }
 
-  await ctx.db.insert("users", {
-    authUserId: args.authUserId,
-    name: providerName(args.name, args.email),
+  await insertAccount(ctx, args.authUserId, {
     email: args.email,
+    name: providerName(args.name, args.email),
     avatarUrl: args.avatarUrl,
-    accountType: "permanent" as const,
-    createdAt: Date.now(),
   });
 }
 

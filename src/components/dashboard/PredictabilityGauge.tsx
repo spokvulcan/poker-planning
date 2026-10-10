@@ -2,9 +2,6 @@
 
 import {
   Gauge,
-  TrendingUp,
-  TrendingDown,
-  Minus,
   BarChart3,
   Handshake,
   Activity,
@@ -26,13 +23,15 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import type { PredictabilityData } from "@/convex/analyticsMath";
+import { trendView } from "./trend-view";
 
 interface PredictabilityGaugeProps {
   score: number | null;
   averageVelocityPerSession: number;
-  velocityTrend: "increasing" | "stable" | "decreasing";
+  velocityTrend: PredictabilityData["velocityTrend"];
   averageAgreement: number;
-  agreementTrend: "improving" | "stable" | "declining";
+  agreementTrend: PredictabilityData["agreementTrend"];
   isLoading?: boolean;
 }
 
@@ -53,14 +52,6 @@ function getScoreColorClass(score: number): string {
   if (score <= 70) return "text-amber-600 dark:text-amber-400";
   return "text-green-600 dark:text-green-400";
 }
-
-const trendIcons = {
-  increasing: TrendingUp,
-  stable: Minus,
-  decreasing: TrendingDown,
-  improving: TrendingUp,
-  declining: TrendingDown,
-} as const;
 
 export function PredictabilityGauge({
   score,
@@ -117,8 +108,11 @@ export function PredictabilityGauge({
   const color = "var(--chart-1)"; 
   const data = [{ name: "score", value: score, fill: color }];
 
-  const VelocityIcon = trendIcons[velocityTrend];
-  const AgreementIcon = trendIcons[agreementTrend];
+  // The read's verdicts, as arrows beside the averages.
+  const velocity = trendView("velocity", velocityTrend);
+  const agreement = trendView("agreement", agreementTrend);
+  const VelocityIcon = velocity.icon;
+  const AgreementIcon = agreement.icon;
 
   return (
     <Card className="flex flex-col h-full shadow-sm">
@@ -205,7 +199,7 @@ export function PredictabilityGauge({
             <span className="text-lg font-bold tracking-tight text-foreground truncate">
               {averageVelocityPerSession} pts
             </span>
-            <VelocityIcon className="h-3 w-3 text-muted-foreground stroke-[2.5] shrink-0" />
+            <VelocityIcon className={`h-3 w-3 stroke-[2.5] shrink-0 ${velocity.className}`} />
           </div>
         </div>
         
@@ -218,7 +212,7 @@ export function PredictabilityGauge({
             <span className="text-lg font-bold tracking-tight text-foreground truncate">
               {averageAgreement}%
             </span>
-            <AgreementIcon className="h-3 w-3 text-muted-foreground stroke-[2.5] shrink-0" />
+            <AgreementIcon className={`h-3 w-3 stroke-[2.5] shrink-0 ${agreement.className}`} />
           </div>
         </div>
       </CardFooter>

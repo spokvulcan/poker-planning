@@ -20,8 +20,8 @@ import { RetroCanvas } from "@/components/retro/retro-canvas";
 type MyMembership = { _id: Id<"users"> };
 
 /**
- * `/room/[roomId]` serves both ceremonies. The two subscriptions every
- * visitor needs here (the room shell, their membership) open in one render;
+ * `/room/[roomId]` serves both ceremonies. The two subscriptions anyone
+ * opening a room needs (the room shell, their membership) open in one render;
  * who they are comes from the auth provider, which reads their users row.
  * Both ceremonies join the same way, and only the canvas differs: the poker
  * room or the retro whiteboard.

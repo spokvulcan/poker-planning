@@ -1,11 +1,12 @@
 "use client";
 
-import { Clock, TrendingDown, TrendingUp, Minus } from "lucide-react";
+import { Clock } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   formatDuration,
   type TimeToConsensusStats,
 } from "@/convex/analyticsMath";
+import { trendView } from "./trend-view";
 
 interface TimeToConsensusCardProps {
   averageMs: number | null;
@@ -54,24 +55,9 @@ export function TimeToConsensusCard({
     );
   }
 
-  // The read's trend: the later sessions against the earlier ones
-  let TrendIcon = Minus;
-  let trendText = "Stable";
-  let trendColor = "text-muted-foreground";
-
-  if (trend.direction === "faster") {
-    TrendIcon = TrendingDown;
-    trendText =
-      trend.changePct === null
-        ? "Faster"
-        : `${Math.abs(trend.changePct)}% faster`;
-    trendColor = "text-green-600 dark:text-green-400";
-  } else if (trend.direction === "slower") {
-    TrendIcon = TrendingUp;
-    trendText =
-      trend.changePct === null ? "Slower" : `${trend.changePct}% slower`;
-    trendColor = "text-amber-600 dark:text-amber-400";
-  }
+  // The read's trend: the later rooms against the earlier ones
+  const verdict = trendView("timeToConsensus", trend);
+  const TrendIcon = verdict.icon;
 
   return (
     <Card>
@@ -82,13 +68,15 @@ export function TimeToConsensusCard({
       <CardContent>
         <div className="text-2xl font-bold">{formatDuration(averageMs)}</div>
         <div className="flex items-center gap-2 text-xs mt-1">
-          <span className={`flex items-center gap-1 ${trendColor}`}>
-            <TrendIcon className="h-3 w-3" />
-            {trendText}
-          </span>
+          {verdict.text && (
+            <span className={`flex items-center gap-1 ${verdict.className}`}>
+              <TrendIcon className="h-3 w-3" />
+              {verdict.text}
+            </span>
+          )}
           {medianMs !== null && (
             <span className="text-muted-foreground">
-              — Median: {formatDuration(medianMs)}
+              {verdict.text && "— "}Median: {formatDuration(medianMs)}
             </span>
           )}
         </div>

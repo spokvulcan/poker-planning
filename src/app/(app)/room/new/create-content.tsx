@@ -27,6 +27,8 @@ import {
   FieldGroup,
 } from "@/components/ui/field";
 import { toast } from "@/lib/toast";
+import { failureCopy } from "@/lib/refusal";
+import { runAct } from "@/lib/run-act";
 import { trackConversion } from "@/lib/analytics";
 import { useCopyRoomUrlToClipboard } from "@/hooks/use-copy-room-url-to-clipboard";
 import {
@@ -110,10 +112,7 @@ export function CreateContent() {
     }
 
     // A guest session, ready in Convex before the create that needs it.
-    try {
-      await ensureSession();
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : SESSION_FAILED);
+    if (!(await runAct(ensureSession(), SESSION_FAILED))) {
       setIsCreating(false);
       return;
     }
@@ -130,7 +129,7 @@ export function CreateContent() {
       router.push(`/room/${roomId}`);
     } catch (error) {
       console.error("Failed to create room:", error);
-      toast.error("Failed to create room. Please try again.");
+      toast.error(failureCopy(error, "Failed to create room. Please try again."));
       setIsCreating(false);
       return;
     }

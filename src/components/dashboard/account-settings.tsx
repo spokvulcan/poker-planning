@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Trash2 } from "lucide-react";
 import { useAuth } from "@/components/auth/auth-provider";
+import { accountKind } from "@/components/auth/viewer";
 import { useDeleteAccount } from "@/hooks/useDeleteAccount";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -35,7 +36,7 @@ import {
  */
 export function AccountSettings() {
   const { viewer } = useAuth();
-  const isPermanent = viewer.status === "signedIn" && viewer.isPermanent;
+  const isPermanent = accountKind(viewer) === "permanent";
   const deleteAccount = useDeleteAccount();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);

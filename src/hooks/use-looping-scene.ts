@@ -25,7 +25,7 @@ function subscribeToMotionSetting(onChange: () => void) {
  * Plays a scene: shows each frame for its hold, in order, then starts over.
  * Unmounting stops it with nothing left scheduled.
  *
- * A visitor who prefers reduced motion sees only the final frame, held, and
+ * Someone who prefers reduced motion sees only the final frame, held, and
  * nothing is scheduled; turning the setting on mid-scene jumps there. The
  * server can't know the setting, so it renders the first frame.
  */

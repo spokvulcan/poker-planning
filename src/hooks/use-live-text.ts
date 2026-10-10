@@ -54,6 +54,12 @@ export interface LiveText {
   canCommit: boolean;
   /** Something typed here hasn't landed on the server yet. */
   unsaved: boolean;
+  /**
+   * The last save of what's typed was refused, and nothing was typed since:
+   * it stays typed and unsaved, and nothing is saving it until the next edit
+   * or commit.
+   */
+  refused: boolean;
 }
 
 /**
@@ -80,6 +86,8 @@ export function useLiveText<E extends HTMLInputElement | HTMLTextAreaElement = H
   const [synced, setSynced] = useState(value);
   // From the first keystroke until what was typed has landed.
   const [unsaved, setUnsaved] = useState(false);
+  // From a refused save of what's typed until the next edit or save.
+  const [refused, setRefused] = useState(false);
   const ref = useRef<E>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const queued = useRef<string | null>(null);
@@ -116,6 +124,7 @@ export function useLiveText<E extends HTMLInputElement | HTMLTextAreaElement = H
     async (typed: string): Promise<boolean> => {
       const next = normalize(typed);
       inFlight.current += 1;
+      setRefused(false);
       let landed = false;
       try {
         landed = (await saveRef.current?.(next)) !== false;
@@ -124,9 +133,11 @@ export function useLiveText<E extends HTMLInputElement | HTMLTextAreaElement = H
       } finally {
         inFlight.current -= 1;
       }
-      // Done once the last save has landed and nothing was typed since it left.
-      if (landed && inFlight.current === 0 && timer.current === null && normalize(localRef.current) === next) {
-        setUnsaved(false);
+      // Settled once the last save is back and nothing was typed since it
+      // left: saved when it landed, refused when it didn't.
+      if (inFlight.current === 0 && timer.current === null && normalize(localRef.current) === next) {
+        if (landed) setUnsaved(false);
+        else setRefused(true);
       }
       return landed;
     },
@@ -137,6 +148,7 @@ export function useLiveText<E extends HTMLInputElement | HTMLTextAreaElement = H
     (next: string) => {
       setLocal(next);
       setUnsaved(true);
+      setRefused(false);
       if (autosaveMs === undefined) return;
       queued.current = next;
       if (timer.current) clearTimeout(timer.current);
@@ -159,6 +171,7 @@ export function useLiveText<E extends HTMLInputElement | HTMLTextAreaElement = H
     setLocal(valueRef.current);
     setSynced(valueRef.current);
     setUnsaved(false);
+    setRefused(false);
   }, [valueRef]);
 
   const commit = useCallback(async (): Promise<boolean> => {
@@ -173,7 +186,10 @@ export function useLiveText<E extends HTMLInputElement | HTMLTextAreaElement = H
       return false;
     }
     if (next === normalize(syncedRef.current)) {
-      if (inFlight.current === 0) setUnsaved(false);
+      if (inFlight.current === 0) {
+        setUnsaved(false);
+        setRefused(false);
+      }
       return true;
     }
     return await send(next);
@@ -199,6 +215,7 @@ export function useLiveText<E extends HTMLInputElement | HTMLTextAreaElement = H
       dirty,
       canCommit: dirty && !(required && !normalize(local)),
       unsaved,
+      refused,
     },
     ref,
   ];

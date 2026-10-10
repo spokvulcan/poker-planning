@@ -61,6 +61,9 @@ export function IntegrationSettingsSection({
   const [loadingProjects, setLoadingProjects] = useState(false);
   const [loadingBoards, setLoadingBoards] = useState(false);
   const [saving, setSaving] = useState(false);
+  // From a save until the webhook the mapping wants is registered, or its
+  // registration fails: the save's toast says which.
+  const [awaitingWebhook, setAwaitingWebhook] = useState(false);
 
   // Form state
   const [projectKey, setProjectKey] = useState(
@@ -85,6 +88,22 @@ export function IntegrationSettingsSection({
       setStoryPointsFieldId(mapping.storyPointsFieldId ?? "");
     }
   }, [mapping]);
+
+  // A saved mapping that wants a webhook is saved for good once its webhook
+  // is on record; a registration that failed is on record instead, and the
+  // person who saved it hears so, not that all went well.
+  useEffect(() => {
+    if (!awaitingWebhook || !mapping) return;
+    if (mapping.jiraWebhookFailure) {
+      setAwaitingWebhook(false);
+      toast.error("Jira mapping saved, but its webhook failed", {
+        description: WEBHOOK_FAILURE_COPY[mapping.jiraWebhookFailure],
+      });
+    } else if (!mapping.autoPushEstimates || mapping.jiraWebhookId) {
+      setAwaitingWebhook(false);
+      toast.success("Jira mapping saved");
+    }
+  }, [awaitingWebhook, mapping]);
 
   const loadProjects = useCallback(async () => {
     setLoadingProjects(true);
@@ -167,7 +186,9 @@ export function IntegrationSettingsSection({
         autoPushEstimates: autoPush,
         storyPointsFieldId: storyPointsFieldId || undefined,
       });
-      toast.success("Jira mapping saved");
+      // The save is back with the mapping as it saved it; the effect above
+      // says how it went once its webhook is settled.
+      setAwaitingWebhook(true);
     } catch {
       toast.error("Failed to save mapping");
     } finally {

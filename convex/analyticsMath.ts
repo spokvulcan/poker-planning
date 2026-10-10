@@ -3,8 +3,10 @@
  *
  * Every dashboard number, and every verdict a chart states (a trend and its
  * size), is projected here from plain rows, with no database access, so the
- * math is testable without a ctx (the summarize.ts precedent); the charts
- * only render them.
+ * math is testable without a ctx (the summarize.ts precedent). The charts
+ * render them, and only shape a series for plotting: the agreement and
+ * consensus charts average their points day by day, and the velocity chart
+ * draws a rolling average.
  * The model layer (model/analytics.ts) owns the single memberships → rooms →
  * history scan (`completedIssueHistory`); these functions own the projections,
  * and `dashboard` gathers them into the Overview's panels. Scan → project,
@@ -102,7 +104,7 @@ export interface TimeToConsensusStats {
     roomName: string;
     averageMs: number;
   }>;
-  /** The later sessions' times against the earlier ones', past a 10% change. */
+  /** The later rooms' times against the earlier rooms', past a 10% change. */
   trend: Trend<"faster" | "stable" | "slower">;
 }
 
@@ -141,10 +143,10 @@ export interface PredictabilityData {
   predictabilityScore: number | null;
   sessions: PredictabilitySession[];
   averageVelocityPerSession: number;
-  /** The later sessions' points against the earlier ones', past a 10% change. */
+  /** The later rooms' points against the earlier rooms', past a 10% change. */
   velocityTrend: Trend<"increasing" | "stable" | "decreasing">;
   averageAgreement: number;
-  /** The later sessions' agreement against the earlier ones', past a 5% change. */
+  /** The later rooms' agreement against the earlier rooms', past a 5% change. */
   agreementTrend: Trend<"improving" | "stable" | "declining">;
 }
 
@@ -175,7 +177,7 @@ export interface SessionSummary extends SessionIssueStats {
  * The agreement chart: a point per issue, and the agreement trend it states,
  * which is the predictability card's.
  */
-export interface AgreementTrendData {
+export interface AgreementChartData {
   points: AgreementDataPoint[];
   trend: PredictabilityData["agreementTrend"];
 }
@@ -184,7 +186,7 @@ export interface AgreementTrendData {
 export interface Dashboard {
   summary: DashboardSummary;
   sessions: SessionSummary[];
-  agreementTrend: AgreementTrendData;
+  agreementChart: AgreementChartData;
   voteDistribution: VoteDistributionItem[];
   timeToConsensus: TimeToConsensusStats;
   voterAlignment: VoterAlignmentData;
@@ -263,7 +265,7 @@ function trend<Up extends string, Down extends string>(
 // ---------------------------------------------------------------------------
 
 /** Agreement over time: one point per issue with an agreement, sorted by time. */
-export function agreementTrend(entries: RoomIssue[]): AgreementDataPoint[] {
+export function agreementPoints(entries: RoomIssue[]): AgreementDataPoint[] {
   const points: AgreementDataPoint[] = [];
 
   for (const { roomName, issue } of entries) {
@@ -689,8 +691,8 @@ export function dashboard(history: DashboardHistory): Dashboard {
   return {
     summary: dashboardSummary(history.sessions),
     sessions: history.sessions,
-    agreementTrend: {
-      points: agreementTrend(entries),
+    agreementChart: {
+      points: agreementPoints(entries),
       trend: predictabilityData.agreementTrend,
     },
     voteDistribution: voteDistribution(history.rooms.flatMap((r) => r.issues)),

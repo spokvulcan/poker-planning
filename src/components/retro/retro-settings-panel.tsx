@@ -11,7 +11,7 @@ import type { PermissionLevel, RetroPermissionCategory, RetroPermissions } from 
 import { ROOM_NAME } from "@/convex/constants";
 import {
   COLUMN_EMOJI,
-  MAX_COLUMN_TITLE_LENGTH,
+  COLUMN_TITLE,
   MAX_COLUMNS,
   MAX_VOTES_PER_PERSON,
   MIN_VOTES_PER_PERSON,
@@ -107,7 +107,7 @@ function ColumnRow({
         <Input
           ref={titleField}
           value={title.value}
-          maxLength={MAX_COLUMN_TITLE_LENGTH}
+          maxLength={COLUMN_TITLE.maxLength}
           onChange={(e) => title.setValue(e.target.value)}
           onBlur={() => void title.commit()}
           onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
