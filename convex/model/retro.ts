@@ -43,7 +43,12 @@ import {
 } from "../retroSteps";
 import { normalizeGifUrl } from "../gifLinks";
 import { FACE_DOWN_HEIGHT, settleOnReveal, STICKY_MIN_HEIGHT } from "../retroLayout";
+import { authorsShown, stickyView, type StickyView } from "../retroStickyView";
 import type { Position } from "../canvasLayout";
+
+// What a viewer sees of a sticky is the pure projection module's; re-exported
+// here so existing imports from this module keep working.
+export type { StickyView } from "../retroStickyView";
 
 export type RetroState = NonNullable<Doc<"rooms">["retro"]>;
 export type Gif = NonNullable<Doc<"retroStickies">["gif"]>;
@@ -182,30 +187,6 @@ async function actionItemsOf(ctx: QueryCtx, roomId: Id<"rooms">): Promise<Doc<"r
     .take(MAX_ACTIONS_PER_ROOM);
 }
 
-/**
- * A sticky as one viewer may see it. Someone else's sticky is face-down
- * while the retro is in `write`: its place and colour, nothing it says.
- * The author travels only when the retro shows authors; `mine` is how the
- * author finds their own in an anonymous retro.
- */
-export interface StickyView {
-  _id: StickyId;
-  clientId: string;
-  columnId: string;
-  position: Position;
-  stackId?: StickyId;
-  createdAt: number;
-  mine: boolean;
-  hidden: boolean;
-  text?: string;
-  gif?: Gif;
-  authorName?: string;
-  /** On a topic (a loose sticky or a stack's root): whether the viewer voted for it. */
-  myVote?: boolean;
-  /** On a topic, from `discuss` on: its votes, the whole stack's. */
-  votes?: number;
-}
-
 export interface BoardView {
   stickies: StickyView[];
   /** How many different people have written a sticky. */
@@ -215,9 +196,10 @@ export interface BoardView {
 }
 
 /**
- * The board as the viewer may see it (the server-side projection). Until the
- * totals show, it reads only the viewer's own votes, so a vote re-sends the
- * voter's board and nobody else's.
+ * The board as the viewer may see it: the rows the sticky projection needs,
+ * read here and projected for the viewer (retroStickyView). Until the totals
+ * show, it reads only the viewer's own votes, so a vote re-sends the voter's
+ * board and nobody else's; authors' names are read only while they show.
  */
 export async function getBoard(
   ctx: QueryCtx,
@@ -225,49 +207,24 @@ export async function getBoard(
   viewerId: Id<"users">
 ): Promise<BoardView> {
   const retro = retroOf(room);
-  const { faceDown: hideOthers, totals: showTotals } = stepShows(retro.step);
   const [stickies, votes] = await Promise.all([
     stickiesOf(ctx, room._id),
-    showTotals ? votesOf(ctx, room._id) : myVotesOf(ctx, room._id, viewerId),
+    stepShows(retro.step).totals ? votesOf(ctx, room._id) : myVotesOf(ctx, room._id, viewerId),
   ]);
 
   const totals = Topics.voteTotals(stickies, votes);
   const myTopics = new Set(Topics.voteTotals(stickies, votes.filter((v) => v.voterId === viewerId)).keys());
 
-  const authorNames = new Map<string, string>();
-  if (retro.showAuthors && !hideOthers) {
+  const names = new Map<Id<"users">, string>();
+  if (authorsShown(retro)) {
     const authorIds = [...new Set(stickies.map((s) => s.authorId))];
     const authors = await Promise.all(authorIds.map((id) => ctx.db.get("users", id)));
-    authors.forEach((author, i) => authorNames.set(authorIds[i], author?.name ?? "Former member"));
+    authors.forEach((author, i) => names.set(authorIds[i], author?.name ?? "Former member"));
   }
 
-  const views = stickies.map((sticky): StickyView => {
-    const mine = sticky.authorId === viewerId;
-    const hidden = hideOthers && !mine;
-    const isTopic = sticky.stackId === undefined;
-    return {
-      _id: sticky._id,
-      clientId: sticky.clientId,
-      columnId: sticky.columnId,
-      position: sticky.position,
-      ...(sticky.stackId ? { stackId: sticky.stackId } : {}),
-      createdAt: sticky.createdAt,
-      mine,
-      hidden,
-      ...(hidden
-        ? {}
-        : {
-            text: sticky.text,
-            ...(sticky.gif ? { gif: sticky.gif } : {}),
-            ...(authorNames.has(sticky.authorId) ? { authorName: authorNames.get(sticky.authorId) } : {}),
-          }),
-      ...(isTopic ? { myVote: myTopics.has(sticky._id) } : {}),
-      ...(isTopic && showTotals ? { votes: totals.get(sticky._id) ?? 0 } : {}),
-    };
-  });
-
+  const viewer = { retro, viewerId, myTopics, names, totals };
   return {
-    stickies: views,
+    stickies: stickies.map((sticky) => stickyView(sticky, viewer)),
     writers: new Set(stickies.map((s) => s.authorId)).size,
     myVotes: myTopics.size,
   };

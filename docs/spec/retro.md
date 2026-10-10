@@ -6,8 +6,8 @@
 
 | Part | Files |
 |---|---|
-| Rules shared with the browser (pure) | `convex/retroTemplates.ts` (steps, colours, templates, caps), `convex/retroTopics.ts` (stacking, unstacking and deleting, how votes and the spotlight follow a topic, vote totals and the vote toggle), `convex/retroSteps.ts` (what each step allows and shows, step changes, the discussion order and walk), `convex/retroLayout.ts` (where nodes and new stickies land), `convex/gifLinks.ts` (the GIF allowlist) |
-| Backend | `convex/retro.ts` (arguments and guards), `convex/model/retro.ts` (logic and the face-down projection) |
+| Rules shared with the browser (pure) | `convex/retroTemplates.ts` (steps, colours, templates, caps), `convex/retroTopics.ts` (stacking, unstacking and deleting, how votes and the spotlight follow a topic, vote totals and the vote toggle), `convex/retroSteps.ts` (what each step allows and shows, step changes, the discussion order and walk), `convex/retroStickyView.ts` (what one viewer sees of a sticky: face-down or not, its author's name, their vote and its total), `convex/retroLayout.ts` (where nodes and new stickies land), `convex/gifLinks.ts` (the GIF allowlist) |
+| Backend | `convex/retro.ts` (arguments and guards), `convex/model/retro.ts` (logic, and the board read that applies the sticky projection) |
 | Board | `src/components/retro/`: `retro-canvas.tsx`, `build-retro-nodes.ts`, `nodes/`, `use-retro-mutations.ts`, `gif-picker.tsx`, `retro-settings-panel.tsx`, `retro-summary.ts` |
 | Routes | `/retro/new` (create), `/room/[roomId]` (both ceremonies, one join gate), `/dashboard/retros` (list), `/api/gifs` (GIPHY proxy) |
 
@@ -120,7 +120,7 @@ Wording may be polished; no claim may go beyond what the code does.
 
 ## 14. Tests
 
-- **convex-test:** `convex/retroLayout.test.ts` (where a pad's sticky lands and where the reveal moves stickies), `convex/retro.test.ts` (creation and nodes, the face-down projection and show authors, sticky heights and the reveal, sticky validation and the GIF allowlist, stacks, votes, the discussion and the spotlight, permissions at the defaults, action items, the next retro, columns, the listing, deletion, account linking, transfer), `convex/retroTopics.test.ts`, `convex/retroSteps.test.ts`, `convex/gifLinks.test.ts`, `convex/retention.test.ts`, `convex/accountDeletion.test.ts`, `convex/accountLifecycle.test.ts`, `convex/ownership.test.ts`, `convex/roomActivity.test.ts`, `convex/requireRoomReader.test.ts`.
+- **convex-test:** `convex/retroLayout.test.ts` (where a pad's sticky lands and where the reveal moves stickies), `convex/retro.test.ts` (creation and nodes, the face-down projection and show authors, sticky heights and the reveal, sticky validation and the GIF allowlist, stacks, votes, the discussion and the spotlight, permissions at the defaults, action items, the next retro, columns, the listing, deletion, account linking, transfer), `convex/retroTopics.test.ts`, `convex/retroSteps.test.ts`, `convex/retroStickyView.test.ts` (who sees what of a sticky, in every step), `convex/gifLinks.test.ts`, `convex/retention.test.ts`, `convex/accountDeletion.test.ts`, `convex/accountLifecycle.test.ts`, `convex/ownership.test.ts`, `convex/roomActivity.test.ts`, `convex/requireRoomReader.test.ts`.
 - **Node:** `src/components/retro/build-retro-nodes.test.ts`, `src/components/retro/board-view.test.ts`, `src/components/retro/sticky-heights.test.ts`, `src/components/retro/retro-summary.test.ts`, and the shared canvas in `src/components/whiteboard/`.
 - **Playwright:** `tests/retro/retro-board.spec.ts`, two cross-browser facts: stickies face-down until the reveal, votes hidden until the discussion, the spotlight and action items shared; and the next retro carrying open action items over.
 - **Manual:** [`tests/retro/MANUAL.md`](../../tests/retro/MANUAL.md): touch, drag-to-stack and GIF flows.
