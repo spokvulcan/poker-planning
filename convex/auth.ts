@@ -3,7 +3,6 @@ import type { GenericActionCtx } from "convex/server";
 import { convex } from "@convex-dev/better-auth/plugins";
 import { components } from "./_generated/api";
 import { DataModel } from "./_generated/dataModel";
-import { query } from "./_generated/server";
 import { betterAuth } from "better-auth";
 import { anonymous, magicLink } from "better-auth/plugins";
 import { internal } from "./_generated/api";
@@ -139,11 +138,3 @@ export const createAuth = (ctx: GenericCtx<DataModel>) => {
     ],
   });
 };
-
-// Get the current authenticated user
-export const getCurrentUser = query({
-  args: {},
-  handler: async (ctx) => {
-    return authComponent.getAuthUser(ctx);
-  },
-});
