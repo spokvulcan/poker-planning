@@ -3,7 +3,7 @@ import { convexTest } from "convex-test";
 import { describe, it, expect } from "vitest";
 import schema from "./schema";
 import type { Id } from "./_generated/dataModel";
-import { requireRoomMember } from "./model/auth";
+import { requireCan, requireRoomMember } from "./model/auth";
 import { type T, seedRoom, seedUser as addUser, addMembership } from "./analytics.seeds";
 
 // Room attendance: `requireRoomMember` answers "is this person in this
@@ -68,5 +68,34 @@ describe("requireRoomMember — the room attendance guard", () => {
     await expect(
       t.withIdentity({ subject: "auth-m" }).run((ctx) => requireRoomMember(ctx, roomId))
     ).rejects.toThrow("Room not found");
+  });
+});
+
+describe("the guards built on room attendance read the room once", () => {
+  it("the attendance guard reads the caller, their membership and the room, one row each", async () => {
+    const t = convexTest(schema, modules);
+    const roomId = await seedRoom(t);
+    await addMember(t, roomId, "auth-m");
+
+    const metrics = await t.withIdentity({ subject: "auth-m" }).run(async (ctx) => {
+      await requireRoomMember(ctx, roomId);
+      return await ctx.meta.getTransactionMetrics();
+    });
+
+    expect(metrics.documentsRead.used).toBe(3);
+  });
+
+  it("the permission guard decides on the room the attendance guard loaded", async () => {
+    const t = convexTest(schema, modules);
+    const roomId = await seedRoom(t); // no permissions set: every category is open to everyone
+    await addMember(t, roomId, "auth-m");
+
+    const metrics = await t.withIdentity({ subject: "auth-m" }).run(async (ctx) => {
+      await requireCan(ctx, roomId, { kind: "category", category: "roomSettings" });
+      return await ctx.meta.getTransactionMetrics();
+    });
+
+    // The caller's users row, their membership and the room: nothing twice.
+    expect(metrics.documentsRead.used).toBe(3);
   });
 });
