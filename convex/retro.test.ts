@@ -684,6 +684,18 @@ describe("the discussion", () => {
     expect((await retroState(t, roomId)).focusStickyId).toBe(most);
   });
 
+  it("finishing takes the spotlight off, and a topic put back in it keeps the retro done", async () => {
+    const t = withComponents(convexTest(schema, modules));
+    const { roomId, some } = await seedVoted(t);
+    await setStep(t, roomId, "discuss");
+
+    await setStep(t, roomId, "done");
+    expect(await retroState(t, roomId)).not.toHaveProperty("focusStickyId");
+
+    await focus(t, roomId, some);
+    expect(await retroState(t, roomId)).toMatchObject({ step: "done", focusStickyId: some });
+  });
+
   it("going back to writing drops the walk, and nothing takes the spotlight while writing", async () => {
     const t = withComponents(convexTest(schema, modules));
     const { roomId, none } = await seedVoted(t);

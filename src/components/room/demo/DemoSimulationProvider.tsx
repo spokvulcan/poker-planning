@@ -24,6 +24,7 @@ import {
 import type { Doc, Id } from "@/convex/_generated/dataModel";
 import type { CanvasNode } from "@/convex/model/canvas";
 import type { RoomWithRelatedData, SanitizedVote } from "@/convex/model/rooms";
+import { cardNumericValue } from "@/convex/scales";
 import {
   advanceDemo,
   initialDemoState,
@@ -90,7 +91,7 @@ function buildRoom(state: DemoSimulationState): Doc<"rooms"> {
     // "session done" flag: reveal sets it true and the next round's reset clears
     // it (votingRound.ts reveal/reset), and phaseOf returns "revealed" iff it is
     // true. Mapping it from the reducer's `revealed` phase is what flips the
-    // cards and mounts the results node each cycle (useCanvasNodes), exactly as a
+    // cards and mounts the results node each cycle (RoomCanvas), exactly as a
     // real round does — always-false here would mean the demo never reveals.
     isGameOver: state.phase === "revealed",
     // While counting down, anchor the wall-clock start so the SessionNode's
@@ -118,14 +119,13 @@ function buildVotes(state: DemoSimulationState): SanitizedVote[] {
   const revealed = state.phase === "revealed";
   return DEMO_BOTS.filter((b) => state.votes[b.id] !== undefined).map((b) => {
     const label = state.votes[b.id];
-    const value = Number.parseFloat(label);
     return {
       _id: `demo-vote-${b.id}` as Id<"votes">,
       _creationTime: 0,
       roomId: DEMO_ROOM_ID,
       userId: b.id,
       cardLabel: revealed ? label : undefined,
-      cardValue: revealed && !Number.isNaN(value) ? value : undefined,
+      cardValue: revealed ? cardNumericValue(label) : undefined,
       cardIcon: undefined,
       hasVoted: true,
     };

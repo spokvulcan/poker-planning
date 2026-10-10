@@ -287,7 +287,7 @@ export async function createNote(
   issueId: Id<"issues">,
   author: Doc<"users">
 ): Promise<Id<"canvasNodes">> {
-  if (!rulesOf(room).votingRounds) throw new Error(NOT_THIS_CEREMONY);
+  if (!rulesOf(room).votingRounds) throw refusal("missing", NOT_THIS_CEREMONY);
   const issue = await ctx.db.get("issues", issueId);
   // An issue from another room is as good as missing: its title stays there.
   if (!issue || issue.roomId !== room._id) throw new Error("Issue not found");

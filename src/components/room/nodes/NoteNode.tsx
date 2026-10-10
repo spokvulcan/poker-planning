@@ -15,13 +15,13 @@ import type { NoteNodeType } from "../types";
 const AUTOSAVE_MS = 500;
 
 export const NoteNode = memo(
-  ({ data, selected }: NodeProps<NoteNodeType>): ReactElement => {
-    const { issueTitle, content, lastUpdatedBy, lastUpdatedAt, onUpdateContent, onDelete } = data;
+  ({ id, data, selected }: NodeProps<NoteNodeType>): ReactElement => {
+    const { issueTitle, content, lastUpdatedBy, lastUpdatedAt, actions } = data;
 
     // What's typed wins until it has landed; other people's edits come in otherwise.
     const [text, textarea] = useLiveText<HTMLTextAreaElement>({
       value: content,
-      save: onUpdateContent,
+      save: (next) => actions.updateNoteContent(id, next),
       autosaveMs: AUTOSAVE_MS,
     });
 
@@ -69,15 +69,13 @@ export const NoteNode = memo(
             <span className="text-xs font-medium text-amber-800 dark:text-amber-300 truncate flex-1">
               {issueTitle}
             </span>
-            {onDelete && (
-              <button
-                onClick={onDelete}
-                className="p-0.5 rounded hover:bg-red-100 dark:hover:bg-red-900/30 text-amber-600 dark:text-amber-400 hover:text-red-600 dark:hover:text-red-400 transition-colors"
-                aria-label="Delete note"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            )}
+            <button
+              onClick={() => actions.deleteNote(id)}
+              className="p-0.5 rounded hover:bg-red-100 dark:hover:bg-red-900/30 text-amber-600 dark:text-amber-400 hover:text-red-600 dark:hover:text-red-400 transition-colors"
+              aria-label="Delete note"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
           </div>
 
           {/* Content textarea */}

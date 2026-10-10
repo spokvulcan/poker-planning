@@ -8,17 +8,34 @@ import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
 import { render, screen, cleanup, fireEvent, act } from "@testing-library/react";
 import { ReactFlowProvider, type NodeProps } from "@xyflow/react";
 import type { Id } from "@/convex/_generated/dataModel";
-import type { NoteNodeData, NoteNodeType } from "../types";
+import type { NoteNodeData, NoteNodeType, PokerBoardActions } from "../types";
 import { NoteNode } from "./NoteNode";
 
-/** A save callback whose saves land only when the test says so. */
+/** The board's actions; a note's text saves at once and writes nowhere, as in the demo. */
+function boardActions(): PokerBoardActions {
+  return {
+    reveal: vi.fn(),
+    reset: vi.fn(),
+    toggleAutoComplete: vi.fn(),
+    cancelAutoReveal: vi.fn(),
+    selectCard: vi.fn(),
+    openIssues: vi.fn(),
+    updateNoteContent: vi.fn(async () => true),
+    deleteNote: vi.fn(),
+  };
+}
+
+/** The board's actions, with note saves that land only when the test says so. */
 function heldSaves() {
-  const saves: { content: string; land: () => Promise<void> }[] = [];
-  const onUpdateContent = (content: string) =>
-    new Promise<void>((resolve) => {
-      saves.push({ content, land: () => act(async () => resolve()) });
-    });
-  return { saves, onUpdateContent };
+  const saves: { nodeId: string; content: string; land: () => Promise<void> }[] = [];
+  const actions: PokerBoardActions = {
+    ...boardActions(),
+    updateNoteContent: (nodeId, content) =>
+      new Promise<boolean>((resolve) => {
+        saves.push({ nodeId, content, land: () => act(async () => resolve(true)) });
+      }),
+  };
+  return { saves, actions };
 }
 
 function renderNote(data: Partial<NoteNodeData>) {
@@ -26,7 +43,7 @@ function renderNote(data: Partial<NoteNodeData>) {
     issueId: "issue-1" as Id<"issues">,
     issueTitle: "Checkout flow",
     content: "",
-    onUpdateContent: () => {},
+    actions: boardActions(),
     ...data,
   };
   const ui = (next: NoteNodeData) => (
@@ -60,15 +77,15 @@ afterEach(() => {
 
 describe("NoteNode — concurrent edits", () => {
   it("keeps what is being typed when another user's edit arrives, then takes in edits after its own save lands", async () => {
-    const { saves, onUpdateContent } = heldSaves();
-    const note = renderNote({ content: "Risks:", onUpdateContent });
+    const { saves, actions } = heldSaves();
+    const note = renderNote({ content: "Risks:", actions });
 
     note.type("Risks: auth");
     note.serverHas("Risks: from Bob");
     expect(note.textarea.value).toBe("Risks: auth");
 
     note.debounce();
-    expect(saves.map((s) => s.content)).toEqual(["Risks: auth"]);
+    expect(saves.map((s) => [s.nodeId, s.content])).toEqual([["note-1", "Risks: auth"]]);
     note.serverHas("Risks: auth");
     await saves[0].land();
     expect(note.textarea.value).toBe("Risks: auth");
@@ -79,8 +96,8 @@ describe("NoteNode — concurrent edits", () => {
   });
 
   it("does not let the echo of an earlier save undo what was typed since", async () => {
-    const { saves, onUpdateContent } = heldSaves();
-    const note = renderNote({ content: "", onUpdateContent });
+    const { saves, actions } = heldSaves();
+    const note = renderNote({ content: "", actions });
 
     note.type("a");
     note.debounce();
@@ -98,8 +115,8 @@ describe("NoteNode — concurrent edits", () => {
   });
 
   it("holds another user's edit until a save still in flight lands, then shows it if it came last", async () => {
-    const { saves, onUpdateContent } = heldSaves();
-    const note = renderNote({ content: "", onUpdateContent });
+    const { saves, actions } = heldSaves();
+    const note = renderNote({ content: "", actions });
 
     note.type("mine");
     note.debounce();
@@ -125,7 +142,7 @@ describe("NoteNode — concurrent edits", () => {
   });
 
   it("keeps typed text when saving writes nowhere, as in the demo", () => {
-    const note = renderNote({ content: "", onUpdateContent: () => {} });
+    const note = renderNote({ content: "" });
 
     note.type("note to self");
     note.debounce();
@@ -139,5 +156,16 @@ describe("NoteNode — its limit", () => {
     const note = renderNote({ content: "" });
 
     expect(note.textarea.maxLength).toBe(10000);
+  });
+});
+
+describe("NoteNode — the board's actions", () => {
+  it("asks the board to take it off by its node id", () => {
+    const actions = boardActions();
+    renderNote({ content: "Risks: auth", actions });
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete note" }));
+
+    expect(actions.deleteNote).toHaveBeenCalledWith("note-1");
   });
 });

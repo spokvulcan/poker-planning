@@ -1,34 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { Check } from "lucide-react";
+import { useLoopingScene, type Scene } from "@/hooks/use-looping-scene";
+
+const REALTIME_VOTING: Scene<{ hovered: number | null; selected: number | null }> = [
+  { show: { hovered: null, selected: null }, hold: 1000 },
+  { show: { hovered: 2, selected: null }, hold: 400 }, // Card '5'
+  { show: { hovered: 2, selected: 2 }, hold: 2500 },
+];
 
 export function RealtimeVotingAnimation() {
-  const [hovered, setHovered] = useState<number | null>(null);
-  const [selected, setSelected] = useState<number | null>(null);
-
-  useEffect(() => {
-    let isMounted = true;
-    const play = async () => {
-      while (isMounted) {
-        setHovered(null);
-        setSelected(null);
-        await new Promise((r) => setTimeout(r, 1000));
-        if (!isMounted) break;
-
-        setHovered(2); // Card '5'
-        await new Promise((r) => setTimeout(r, 400));
-        if (!isMounted) break;
-
-        setSelected(2);
-        await new Promise((r) => setTimeout(r, 2500));
-      }
-    };
-    play();
-    return () => {
-      isMounted = false;
-    };
-  }, []);
+  const { hovered, selected } = useLoopingScene(REALTIME_VOTING);
 
   const cards = [1, 3, 5, 8];
 
@@ -57,26 +39,13 @@ export function RealtimeVotingAnimation() {
   );
 }
 
+const ANALYTICS: Scene<boolean> = [
+  { show: false, hold: 1000 },
+  { show: true, hold: 3500 },
+];
+
 export function AnalyticsAnimation() {
-  const [revealed, setRevealed] = useState(false);
-
-  useEffect(() => {
-    let isMounted = true;
-    const play = async () => {
-      while (isMounted) {
-        setRevealed(false);
-        await new Promise((r) => setTimeout(r, 1000));
-        if (!isMounted) break;
-
-        setRevealed(true);
-        await new Promise((r) => setTimeout(r, 3500));
-      }
-    };
-    play();
-    return () => {
-      isMounted = false;
-    };
-  }, []);
+  const revealed = useLoopingScene(ANALYTICS);
 
   const bars = [
     { height: "h-6", target: "h-12", value: "3" },
@@ -110,32 +79,15 @@ export function AnalyticsAnimation() {
   );
 }
 
+const JIRA_INTEGRATION: Scene<"idle" | "import" | "sync" | "done"> = [
+  { show: "idle", hold: 1000 },
+  { show: "import", hold: 1200 },
+  { show: "sync", hold: 1200 },
+  { show: "done", hold: 2000 },
+];
+
 export function JiraIntegrationAnimation() {
-  const [phase, setPhase] = useState<"idle" | "import" | "sync" | "done">("idle");
-
-  useEffect(() => {
-    let isMounted = true;
-    const play = async () => {
-      while (isMounted) {
-        setPhase("idle");
-        await new Promise((r) => setTimeout(r, 1000));
-        if (!isMounted) break;
-
-        setPhase("import");
-        await new Promise((r) => setTimeout(r, 1200));
-        if (!isMounted) break;
-
-        setPhase("sync");
-        await new Promise((r) => setTimeout(r, 1200));
-        if (!isMounted) break;
-
-        setPhase("done");
-        await new Promise((r) => setTimeout(r, 2000));
-      }
-    };
-    play();
-    return () => { isMounted = false; };
-  }, []);
+  const phase = useLoopingScene(JIRA_INTEGRATION);
 
   return (
     <div className="absolute inset-0 flex items-end justify-center pb-4 sm:pb-8 pointer-events-none">
@@ -177,30 +129,14 @@ export function JiraIntegrationAnimation() {
   );
 }
 
+const CANVAS: Scene<{ x: number; y: number }> = [
+  { show: { x: 0, y: 0 }, hold: 1000 },
+  { show: { x: -20, y: -30 }, hold: 800 },
+  { show: { x: -40, y: -10 }, hold: 1500 },
+];
+
 export function CanvasAnimation() {
-  const [pos, setPos] = useState({ x: 0, y: 0 });
-
-  useEffect(() => {
-    let isMounted = true;
-    const play = async () => {
-      while (isMounted) {
-        setPos({ x: 0, y: 0 });
-        await new Promise((r) => setTimeout(r, 1000));
-        if (!isMounted) break;
-
-        setPos({ x: -20, y: -30 });
-        await new Promise((r) => setTimeout(r, 800));
-        if (!isMounted) break;
-
-        setPos({ x: -40, y: -10 });
-        await new Promise((r) => setTimeout(r, 1500));
-      }
-    };
-    play();
-    return () => {
-      isMounted = false;
-    };
-  }, []);
+  const pos = useLoopingScene(CANVAS);
 
   return (
     <div className="absolute inset-0 flex items-end justify-center sm:justify-end pr-0 sm:pr-8 pb-4 sm:pb-8 pointer-events-none">
@@ -222,35 +158,20 @@ export function CanvasAnimation() {
   );
 }
 
+const SCALES: Scene<string[]> = [
+  ["1", "2", "3", "5", "8"],
+  ["XS", "S", "M", "L", "XL"],
+  ["1", "2", "4", "8", "16"],
+].map((scale) => ({ show: scale, hold: 2000 }));
+
 export function ScalesAnimation() {
-  const [scaleIdx, setScaleIdx] = useState(0);
-
-  useEffect(() => {
-    let isMounted = true;
-    const play = async () => {
-      while (isMounted) {
-        await new Promise((r) => setTimeout(r, 2000));
-        if (!isMounted) break;
-        setScaleIdx((prev) => (prev + 1) % 3);
-      }
-    };
-    play();
-    return () => {
-      isMounted = false;
-    };
-  }, []);
-
-  const scales = [
-    ["1", "2", "3", "5", "8"],
-    ["XS", "S", "M", "L", "XL"],
-    ["1", "2", "4", "8", "16"],
-  ];
+  const scale = useLoopingScene(SCALES);
 
   return (
     <div className="absolute inset-0 flex items-center justify-center sm:items-end sm:justify-end pr-0 sm:pr-8 pb-0 sm:pb-8 pointer-events-none">
       <div className="absolute right-0 bottom-0 w-48 h-48 bg-orange-500/5 rounded-full blur-3xl"></div>
       <div className="flex gap-2 z-10 opacity-90">
-        {scales[scaleIdx].map((val, i) => (
+        {scale.map((val, i) => (
           <div
             key={i + val} // Key changes to force animation
             className="w-10 h-14 bg-white dark:bg-zinc-800 rounded-lg flex items-center justify-center font-bold text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-zinc-700 shadow-sm animate-in zoom-in fade-in duration-300"
@@ -264,39 +185,22 @@ export function ScalesAnimation() {
   );
 }
 
+// The second each of the four votes lands; the clock shows a dot per landed vote.
+const VOTES_LAND_AT = [3, 6, 8, 11];
+const clock = (seconds: number, consensus = false) => ({
+  seconds,
+  dots: VOTES_LAND_AT.map((landed) => landed <= seconds),
+  consensus,
+});
+
+const TIME_TO_CONSENSUS: Scene<ReturnType<typeof clock>> = [
+  { show: clock(0), hold: 800 },
+  ...Array.from({ length: 12 }, (_, i) => ({ show: clock(i + 1), hold: 150 })),
+  { show: clock(12, true), hold: 2500 },
+];
+
 export function TimeToConsensusAnimation() {
-  const [seconds, setSeconds] = useState(0);
-  const [dots, setDots] = useState<boolean[]>([false, false, false, false]);
-  const [consensus, setConsensus] = useState(false);
-
-  useEffect(() => {
-    let isMounted = true;
-    const play = async () => {
-      while (isMounted) {
-        setSeconds(0);
-        setDots([false, false, false, false]);
-        setConsensus(false);
-        await new Promise((r) => setTimeout(r, 800));
-        if (!isMounted) break;
-
-        for (let s = 1; s <= 12; s++) {
-          if (!isMounted) break;
-          setSeconds(s);
-          if (s === 3) setDots([true, false, false, false]);
-          if (s === 6) setDots([true, true, false, false]);
-          if (s === 8) setDots([true, true, true, false]);
-          if (s === 11) setDots([true, true, true, true]);
-          await new Promise((r) => setTimeout(r, 150));
-        }
-        if (!isMounted) break;
-
-        setConsensus(true);
-        await new Promise((r) => setTimeout(r, 2500));
-      }
-    };
-    play();
-    return () => { isMounted = false; };
-  }, []);
+  const { seconds, dots, consensus } = useLoopingScene(TIME_TO_CONSENSUS);
 
   const formatTime = (s: number) => `0:${s.toString().padStart(2, "0")}`;
 
@@ -323,31 +227,17 @@ export function TimeToConsensusAnimation() {
   );
 }
 
+const ISSUES = ["PROJ-123", "PROJ-124", "PROJ-125"];
+const ESTIMATING: Scene<number> = ISSUES.map((_, active) => ({ show: active, hold: 1500 }));
+
 export function IssuesAnimation() {
-  const [active, setActive] = useState(0);
-
-  useEffect(() => {
-    let isMounted = true;
-    const play = async () => {
-      while (isMounted) {
-        await new Promise((r) => setTimeout(r, 1500));
-        if (!isMounted) break;
-        setActive((prev) => (prev + 1) % 3);
-      }
-    };
-    play();
-    return () => {
-      isMounted = false;
-    };
-  }, []);
-
-  const issues = ["PROJ-123", "PROJ-124", "PROJ-125"];
+  const active = useLoopingScene(ESTIMATING);
 
   return (
     <div className="absolute inset-0 flex items-end justify-center sm:justify-end pr-0 sm:pr-8 pb-4 sm:pb-8 pointer-events-none">
       <div className="absolute right-0 bottom-0 w-48 h-48 bg-sky-500/5 rounded-full blur-3xl"></div>
       <div className="flex flex-col gap-2 z-10 w-48">
-        {issues.map((issue, i) => (
+        {ISSUES.map((issue, i) => (
           <div
             key={issue}
             className={`h-10 rounded-lg flex items-center px-3 gap-3 transition-all duration-500 border shadow-sm
@@ -369,28 +259,14 @@ export function IssuesAnimation() {
   );
 }
 
+const VOTER_ALIGNMENT: Scene<"scattered" | "converging" | "aligned"> = [
+  { show: "scattered", hold: 1200 },
+  { show: "converging", hold: 1000 },
+  { show: "aligned", hold: 2500 },
+];
+
 export function VoterAlignmentAnimation() {
-  const [phase, setPhase] = useState<"scattered" | "converging" | "aligned">("scattered");
-
-  useEffect(() => {
-    let isMounted = true;
-    const play = async () => {
-      while (isMounted) {
-        setPhase("scattered");
-        await new Promise((r) => setTimeout(r, 1200));
-        if (!isMounted) break;
-
-        setPhase("converging");
-        await new Promise((r) => setTimeout(r, 1000));
-        if (!isMounted) break;
-
-        setPhase("aligned");
-        await new Promise((r) => setTimeout(r, 2500));
-      }
-    };
-    play();
-    return () => { isMounted = false; };
-  }, []);
+  const phase = useLoopingScene(VOTER_ALIGNMENT);
 
   const scattered = [
     { top: "12%", left: "10%" },

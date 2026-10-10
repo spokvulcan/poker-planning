@@ -113,10 +113,6 @@ export function useCanvasActions({
           roomId,
           userId: currentUserId,
           cardLabel: cardValue,
-          // parseFloat, not parseInt — fractional scale cards like "0.5" must
-          // keep their value; parseInt("0.5") truncates to 0. Special cards
-          // ("?", "☕") are non-numeric and intentionally fall back to 0.
-          cardValue: parseFloat(cardValue) || 0,
         });
       } catch (error) {
         console.error("Failed to pick card:", error);

@@ -3,7 +3,7 @@ import { Id, Doc } from "../_generated/dataModel";
 import * as Canvas from "./canvas";
 import * as Memberships from "./memberships";
 import * as Ownership from "./ownership";
-import { VOTING_SCALES, VotingScaleType, validateCustomScale } from "../scales";
+import { DEFAULT_SCALE, VOTING_SCALES, VotingScaleType, validateCustomScale } from "../scales";
 import { ROOM_NAME } from "../constants";
 import { requireValid } from "./refusal";
 import { rulesOf } from "../ceremony";
@@ -34,18 +34,8 @@ export interface RoomWithRelatedData {
  * Resolves voting scale configuration from user input
  */
 function resolveVotingScale(scaleConfig?: CreateRoomArgs["votingScale"]) {
-  // Default to Fibonacci if no scale provided
-  if (!scaleConfig) {
-    const fibonacci = VOTING_SCALES.fibonacci;
-    return {
-      type: fibonacci.type,
-      cards: [...fibonacci.cards],
-      isNumeric: fibonacci.isNumeric,
-    };
-  }
-
   // Handle custom scales
-  if (scaleConfig.type === "custom") {
+  if (scaleConfig?.type === "custom") {
     if (!scaleConfig.cards || scaleConfig.cards.length === 0) {
       throw new Error("Custom scale requires cards array");
     }
@@ -59,8 +49,8 @@ function resolveVotingScale(scaleConfig?: CreateRoomArgs["votingScale"]) {
     };
   }
 
-  // Handle predefined scales
-  const predefinedScale = VOTING_SCALES[scaleConfig.type];
+  // Handle predefined scales, and the default when none was picked
+  const predefinedScale = scaleConfig ? VOTING_SCALES[scaleConfig.type] : DEFAULT_SCALE;
   return {
     type: predefinedScale.type,
     cards: [...predefinedScale.cards],

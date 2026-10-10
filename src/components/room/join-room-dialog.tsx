@@ -32,6 +32,8 @@ export function JoinRoomDialog({ roomId, roomName, roomType }: JoinRoomDialogPro
   const [isJoining, setIsJoining] = useState(false);
 
   const handleJoin = async () => {
+    // One join at a time: Enter gets here even while the button is disabled.
+    if (isJoining) return;
     if (!userName.trim()) {
       toast.error("Please enter your name");
       return;
