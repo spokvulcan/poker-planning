@@ -87,7 +87,7 @@ tests/
 
 ## Releases
 
-Commit and PR titles follow Conventional Commits (`feat:`, `fix:`, `chore:`, …): release-please builds versions and the changelog from them, and CI checks them. Convex deploys from CI once `main` passes. See [docs/releasing.md](docs/releasing.md).
+Commit and PR titles follow Conventional Commits (`feat:`, `fix:`, `chore:`, …): release-please builds versions and the changelog from them, and CI checks them. Releases and deploys: [docs/releasing.md](docs/releasing.md).
 
 ## Plan Mode
 

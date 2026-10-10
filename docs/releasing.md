@@ -89,9 +89,9 @@ chore(deps): bump next from 15.0.0 to 15.1.0
 - No deployment changes needed for releases
 
 ### Convex (Backend)
-- **Deploys separately** when schema/functions change
+- **Deploys manually**: run `npx convex deploy` from an up-to-date `main` after merging backend changes. That includes dependency updates, because a Convex component's code ships inside the deploy.
+- The command asks before it pushes to the production deployment; answer in the terminal that runs it.
 - Not tied to release versioning
-- Manual deployment via `npx convex deploy --prod`
 
 ## Viewing Releases
 
