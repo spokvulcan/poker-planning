@@ -124,12 +124,25 @@ export const editGlobalUser = mutation({
   },
 });
 
-// Delete user completely (called on sign out)
+// Delete account: deletes the caller's account, whatever its kind (the
+// Account tab). Older browsers also call it to sign a guest out.
 export const deleteUser = mutation({
   args: {},
   handler: async (ctx) => {
     const { user } = await requireCaller(ctx);
     if (user) await AccountLifecycle.deleteAccount(ctx, user);
+  },
+});
+
+// Sign out: deletes the caller's account only when they are a guest; a
+// permanent account is kept. With nobody signed in there is nothing to
+// delete, and the browser, which calls it before clearing its session, still
+// clears it.
+export const signOut = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const caller = await getCaller(ctx);
+    if (caller) await AccountLifecycle.signOut(ctx, caller);
   },
 });
 
