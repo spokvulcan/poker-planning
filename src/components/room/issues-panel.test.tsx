@@ -2,11 +2,12 @@
  * IssuesPanel — the Quick Vote switch consumes the game-flow decision it is
  * handed: denied renders the switch disabled with the decision's denial copy
  * (and no onClick that would let the backend throw); allowed keeps it live.
- * Convex reads/writes, toast, and the mobile branch are mocked at the seams;
- * the decision itself comes from the real computePermissions.
+ * A refused write shows the refusal's message. Convex reads/writes, toast,
+ * and the mobile branch are mocked at the seams; the decision itself comes
+ * from the real computePermissions.
  */
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, screen, fireEvent, cleanup } from "@testing-library/react";
+import { render, screen, fireEvent, cleanup, act } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { computePokerPermissions as computePermissions } from "@/hooks/usePermissions";
 import type { RoomWithRelatedData } from "@/convex/model/rooms";
@@ -21,6 +22,9 @@ import {
 // Hoisted recorder shared with the (hoisted) vi.mock factories below.
 const mocks = vi.hoisted(() => ({
   switchToQuickVote: vi.fn(() => Promise.resolve(undefined)),
+  createIssue: vi.fn((): Promise<unknown> => Promise.resolve(undefined)),
+  // Every error toast's message: what the person is shown when a write fails.
+  errors: [] as string[],
 }));
 
 vi.mock("convex/react", () => ({
@@ -38,7 +42,7 @@ vi.mock("next/link", () => ({
 vi.mock("@/hooks/use-mobile", () => ({ useIsMobile: () => false }));
 
 vi.mock("@/lib/toast", () => ({
-  toast: { success: () => {}, error: () => {} },
+  toast: { success: () => {}, error: (message: string) => mocks.errors.push(message) },
 }));
 
 vi.mock("./hooks/useIssues", () => ({
@@ -52,7 +56,7 @@ vi.mock("./hooks/useIssues", () => ({
 
 vi.mock("./hooks/useIssueActions", () => ({
   useIssueActions: () => ({
-    createIssue: () => Promise.resolve(undefined),
+    createIssue: mocks.createIssue,
     startVoting: () => Promise.resolve(undefined),
     switchToQuickVote: mocks.switchToQuickVote,
     updateTitle: () => Promise.resolve(undefined),
@@ -61,6 +65,7 @@ vi.mock("./hooks/useIssueActions", () => ({
   }),
 }));
 
+import { refusal } from "@/convex/model/refusal";
 import { IssuesPanel } from "./issues-panel";
 
 const allEveryone: RoomPermissions = {
@@ -100,6 +105,8 @@ function renderPanel(canControlGameFlow: ResolvedDecision) {
 afterEach(() => {
   cleanup();
   mocks.switchToQuickVote.mockClear();
+  mocks.createIssue.mockReset();
+  mocks.errors.length = 0;
 });
 
 describe("IssuesPanel — Quick Vote switch and the game-flow decision", () => {
@@ -137,5 +144,19 @@ describe("IssuesPanel — adding an issue", () => {
     renderPanel(RESOLVED_ALLOWED);
 
     expect((screen.getByPlaceholderText("Add new issue...") as HTMLInputElement).maxLength).toBe(500);
+  });
+
+  it("a refused issue shows the refusal's message and keeps the typed title", async () => {
+    mocks.createIssue.mockRejectedValue(refusal("forbidden", "Rooms are limited to 500 issues"));
+    renderPanel(RESOLVED_ALLOWED);
+    const input = screen.getByPlaceholderText("Add new issue...") as HTMLInputElement;
+
+    fireEvent.change(input, { target: { value: "Checkout flow" } });
+    await act(async () => {
+      fireEvent.keyDown(input, { key: "Enter" });
+    });
+
+    expect(mocks.errors).toEqual(["Rooms are limited to 500 issues"]);
+    expect(input.value).toBe("Checkout flow");
   });
 });

@@ -478,8 +478,8 @@ describe("removeInactiveRooms", () => {
 
     // The room's only sign of life in days is a timer start — that must count
     // as activity or the cleanup cascade deletes a room in use.
-    await t.run((ctx) =>
-      Timer.updateTimerState(ctx, { roomId, nodeId: "timer", action: "start", userId })
+    await t.run(async (ctx) =>
+      Timer.updateTimerState(ctx, { room: (await ctx.db.get("rooms", roomId))!, nodeId: "timer", action: "start", userId })
     );
 
     const result = await t.mutation(internal.cleanup.removeInactiveRooms, {});

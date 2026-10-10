@@ -110,7 +110,6 @@ function JoinGate({
       await joinRoom({
         roomId,
         name: globalUser.name,
-        authUserId,
       });
       // No need to set state - existingMembership query will auto-update
     } catch (error) {
