@@ -210,8 +210,7 @@ describe("useRetroMutations", () => {
     { write: "deleteActionItem", send: (m) => m.deleteActionItem({ itemId: ITEM }), patches: ["retro:actionItems"] },
     {
       write: "moveNodes",
-      send: (m) =>
-        m.moveNodes({ roomId: ROOM, moves: [{ nodeId: "actions", position: { x: 0, y: 900 } }], userId: ME }),
+      send: (m) => m.moveNodes({ roomId: ROOM, moves: [{ nodeId: "actions", position: { x: 0, y: 900 } }] }),
       patches: ["canvas:getCanvasNodes"],
     },
   ];
