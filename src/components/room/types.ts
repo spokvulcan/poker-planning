@@ -2,12 +2,32 @@ import { Node } from "@xyflow/react";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { SanitizedVote } from "@/convex/model/rooms";
 import type { RoomUserData } from "@/convex/model/memberships";
-import type { MemberRole, ResolvedDecision } from "@/convex/permissions";
+import type { MemberRole, PokerPermissionCategory, ResolvedDecision } from "@/convex/permissions";
 import type { Phase } from "@/convex/phase";
 import type { TimerState } from "@/convex/timerState";
 
 // Demo mode constants
 export const DEMO_VIEWER_ID = "demo-viewer" as const;
+
+/**
+ * Everything a node on the poker board can ask for, behind one frozen-identity
+ * object that rides in each node's data, as on the retro's board: no node gets
+ * a handler of its own, so a node nothing changed keeps its object through the
+ * whiteboard's merge and its memo holds. The board's adapter builds it over
+ * the canvas writes.
+ */
+export interface PokerBoardActions {
+  reveal: () => void;
+  reset: () => void;
+  toggleAutoComplete: () => void;
+  cancelAutoReveal: () => void;
+  selectCard: (cardValue: string) => void;
+  openIssues: () => void;
+  /** Resolves to whether the note's text landed, for the field to keep it until it has. */
+  updateNoteContent: (nodeId: string, content: string) => Promise<boolean>;
+  /** Takes an empty note off at once, and asks first when it has words in it. */
+  deleteNote: (nodeId: string) => void;
+}
 
 // Node data types
 export type PlayerNodeData = {
@@ -36,14 +56,9 @@ export type SessionNodeData = {
     id: Id<"issues">;
     title: string;
   } | null;
-  canRevealCards: ResolvedDecision;
-  canControlGameFlow: ResolvedDecision;
-  canChangeRoomSettings: ResolvedDecision;
-  onRevealCards?: () => void;
-  onResetGame?: () => void;
-  onToggleAutoComplete?: () => void;
-  onCancelAutoReveal?: () => void;
-  onOpenIssuesPanel?: () => void;
+  /** The viewer's decision for each of the room's permission categories. */
+  permissions: Record<PokerPermissionCategory, ResolvedDecision>;
+  actions: PokerBoardActions;
 };
 
 // Persisted fields come from the single declaration in @/convex/timerState;
@@ -61,7 +76,7 @@ export type VotingCardNodeData = {
   roomId: string;
   isSelectable: boolean;
   isSelected: boolean;
-  onCardSelect?: (cardValue: string) => void;
+  actions: PokerBoardActions;
 };
 
 export type ResultsNodeData = {
@@ -76,10 +91,7 @@ export type NoteNodeData = {
   content: string;
   lastUpdatedBy?: string; // User name who last edited
   lastUpdatedAt?: number;
-  /** Saves the note's text; a returned promise settles once the save has landed. */
-  /** Resolves to `false` when the text didn't land. */
-  onUpdateContent: (content: string) => Promise<boolean | void> | void;
-  onDelete?: () => void;
+  actions: PokerBoardActions;
 };
 
 // Node types

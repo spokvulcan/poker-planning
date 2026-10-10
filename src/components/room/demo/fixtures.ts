@@ -99,7 +99,7 @@ export const DEMO_CURRENT_ISSUE = DEMO_ISSUES[0];
 // Positions are static — the canvas is locked in demo mode.
 
 /**
- * Builds the canvas node set in the shape `useCanvasNodes` consumes from
+ * Builds the canvas node set in the shape the poker board reads from
  * `api.canvas.getCanvasNodes`. Constant for the page's lifetime.
  */
 function buildDemoCanvasNodes(): CanvasNode[] {
