@@ -1,6 +1,8 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { isAuthenticated } from "@/lib/auth-server";
+import { fetchAuthQuery, isAuthenticated } from "@/lib/auth-server";
+import { api } from "@/convex/_generated/api";
+import { jiraRefusalCode } from "../refusal";
 
 export async function GET() {
   const authed = await isAuthenticated();
@@ -8,15 +10,25 @@ export async function GET() {
     redirect("/dashboard/settings?tab=integrations&error=jira_unauthorized");
   }
 
-  const clientId = process.env.JIRA_CLIENT_ID;
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? process.env.NEXT_PUBLIC_SITE_URL;
+  // CSRF protection: random state, kept in an httpOnly cookie below
+  const state = crypto.randomUUID();
 
-  if (!clientId || !appUrl) {
-    redirect("/dashboard/settings?tab=integrations&error=jira_not_configured");
+  let authorizeUrl: string;
+  try {
+    // The Jira OAuth app's settings live in Convex, so it builds the URL
+    authorizeUrl = await fetchAuthQuery(
+      api.integrations.jira.getJiraAuthorizeUrl,
+      { state }
+    );
+  } catch (err) {
+    console.error("Failed to start connecting Jira:", err);
+    redirect(
+      `/dashboard/settings?tab=integrations&error=${
+        jiraRefusalCode(err) ?? "jira_authorize_failed"
+      }`
+    );
   }
 
-  // CSRF protection: store random state in httpOnly cookie
-  const state = crypto.randomUUID();
   const cookieStore = await cookies();
   cookieStore.set("jira_oauth_state", state, {
     httpOnly: true,
@@ -26,18 +38,5 @@ export async function GET() {
     path: "/",
   });
 
-  const params = new URLSearchParams({
-    audience: "api.atlassian.com",
-    client_id: clientId,
-    scope:
-      "read:jira-work write:jira-work read:project:jira read:board-scope:jira-software read:sprint:jira-software read:issue:jira-software write:issue:jira-software offline_access",
-    redirect_uri: `${appUrl}/api/integrations/jira/callback`,
-    state,
-    response_type: "code",
-    prompt: "consent",
-  });
-
-  return Response.redirect(
-    `https://auth.atlassian.com/authorize?${params.toString()}`
-  );
+  return Response.redirect(authorizeUrl);
 }

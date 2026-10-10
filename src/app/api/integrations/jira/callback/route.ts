@@ -1,17 +1,8 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { ConvexError } from "convex/values";
 import { fetchAuthAction } from "@/lib/auth-server";
 import { api } from "@/convex/_generated/api";
-import type { JiraNotConfigured } from "@/convex/integrations/jiraAuth";
-import { exchangeJiraCode } from "./exchangeCode";
-
-/** Whether Convex refused the connect because its Jira settings are missing. */
-function isNotConfigured(error: unknown): boolean {
-  if (!(error instanceof ConvexError)) return false;
-  const code = (error.data as Partial<JiraNotConfigured> | undefined)?.code;
-  return code === "jira_not_configured";
-}
+import { jiraRefusalCode } from "../refusal";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -36,28 +27,15 @@ export async function GET(request: Request) {
     redirect("/dashboard/settings?tab=integrations&error=jira_state_mismatch");
   }
 
-  const appUrl =
-    process.env.NEXT_PUBLIC_APP_URL ?? process.env.NEXT_PUBLIC_SITE_URL!;
-
-  const result = await exchangeJiraCode(code, {
-    clientId: process.env.JIRA_CLIENT_ID!,
-    clientSecret: process.env.JIRA_CLIENT_SECRET!,
-    appUrl,
-  });
-
-  if (!result.ok) {
-    redirect(`/dashboard/settings?tab=integrations&error=${result.error}`);
-  }
-
   try {
-    // Call public action via user's auth session (fetchAuthAction
-    // carries the user's session cookie automatically)
-    await fetchAuthAction(api.integrations.jira.connectJira, result.connection);
+    // Convex exchanges the code and stores the connection, as the person
+    // (fetchAuthAction carries the user's session cookie automatically)
+    await fetchAuthAction(api.integrations.jira.connectJira, { code });
   } catch (err) {
-    console.error("Failed to store Jira connection:", err);
+    console.error("Failed to connect Jira:", err);
     redirect(
       `/dashboard/settings?tab=integrations&error=${
-        isNotConfigured(err) ? "jira_not_configured" : "jira_store_failed"
+        jiraRefusalCode(err) ?? "jira_store_failed"
       }`
     );
   }
