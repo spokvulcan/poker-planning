@@ -53,6 +53,16 @@ export async function requireUser(
 }
 
 /**
+ * Whether the caller is a guest, as their session's token says: BetterAuth
+ * puts its user's fields in the token, `isAnonymous` among them, true for a
+ * guest and false for a permanent account. Only a token that says so makes a
+ * guest; the users row's kind isn't asked (a row can lack one).
+ */
+export function isGuest(caller: Caller): boolean {
+  return caller.identity.isAnonymous === true;
+}
+
+/**
  * The users row of the person signed in as `authUserId`, or null: for code
  * that is told who the person is rather than asking (BetterAuth's hooks, a
  * join that names its own id).

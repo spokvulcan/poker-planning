@@ -32,6 +32,7 @@ export function IntegrationsSettings() {
         jira_unauthorized: "You must be signed in to connect Jira.",
         jira_not_configured:
           "Jira integration is not configured. Please contact the administrator.",
+        jira_authorize_failed: "Could not start connecting Jira. Please try again.",
         jira_denied: "Jira authorization was denied.",
         jira_invalid: "Invalid callback parameters.",
         jira_state_mismatch: "Security check failed. Please try again.",

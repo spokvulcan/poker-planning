@@ -18,6 +18,7 @@ import { trackConversion } from "@/lib/analytics";
 import { cn } from "@/lib/utils";
 import { useEnsureSession } from "@/hooks/useEnsureSession";
 import { useCopyRoomUrlToClipboard } from "@/hooks/use-copy-room-url-to-clipboard";
+import { ROOM_NAME } from "@/convex/constants";
 import { DEFAULT_TEMPLATE_ID, RETRO_TEMPLATES } from "@/convex/retroTemplates";
 import { STICKY_TONES } from "@/components/retro/sticky-colors";
 
@@ -94,6 +95,7 @@ export function CreateRetroContent() {
                     <Input
                       id="retro-name"
                       placeholder="e.g., Sprint 42 Retro"
+                      maxLength={ROOM_NAME.maxLength}
                       value={name}
                       onChange={(e) => setName(e.target.value)}
                       onKeyDown={(e) => e.key === "Enter" && !isCreating && void handleCreate()}

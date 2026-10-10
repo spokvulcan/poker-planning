@@ -121,11 +121,13 @@ export const ActionsNode = memo(({ data, selected }: NodeProps<Node<ActionsNodeD
   const fresh = (items ?? []).filter((i) => !i.carriedOver);
   const open = (items ?? []).filter((i) => !i.done).length;
 
-  const add = () => {
+  // The pending item takes the words' place until it lands; a refused one
+  // gives them back, unless something new has been typed since.
+  const add = async () => {
     const text = draft.trim();
     if (!text || !canManage.allowed) return;
-    actions.addActionItem(text);
     setDraft("");
+    if (!(await actions.addActionItem(text))) setDraft((typed) => typed || text);
   };
 
   return (
@@ -194,7 +196,7 @@ export const ActionsNode = memo(({ data, selected }: NodeProps<Node<ActionsNodeD
             onKeyDown={(e) => {
               if (e.key === "Enter") {
                 e.preventDefault();
-                add();
+                void add();
               }
             }}
             maxLength={MAX_ACTION_TEXT_LENGTH}

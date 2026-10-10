@@ -151,6 +151,14 @@ describe("NoteNode — concurrent edits", () => {
   });
 });
 
+describe("NoteNode — its limit", () => {
+  it("stops typing at the discussion note's limit", () => {
+    const note = renderNote({ content: "" });
+
+    expect(note.textarea.maxLength).toBe(10000);
+  });
+});
+
 describe("NoteNode — the board's actions", () => {
   it("asks the board to take it off by its node id", () => {
     const actions = boardActions();

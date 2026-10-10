@@ -569,6 +569,28 @@ describe("cleanupOrphanedData", () => {
     expect(await countRows(t, "issueLinks")).toBe(0);
   });
 
+  it("removes the webhook of a mapping whose room was deleted out from under it", async () => {
+    const t = withComponents(convexTest(schema, modules));
+    const roomId = await seedRoom(t);
+    const userId = await t.run((ctx) =>
+      ctx.db.insert("users", { authUserId: "auth-u", name: "U", createdAt: Date.now() })
+    );
+    const connectionId = await seedConnection(t, userId);
+    await seedMappingWithWebhook(t, roomId, connectionId, "wh-orphan");
+    await t.run((ctx) => ctx.db.delete("rooms", roomId));
+
+    const result = await t.mutation(internal.maintenance.cleanupOrphanedData, {});
+
+    expect(result.orphanedIntegrationMappings).toBe(1);
+    expect(await countRows(t, "integrationMappings")).toBe(0);
+    // The job may already have fired on real timers and scheduled its one
+    // disarmed retry, so match the original job (no attemptsLeft).
+    const removals = (await scheduledByName(t, ":deregisterWebhook")).filter(
+      (j) => (j.args as [{ attemptsLeft?: number }])[0].attemptsLeft === undefined
+    );
+    expect(removals.map((j) => j.args[0])).toEqual([{ connectionId, webhookId: "wh-orphan" }]);
+  });
+
   it("sweeps an issueLink whose issue is gone while its room lives", async () => {
     const t = withComponents(convexTest(schema, modules));
     const roomId = await seedRoom(t);

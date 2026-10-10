@@ -1,7 +1,8 @@
 import { MutationCtx } from "../_generated/server";
 import { Doc, Id } from "../_generated/dataModel";
 import { internal } from "../_generated/api";
-import { scheduleWebhookDeregistration } from "./integrations";
+import * as Integrations from "./integrations";
+import * as Issues from "./issues";
 import * as Presence from "./presence";
 
 /**
@@ -36,8 +37,8 @@ export const ORPHAN_SWEPT_TABLES = [
  *
  * Every table keyed by `roomId` is a direct member. `issueLinks` is owned
  * transitively through its issue — rows written before it gained its own
- * `roomId` can only be found that way — so the cascade expands it from the
- * room's issues instead.
+ * `roomId` can only be found that way — so the cascade deletes each issue
+ * through the issue module, which deletes its links with it.
  *
  * Deliberately NOT room-owned: `integrationConnections` belongs to users,
  * `webhookEvents` is a global dedup table, and `users` is global identity.
@@ -83,47 +84,35 @@ export interface RoomAggregateDeleteStep {
  * the step returns `done: false`.
  *
  * Phase order is load-bearing:
- * 1. issues + their issueLinks — links expand from the room's issues, so each
- *    issue batch must go before its rows vanish (a deleted issue's links can
- *    no longer be found by index).
+ * 1. issues, each with its issueLinks — through the issue module, which finds
+ *    the links by issue, so they go in the same step as their issue (a
+ *    deleted issue's links can no longer be found by index).
  * 2. the remaining by_room tables, one batch per table per step.
  * 3. the room's presence, then the room row itself, only once every owned
  *    table reads empty. Memberships are gone by then, so no heartbeat can
  *    write presence for the room again.
  *
- * integrationMappings rows schedule webhook deregistration BEFORE deletion:
- * deleting the mapping alone would orphan the remote Jira webhook (it keeps
- * POSTing until its 30-day expiry). Connections belong to users, not rooms,
- * so the connection row survives the cascade and the scheduled action can
- * still authenticate the remote delete.
+ * integrationMappings rows are deleted through Integrations.deleteMapping,
+ * which hands each one's webhook to the provider's reconcile. Connections
+ * belong to users, not rooms, so the connection row survives the cascade and
+ * the webhook's removal can still authenticate with it.
  */
 export async function deleteRoomAggregateChunk(
   ctx: MutationCtx,
   roomId: Id<"rooms">,
   batchSize: number = ROOM_DELETE_BATCH_SIZE
 ): Promise<RoomAggregateDeleteStep> {
-  // Phase 1: issues + their links, one batch at a time.
+  // Phase 1: issues, each with its links, one batch at a time.
   const issueBatch = (await ctx.db
     .query("issues")
     .withIndex("by_room", (q) => q.eq("roomId", roomId))
     .take(batchSize)) as Doc<"issues">[];
 
   if (issueBatch.length > 0) {
-    const links = (
-      await Promise.all(
-        issueBatch.map((issue) =>
-          ctx.db
-            .query("issueLinks")
-            .withIndex("by_issue", (q) => q.eq("issueId", issue._id))
-            .collect()
-        )
-      )
-    ).flat();
-    await Promise.all([
-      ...links.map((link) => ctx.db.delete("issueLinks", link._id)),
-      ...issueBatch.map((issue) => ctx.db.delete("issues", issue._id)),
-    ]);
-    return { done: false, deleted: issueBatch.length + links.length };
+    const deleted = await Promise.all(
+      issueBatch.map((issue) => Issues.deleteIssueWithLinks(ctx, issue._id))
+    );
+    return { done: false, deleted: deleted.reduce((sum, rows) => sum + rows, 0) };
   }
 
   // Phase 2: the remaining room-owned tables, one batch per table per step.
@@ -143,12 +132,12 @@ export async function deleteRoomAggregateChunk(
     const rows = batches[i];
 
     if (table === "integrationMappings") {
-      for (const mapping of rows as Doc<"integrationMappings">[]) {
-        await scheduleWebhookDeregistration(ctx, mapping);
-      }
+      await Promise.all(
+        (rows as Doc<"integrationMappings">[]).map((mapping) => Integrations.deleteMapping(ctx, mapping))
+      );
+    } else {
+      await Promise.all(rows.map((row) => ctx.db.delete(table, row._id as Id<typeof table>)));
     }
-
-    await Promise.all(rows.map((row) => ctx.db.delete(table, row._id)));
     deleted += rows.length;
     if (rows.length === batchSize) anyFullBatch = true;
   }

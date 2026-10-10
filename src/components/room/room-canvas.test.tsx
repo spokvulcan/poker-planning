@@ -3,6 +3,7 @@
  * whiteboard. React Flow is stubbed as in the whiteboard's own test: the
  * tests drive the callbacks it would call (a drop, Delete) and click the
  * controls the board's nodes draw, and read the writes that reach Convex.
+ * The board gets the room's data from `rooms.get`, as the room page hands it.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
@@ -47,20 +48,47 @@ vi.mock("@xyflow/react", async () => {
   };
 });
 
-// The server: what the board's two queries return, and every write it makes.
-const server = vi.hoisted(() => ({
-  canvasNodes: [] as unknown[],
-  currentIssue: null as unknown,
-  writes: [] as { name: string; args: Record<string, unknown> }[],
-}));
+// The server: what the board's queries return, and every write it makes. The
+// room's data is live, as Convex keeps it: a write's optimistic update lands
+// on it at once, and the server answers no write.
+const server = vi.hoisted(() => {
+  const listeners = new Set<() => void>();
+  const state = {
+    room: undefined as unknown,
+    canvasNodes: [] as unknown[],
+    currentIssue: null as unknown,
+    writes: [] as { name: string; args: Record<string, unknown> }[],
+    subscribe: (listener: () => void) => {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+    setRoom: (room: unknown) => {
+      state.room = room;
+      for (const listener of listeners) listener();
+    },
+  };
+  return state;
+});
 
 vi.mock("convex/react", async () => {
   const { getFunctionName } = await import("convex/server");
+  const { useSyncExternalStore } = await vi.importActual<typeof import("react")>("react");
   type Ref = Parameters<typeof getFunctionName>[0];
+  // What an optimistic update reads and writes: the room's data.
+  const store = {
+    getQuery: (query: Ref) => (getFunctionName(query) === "rooms:get" ? server.room : undefined),
+    setQuery: (query: Ref, _args: unknown, value: unknown) => {
+      if (getFunctionName(query) === "rooms:get") server.setRoom(value);
+    },
+  };
   return {
     useQuery: (query: Ref, args: unknown) => {
+      const room = useSyncExternalStore(server.subscribe, () => server.room);
       if (args === "skip") return undefined;
       const name = getFunctionName(query);
+      if (name === "rooms:get") return room;
       if (name === "canvas:getCanvasNodes") return server.canvasNodes;
       if (name === "issues:getCurrent") return server.currentIssue;
       return undefined;
@@ -71,7 +99,14 @@ vi.mock("convex/react", async () => {
         server.writes.push({ name, args });
         return Promise.resolve(undefined);
       };
-      return Object.assign(write, { withOptimisticUpdate: () => write });
+      return Object.assign(write, {
+        withOptimisticUpdate:
+          (update: (local: typeof store, args: Record<string, unknown>) => void) =>
+          (args: Record<string, unknown>) => {
+            update(store, args);
+            return write(args);
+          },
+      });
     },
   };
 });
@@ -82,11 +117,14 @@ vi.mock("./canvas-navigation", () => ({ CanvasNavigation: () => null }));
 vi.mock("@/components/canvas-dots-background", () => ({ CanvasDotsBackground: () => null }));
 vi.mock("@/hooks/use-mobile", () => ({ useIsMobile: () => false }));
 
+import { useQuery } from "convex/react";
+import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { CanvasNode } from "@/convex/model/canvas";
 import type { RoomUserData } from "@/convex/model/memberships";
 import type { RoomWithRelatedData, SanitizedVote } from "@/convex/model/rooms";
 import { RoomCanvas } from "./room-canvas";
+import type { VotingCardNodeData } from "./types";
 
 const ROOM_ID = "room-1" as Id<"rooms">;
 const ISSUE_ID = "issue-1" as Id<"issues">;
@@ -112,13 +150,19 @@ function withNote(content: string) {
   ];
 }
 
-function vote(userId: Id<"users">): SanitizedVote {
-  return { _id: `vote-${userId}` as Id<"votes">, _creationTime: 0, roomId: ROOM_ID, userId, hasVoted: true };
+/** A vote as the viewer is sent it: their own with its card, anyone else's face down until the reveal. */
+function vote(userId: Id<"users">, cardLabel?: string): SanitizedVote {
+  return { _id: `vote-${userId}` as Id<"votes">, _creationTime: 0, roomId: ROOM_ID, userId, cardLabel, hasVoted: true };
 }
 
 /** Delete or Backspace on these nodes, as React Flow reports it. */
 function pressDelete(...ids: string[]) {
   act(() => flow.props.onNodesChange?.(ids.map((id) => ({ type: "remove" as const, id }))));
+}
+
+/** React Flow selecting a node the viewer clicked, as it reports it. */
+function selectNode(id: string) {
+  act(() => flow.props.onNodesChange?.([{ type: "select" as const, id, selected: true }]));
 }
 
 const dialog = () => within(screen.getByRole("alertdialog"));
@@ -143,10 +187,34 @@ function roomData(overrides: Partial<RoomWithRelatedData> = {}): RoomWithRelated
   };
 }
 
-function renderBoard(data = roomData()) {
-  const view = render(<RoomCanvas roomData={data} currentUserId={ME} />);
-  return { rerender: (next: RoomWithRelatedData) => view.rerender(<RoomCanvas roomData={next} currentUserId={ME} />) };
+/** The board as the room page shows it, with the room's data from `rooms.get`. */
+function Room() {
+  const data = useQuery(api.rooms.get, { roomId: ROOM_ID });
+  return data ? <RoomCanvas roomData={data} currentUserId={ME} /> : null;
 }
+
+/** Shows the board; `rerender` is the server sending the room's data again. */
+function renderBoard(data = roomData()) {
+  server.room = data;
+  const view = render(<Room />);
+  return {
+    rerender: (next: RoomWithRelatedData) => {
+      server.room = next;
+      view.rerender(<Room />);
+    },
+  };
+}
+
+/** The cards the viewer sees raised. */
+const raisedCards = () =>
+  screen.queryAllByRole("button", { name: /^Vote /, pressed: true }).map((card) => card.textContent);
+
+/** The node of the card that plays `label`. */
+const cardNode = (label: string) => {
+  const found = flow.nodes.find((n) => n.type === "votingCard" && (n.data as VotingCardNodeData).card.value === label);
+  if (!found) throw new Error(`no card ${label} on the board`);
+  return found;
+};
 
 const event = {} as never;
 const node = (id: string) => {
@@ -305,6 +373,28 @@ describe("the nodes' controls", () => {
 
     expect(dialog().getByText("Delete note?")).toBeDefined();
     expect(server.writes).toEqual([]);
+  });
+});
+
+describe("the raised card", () => {
+  it("rises the moment the viewer picks it, before the server answers", async () => {
+    renderBoard();
+
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Vote 5" })));
+
+    expect(raisedCards()).toEqual(["5"]);
+  });
+
+  it("comes down when a reset clears the viewer's vote, the card they clicked included", async () => {
+    const { rerender } = renderBoard();
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Vote 5" })));
+    selectNode(cardNode("5").id);
+    rerender(roomData({ votes: [vote(ME, "5")] }));
+    expect(raisedCards()).toEqual(["5"]);
+
+    rerender(roomData());
+
+    expect(raisedCards()).toEqual([]);
   });
 });
 

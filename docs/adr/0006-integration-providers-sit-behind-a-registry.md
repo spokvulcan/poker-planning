@@ -1,6 +1,6 @@
 # Integration providers sit behind a registry seam
 
-**Status:** accepted
+**Status:** accepted. Amended by [#384](https://github.com/spokvulcan/poker-planning/issues/384): a handler's webhook members (the register, deregister and disconnect references and the accessors over the mapping's webhook column) are one **webhook reconcile** per provider, which owns the mapping's webhook record (`convex/integrations/jiraWebhookReconcile.ts`). Amended by [#387](https://github.com/spokvulcan/poker-planning/issues/387): Convex owns the whole Jira OAuth handshake (`convex/integrations/jiraAuth.ts`). It builds the consent URL and takes the authorization code, so the client credentials live only in Convex and no token crosses a public function; the Next.js routes keep the CSRF state cookie and the redirects.
 
 The generic integrations module (`convex/model/integrations.ts`) hard-referenced Jira: it scheduled `internal.integrations.jira.*` functions by name, filtered `provider === "jira"`, and took jira-shaped mapping arguments. The Jira orchestration also constructed its own effects inline — `fetch`, `Date.now`, `setTimeout` — so the client, token refresh, webhook endpoint, and OAuth exchange were untestable, and tests resorted to faking `setTimeout` to suppress the reveal→Jira push. GitHub (spec 07) is the prescribed second adapter, so the seam is real, not speculative.
 
@@ -14,7 +14,7 @@ The **integration provider registry** (`convex/integrations/registry.ts`) maps a
 
 ## Consequences
 
-- Registered Convex actions cannot receive injected functions (args must be serializable), so tests cover the injectable helper cores (`pushEstimateWithClient`, `refreshJiraToken`, `exchangeCode`) rather than the registered actions end-to-end; the registered wrappers stay thin.
+- Registered Convex actions cannot receive injected functions (args must be serializable), so tests cover the injectable helper cores (`pushEstimateWithClient`, `refreshJiraToken`, `exchangeJiraCode`, `connectJiraWithCode`) rather than the registered actions end-to-end; the registered wrappers stay thin.
 - Provider-specific *data* stays provider-named in the schema (`jiraWebhookId`, `jiraProjectKey` columns); only the generic module's *arguments* are provider-neutral. A schema rename is deliberately out of scope.
 - `convex/model/votingRound.ts` still schedules the Jira estimate push directly at reveal — that is a Jira-specific effect by design, not a registry gap. When GitHub has an equivalent effect, that call site becomes a registry dispatch.
-- The OAuth callback route handler keeps its CSRF/redirect plumbing untested (no Next.js route test infrastructure); its fetch orchestration is extracted and covered.
+- The OAuth routes' CSRF state check stays untested; their mapping from Convex's coded refusals to redirects is tested with Next.js mocked (`src/app/api/integrations/jira/*/route.test.ts`), and the fetch orchestration they once held is covered in Convex.
