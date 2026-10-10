@@ -121,7 +121,10 @@ export async function requireRoomMember(
 
 /**
  * Room access (ADR-0009): may the authenticated user *read* this room's
- * contents? Passes a room member. Returns the identity, user and room.
+ * contents? Passes a room member, deciding from the caller and their
+ * membership alone, and returns the identity and user. It reads no room: a
+ * guard's reads join the read set of every query that takes it, so a room
+ * patch would re-run them all. A query that needs the room reads it itself.
  * Every read-only query on room-owned data takes this guard; every mutation
  * keeps `requireRoomMember` (attendance).
  */
@@ -131,20 +134,13 @@ export async function requireRoomReader(
 ): Promise<{
   identity: AuthIdentity;
   user: Doc<"users">;
-  room: Doc<"rooms">;
 }> {
   const { identity, user } = await requireAuthUser(ctx);
-  const [room, membership] = await Promise.all([
-    ctx.db.get("rooms", roomId),
-    getMembership(ctx, roomId, user._id),
-  ]);
-  if (!room) {
-    throw new Error("Room not found");
-  }
+  const membership = await getMembership(ctx, roomId, user._id);
   if (!membership) {
     throw new Error("You don't have access to this room");
   }
-  return { identity, user, room };
+  return { identity, user };
 }
 
 /**

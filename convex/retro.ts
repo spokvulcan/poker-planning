@@ -156,11 +156,17 @@ export const removeColumn = mutation({
 
 // --- The board ------------------------------------------------------------------
 
-/** Every sticky as the viewer may see it, plus the writer and the viewer's vote counts. */
+/**
+ * Every sticky as the viewer may see it, plus the writer and the viewer's vote
+ * counts. It loads the room itself: room access returns none, so a room patch
+ * re-runs only the queries that read the room (ADR-0009).
+ */
 export const board = query({
   args: { roomId: v.id("rooms") },
   handler: async (ctx, args) => {
-    const { user, room } = await requireRoomReader(ctx, args.roomId);
+    const { user } = await requireRoomReader(ctx, args.roomId);
+    const room = await ctx.db.get("rooms", args.roomId);
+    if (!room) throw refusal("missing", "This retro is gone.");
     return await Retro.getBoard(ctx, room, user._id);
   },
 });

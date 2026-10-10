@@ -2,15 +2,17 @@
 import { convexTest } from "convex-test";
 import { describe, it, expect } from "vitest";
 import schema from "./schema";
-import { api } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { requireRoomReader } from "./model/auth";
 import { type T, seedRoom, seedUser as addUser, addMembership } from "./analytics.seeds";
+import { withComponents } from "./components.setup";
 
 // Room access (ADR-0009): `requireRoomReader` answers "may you read this
-// room's contents?" and never returns a membership row. It passes a room
-// member and nobody else. The enforcement net: a non-member cannot read
-// canvas nodes, either issue export, or a retro's board and action items.
+// room's contents?" from the caller's membership alone, and returns neither
+// the room nor a membership row. It passes a room member and nobody else. The
+// enforcement net: a non-member cannot read canvas nodes, either issue
+// export, or a retro's board and action items.
 
 const modules = import.meta.glob("./**/*.*s");
 
@@ -38,7 +40,7 @@ async function seedCanvasNode(t: T, roomId: Id<"rooms">): Promise<void> {
 }
 
 describe("requireRoomReader — the room access guard", () => {
-  it("passes a room member and returns identity, user and room — never a membership", async () => {
+  it("passes a room member and returns identity and user — neither the room nor a membership", async () => {
     const t = convexTest(schema, modules);
     const roomId = await seedRoom(t);
     const userId = await addMember(t, roomId, "auth-m");
@@ -49,9 +51,25 @@ describe("requireRoomReader — the room access guard", () => {
 
     expect(result.identity.subject).toBe("auth-m");
     expect(result.user._id).toBe(userId);
-    expect(result.room._id).toBe(roomId);
-    expect(Object.keys(result).sort()).toEqual(["identity", "room", "user"]);
-    expect("membership" in result).toBe(false);
+    expect(Object.keys(result).sort()).toEqual(["identity", "user"]);
+  });
+
+  it("reads only the caller and their membership, never the room row", async () => {
+    const t = convexTest(schema, modules);
+    const roomId = await seedRoom(t);
+    await addMember(t, roomId, "auth-m");
+
+    const metrics = await t.withIdentity({ subject: "auth-m" }).run(async (ctx) => {
+      await requireRoomReader(ctx, roomId);
+      return await ctx.meta.getTransactionMetrics();
+    });
+
+    // A guard's reads join the read set of every query that takes it, so a
+    // room row among them would re-run them all on each room patch (every
+    // poker vote moves the room's activity clock). Two reads, one row each:
+    // the caller's users row and their membership.
+    expect(metrics.databaseQueries.used).toBe(2);
+    expect(metrics.documentsRead.used).toBe(2);
   });
 
   it("rejects an authenticated non-member", async () => {
@@ -74,15 +92,17 @@ describe("requireRoomReader — the room access guard", () => {
     ).rejects.toThrow("Not authenticated");
   });
 
-  it("rejects a missing room", async () => {
-    const t = convexTest(schema, modules);
+  it("decides from the membership alone: a deleted room refuses its former member like any non-member", async () => {
+    const t = withComponents(convexTest(schema, modules));
     const roomId = await seedRoom(t);
     await addMember(t, roomId, "auth-m");
-    await t.run((ctx) => ctx.db.delete("rooms", roomId));
+    const step = await t.mutation(internal.maintenance.deleteRoomAggregateChunk, { roomId });
+    expect(step.done).toBe(true);
 
+    // No separate "Room not found": the cascade took the membership with the room.
     await expect(
       t.withIdentity({ subject: "auth-m" }).run((ctx) => requireRoomReader(ctx, roomId))
-    ).rejects.toThrow("Room not found");
+    ).rejects.toThrow("You don't have access to this room");
   });
 });
 
