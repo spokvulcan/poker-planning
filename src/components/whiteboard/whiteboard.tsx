@@ -51,6 +51,7 @@ import { mergeNodes } from "./merge-nodes";
 // prop whose identity changes, on every render.
 const PRO_OPTIONS = { hideAttribution: true };
 const DEFAULT_VIEWPORT = { x: 0, y: 0, zoom: 0.8 };
+const FIT_VIEW_OPTIONS = { padding: 0.12, maxZoom: 1 };
 const SNAP_GRID: [number, number] = [10, 10];
 const DELETE_KEYS = ["Backspace", "Delete"];
 const PAN_BUTTONS = [1, 2];
@@ -213,6 +214,12 @@ export function Whiteboard<N extends Node>(props: WhiteboardProps<N>): ReactElem
       if (nudgeTimer.current) clearTimeout(nudgeTimer.current);
       nudgeTimer.current = setTimeout(saveNudges, NUDGE_SETTLE_MS);
     },
+    // Read-only, the buffer still takes React Flow's measurements, which a
+    // changed node carries over (`mergeNodes`): without them React Flow hides
+    // it for a frame to measure it again, on every vote.
+    onMeasure: (changes: NodeChange<N>[]) => {
+      applyChanges(changes.filter((change) => change.type === "dimensions"));
+    },
     // A nudge still settling is saved first, so the drop has the last word.
     onNodeDragStart: () => {
       dragging.current = true;
@@ -232,14 +239,17 @@ export function Whiteboard<N extends Node>(props: WhiteboardProps<N>): ReactElem
     },
   });
 
-  // Fit once the nodes are measured, and again when the board says its layout changed.
+  // The first fit is React Flow's own (the `fitView` prop): it lands in the
+  // pass that measures the nodes, before they paint. Fitting from an effect
+  // painted them in the top-left corner first, then jumped. Later refits,
+  // when the board says its layout changed, are this effect's, and glide.
   const initialized = useNodesInitialized();
   const fittedKey = useRef<string | null>(null);
   useEffect(() => {
     if (!initialized || nodes.length === 0 || fittedKey.current === fitKey) return;
     const first = fittedKey.current === null;
     fittedKey.current = fitKey;
-    void flow.fitView({ padding: 0.12, maxZoom: 1, duration: first ? 0 : 600 });
+    if (!first) void flow.fitView({ ...FIT_VIEW_OPTIONS, duration: 600 });
   }, [initialized, fitKey, nodes.length, flow]);
 
   // Keep the followed node in view, once the board has had its first fit.
@@ -260,7 +270,7 @@ export function Whiteboard<N extends Node>(props: WhiteboardProps<N>): ReactElem
             nodes={buffer}
             edges={edges}
             nodeTypes={nodeTypes}
-            onNodesChange={readOnly ? undefined : handlers.onNodesChange}
+            onNodesChange={readOnly ? handlers.onMeasure : handlers.onNodesChange}
             onNodeDragStart={handlers.onNodeDragStart}
             onNodeDrag={handlers.onNodeDrag}
             onNodeDragStop={handlers.onNodeDragStop}
@@ -269,6 +279,8 @@ export function Whiteboard<N extends Node>(props: WhiteboardProps<N>): ReactElem
             minZoom={MIN_ZOOM}
             maxZoom={MAX_ZOOM}
             defaultViewport={DEFAULT_VIEWPORT}
+            fitView
+            fitViewOptions={FIT_VIEW_OPTIONS}
             nodesDraggable={!readOnly}
             elementsSelectable={!readOnly}
             nodesConnectable={false}

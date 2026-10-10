@@ -205,15 +205,21 @@ describe("Delete", () => {
 });
 
 describe("the view", () => {
-  it("fits once, and again only when the board's layout key changes", () => {
+  it("leaves the first fit to React Flow, so the nodes never paint unfitted", () => {
+    renderBoard({ fitKey: "one" });
+
+    expect(flow.props.fitView).toBe(true);
+    expect(flow.fitView).not.toHaveBeenCalled();
+  });
+
+  it("refits only when the board's layout key changes", () => {
     const { rerender } = renderBoard({ fitKey: "one" });
-    expect(flow.fitView).toHaveBeenCalledTimes(1);
 
     rerender({ fitKey: "one", nodes: [node("a", 5), node("b", 200)] });
-    expect(flow.fitView).toHaveBeenCalledTimes(1);
+    expect(flow.fitView).not.toHaveBeenCalled();
 
     rerender({ fitKey: "two" });
-    expect(flow.fitView).toHaveBeenCalledTimes(2);
+    expect(flow.fitView).toHaveBeenCalledTimes(1);
   });
 
   it("follows a node: pans to it whenever it changes", () => {
@@ -244,6 +250,27 @@ describe("the view", () => {
     renderBoard({ readOnly: true });
 
     expect(flow.props).toMatchObject({ nodesDraggable: false, elementsSelectable: false, deleteKeyCode: null });
-    expect(flow.props.onNodesChange).toBeUndefined();
+  });
+
+  it("takes only React Flow's measurements when read-only", () => {
+    const onDrop = vi.fn();
+    const onDeleteNodes = vi.fn();
+    renderBoard({ readOnly: true, onDrop, onDeleteNodes });
+
+    act(() => {
+      flow.props.onNodesChange?.([
+        { type: "dimensions", id: "a", dimensions: { width: 300, height: 80 } },
+        { type: "position", id: "b", position: { x: 999, y: 0 }, dragging: false },
+        { type: "remove", id: "b" },
+      ]);
+      vi.advanceTimersByTime(1000);
+    });
+
+    expect(flow.nodes.map((n) => [n.id, n.measured, n.position.x])).toEqual([
+      ["a", { width: 300, height: 80 }, 0],
+      ["b", { width: 100, height: 100 }, 200],
+    ]);
+    expect(onDrop).not.toHaveBeenCalled();
+    expect(onDeleteNodes).not.toHaveBeenCalled();
   });
 });
