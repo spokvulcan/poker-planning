@@ -265,42 +265,6 @@ export const getIssueData = internalQuery({
 });
 
 // ---------------------------------------------------------------------------
-// Internal actions — OAuth + external API calls
-// ---------------------------------------------------------------------------
-
-export const storeConnection = internalAction({
-  args: {
-    userId: v.id("users"),
-    accessToken: v.string(),
-    refreshToken: v.string(),
-    expiresIn: v.number(),
-    cloudId: v.string(),
-    siteUrl: v.string(),
-    scopes: v.array(v.string()),
-    providerUserId: v.optional(v.string()),
-    providerUserEmail: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    const enc = await TokenVault.encryptTokens({
-      accessToken: args.accessToken,
-      refreshToken: args.refreshToken,
-    });
-
-    await ctx.runMutation(internal.integrations.jira.saveConnection, {
-      userId: args.userId,
-      provider: "jira",
-      ...enc,
-      expiresAt: TokenVault.computeExpiresAt(args.expiresIn),
-      cloudId: args.cloudId,
-      siteUrl: args.siteUrl,
-      providerUserId: args.providerUserId,
-      providerUserEmail: args.providerUserEmail,
-      scopes: args.scopes,
-    });
-  },
-});
-
-// ---------------------------------------------------------------------------
 // Public actions — called from frontend
 // ---------------------------------------------------------------------------
 
@@ -335,17 +299,22 @@ export const connectJira = action({
       throw new Error("Jira site URL must be an https://*.atlassian.net URL");
     }
 
-    // Delegate to internal action that handles encryption + storage
-    await ctx.runAction(internal.integrations.jira.storeConnection, {
-      userId: user._id,
+    // The tokens reach the database only as vault ciphertext.
+    const enc = await TokenVault.encryptTokens({
       accessToken: args.accessToken,
       refreshToken: args.refreshToken,
-      expiresIn: args.expiresIn,
+    });
+
+    await ctx.runMutation(internal.integrations.jira.saveConnection, {
+      userId: user._id,
+      provider: "jira",
+      ...enc,
+      expiresAt: TokenVault.computeExpiresAt(args.expiresIn),
       cloudId: args.cloudId,
       siteUrl: args.siteUrl,
-      scopes: args.scopes,
       providerUserId: args.providerUserId,
       providerUserEmail: args.providerUserEmail,
+      scopes: args.scopes,
     });
   },
 });
