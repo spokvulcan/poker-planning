@@ -1,22 +1,8 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
-import type { MutationCtx } from "./_generated/server";
-import type { Doc, Id } from "./_generated/dataModel";
 import * as Canvas from "./model/canvas";
 import { requireRoomReader, requireActingUser } from "./model/auth";
 import { positionValidator } from "./schema";
-
-/** The room a canvas write lands in and the member making it, after the acting-user guard. */
-async function actingIn(
-  ctx: MutationCtx,
-  roomId: Id<"rooms">,
-  userId: Id<"users">
-): Promise<{ room: Doc<"rooms">; user: Doc<"users"> }> {
-  const { user } = await requireActingUser(ctx, roomId, userId);
-  const room = await ctx.db.get("rooms", roomId);
-  if (!room) throw new Error("Room not found");
-  return { room, user };
-}
 
 // Get all canvas nodes for a room
 // Requires room access (ADR-0009): note contents are private to the room.
@@ -36,7 +22,7 @@ export const moveNodes = mutation({
     userId: v.id("users"),
   },
   handler: async (ctx, args) => {
-    const { room, user } = await actingIn(ctx, args.roomId, args.userId);
+    const { room, user } = await requireActingUser(ctx, args.roomId, args.userId);
     await Canvas.moveNodes(ctx, room, args.moves, user._id);
   },
 });
@@ -50,7 +36,7 @@ export const updateNodePosition = mutation({
     userId: v.id("users"),
   },
   handler: async (ctx, args) => {
-    const { room, user } = await actingIn(ctx, args.roomId, args.userId);
+    const { room, user } = await requireActingUser(ctx, args.roomId, args.userId);
     await Canvas.moveNodes(ctx, room, [{ nodeId: args.nodeId, position: args.position }], user._id);
   },
 });
@@ -63,7 +49,7 @@ export const createNote = mutation({
     userId: v.id("users"),
   },
   handler: async (ctx, args) => {
-    const { room, user } = await actingIn(ctx, args.roomId, args.userId);
+    const { room, user } = await requireActingUser(ctx, args.roomId, args.userId);
     return await Canvas.createNote(ctx, room, args.issueId, user);
   },
 });
@@ -77,7 +63,7 @@ export const updateNoteContent = mutation({
     userId: v.id("users"),
   },
   handler: async (ctx, args) => {
-    const { room, user } = await actingIn(ctx, args.roomId, args.userId);
+    const { room, user } = await requireActingUser(ctx, args.roomId, args.userId);
     await Canvas.updateNote(ctx, room, args.nodeId, args.content, user);
   },
 });
@@ -90,7 +76,7 @@ export const deleteNote = mutation({
     userId: v.id("users"),
   },
   handler: async (ctx, args) => {
-    const { room } = await actingIn(ctx, args.roomId, args.userId);
+    const { room } = await requireActingUser(ctx, args.roomId, args.userId);
     await Canvas.deleteNote(ctx, room, args.nodeId);
   },
 });

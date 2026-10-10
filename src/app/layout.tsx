@@ -11,7 +11,7 @@ import { isEmbeddedDocument } from "@/lib/embed";
 import { TopLevelOnly } from "@/components/top-level-only";
 import { AnalyticsConsentBanner } from "@/components/legal/analytics-consent";
 import { SITE } from "@/lib/site-copy";
-import { SITE_ORIGIN } from "@/lib/site-config";
+import { SITE_ORIGIN, siteConfig } from "@/lib/site-config";
 import { SITE_OPEN_GRAPH, SITE_TWITTER } from "@/lib/page-metadata";
 
 import "./globals.css";
@@ -38,9 +38,9 @@ export const metadata: Metadata = {
   },
   description: SITE.description,
   keywords: SITE.keywords,
-  authors: [{ name: "AgileKit Team" }],
-  creator: "AgileKit",
-  publisher: "AgileKit",
+  authors: [{ name: siteConfig.author.name }],
+  creator: siteConfig.name,
+  publisher: siteConfig.name,
   robots: {
     index: true,
     follow: true,

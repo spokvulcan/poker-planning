@@ -18,6 +18,7 @@ import {
 
 
 import { toast } from "@/lib/toast";
+import { importReport } from "./jira-import-report";
 
 interface JiraImportModalProps {
   open: boolean;
@@ -200,8 +201,17 @@ export function JiraImportModal({
         roomId,
         jiraIssueKeys: Array.from(selectedIssues),
       });
-      toast.success("Import complete", {
-        description: `Imported ${result.imported} issue${result.imported !== 1 ? "s" : ""}${result.skipped > 0 ? `, ${result.skipped} already existed` : ""}.`,
+      const report = importReport(result);
+      toast[report.tone](report.title, {
+        description: (
+          <div className="space-y-1">
+            {report.lines.map((line) => (
+              <p key={line}>{line}</p>
+            ))}
+          </div>
+        ),
+        // Long enough to read which keys were refused and why.
+        duration: report.tone === "success" ? undefined : 10_000,
       });
       handleOpenChange(false);
     } catch {

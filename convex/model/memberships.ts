@@ -4,6 +4,7 @@ import { rulesOf } from "../ceremony";
 import { getEffectiveRole, type MemberRole } from "../permissions";
 import * as Canvas from "./canvas";
 import * as Ownership from "./ownership";
+import { refusal } from "./refusal";
 import * as Rooms from "./rooms";
 import * as VotingRound from "./votingRound";
 import type { UserRows } from "./userRows";
@@ -110,7 +111,7 @@ export async function setSpectator(
 ): Promise<void> {
   const membership = await getMembership(ctx, room._id, userId);
   if (!membership) throw new Error("User not in room");
-  if (isSpectator && !rulesOf(room).spectators) throw new Error("Everyone takes part here: there are no spectators.");
+  if (isSpectator && !rulesOf(room).spectators) throw refusal("missing", "Everyone takes part here: there are no spectators.");
   await Rooms.updateRoomActivity(ctx, room);
   if (membership.isSpectator === isSpectator) return;
   // The roster bit first, so the round re-checks against the new roster.

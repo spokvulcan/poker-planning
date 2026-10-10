@@ -16,7 +16,6 @@ export const metadata: Metadata = pageMetadata({
     "Track the latest updates, features, and improvements to AgileKit. See what's new in our open-source planning poker tool.",
   path: "/changelog",
   social: {
-    title: "Changelog | AgileKit",
     description:
       "Track the latest updates, features, and improvements to AgileKit.",
   },

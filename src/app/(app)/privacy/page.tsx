@@ -7,7 +7,6 @@ export const metadata: Metadata = pageMetadata({
   description:
     "Read how AgileKit handles account data, session data, cookies, and optional analytics.",
   path: "/privacy",
-  social: { title: "Privacy Policy | AgileKit" },
 });
 
 export default function PrivacyPage() {

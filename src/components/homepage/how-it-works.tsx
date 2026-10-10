@@ -1,9 +1,10 @@
 "use client";
 
 import { Check, Loader2, Layers } from "lucide-react";
-import { useState, useEffect, type ComponentType } from "react";
+import type { ComponentType } from "react";
 import { columnsFromTemplate, DEFAULT_TEMPLATE_ID } from "@/convex/retroTemplates";
 import { STICKY_TONES } from "@/components/retro/sticky-colors";
+import { useLoopingScene, type Scene } from "@/hooks/use-looping-scene";
 import { HOW_IT_WORKS } from "./copy";
 import { CeremonyTabs, CeremonyTabList, CeremonyTabPanel, type Ceremony } from "./ceremony-tabs";
 
@@ -22,48 +23,26 @@ const SCRIBBLE = TONES.map((tone) => tone.scribble);
 /** The stack the vote step builds and the discussion opens on: the "To improve" sticky and the one dropped on it. */
 const STACK = [RETRO.stickies[1], RETRO.stacked];
 
-/** Types a name, presses the button, shows the created state, loops. */
-function useCreateLoop(typed: string) {
-  const [text, setText] = useState("");
-  const [clicked, setClicked] = useState(false);
-  const [created, setCreated] = useState(false);
-
-  useEffect(() => {
-    let isMounted = true;
-    const play = async () => {
-      while (isMounted) {
-        setText("");
-        setClicked(false);
-        setCreated(false);
-
-        await new Promise(r => setTimeout(r, 800));
-        if(!isMounted) break;
-
-        for(let i=1; i<=typed.length; i++) {
-          setText(typed.slice(0, i));
-          await new Promise(r => setTimeout(r, 60)); // Typing speed
-        }
-        await new Promise(r => setTimeout(r, 400));
-        if(!isMounted) break;
-
-        setClicked(true);
-        await new Promise(r => setTimeout(r, 150));
-        if(!isMounted) break;
-
-        setClicked(false);
-        setCreated(true);
-        await new Promise(r => setTimeout(r, 2500));
-      }
-    };
-    play();
-    return () => { isMounted = false; };
-  }, [typed]);
-
-  return { text, clicked, created };
+/** Types a name, presses the button, shows the created state. */
+function createScene(name: string): Scene<{ text: string; clicked: boolean; created: boolean }> {
+  const typed = (length: number) => ({ text: name.slice(0, length), clicked: false, created: false });
+  return [
+    { show: typed(0), hold: 800 },
+    // A key every 60ms (typing speed); the last one holds a beat longer before the click.
+    ...Array.from({ length: name.length }, (_, i) => ({
+      show: typed(i + 1),
+      hold: i + 1 < name.length ? 60 : 60 + 400,
+    })),
+    { show: { text: name, clicked: true, created: false }, hold: 150 },
+    { show: { text: name, clicked: false, created: true }, hold: 2500 },
+  ];
 }
 
-function CreateAnimation({ typed, button, created: createdLabel }: { typed: string; button: string; created: string }) {
-  const { text, clicked, created } = useCreateLoop(typed);
+const CREATE_ROOM = createScene(POKER.roomName);
+const OPEN_BOARD = createScene(RETRO.retroName);
+
+function CreateAnimation({ scene, button, created: createdLabel }: { scene: ReturnType<typeof createScene>; button: string; created: string }) {
+  const { text, clicked, created } = useLoopingScene(scene);
 
   return (
     <div className="w-full max-w-[260px] bg-white dark:bg-zinc-950 rounded-xl shadow-lg border border-gray-100 dark:border-zinc-800 p-5">
@@ -91,39 +70,22 @@ function CreateAnimation({ typed, button, created: createdLabel }: { typed: stri
 }
 
 function CreateRoomAnimation() {
-  return <CreateAnimation typed={POKER.roomName} button={POKER.startButton} created={POKER.created} />;
+  return <CreateAnimation scene={CREATE_ROOM} button={POKER.startButton} created={POKER.created} />;
 }
 
 function OpenBoardAnimation() {
-  return <CreateAnimation typed={RETRO.retroName} button={RETRO.startButton} created={RETRO.created} />;
+  return <CreateAnimation scene={OPEN_BOARD} button={RETRO.startButton} created={RETRO.created} />;
 }
 
+const INVITE_TEAM: Scene<number[]> = [
+  { show: [], hold: 1000 },
+  { show: [1], hold: 500 },
+  { show: [1, 2], hold: 700 },
+  { show: [1, 2, 3], hold: 2500 },
+];
+
 function InviteTeamAnimation() {
-  const [avatars, setAvatars] = useState<number[]>([]);
-
-  useEffect(() => {
-    let isMounted = true;
-    const play = async () => {
-      while(isMounted) {
-        setAvatars([]);
-        await new Promise(r => setTimeout(r, 1000));
-        if(!isMounted) break;
-
-        setAvatars([1]);
-        await new Promise(r => setTimeout(r, 500));
-        if(!isMounted) break;
-
-        setAvatars([1, 2]);
-        await new Promise(r => setTimeout(r, 700));
-        if(!isMounted) break;
-
-        setAvatars([1, 2, 3]);
-        await new Promise(r => setTimeout(r, 2500));
-      }
-    };
-    play();
-    return () => { isMounted = false; };
-  }, []);
+  const avatars = useLoopingScene(INVITE_TEAM);
 
   const colors = [
     "bg-blue-500 text-blue-50",
@@ -149,36 +111,20 @@ function InviteTeamAnimation() {
         ))}
       </div>
       <div className="flex items-center gap-2 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-sm px-4 py-2 rounded-full border border-gray-200 dark:border-zinc-800 text-xs font-medium text-gray-600 dark:text-gray-400 shadow-sm">
-        <Loader2 className="w-3 h-3 animate-spin text-primary" /> {POKER.waiting}
+        <Loader2 className="w-3 h-3 motion-safe:animate-spin text-primary" /> {POKER.waiting}
       </div>
     </div>
   )
 }
 
+const ESTIMATE: Scene<{ hovered: number | null; selected: number | null }> = [
+  { show: { hovered: null, selected: null }, hold: 1000 },
+  { show: { hovered: 2, selected: null }, hold: 400 }, // The card '3'
+  { show: { hovered: 2, selected: 2 }, hold: 2500 },
+];
+
 function EstimateAnimation() {
-  const [hovered, setHovered] = useState<number | null>(null);
-  const [selected, setSelected] = useState<number | null>(null);
-
-  useEffect(() => {
-    let isMounted = true;
-    const play = async () => {
-      while(isMounted) {
-        setHovered(null);
-        setSelected(null);
-        await new Promise(r => setTimeout(r, 1000));
-        if(!isMounted) break;
-
-        setHovered(2); // The card '3'
-        await new Promise(r => setTimeout(r, 400));
-        if(!isMounted) break;
-
-        setSelected(2);
-        await new Promise(r => setTimeout(r, 2500));
-      }
-    }
-    play();
-    return () => { isMounted = false; };
-  }, []);
+  const { hovered, selected } = useLoopingScene(ESTIMATE);
 
   const cards = [1, 2, 3, 5];
 
@@ -205,24 +151,13 @@ function EstimateAnimation() {
   )
 }
 
+const ALIGN: Scene<boolean> = [
+  { show: false, hold: 1500 },
+  { show: true, hold: 3500 },
+];
+
 function AlignAnimation() {
-  const [revealed, setRevealed] = useState(false);
-
-  useEffect(() => {
-    let isMounted = true;
-    const play = async () => {
-      while(isMounted) {
-        setRevealed(false);
-        await new Promise(r => setTimeout(r, 1500));
-        if(!isMounted) break;
-
-        setRevealed(true);
-        await new Promise(r => setTimeout(r, 3500));
-      }
-    }
-    play();
-    return () => { isMounted = false; };
-  }, []);
+  const revealed = useLoopingScene(ALIGN);
 
   const votes = [5, 5, 8, 5];
 
@@ -255,33 +190,19 @@ function AlignAnimation() {
   )
 }
 
+const WRITE_FACE_DOWN: Scene<{ written: number; revealed: boolean }> = [
+  { show: { written: 0, revealed: false }, hold: 800 },
+  // A sticky every 500ms; the last one holds a beat longer before the reveal.
+  ...RETRO.stickies.map((_, i) => ({
+    show: { written: i + 1, revealed: false },
+    hold: i + 1 < RETRO.stickies.length ? 500 : 500 + 900,
+  })),
+  { show: { written: RETRO.stickies.length, revealed: true }, hold: 3000 },
+];
+
 /** Stickies land face-down (scribbles) one by one, then the reveal turns them all over. */
 function WriteFaceDownAnimation() {
-  const [written, setWritten] = useState(0);
-  const [revealed, setRevealed] = useState(false);
-
-  useEffect(() => {
-    let isMounted = true;
-    const play = async () => {
-      while (isMounted) {
-        setWritten(0);
-        setRevealed(false);
-        await new Promise(r => setTimeout(r, 800));
-        if (!isMounted) break;
-        for (let i = 1; i <= RETRO.stickies.length; i++) {
-          setWritten(i);
-          await new Promise(r => setTimeout(r, 500));
-          if (!isMounted) break;
-        }
-        await new Promise(r => setTimeout(r, 900));
-        if (!isMounted) break;
-        setRevealed(true);
-        await new Promise(r => setTimeout(r, 3000));
-      }
-    };
-    play();
-    return () => { isMounted = false; };
-  }, []);
+  const { written, revealed } = useLoopingScene(WRITE_FACE_DOWN);
 
   return (
     <div className="w-full flex flex-col items-center justify-center gap-2 h-full">
@@ -312,29 +233,15 @@ function WriteFaceDownAnimation() {
   );
 }
 
+const STACK_VOTE: Scene<{ stacked: boolean; voted: boolean }> = [
+  { show: { stacked: false, voted: false }, hold: 1000 },
+  { show: { stacked: true, voted: false }, hold: 1100 },
+  { show: { stacked: true, voted: true }, hold: 2500 },
+];
+
 /** A sticky drops onto a similar one to make a stack, then your vote lands on the stack. */
 function StackVoteAnimation() {
-  const [stacked, setStacked] = useState(false);
-  const [voted, setVoted] = useState(false);
-
-  useEffect(() => {
-    let isMounted = true;
-    const play = async () => {
-      while (isMounted) {
-        setStacked(false);
-        setVoted(false);
-        await new Promise(r => setTimeout(r, 1000));
-        if (!isMounted) break;
-        setStacked(true);
-        await new Promise(r => setTimeout(r, 1100));
-        if (!isMounted) break;
-        setVoted(true);
-        await new Promise(r => setTimeout(r, 2500));
-      }
-    };
-    play();
-    return () => { isMounted = false; };
-  }, []);
+  const { stacked, voted } = useLoopingScene(STACK_VOTE);
 
   return (
     <div className="w-full flex flex-col items-center justify-center gap-5 h-full">
@@ -379,30 +286,16 @@ function StackVoteAnimation() {
   );
 }
 
+const DISCUSS: Scene<number> = [
+  { show: 0, hold: 1000 },
+  { show: 1, hold: 1200 },
+  { show: 2, hold: 1200 },
+  { show: 3, hold: 2500 },
+];
+
 /** The most-voted topic takes the spotlight, an owned action item appears under it and gets ticked. */
 function DiscussAnimation() {
-  const [stage, setStage] = useState(0);
-
-  useEffect(() => {
-    let isMounted = true;
-    const play = async () => {
-      while (isMounted) {
-        setStage(0);
-        await new Promise(r => setTimeout(r, 1000));
-        if (!isMounted) break;
-        setStage(1);
-        await new Promise(r => setTimeout(r, 1200));
-        if (!isMounted) break;
-        setStage(2);
-        await new Promise(r => setTimeout(r, 1200));
-        if (!isMounted) break;
-        setStage(3);
-        await new Promise(r => setTimeout(r, 2500));
-      }
-    };
-    play();
-    return () => { isMounted = false; };
-  }, []);
+  const stage = useLoopingScene(DISCUSS);
 
   return (
     <div className="w-full flex flex-col items-center justify-center gap-4 h-full">
@@ -442,7 +335,8 @@ function DiscussAnimation() {
   );
 }
 
-const VISUALS: Record<Ceremony, [ComponentType, ComponentType, ComponentType, ComponentType]> = {
+/** Each ceremony's step animations, in step order. */
+export const VISUALS: Record<Ceremony, [ComponentType, ComponentType, ComponentType, ComponentType]> = {
   poker: [CreateRoomAnimation, InviteTeamAnimation, EstimateAnimation, AlignAnimation],
   retro: [OpenBoardAnimation, WriteFaceDownAnimation, StackVoteAnimation, DiscussAnimation],
 };

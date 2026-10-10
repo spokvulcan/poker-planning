@@ -14,6 +14,7 @@
  * provider passes `Math.random` for natural variance across viewers.
  */
 import { summarize, type VoteSummary } from "@/convex/summarize";
+import { deckOf, type Deck } from "@/convex/scales";
 
 /** Mirrors `VotingRound.Phase`. There is no idle phase — see ADR-0002/0003. */
 export type DemoPhase = "voting" | "countingDown" | "revealed";
@@ -187,15 +188,16 @@ function advancePhaseTimer(
 /**
  * The revealed round's results, via the one shared pure computation. The
  * provider feeds the same votes to the ResultsNode, so the panel and any
- * derived numbers agree by construction.
+ * derived numbers agree by construction. The demo stores no scale, so it deals
+ * the default deck.
  */
 export function summarizeDemoVotes(
   votes: Record<string, string>,
-  scale?: { isNumeric: boolean },
+  deck: Pick<Deck, "isNumeric"> = deckOf(),
 ): VoteSummary {
   return summarize(
     Object.values(votes).map((cardLabel) => ({ cardLabel })),
-    scale,
+    deck,
   );
 }
 

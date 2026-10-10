@@ -60,9 +60,8 @@ describe("metadata, features and about (spec §18.1, §18.2)", () => {
     expect(site.SITE.twitter.title).toBe(site.SITE.title);
   });
 
-  it("drops Planning Poker from the features page title and its Open Graph title", () => {
+  it("drops Planning Poker from the features page title, which titles its cards too", () => {
     expect(features.META.title).not.toMatch(/planning poker/i);
-    expect(features.META.openGraph.title).not.toMatch(/planning poker/i);
   });
 
   it("anchors the features page at #planning-poker and #retro", () => {
