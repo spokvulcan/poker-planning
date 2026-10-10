@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
+import { GithubIcon } from "@/components/icons";
 import { CALL_TO_ACTION } from "./copy";
 
 export const CallToAction = () => {
@@ -36,8 +37,9 @@ export const CallToAction = () => {
                 href={CALL_TO_ACTION.github.href}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex h-16 w-full sm:w-auto items-center justify-center bg-transparent border-2 border-white/20 dark:border-black/20 px-12 text-lg font-bold tracking-tight text-white dark:text-black hover:bg-white/10 dark:hover:bg-black/10 transition-colors rounded-2xl"
+                className="inline-flex h-16 w-full sm:w-auto items-center justify-center gap-2 bg-zinc-900 dark:bg-gray-100 border-2 border-zinc-700 dark:border-gray-200 px-12 text-lg font-bold tracking-tight text-white dark:text-black hover:bg-zinc-800 dark:hover:bg-gray-200 transition-colors rounded-2xl"
               >
+                <GithubIcon className="h-5 w-5" />
                 {CALL_TO_ACTION.github.label}
               </a>
             </div>
