@@ -1,13 +1,12 @@
 /**
  * The homepage's structured data as plain strings (spec §18.2, ADR-0014),
  * read by the claims-register test. Metadata may say "retrospective" where
- * the UI says "Retro" (§18.4).
+ * the UI says "Retro" (§18.4). The site's name and author are siteConfig's.
  */
 
 import { FAQ } from "@/components/homepage/copy";
 
 export const WEB_APPLICATION = {
-  name: "AgileKit",
   description:
     "Free online planning poker and retrospectives for Scrum teams. Real-time collaboration, no registration required.",
   featureList: [

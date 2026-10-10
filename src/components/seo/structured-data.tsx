@@ -29,7 +29,7 @@ export function WebApplicationSchema() {
   const schema = {
     "@context": "https://schema.org",
     "@type": "WebApplication",
-    name: WEB_APPLICATION.name,
+    name: siteConfig.name,
     applicationCategory: "BusinessApplication",
     operatingSystem: "All",
     offers: {
@@ -41,7 +41,7 @@ export function WebApplicationSchema() {
     url: SITE_ORIGIN,
     author: {
       "@type": "Organization",
-      name: siteConfig.name,
+      name: siteConfig.author.name,
       url: "https://github.com/spokvulcan/poker-planning",
     },
     screenshot: `${SITE_ORIGIN}/og-image.png`,
