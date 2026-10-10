@@ -1,5 +1,5 @@
 import { MutationCtx } from "../_generated/server";
-import { Doc } from "../_generated/dataModel";
+import { Doc, Id } from "../_generated/dataModel";
 import { analyticsUserRows } from "./analytics";
 import { isGuest, type Caller } from "./caller";
 import { canvasUserRows } from "./canvas";
@@ -68,32 +68,24 @@ export async function signOut(ctx: MutationCtx, caller: Caller): Promise<void> {
  * yet, the guest's row becomes the account's. When it has one (the auth hook
  * wrote it as the account was created, or the room page joined with it first),
  * everything the guest had is folded into it, module by module, and the
- * guest's row goes. Either way the rooms it owns are kept from now on where
- * a permanent owner keeps them.
+ * guest's row goes. Returns the account's row, which the users model then
+ * turns permanent (model/users.ts).
  */
 export async function linkAccount(
   ctx: MutationCtx,
   guest: Doc<"users">,
   account: Doc<"users"> | null,
-  details: { newAuthUserId: string; email: string; name?: string; avatarUrl?: string }
-): Promise<void> {
+  details: { newAuthUserId: string; name?: string }
+): Promise<Id<"users">> {
   if (account) {
-    await ctx.db.patch("users", account._id, {
-      email: details.email,
-      accountType: "permanent",
-      avatarUrl: details.avatarUrl,
-    });
     for (const rows of userRows()) await rows.fold(ctx, guest._id, account._id);
     await ctx.db.delete("users", guest._id);
-  } else {
-    await ctx.db.patch("users", guest._id, {
-      authUserId: details.newAuthUserId,
-      email: details.email,
-      avatarUrl: details.avatarUrl,
-      accountType: "permanent",
-      // The name the person chose as a guest wins over the provider's.
-      ...(details.name && !guest.name ? { name: details.name } : {}),
-    });
+    return account._id;
   }
-  await Ownership.ownerTurnedPermanent(ctx, (account ?? guest)._id);
+  await ctx.db.patch("users", guest._id, {
+    authUserId: details.newAuthUserId,
+    // The name the person chose as a guest wins over the provider's.
+    ...(details.name && !guest.name ? { name: details.name } : {}),
+  });
+  return guest._id;
 }

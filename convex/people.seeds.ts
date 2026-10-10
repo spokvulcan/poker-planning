@@ -15,6 +15,6 @@ export const seedUser = (t: T, subject: string, accountType?: "anonymous" | "per
 /** Acting as the person signed in as `subject`. */
 export const as = (t: T, subject: string) => t.withIdentity({ subject });
 
-/** Joins a room the way the app does; the first join creates a guest's user row. */
+/** Joins a room the way the app does; the first join makes the person's user row. */
 export const join = (t: T, roomId: Id<"rooms">, subject: string) =>
-  as(t, subject).mutation(api.users.join, { roomId, name: subject, authUserId: subject });
+  as(t, subject).mutation(api.users.join, { roomId, name: subject });
