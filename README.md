@@ -72,7 +72,7 @@ npx convex env set BETTER_AUTH_SECRET "$(openssl rand -base64 32)"
 npm run dev
 ```
 
-Open [localhost:3000](http://localhost:3000). To go live, ship the backend with `npx convex deploy` and host the Next.js app on Vercel or any Node server, with the variables below.
+Open [localhost:3000](http://localhost:3000). To go live on Vercel, set the build command to `npx convex deploy --cmd 'npm run build'` and add a production `CONVEX_DEPLOY_KEY`: each build then deploys the backend along with the app. On any other Node host, run `npx convex deploy` before you start the app. Either way, set the variables below.
 
 <details>
 <summary><b>Environment variables</b></summary>

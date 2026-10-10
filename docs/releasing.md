@@ -83,15 +83,16 @@ chore(deps): bump next from 15.0.0 to 15.1.0
 
 ## Deployment Relationship
 
-### Vercel (Frontend)
-- **Deploys on every push to `main`** - independent of releases
-- Releases serve as version markers in git history
-- No deployment changes needed for releases
+A push to `main` deploys both the frontend and the backend to production. Releases deploy nothing: they serve as version markers in git history.
 
-### Convex (Backend)
-- **Deploys manually**: run `npx convex deploy` from an up-to-date `main` after merging backend changes. That includes dependency updates, because a Convex component's code ships inside the deploy.
-- The command asks before it pushes to the production deployment; answer in the terminal that runs it.
-- Not tied to release versioning
+### One Vercel build deploys both
+- Vercel builds every push with the build command `npx convex deploy --cmd 'npm run build'`:
+  1. It runs `npm run build` with `NEXT_PUBLIC_CONVEX_URL` and `NEXT_PUBLIC_CONVEX_SITE_URL` pointing at the target Convex deployment.
+  2. If the Next.js build succeeds, it typechecks and pushes the Convex functions, schema and indexes.
+  - If either step fails, the build fails and production stays on the previous deployment.
+- **Production** (a push to `main`): the `CONVEX_DEPLOY_KEY` in Vercel's production environment targets the prod deployment, `modest-gopher-21`. Dependency updates ship this way too, because a Convex component's code goes inside the deploy.
+- **Previews** (any other branch): the preview environment's key targets the shared dev deployment, `zealous-reindeer-966`. That is the same one `npx convex dev` and the e2e tests use, so whichever branch built last is what runs there.
+- Don't run `npx convex deploy` by hand after merging. The build has already deployed, and from a stale checkout it would push old code over it.
 
 ## Viewing Releases
 
