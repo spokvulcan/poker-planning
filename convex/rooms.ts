@@ -1,8 +1,10 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import * as Rooms from "./model/rooms";
+import * as Users from "./model/users";
 import * as VotingRound from "./model/votingRound";
-import { requireAuthUser, requireCan } from "./model/auth";
+import { requireRoomWrite } from "./model/auth";
+import { getCaller } from "./model/caller";
 
 // Create a new room
 export const create = mutation({
@@ -23,8 +25,8 @@ export const create = mutation({
     ),
   },
   handler: async (ctx, args) => {
-    const { user } = await requireAuthUser(ctx);
-    return await Rooms.createRoom(ctx, { ...args, owner: user });
+    const owner = await Users.findOrMakeUser(ctx);
+    return await Rooms.createRoom(ctx, { ...args, owner });
   },
 });
 
@@ -36,16 +38,8 @@ export const get = query({
   handler: async (ctx, args) => {
     // Derive currentUserId from server-side auth context (not client-supplied)
     // to prevent vote privacy bypass
-    let currentUserId;
-    const identity = await ctx.auth.getUserIdentity();
-    if (identity) {
-      const appUser = await ctx.db
-        .query("users")
-        .withIndex("by_auth_user", (q) => q.eq("authUserId", identity.subject))
-        .first();
-      currentUserId = appUser?._id;
-    }
-    return await Rooms.getRoomWithRelatedData(ctx, args.roomId, currentUserId);
+    const caller = await getCaller(ctx);
+    return await Rooms.getRoomWithRelatedData(ctx, args.roomId, caller?.user?._id);
   },
 });
 
@@ -53,8 +47,8 @@ export const get = query({
 export const showCards = mutation({
   args: { roomId: v.id("rooms") },
   handler: async (ctx, args) => {
-    await requireCan(ctx, args.roomId, { kind: "category", category: "revealCards" });
-    await VotingRound.reveal(ctx, args.roomId);
+    const { room } = await requireRoomWrite(ctx, args.roomId, { kind: "category", category: "revealCards" });
+    await VotingRound.reveal(ctx, room);
   },
 });
 
@@ -62,8 +56,8 @@ export const showCards = mutation({
 export const resetGame = mutation({
   args: { roomId: v.id("rooms") },
   handler: async (ctx, args) => {
-    await requireCan(ctx, args.roomId, { kind: "category", category: "gameFlow" });
-    await VotingRound.reset(ctx, args.roomId);
+    const { room } = await requireRoomWrite(ctx, args.roomId, { kind: "category", category: "gameFlow" });
+    await VotingRound.reset(ctx, room);
   },
 });
 
@@ -71,8 +65,8 @@ export const resetGame = mutation({
 export const toggleAutoComplete = mutation({
   args: { roomId: v.id("rooms") },
   handler: async (ctx, args) => {
-    const { room } = await requireCan(ctx, args.roomId, { kind: "category", category: "roomSettings" });
-    await VotingRound.setAutoComplete(ctx, args.roomId, !room.autoCompleteVoting);
+    const { room } = await requireRoomWrite(ctx, args.roomId, { kind: "category", category: "roomSettings" });
+    await VotingRound.setAutoComplete(ctx, room, !room.autoCompleteVoting);
   },
 });
 
@@ -80,8 +74,8 @@ export const toggleAutoComplete = mutation({
 export const cancelAutoRevealCountdown = mutation({
   args: { roomId: v.id("rooms") },
   handler: async (ctx, args) => {
-    await requireCan(ctx, args.roomId, { kind: "category", category: "revealCards" });
-    await VotingRound.cancelCountdown(ctx, args.roomId);
+    const { room } = await requireRoomWrite(ctx, args.roomId, { kind: "category", category: "revealCards" });
+    await VotingRound.cancelCountdown(ctx, room);
   },
 });
 
@@ -92,7 +86,7 @@ export const rename = mutation({
     name: v.string(),
   },
   handler: async (ctx, args) => {
-    await requireCan(ctx, args.roomId, { kind: "category", category: "roomSettings" });
-    await Rooms.renameRoom(ctx, args);
+    const { room } = await requireRoomWrite(ctx, args.roomId, { kind: "category", category: "roomSettings" });
+    await Rooms.renameRoom(ctx, room, args.name);
   },
 });

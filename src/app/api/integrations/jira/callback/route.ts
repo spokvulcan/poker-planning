@@ -2,7 +2,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { fetchAuthAction } from "@/lib/auth-server";
 import { api } from "@/convex/_generated/api";
-import { exchangeJiraCode } from "./exchangeCode";
+import { jiraConnectFailed, jiraRefusalCode } from "../refusal";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -11,11 +11,11 @@ export async function GET(request: Request) {
   const error = searchParams.get("error");
 
   if (error) {
-    redirect("/dashboard/settings?tab=integrations&error=jira_denied");
+    redirect(jiraConnectFailed("jira_denied"));
   }
 
   if (!code || !state) {
-    redirect("/dashboard/settings?tab=integrations&error=jira_invalid");
+    redirect(jiraConnectFailed("jira_invalid"));
   }
 
   // Verify CSRF state
@@ -24,31 +24,16 @@ export async function GET(request: Request) {
   cookieStore.delete("jira_oauth_state");
 
   if (!storedState || storedState !== state) {
-    redirect("/dashboard/settings?tab=integrations&error=jira_state_mismatch");
-  }
-
-  const appUrl =
-    process.env.NEXT_PUBLIC_APP_URL ?? process.env.NEXT_PUBLIC_SITE_URL!;
-
-  const result = await exchangeJiraCode(code, {
-    clientId: process.env.JIRA_CLIENT_ID!,
-    clientSecret: process.env.JIRA_CLIENT_SECRET!,
-    appUrl,
-  });
-
-  if (!result.ok) {
-    redirect(`/dashboard/settings?tab=integrations&error=${result.error}`);
+    redirect(jiraConnectFailed("jira_state_mismatch"));
   }
 
   try {
-    // Call public action via user's auth session (fetchAuthAction
-    // carries the user's session cookie automatically)
-    await fetchAuthAction(api.integrations.jira.connectJira, result.connection);
+    // Convex exchanges the code and stores the connection, as the person
+    // (fetchAuthAction carries the user's session cookie automatically)
+    await fetchAuthAction(api.integrations.jira.connectJira, { code });
   } catch (err) {
-    console.error("Failed to store Jira connection:", err);
-    redirect(
-      "/dashboard/settings?tab=integrations&error=jira_store_failed"
-    );
+    console.error("Failed to connect Jira:", err);
+    redirect(jiraConnectFailed(jiraRefusalCode(err) ?? "jira_store_failed"));
   }
 
   redirect("/dashboard/settings?tab=integrations&connected=jira");

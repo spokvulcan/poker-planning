@@ -4,6 +4,7 @@ import { rulesOf } from "../ceremony";
 import { getEffectiveRole, type MemberRole } from "../permissions";
 import * as Canvas from "./canvas";
 import * as Ownership from "./ownership";
+import { refusal } from "./refusal";
 import * as Rooms from "./rooms";
 import * as VotingRound from "./votingRound";
 import type { UserRows } from "./userRows";
@@ -11,10 +12,11 @@ import type { UserRows } from "./userRows";
 /**
  * Room attendance (CONTEXT.md: Room attendance): who is in which room, and
  * as what. The one writer of `roomMemberships` rows: joining, sitting out as
- * a spectator, leaving, and folding a guest's memberships into their account.
- * The owner role is ownership's to give (model/ownership.ts); what a member
- * joining or leaving does to the canvas and the voting round, those modules
- * decide (memberJoined/memberLeft, dropVoter).
+ * a spectator, being made a facilitator or a participant again, leaving, and
+ * folding a guest's memberships into their account. The owner role is
+ * ownership's to give (model/ownership.ts); what a member joining or leaving
+ * does to the canvas and the voting round, those modules decide
+ * (memberJoined/memberLeft, dropVoter).
  */
 
 /** A member as the roster shows them: the person and their membership in one. */
@@ -100,32 +102,46 @@ export async function join(
 /**
  * Sits a member out as a spectator, or back in. A spectator is voteless, so
  * sitting out drops their vote and the round re-checks whether everyone has
- * voted (ADR-0004); coming back in needs nothing from the round.
+ * voted (ADR-0004); coming back in needs nothing from the round. Takes the
+ * member's membership as the room-scoped step loaded it.
  */
 export async function setSpectator(
   ctx: MutationCtx,
   room: Doc<"rooms">,
-  userId: Id<"users">,
+  membership: Doc<"roomMemberships">,
   isSpectator: boolean
 ): Promise<void> {
-  const membership = await getMembership(ctx, room._id, userId);
-  if (!membership) throw new Error("User not in room");
-  if (isSpectator && !rulesOf(room).spectators) throw new Error("Everyone takes part here: there are no spectators.");
+  if (isSpectator && !rulesOf(room).spectators) throw refusal("missing", "Everyone takes part here: there are no spectators.");
   await Rooms.updateRoomActivity(ctx, room);
   if (membership.isSpectator === isSpectator) return;
   // The roster bit first, so the round re-checks against the new roster.
   await ctx.db.patch("roomMemberships", membership._id, { isSpectator });
-  if (isSpectator) await VotingRound.dropVoter(ctx, room._id, userId);
+  if (isSpectator) await VotingRound.dropVoter(ctx, room._id, membership.userId);
+}
+
+/**
+ * Makes a member a facilitator (a promotion) or a participant again (a
+ * demotion). The handler's room-scoped step runs the `promote` or `demote`
+ * guard, which weighs both roles, and hands over the room and the member's
+ * membership. The owner role is ownership's to give.
+ */
+export async function setRole(
+  ctx: MutationCtx,
+  room: Doc<"rooms">,
+  membership: Doc<"roomMemberships">,
+  role: "facilitator" | "participant"
+): Promise<void> {
+  await ctx.db.patch("roomMemberships", membership._id, { role });
+  await Rooms.updateRoomActivity(ctx, room);
 }
 
 /**
  * Takes a member out of a room: leaving, or being removed. The membership
  * goes first, so the round re-checks completion against the smaller roster
- * when it drops their vote.
+ * when it drops their vote. Takes the membership as the room-scoped step
+ * loaded it: the caller's own, or the member a removal acts on.
  */
-export async function leave(ctx: MutationCtx, room: Doc<"rooms">, userId: Id<"users">): Promise<void> {
-  const membership = await getMembership(ctx, room._id, userId);
-  if (!membership) return;
+export async function leave(ctx: MutationCtx, room: Doc<"rooms">, membership: Doc<"roomMemberships">): Promise<void> {
   await takeOut(ctx, room, membership);
   await Rooms.updateRoomActivity(ctx, room);
 }

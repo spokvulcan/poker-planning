@@ -3,9 +3,8 @@
 import { ConvexReactClient } from "convex/react";
 import { ConvexBetterAuthProvider, type AuthClient } from "@convex-dev/better-auth/react";
 import { AuthProvider } from "./auth/auth-provider";
-import { ThemeProvider } from "next-themes";
+import { ConvexSetupRequired } from "./convex-setup-required";
 import { ReactNode } from "react";
-import { TooltipProvider } from "@/components/ui/tooltip";
 import { authClient } from "@/lib/auth-client";
 
 // This will be undefined until you run `npx convex dev` and set up your project
@@ -13,7 +12,12 @@ const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL;
 
 const convex = convexUrl ? new ConvexReactClient(convexUrl) : null;
 
-export function Providers({
+/**
+ * The app shell, which the (app) layout mounts for every page but the demo:
+ * Convex signed in through BetterAuth, starting from the token the layout
+ * fetched on the server, and the auth provider.
+ */
+export function AppProviders({
   children,
   initialToken,
 }: {
@@ -21,16 +25,7 @@ export function Providers({
   initialToken?: string | null;
 }) {
   if (!convex) {
-    return (
-      <div className="min-h-screen flex items-center justify-center p-4">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold mb-4">Setup Required</h1>
-          <p className="mb-4">Please run the following command to set up Convex:</p>
-          <code className="bg-gray-100 p-2 rounded">npx convex dev</code>
-          <p className="mt-4">Then add the NEXT_PUBLIC_CONVEX_URL to your .env.local file</p>
-        </div>
-      </div>
-    );
+    return <ConvexSetupRequired />;
   }
 
   return (
@@ -46,19 +41,7 @@ export function Providers({
       authClient={authClient as unknown as AuthClient}
       initialToken={initialToken}
     >
-      <ThemeProvider
-        defaultTheme="system"
-        storageKey="agilekit-theme"
-        attribute="class"
-        enableSystem
-        disableTransitionOnChange
-      >
-        <AuthProvider>
-          <TooltipProvider>
-            {children}
-          </TooltipProvider>
-        </AuthProvider>
-      </ThemeProvider>
+      <AuthProvider>{children}</AuthProvider>
     </ConvexBetterAuthProvider>
   );
 }

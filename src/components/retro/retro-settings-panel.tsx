@@ -8,8 +8,10 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { RoomWithRelatedData } from "@/convex/model/rooms";
 import type { PermissionLevel, RetroPermissionCategory, RetroPermissions } from "@/convex/permissions";
+import { ROOM_NAME } from "@/convex/constants";
 import {
-  MAX_COLUMN_TITLE_LENGTH,
+  COLUMN_EMOJI,
+  COLUMN_TITLE,
   MAX_COLUMNS,
   MAX_VOTES_PER_PERSON,
   MIN_VOTES_PER_PERSON,
@@ -95,6 +97,7 @@ function ColumnRow({
         <Input
           ref={emojiField}
           value={emoji.value}
+          maxLength={COLUMN_EMOJI.maxLength}
           onChange={(e) => emoji.setValue(e.target.value)}
           onBlur={() => void emoji.commit()}
           aria-label={`${column.title} emoji`}
@@ -104,7 +107,7 @@ function ColumnRow({
         <Input
           ref={titleField}
           value={title.value}
-          maxLength={MAX_COLUMN_TITLE_LENGTH}
+          maxLength={COLUMN_TITLE.maxLength}
           onChange={(e) => title.setValue(e.target.value)}
           onBlur={() => void title.commit()}
           onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
@@ -244,6 +247,7 @@ export const RetroSettingsPanel = memo(function RetroSettingsPanel({
                   id="retro-name"
                   ref={nameField}
                   value={name.value}
+                  maxLength={ROOM_NAME.maxLength}
                   onChange={(e) => name.setValue(e.target.value)}
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && name.canCommit && canSettings) void name.commit();

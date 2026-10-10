@@ -16,11 +16,11 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { UserAvatar } from "@/components/user-menu/user-avatar";
 import { permissionProps } from "@/hooks/usePermissions";
-import { MAX_ACTION_TEXT_LENGTH } from "@/convex/retroTemplates";
+import { ACTION_ITEM_TEXT } from "@/convex/retroTemplates";
 import { ACTIONS_WIDTH } from "@/convex/retroLayout";
 import type { ActionItemView } from "@/convex/model/retro";
 import type { ActionsNodeData, RetroBoardActions, RetroMember } from "../types";
-import { isOptimistic } from "../optimistic";
+import { isOptimistic } from "@/lib/optimistic-id";
 
 function ActionRow({
   item,
@@ -121,11 +121,13 @@ export const ActionsNode = memo(({ data, selected }: NodeProps<Node<ActionsNodeD
   const fresh = (items ?? []).filter((i) => !i.carriedOver);
   const open = (items ?? []).filter((i) => !i.done).length;
 
-  const add = () => {
+  // The pending item takes the words' place until it lands; a refused one
+  // gives them back, unless something new has been typed since.
+  const add = async () => {
     const text = draft.trim();
     if (!text || !canManage.allowed) return;
-    actions.addActionItem(text);
     setDraft("");
+    if (!(await actions.addActionItem(text))) setDraft((typed) => typed || text);
   };
 
   return (
@@ -194,10 +196,10 @@ export const ActionsNode = memo(({ data, selected }: NodeProps<Node<ActionsNodeD
             onKeyDown={(e) => {
               if (e.key === "Enter") {
                 e.preventDefault();
-                add();
+                void add();
               }
             }}
-            maxLength={MAX_ACTION_TEXT_LENGTH}
+            maxLength={ACTION_ITEM_TEXT.maxLength}
             disabled={!canManage.allowed}
             placeholder="Add an action item"
             aria-label="New action item"

@@ -5,6 +5,8 @@
  * IO, no Convex runtime.
  */
 
+import { fieldRule } from "./fieldRule";
+
 /**
  * Where the retro is. `write` keeps other people's stickies face-down;
  * `vote` reveals them and hands out votes; `discuss` shows the totals and
@@ -122,14 +124,44 @@ export function nextColumnId(columns: readonly Pick<RetroColumn, "id">[]): strin
 }
 
 // --- Caps -------------------------------------------------------------------
+// Each text field's rule sits beside its limit (fieldRule.ts): the model's
+// writers and the board's inputs read the same one.
 
 export const DEFAULT_VOTES_PER_PERSON = 3;
 export const MIN_VOTES_PER_PERSON = 1;
 export const MAX_VOTES_PER_PERSON = 10;
 
-export const MAX_STICKY_TEXT_LENGTH = 500;
+const MAX_STICKY_TEXT_LENGTH = 500;
+/** What a sticky says. Blank is kept here: a sticky with a GIF needs no words. */
+export const STICKY_TEXT = fieldRule({
+  maxLength: MAX_STICKY_TEXT_LENGTH,
+  tooLong: `Keep stickies to ${MAX_STICKY_TEXT_LENGTH} characters.`,
+});
+const MAX_GIF_TITLE_LENGTH = 140;
+/** A sticky's GIF's title, as its source names it: from outside, so fitted, never refused. */
+export const GIF_TITLE = fieldRule({
+  maxLength: MAX_GIF_TITLE_LENGTH,
+  tooLong: `Keep GIF titles to ${MAX_GIF_TITLE_LENGTH} characters.`,
+});
 export const MAX_STICKIES_PER_ROOM = 400;
 export const MAX_COLUMNS = 6;
-export const MAX_COLUMN_TITLE_LENGTH = 40;
-export const MAX_ACTION_TEXT_LENGTH = 300;
+const MAX_COLUMN_TITLE_LENGTH = 40;
+export const COLUMN_TITLE = fieldRule({
+  maxLength: MAX_COLUMN_TITLE_LENGTH,
+  blank: "A column needs a title.",
+  tooLong: `Keep column titles to ${MAX_COLUMN_TITLE_LENGTH} characters.`,
+});
+/** An emoji is a handful of code units (flags and ZWJ sequences included). */
+const MAX_COLUMN_EMOJI_LENGTH = 16;
+export const COLUMN_EMOJI = fieldRule({
+  maxLength: MAX_COLUMN_EMOJI_LENGTH,
+  blank: "Pick one emoji.",
+  tooLong: "Pick one emoji.",
+});
+const MAX_ACTION_TEXT_LENGTH = 300;
+export const ACTION_ITEM_TEXT = fieldRule({
+  maxLength: MAX_ACTION_TEXT_LENGTH,
+  blank: "An action item needs a few words.",
+  tooLong: `Keep action items to ${MAX_ACTION_TEXT_LENGTH} characters.`,
+});
 export const MAX_ACTIONS_PER_ROOM = 100;

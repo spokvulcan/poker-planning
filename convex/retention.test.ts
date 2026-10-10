@@ -220,14 +220,14 @@ describe("account linking: roles", () => {
   });
 });
 
-describe("removeInactiveRooms: retention", () => {
+describe("the sweep: retention", () => {
   it("a retained room outlives five quiet days", async () => {
     const t = withComponents(convexTest(schema, modules));
     const keptId = await seedStaleRoom(t, { retained: true });
 
-    const result = await t.mutation(internal.cleanup.removeInactiveRooms, {});
+    const result = await t.mutation(internal.maintenance.endStaleRooms, {});
 
-    expect(result.roomsScheduled).toBe(0);
+    expect(result.roomsEnding).toBe(0);
     expect(await scheduledCascadeRoomIds(t)).toEqual(new Set());
     expect(await t.run((ctx) => ctx.db.get("rooms", keptId))).not.toBeNull();
   });
@@ -237,9 +237,9 @@ describe("removeInactiveRooms: retention", () => {
     const staleId = await seedStaleRoom(t, { retained: false });
     const activeId = await seedRoom(t, "active");
 
-    const result = await t.mutation(internal.cleanup.removeInactiveRooms, {});
+    const result = await t.mutation(internal.maintenance.endStaleRooms, {});
 
-    expect(result.roomsScheduled).toBe(1);
+    expect(result.roomsEnding).toBe(1);
     expect(await scheduledCascadeRoomIds(t)).toEqual(new Set([staleId]));
     expect(await t.run((ctx) => ctx.db.get("rooms", activeId))).not.toBeNull();
   });
@@ -253,9 +253,9 @@ describe("removeInactiveRooms: retention", () => {
     await seedStaleRoom(t, { retained: true });
     await seedStaleRoom(t, { retained: true, roomType: "retro" });
 
-    const result = await t.mutation(internal.cleanup.removeInactiveRooms, {});
+    const result = await t.mutation(internal.maintenance.endStaleRooms, {});
 
-    expect(result.roomsScheduled).toBe(3);
+    expect(result.roomsEnding).toBe(3);
     expect(await scheduledCascadeRoomIds(t)).toEqual(
       new Set([staleCanvas, staleUntyped, staleGuestRetro])
     );

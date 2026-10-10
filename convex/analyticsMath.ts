@@ -1,17 +1,27 @@
 /**
  * analyticsMath — the ONE pure computation layer behind the analytics dashboard.
  *
- * Every dashboard number is projected here from plain rows, with no database
- * access, so the math is testable without a ctx (the summarize.ts precedent).
+ * Every dashboard number, and every verdict a chart states (a trend and its
+ * size), is projected here from plain rows, with no database access, so the
+ * math is testable without a ctx (the summarize.ts precedent). The charts
+ * render them, and only shape a series for plotting: the agreement and
+ * consensus charts average their points day by day, and the velocity chart
+ * draws a rolling average.
  * The model layer (model/analytics.ts) owns the single memberships → rooms →
- * history scan (`completedIssueHistory`); these functions own the projections.
- * Scan → project, never scan-and-compute inline.
+ * history scan (`completedIssueHistory`); these functions own the projections,
+ * and `dashboard` gathers them into the Overview's panels. Scan → project,
+ * never scan-and-compute inline.
  *
- * Date-window semantics live in the aggregate, not here: a range windows on
- * `issue.votedAt`. Projections only decide which fields their metric requires
- * (velocity needs a numeric estimate, the agreement trend needs an agreement,
- * and so on), and skip rows that lack them.
+ * Date-window semantics live in the dashboard read (`getDashboard`), not
+ * here. Projections only decide which fields their metric requires (the
+ * agreement trend needs an agreement, time to consensus a duration, and so
+ * on), and skip rows that lack them.
+ *
+ * A numeric estimate is the deck's one numeric reading (`cardNumericValue`),
+ * shared without a deck: a final estimate can be free text.
  */
+
+import { cardNumericValue } from "./scales";
 
 // ---------------------------------------------------------------------------
 // Row types — minimal structural views of the table Docs, so projections are
@@ -63,23 +73,21 @@ export interface AgreementDataPoint {
   roomName: string;
 }
 
-export interface VelocityDataPoint {
-  date: string; // ISO date string (YYYY-MM-DD)
-  storyPoints: number;
-  issueCount: number;
-}
-
 export interface VoteDistributionItem {
   value: string;
   count: number;
   percentage: number;
 }
 
-export interface ParticipationStats {
-  totalSessions: number;
-  totalIssuesVoted: number;
-  totalVotesCast: number;
-  averageVotesPerSession: number;
+/**
+ * A trend verdict, in the metric's own words: the second half of its series
+ * against the first. `changePct` is the change of the second half's mean
+ * relative to the first's, in whole percent; null when nothing was compared
+ * (fewer than two values, or a first half averaging zero).
+ */
+export interface Trend<Direction extends string> {
+  direction: Direction;
+  changePct: number | null;
 }
 
 export interface TimeToConsensusStats {
@@ -96,6 +104,8 @@ export interface TimeToConsensusStats {
     roomName: string;
     averageMs: number;
   }>;
+  /** The later rooms' times against the earlier rooms', past a 10% change. */
+  trend: Trend<"faster" | "stable" | "slower">;
 }
 
 export interface VoterAlignmentUser {
@@ -133,9 +143,11 @@ export interface PredictabilityData {
   predictabilityScore: number | null;
   sessions: PredictabilitySession[];
   averageVelocityPerSession: number;
-  velocityTrend: "increasing" | "stable" | "decreasing";
+  /** The later rooms' points against the earlier rooms', past a 10% change. */
+  velocityTrend: Trend<"increasing" | "stable" | "decreasing">;
   averageAgreement: number;
-  agreementTrend: "improving" | "stable" | "declining";
+  /** The later rooms' agreement against the earlier rooms', past a 5% change. */
+  agreementTrend: Trend<"improving" | "stable" | "declining">;
 }
 
 export interface DashboardSummary {
@@ -145,11 +157,53 @@ export interface DashboardSummary {
   averageAgreement: number | null;
 }
 
-/** The per-session issue stats getUserSessions reports for one room. */
+/** The per-session issue stats a session-list row reports for one room. */
 export interface SessionIssueStats {
   issuesCompleted: number;
   totalStoryPoints: number | null; // null if non-numeric scale
   averageAgreement: number | null;
+}
+
+/** One row of the session list: a room the viewer joined, over its lifetime. */
+export interface SessionSummary extends SessionIssueStats {
+  roomId: string;
+  roomName: string;
+  joinedAt: number;
+  lastActivityAt: number;
+  participantCount: number;
+}
+
+/**
+ * The agreement chart: a point per issue, and the agreement trend it states,
+ * which is the predictability card's.
+ */
+export interface AgreementChartData {
+  points: AgreementDataPoint[];
+  trend: PredictabilityData["agreementTrend"];
+}
+
+/** Everything the dashboard Overview shows: one field per panel. */
+export interface Dashboard {
+  summary: DashboardSummary;
+  sessions: SessionSummary[];
+  agreementChart: AgreementChartData;
+  voteDistribution: VoteDistributionItem[];
+  timeToConsensus: TimeToConsensusStats;
+  voterAlignment: VoterAlignmentData;
+  predictability: PredictabilityData;
+}
+
+/**
+ * The viewer's history as the dashboard read hands it over, already windowed
+ * (model/analytics.ts getDashboard states the window rules): the session-list
+ * rows, the issues voted in the window by room, the votes cast in it, and
+ * those voters' display names.
+ */
+export interface DashboardHistory {
+  sessions: SessionSummary[];
+  rooms: RoomIssues[];
+  votes: HistoryVote[];
+  voterNames: Record<string, string>;
 }
 
 // ---------------------------------------------------------------------------
@@ -176,15 +230,17 @@ function stdDev(values: number[]): number {
 }
 
 /**
- * Compares the first half vs second half of a numeric series.
- * Returns "increasing" if second half is >threshold% higher,
- * "decreasing" if lower, "stable" otherwise.
+ * Compares the first half vs second half of a numeric series. Goes `up` if
+ * the second half's mean is more than `thresholdPct` percent above the
+ * first's, `down` if as far below, "stable" otherwise. A first half averaging
+ * zero has no relative change: any rise goes `up`.
  */
-function computeTrend(
+function trend<Up extends string, Down extends string>(
   values: number[],
-  thresholdPct: number
-): "increasing" | "stable" | "decreasing" {
-  if (values.length < 2) return "stable";
+  thresholdPct: number,
+  { up, down }: { up: Up; down: Down }
+): Trend<Up | "stable" | Down> {
+  if (values.length < 2) return { direction: "stable", changePct: null };
 
   const mid = Math.floor(values.length / 2);
   const firstHalf = values.slice(0, mid);
@@ -193,13 +249,15 @@ function computeTrend(
   const firstAvg = mean(firstHalf);
   const secondAvg = mean(secondHalf);
 
-  if (firstAvg === 0) return secondAvg > 0 ? "increasing" : "stable";
+  if (firstAvg === 0) {
+    return { direction: secondAvg > 0 ? up : "stable", changePct: null };
+  }
 
   const diffPct = ((secondAvg - firstAvg) / firstAvg) * 100;
+  const direction =
+    diffPct > thresholdPct ? up : diffPct < -thresholdPct ? down : "stable";
 
-  if (diffPct > thresholdPct) return "increasing";
-  if (diffPct < -thresholdPct) return "decreasing";
-  return "stable";
+  return { direction, changePct: Math.round(diffPct) };
 }
 
 // ---------------------------------------------------------------------------
@@ -207,7 +265,7 @@ function computeTrend(
 // ---------------------------------------------------------------------------
 
 /** Agreement over time: one point per issue with an agreement, sorted by time. */
-export function agreementTrend(entries: RoomIssue[]): AgreementDataPoint[] {
+export function agreementPoints(entries: RoomIssue[]): AgreementDataPoint[] {
   const points: AgreementDataPoint[] = [];
 
   for (const { roomName, issue } of entries) {
@@ -225,38 +283,11 @@ export function agreementTrend(entries: RoomIssue[]): AgreementDataPoint[] {
   return points.sort((a, b) => a.timestamp - b.timestamp);
 }
 
-/** Velocity: story points and issue counts bucketed by day. */
-export function velocityByDay(entries: RoomIssue[]): VelocityDataPoint[] {
-  const byDate: Record<string, { storyPoints: number; issueCount: number }> =
-    {};
-
-  for (const { issue } of entries) {
-    if (issue.votedAt && issue.finalEstimate) {
-      const storyPoints = parseFloat(issue.finalEstimate);
-      if (isNaN(storyPoints)) continue;
-
-      const date = isoDay(issue.votedAt);
-      if (!byDate[date]) {
-        byDate[date] = { storyPoints: 0, issueCount: 0 };
-      }
-      byDate[date].storyPoints += storyPoints;
-      byDate[date].issueCount += 1;
-    }
-  }
-
-  return Object.entries(byDate)
-    .map(([date, data]) => ({
-      date,
-      storyPoints: data.storyPoints,
-      issueCount: data.issueCount,
-    }))
-    .sort((a, b) => a.date.localeCompare(b.date));
-}
-
 /**
  * Distribution of final estimates. Counts whatever history it is given —
- * the aggregate decides the window, so a ranged call never sees issues that
- * lack a `votedAt` (the old inline copy leaked them into ranged results).
+ * the dashboard read decides the window, so a ranged read never hands it
+ * issues that lack a `votedAt` (the old inline copy leaked them into ranged
+ * results).
  */
 export function voteDistribution(
   issues: HistoryIssue[]
@@ -280,23 +311,10 @@ export function voteDistribution(
   return distribution.sort((a, b) => b.count - a.count);
 }
 
-/** Participation header numbers from pre-counted totals. */
-export function participationStats(totals: {
-  totalSessions: number;
-  totalIssuesVoted: number;
-  totalVotesCast: number;
-}): ParticipationStats {
-  const { totalSessions, totalIssuesVoted, totalVotesCast } = totals;
-  return {
-    totalSessions,
-    totalIssuesVoted,
-    totalVotesCast,
-    averageVotesPerSession:
-      totalSessions > 0 ? Math.round(totalVotesCast / totalSessions) : 0,
-  };
-}
-
-/** Time-to-consensus: average/median, >2x outliers, and per-session trend. */
+/**
+ * Time-to-consensus: average/median, >2x outliers, the per-session series and
+ * its trend.
+ */
 export function timeToConsensus(entries: RoomIssue[]): TimeToConsensusStats {
   const issuesWithTime: Array<{
     issueTitle: string;
@@ -319,7 +337,13 @@ export function timeToConsensus(entries: RoomIssue[]): TimeToConsensusStats {
   }
 
   if (issuesWithTime.length === 0) {
-    return { averageMs: null, medianMs: null, outliers: [], trendBySession: [] };
+    return {
+      averageMs: null,
+      medianMs: null,
+      outliers: [],
+      trendBySession: [],
+      trend: { direction: "stable", changePct: null },
+    };
   }
 
   const durations = issuesWithTime.map((i) => i.durationMs);
@@ -373,6 +397,11 @@ export function timeToConsensus(entries: RoomIssue[]): TimeToConsensusStats {
     medianMs: Math.round(medianMs),
     outliers,
     trendBySession,
+    trend: trend(
+      trendBySession.map((s) => s.averageMs),
+      10,
+      { up: "slower", down: "faster" }
+    ),
   };
 }
 
@@ -480,8 +509,8 @@ export function predictability(rooms: RoomIssues[]): PredictabilityData {
 
     // Story points
     const numericEstimates = usable
-      .map((i) => (i.finalEstimate ? parseFloat(i.finalEstimate) : NaN))
-      .filter((v) => !isNaN(v));
+      .map((i) => (i.finalEstimate ? cardNumericValue(i.finalEstimate) : undefined))
+      .filter((v): v is number => v !== undefined);
     const estimatedPoints =
       numericEstimates.length > 0
         ? numericEstimates.reduce((sum, v) => sum + v, 0)
@@ -522,7 +551,10 @@ export function predictability(rooms: RoomIssues[]): PredictabilityData {
   const velocities = sessionsWithPoints.map((s) => s.estimatedPoints);
   const averageVelocityPerSession =
     velocities.length > 0 ? round(mean(velocities), 1) : 0;
-  const velocityTrend = computeTrend(velocities, 10);
+  const velocityTrend = trend(velocities, 10, {
+    up: "increasing",
+    down: "decreasing",
+  });
 
   const allAgreements = sessions
     .map((s) => s.averageAgreement)
@@ -530,13 +562,10 @@ export function predictability(rooms: RoomIssues[]): PredictabilityData {
   const overallAgreement =
     allAgreements.length > 0 ? Math.round(mean(allAgreements)) : 0;
 
-  const agreementTrendDir = computeTrend(allAgreements, 5);
-  const agreementTrend: "improving" | "stable" | "declining" =
-    agreementTrendDir === "increasing"
-      ? "improving"
-      : agreementTrendDir === "decreasing"
-        ? "declining"
-        : "stable";
+  const agreementTrend = trend(allAgreements, 5, {
+    up: "improving",
+    down: "declining",
+  });
 
   // Predictability score (need at least 3 sessions with points)
   let predictabilityScore: number | null = null;
@@ -604,8 +633,8 @@ export function dashboardSummary(sessions: SessionIssueStats[]): DashboardSummar
 export function sessionIssueStats(issues: HistoryIssue[]): SessionIssueStats {
   // Total story points (numeric estimates only)
   const numericEstimates = issues
-    .map((i) => (i.finalEstimate ? parseFloat(i.finalEstimate) : NaN))
-    .filter((v) => !isNaN(v));
+    .map((i) => (i.finalEstimate ? cardNumericValue(i.finalEstimate) : undefined))
+    .filter((v): v is number => v !== undefined);
   const totalStoryPoints =
     numericEstimates.length > 0
       ? numericEstimates.reduce((sum, v) => sum + v, 0)
@@ -623,3 +652,60 @@ export function sessionIssueStats(issues: HistoryIssue[]): SessionIssueStats {
     averageAgreement,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Formatting
+// ---------------------------------------------------------------------------
+
+/**
+ * How a duration reads, on the dashboard and in the issue export: to the
+ * nearest second, with minutes from the first one ("2m 34s").
+ */
+export function formatDuration(ms: number): string {
+  const totalSeconds = Math.round(ms / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+
+  if (minutes === 0) return `${seconds}s`;
+  return `${minutes}m ${seconds}s`;
+}
+
+// ---------------------------------------------------------------------------
+// The Overview
+// ---------------------------------------------------------------------------
+
+/**
+ * Every panel of the Overview, each from its own projection. The header
+ * totals the session list; the charts read the windowed issues and votes.
+ *
+ * The agreement chart plots its points day by day but states the
+ * predictability card's agreement trend, room against room (#391): the page
+ * shows one agreement trend.
+ */
+export function dashboard(history: DashboardHistory): Dashboard {
+  const entries: RoomIssue[] = history.rooms.flatMap(
+    ({ roomId, roomName, issues }) =>
+      issues.map((issue) => ({ roomId, roomName, issue }))
+  );
+  const predictabilityData = predictability(history.rooms);
+  return {
+    summary: dashboardSummary(history.sessions),
+    sessions: history.sessions,
+    agreementChart: {
+      points: agreementPoints(entries),
+      trend: predictabilityData.agreementTrend,
+    },
+    voteDistribution: voteDistribution(history.rooms.flatMap((r) => r.issues)),
+    timeToConsensus: timeToConsensus(entries),
+    voterAlignment: voterAlignment(history.votes, history.voterNames),
+    predictability: predictabilityData,
+  };
+}
+
+/** The dashboard of a viewer with no history: every panel's empty state. */
+export const EMPTY_DASHBOARD: Dashboard = dashboard({
+  sessions: [],
+  rooms: [],
+  votes: [],
+  voterNames: {},
+});

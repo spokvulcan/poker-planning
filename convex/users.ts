@@ -1,30 +1,16 @@
-import { mutation, query, internalMutation } from "./_generated/server";
+import { mutation, query, internalMutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
 import * as Users from "./model/users";
-import {
-  requireAuth,
-  requireAuthAs,
-  requireActingUser,
-  requireCan,
-  getOptionalAuthUser,
-} from "./model/auth";
-
-function validateName(name: string): string {
-  const trimmed = name.trim();
-  if (!trimmed) {
-    throw new Error("Name is required");
-  }
-  if (trimmed.length > 50) {
-    throw new Error("Name must be 50 characters or less");
-  }
-  return trimmed;
-}
+import * as AccountLifecycle from "./model/accountLifecycle";
+import * as Memberships from "./model/memberships";
+import { findUser, getCaller, requireCaller } from "./model/caller";
+import { requireRoomWrite } from "./model/auth";
 
 // Get global user for the currently authenticated user
 export const getGlobalUser = query({
   args: {},
   handler: async (ctx) => {
-    return await getOptionalAuthUser(ctx);
+    return (await getCaller(ctx))?.user ?? null;
   },
 });
 
@@ -34,25 +20,21 @@ export const getMyMembership = query({
     roomId: v.id("rooms"),
   },
   handler: async (ctx, args) => {
-    const user = await getOptionalAuthUser(ctx);
+    const user = (await getCaller(ctx))?.user;
     if (!user) return null;
 
-    const result = await Users.getMembershipByAuthUserId(
-      ctx,
-      args.roomId,
-      user.authUserId
-    );
-    if (!result) return null;
+    const membership = await Memberships.getMembership(ctx, args.roomId, user._id);
+    if (!membership) return null;
 
     // Return merged user + membership data for frontend
     return {
-      _id: result.user._id,
-      name: result.user.name,
-      avatarUrl: result.user.avatarUrl,
-      isSpectator: result.membership.isSpectator,
-      role: result.membership.role ?? ("participant" as const),
-      joinedAt: result.membership.joinedAt,
-      membershipId: result.membership._id,
+      _id: user._id,
+      name: user.name,
+      avatarUrl: user.avatarUrl,
+      isSpectator: membership.isSpectator,
+      role: membership.role ?? ("participant" as const),
+      joinedAt: membership.joinedAt,
+      membershipId: membership._id,
     };
   },
 });
@@ -62,92 +44,88 @@ export const join = mutation({
     roomId: v.id("rooms"),
     name: v.string(),
     isSpectator: v.optional(v.boolean()),
-    authUserId: v.string(), // The caller's own id; older browsers still send it
+    authUserId: v.optional(v.string()), // Ignored: older browsers still send the caller's own id
   },
   handler: async (ctx, args) => {
-    await requireAuthAs(ctx, args.authUserId);
-
     return await Users.joinRoom(ctx, {
       roomId: args.roomId,
-      name: validateName(args.name),
+      name: args.name,
       isSpectator: args.isSpectator,
-      authUserId: args.authUserId,
     });
   },
 });
 
 export const edit = mutation({
   args: {
-    userId: v.id("users"),
+    userId: v.optional(v.id("users")), // Ignored: the caller's own id, which old browsers still send
     roomId: v.id("rooms"),
     name: v.optional(v.string()),
     isSpectator: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
-    // Authenticated, in-room, and acting as this userId — the one guard.
-    await requireActingUser(ctx, args.roomId, args.userId, "Cannot edit another user");
-
-    await Users.editUser(ctx, {
-      userId: args.userId,
-      roomId: args.roomId,
-      name: args.name !== undefined ? validateName(args.name) : undefined,
-      isSpectator: args.isSpectator,
-    });
+    const { room, membership } = await requireRoomWrite(ctx, args.roomId);
+    await Users.editUser(ctx, room, membership, { name: args.name, isSpectator: args.isSpectator });
   },
 });
 
 export const leave = mutation({
   args: {
-    userId: v.id("users"),
+    userId: v.optional(v.id("users")), // Ignored: the caller's own id, which old browsers still send
     roomId: v.id("rooms"),
   },
   handler: async (ctx, args) => {
-    // Authenticated, in-room, and acting as this userId — the one guard.
-    await requireActingUser(ctx, args.roomId, args.userId, "Cannot remove another user");
-
-    await Users.leaveRoom(ctx, args.userId, args.roomId);
+    const { room, membership } = await requireRoomWrite(ctx, args.roomId);
+    await Memberships.leave(ctx, room, membership);
   },
 });
 
 // Remove a user from a room (role-based: owner→anyone, facilitator→participants only)
 export const remove = mutation({
   args: {
-    userId: v.id("users"),
+    userId: v.id("users"), // The member taken out
     roomId: v.id("rooms"),
   },
   handler: async (ctx, args) => {
-    await requireCan(
+    const { room, target } = await requireRoomWrite(
       ctx,
       args.roomId,
       { kind: "relationship", verb: "remove" },
       args.userId
     );
-
-    await Users.leaveRoom(ctx, args.userId, args.roomId);
+    await Memberships.leave(ctx, room, target!);
   },
 });
 
-// Edit global user (name only, no room context required)
+// Edit global user (name only, no room context required): the caller's row
+// takes the name, made with it when they have none yet
 export const editGlobalUser = mutation({
   args: {
     name: v.string(),
   },
   handler: async (ctx, args) => {
-    const identity = await requireAuth(ctx);
-    await Users.updateGlobalUserName(
-      ctx,
-      identity.subject,
-      validateName(args.name)
-    );
+    await Users.findOrMakeUser(ctx, args.name);
   },
 });
 
-// Delete user completely (called on sign out)
+// Delete account: deletes the caller's account, whatever its kind (the
+// Account tab). Older browsers also call it to sign a guest out.
 export const deleteUser = mutation({
   args: {},
   handler: async (ctx) => {
-    const identity = await requireAuth(ctx);
-    await Users.deleteUserByAuthUserId(ctx, identity.subject);
+    const { user } = await requireCaller(ctx);
+    if (user) await AccountLifecycle.deleteAccount(ctx, user);
+  },
+});
+
+// Sign out: deletes the caller's account only when they are a guest; a
+// permanent account is kept. With nobody signed in there is nothing to
+// delete, and the browser, which calls it before clearing its session, still
+// clears it.
+export const signOut = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const caller = await getCaller(ctx);
+    if (caller) await AccountLifecycle.signOut(ctx, caller);
   },
 });
 
@@ -175,22 +153,18 @@ export const syncAvatarFromAuth = internalMutation({
   },
 });
 
-// Ensure the caller has a global user, making one with `name` when they have
-// none. An existing row keeps its name: the session bootstrap calls this on
-// every create, with a fresh guest name each time.
+// Older browsers' session bootstrap calls this before every create, to make
+// sure the caller has a users row. Creating a room now makes the row itself,
+// so it does no more than that: both arguments (the caller's own id, a guest
+// name made up in the browser) are accepted and ignored until browsers on the
+// old code are gone.
 export const ensureGlobalUser = mutation({
   args: {
-    authUserId: v.string(), // The caller's own id; older browsers still send it
+    authUserId: v.string(),
     name: v.string(),
   },
-  handler: async (ctx, args) => {
-    await requireAuthAs(ctx, args.authUserId);
-
-    if (await Users.getGlobalUserByAuthUserId(ctx, args.authUserId)) return;
-    await Users.findOrCreateGlobalUser(ctx, {
-      authUserId: args.authUserId,
-      name: validateName(args.name),
-    });
+  handler: async (ctx) => {
+    await Users.findOrMakeUser(ctx);
   },
 });
 
@@ -204,5 +178,14 @@ export const linkAnonymousAccount = internalMutation({
   },
   handler: async (ctx, args) => {
     await Users.linkAnonymousToPermanent(ctx, args);
+  },
+});
+
+// The users row of the person signed in as `authUserId`: how an action, which
+// has no database of its own, finds its caller (model/caller.ts).
+export const userByAuthId = internalQuery({
+  args: { authUserId: v.string() },
+  handler: async (ctx, args) => {
+    return await findUser(ctx, args.authUserId);
   },
 });

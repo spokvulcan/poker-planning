@@ -3,13 +3,9 @@ import { mutation, query } from "./_generated/server";
 import * as Retro from "./model/retro";
 import * as Roles from "./model/roles";
 import { renameRoom } from "./model/rooms";
-import {
-  getOptionalAuthUser,
-  requireAuthUser,
-  requireCan,
-  requireRoomMember,
-  requireRoomReader,
-} from "./model/auth";
+import { requireRoomReader, requireRoomWrite } from "./model/auth";
+import { getCaller } from "./model/caller";
+import * as Users from "./model/users";
 import {
   gifValidator,
   positionValidator,
@@ -17,29 +13,7 @@ import {
   retroStepValidator,
   stickyColorValidator,
 } from "./schema";
-import { refusal } from "./model/refusal";
-import type { Doc, Id } from "./_generated/dataModel";
-import type { MutationCtx } from "./_generated/server";
-
-type MemberRoom = { user: Doc<"users">; membership: Doc<"roomMemberships">; room: Doc<"rooms"> };
-
-/** The room a retro write lands in, loaded after the attendance guard. */
-async function memberRoom(ctx: MutationCtx, roomId: Id<"rooms">): Promise<MemberRoom> {
-  const { user, membership } = await requireRoomMember(ctx, roomId);
-  const room = await ctx.db.get("rooms", roomId);
-  if (!room) throw refusal("missing", "This retro is gone.");
-  return { user, membership, room };
-}
-
-/** A sticky and the room it lives in, for writes addressed by sticky. */
-async function memberSticky(
-  ctx: MutationCtx,
-  stickyId: Id<"retroStickies">
-): Promise<MemberRoom & { sticky: Doc<"retroStickies"> }> {
-  const sticky = await ctx.db.get("retroStickies", stickyId);
-  if (!sticky) throw refusal("missing", "That sticky is gone.");
-  return { ...(await memberRoom(ctx, sticky.roomId)), sticky };
-}
+import { refusal, refusalOf } from "./model/refusal";
 
 // --- Retros -------------------------------------------------------------------
 
@@ -47,8 +21,8 @@ async function memberSticky(
 export const create = mutation({
   args: { name: v.string(), templateId: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    const { user } = await requireAuthUser(ctx);
-    return await Retro.createRetro(ctx, { name: args.name, templateId: args.templateId, owner: user });
+    const owner = await Users.findOrMakeUser(ctx);
+    return await Retro.createRetro(ctx, { name: args.name, templateId: args.templateId, owner });
   },
 });
 
@@ -56,7 +30,7 @@ export const create = mutation({
 export const listMine = query({
   args: {},
   handler: async (ctx) => {
-    const user = await getOptionalAuthUser(ctx);
+    const user = (await getCaller(ctx))?.user;
     if (!user) return [];
     return await Retro.listRetrosOf(ctx, user._id);
   },
@@ -65,9 +39,9 @@ export const listMine = query({
 export const rename = mutation({
   args: { roomId: v.id("rooms"), name: v.string() },
   handler: async (ctx, args) => {
-    const { room } = await requireCan(ctx, args.roomId, { kind: "category", category: "retroSettings" });
+    const { room } = await requireRoomWrite(ctx, args.roomId, { kind: "category", category: "retroSettings" });
     Retro.retroOf(room);
-    await renameRoom(ctx, args);
+    await renameRoom(ctx, room, args.name);
   },
 });
 
@@ -75,7 +49,8 @@ export const rename = mutation({
 export const updatePermissions = mutation({
   args: { roomId: v.id("rooms"), permissions: retroPermissionsValidator },
   handler: async (ctx, args) => {
-    await Roles.updatePermissions(ctx, args);
+    const { room } = await requireRoomWrite(ctx, args.roomId, { kind: "relationship", verb: "changePerms" });
+    await Roles.updatePermissions(ctx, room, args.permissions);
   },
 });
 
@@ -83,7 +58,7 @@ export const updatePermissions = mutation({
 export const remove = mutation({
   args: { roomId: v.id("rooms") },
   handler: async (ctx, args) => {
-    const { room } = await requireCan(ctx, args.roomId, { kind: "relationship", verb: "delete" });
+    const { room } = await requireRoomWrite(ctx, args.roomId, { kind: "relationship", verb: "delete" });
     await Retro.deleteRetro(ctx, room);
   },
 });
@@ -92,7 +67,7 @@ export const remove = mutation({
 export const startNext = mutation({
   args: { roomId: v.id("rooms") },
   handler: async (ctx, args) => {
-    const { room, user } = await requireCan(ctx, args.roomId, { kind: "category", category: "stageFlow" });
+    const { room, user } = await requireRoomWrite(ctx, args.roomId, { kind: "category", category: "stageFlow" });
     return await Retro.startNextRetro(ctx, room, user);
   },
 });
@@ -102,7 +77,7 @@ export const startNext = mutation({
 export const setStep = mutation({
   args: { roomId: v.id("rooms"), step: retroStepValidator },
   handler: async (ctx, args) => {
-    const { room } = await requireCan(ctx, args.roomId, { kind: "category", category: "stageFlow" });
+    const { room } = await requireRoomWrite(ctx, args.roomId, { kind: "category", category: "stageFlow" });
     await Retro.setStep(ctx, room, args.step);
   },
 });
@@ -110,7 +85,7 @@ export const setStep = mutation({
 export const stepDiscussion = mutation({
   args: { roomId: v.id("rooms"), direction: v.union(v.literal("next"), v.literal("previous")) },
   handler: async (ctx, args) => {
-    const { room } = await requireCan(ctx, args.roomId, { kind: "category", category: "stageFlow" });
+    const { room } = await requireRoomWrite(ctx, args.roomId, { kind: "category", category: "stageFlow" });
     await Retro.stepDiscussion(ctx, room, args.direction);
   },
 });
@@ -118,7 +93,7 @@ export const stepDiscussion = mutation({
 export const focusTopic = mutation({
   args: { roomId: v.id("rooms"), stickyId: v.id("retroStickies") },
   handler: async (ctx, args) => {
-    const { room } = await requireCan(ctx, args.roomId, { kind: "category", category: "stageFlow" });
+    const { room } = await requireRoomWrite(ctx, args.roomId, { kind: "category", category: "stageFlow" });
     await Retro.focusTopic(ctx, room, args.stickyId);
   },
 });
@@ -132,7 +107,7 @@ export const updateSettings = mutation({
     showAuthors: v.optional(v.boolean()),
   },
   handler: async (ctx, { roomId, ...patch }) => {
-    const { room } = await requireCan(ctx, roomId, { kind: "category", category: "retroSettings" });
+    const { room } = await requireRoomWrite(ctx, roomId, { kind: "category", category: "retroSettings" });
     await Retro.updateSettings(ctx, room, patch);
   },
 });
@@ -146,7 +121,7 @@ export const updateColumn = mutation({
     color: v.optional(stickyColorValidator),
   },
   handler: async (ctx, { roomId, columnId, ...patch }) => {
-    const { room } = await requireCan(ctx, roomId, { kind: "category", category: "retroSettings" });
+    const { room } = await requireRoomWrite(ctx, roomId, { kind: "category", category: "retroSettings" });
     await Retro.updateColumn(ctx, room, columnId, patch);
   },
 });
@@ -154,7 +129,7 @@ export const updateColumn = mutation({
 export const addColumn = mutation({
   args: { roomId: v.id("rooms"), title: v.string(), emoji: v.string(), color: stickyColorValidator },
   handler: async (ctx, { roomId, ...column }) => {
-    const { room } = await requireCan(ctx, roomId, { kind: "category", category: "retroSettings" });
+    const { room } = await requireRoomWrite(ctx, roomId, { kind: "category", category: "retroSettings" });
     return await Retro.addColumn(ctx, room, column);
   },
 });
@@ -162,18 +137,24 @@ export const addColumn = mutation({
 export const removeColumn = mutation({
   args: { roomId: v.id("rooms"), columnId: v.string() },
   handler: async (ctx, args) => {
-    const { room } = await requireCan(ctx, args.roomId, { kind: "category", category: "retroSettings" });
+    const { room } = await requireRoomWrite(ctx, args.roomId, { kind: "category", category: "retroSettings" });
     await Retro.removeColumn(ctx, room, args.columnId);
   },
 });
 
 // --- The board ------------------------------------------------------------------
 
-/** Every sticky as the viewer may see it, plus the writer and the viewer's vote counts. */
+/**
+ * Every sticky as the viewer may see it, plus the writer and the viewer's vote
+ * counts. It loads the room itself: room access returns none, so a room patch
+ * re-runs only the queries that read the room (ADR-0009).
+ */
 export const board = query({
   args: { roomId: v.id("rooms") },
   handler: async (ctx, args) => {
-    const { user, room } = await requireRoomReader(ctx, args.roomId);
+    const { user } = await requireRoomReader(ctx, args.roomId);
+    const room = await ctx.db.get("rooms", args.roomId);
+    if (!room) throw refusal("missing", "This retro is gone.");
     return await Retro.getBoard(ctx, room, user._id);
   },
 });
@@ -197,7 +178,7 @@ export const addSticky = mutation({
     position: positionValidator,
   },
   handler: async (ctx, { roomId, ...args }) => {
-    const { user, room } = await memberRoom(ctx, roomId);
+    const { user, room } = await requireRoomWrite(ctx, roomId);
     return await Retro.addSticky(ctx, room, user, args);
   },
 });
@@ -210,7 +191,7 @@ export const updateSticky = mutation({
     columnId: v.optional(v.string()),
   },
   handler: async (ctx, { stickyId, ...patch }) => {
-    const { membership, room, sticky } = await memberSticky(ctx, stickyId);
+    const { membership, room, sticky } = await requireRoomWrite(ctx, { sticky: stickyId });
     await Retro.updateSticky(ctx, room, membership, sticky, patch);
   },
 });
@@ -221,7 +202,7 @@ export const moveStickies = mutation({
     moves: v.array(v.object({ stickyId: v.id("retroStickies"), position: positionValidator })),
   },
   handler: async (ctx, args) => {
-    const { room } = await memberRoom(ctx, args.roomId);
+    const { room } = await requireRoomWrite(ctx, args.roomId);
     await Retro.moveStickies(ctx, room, args.moves);
   },
 });
@@ -233,7 +214,7 @@ export const measureStickies = mutation({
     heights: v.array(v.object({ stickyId: v.id("retroStickies"), height: v.number() })),
   },
   handler: async (ctx, args) => {
-    const { user, room } = await memberRoom(ctx, args.roomId);
+    const { user, room } = await requireRoomWrite(ctx, args.roomId);
     await Retro.measureStickies(ctx, room, user, args.heights);
   },
 });
@@ -241,7 +222,7 @@ export const measureStickies = mutation({
 export const deleteSticky = mutation({
   args: { stickyId: v.id("retroStickies") },
   handler: async (ctx, args) => {
-    const { membership, room, sticky } = await memberSticky(ctx, args.stickyId);
+    const { membership, room, sticky } = await requireRoomWrite(ctx, { sticky: args.stickyId });
     await Retro.deleteSticky(ctx, room, membership, sticky);
   },
 });
@@ -249,7 +230,7 @@ export const deleteSticky = mutation({
 export const stackSticky = mutation({
   args: { stickyId: v.id("retroStickies"), ontoId: v.id("retroStickies") },
   handler: async (ctx, args) => {
-    const { user, room, sticky } = await memberSticky(ctx, args.stickyId);
+    const { user, room, sticky } = await requireRoomWrite(ctx, { sticky: args.stickyId });
     await Retro.stackSticky(ctx, room, user, sticky, args.ontoId);
   },
 });
@@ -257,7 +238,7 @@ export const stackSticky = mutation({
 export const unstackSticky = mutation({
   args: { stickyId: v.id("retroStickies"), position: positionValidator },
   handler: async (ctx, args) => {
-    const { user, room, sticky } = await memberSticky(ctx, args.stickyId);
+    const { user, room, sticky } = await requireRoomWrite(ctx, { sticky: args.stickyId });
     await Retro.unstackSticky(ctx, room, user, sticky, args.position);
   },
 });
@@ -265,7 +246,7 @@ export const unstackSticky = mutation({
 export const toggleVote = mutation({
   args: { stickyId: v.id("retroStickies") },
   handler: async (ctx, args) => {
-    const { user, room, sticky } = await memberSticky(ctx, args.stickyId);
+    const { user, room, sticky } = await requireRoomWrite(ctx, { sticky: args.stickyId });
     await Retro.toggleVote(ctx, room, user, sticky);
   },
 });
@@ -283,7 +264,7 @@ export const actionItems = query({
 export const addActionItem = mutation({
   args: { roomId: v.id("rooms"), text: v.string(), ownerId: v.optional(v.id("users")) },
   handler: async (ctx, { roomId, ...args }) => {
-    const { room } = await requireCan(ctx, roomId, { kind: "category", category: "actionManagement" });
+    const { room } = await requireRoomWrite(ctx, roomId, { kind: "category", category: "actionManagement" });
     return await Retro.addActionItem(ctx, room, args);
   },
 });
@@ -296,19 +277,28 @@ export const updateActionItem = mutation({
     ownerId: v.optional(v.union(v.id("users"), v.null())),
   },
   handler: async (ctx, { itemId, ...patch }) => {
-    const item = await ctx.db.get("retroActionItems", itemId);
-    if (!item) throw refusal("missing", "That action item is gone.");
-    const { room } = await requireCan(ctx, item.roomId, { kind: "category", category: "actionManagement" });
-    await Retro.updateActionItem(ctx, room, item, patch);
+    const { room, actionItem } = await requireRoomWrite(
+      ctx,
+      { actionItem: itemId },
+      { kind: "category", category: "actionManagement" }
+    );
+    await Retro.updateActionItem(ctx, room, actionItem, patch);
   },
 });
 
 export const deleteActionItem = mutation({
   args: { itemId: v.id("retroActionItems") },
   handler: async (ctx, args) => {
-    const item = await ctx.db.get("retroActionItems", args.itemId);
-    if (!item) return;
-    const { room } = await requireCan(ctx, item.roomId, { kind: "category", category: "actionManagement" });
-    await Retro.deleteActionItem(ctx, room, item);
+    // The step refuses an item that is gone as missing: deleting it again (a
+    // second click, say) has nothing left to do.
+    const write = await requireRoomWrite(
+      ctx,
+      { actionItem: args.itemId },
+      { kind: "category", category: "actionManagement" }
+    ).catch((error: unknown) => {
+      if (refusalOf(error)?.code === "missing") return null;
+      throw error;
+    });
+    if (write) await Retro.deleteActionItem(ctx, write.room, write.actionItem);
   },
 });

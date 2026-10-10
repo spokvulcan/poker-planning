@@ -16,6 +16,7 @@ test.describe("Results Display Suite", () => {
         await users[2].roomPage.selectCard("8");
 
         // Reveal cards
+        await users[0].roomPage.expectVoteCount(users.length);
         await users[0].roomPage.revealCards();
 
         // Check average on results node
@@ -39,6 +40,7 @@ test.describe("Results Display Suite", () => {
         await users[2].roomPage.selectCard("?");
 
         // Reveal cards
+        await users[0].roomPage.expectVoteCount(users.length);
         await users[0].roomPage.revealCards();
 
         // Check average (should only count 5 and 8)
@@ -59,6 +61,7 @@ test.describe("Results Display Suite", () => {
         await users[1].roomPage.selectCard("?");
 
         // Reveal cards
+        await users[0].roomPage.expectVoteCount(users.length);
         await users[0].roomPage.revealCards();
 
         // Check average shows dash
@@ -83,6 +86,7 @@ test.describe("Results Display Suite", () => {
         await users[2].roomPage.selectCard("5");
 
         // Reveal cards
+        await users[0].roomPage.expectVoteCount(users.length);
         await users[0].roomPage.revealCards();
 
         // Check agreement
@@ -106,6 +110,7 @@ test.describe("Results Display Suite", () => {
         await users[3].roomPage.selectCard("8");
 
         // Reveal cards
+        await users[0].roomPage.expectVoteCount(users.length);
         await users[0].roomPage.revealCards();
 
         // Check agreement (3/4 = 75%)
@@ -129,6 +134,7 @@ test.describe("Results Display Suite", () => {
         await users[3].roomPage.selectCard("8");
 
         // Reveal cards
+        await users[0].roomPage.expectVoteCount(users.length);
         await users[0].roomPage.revealCards();
 
         // Check agreement (2/4 = 50%)
@@ -154,6 +160,7 @@ test.describe("Results Display Suite", () => {
         await users[4].roomPage.selectCard("5");
 
         // Reveal cards
+        await users[0].roomPage.expectVoteCount(users.length);
         await users[0].roomPage.revealCards();
 
         // Check color is green
@@ -180,6 +187,7 @@ test.describe("Results Display Suite", () => {
         await users[4].roomPage.selectCard("3");
 
         // Reveal cards
+        await users[0].roomPage.expectVoteCount(users.length);
         await users[0].roomPage.revealCards();
 
         // Check color is amber (60% agreement)
@@ -201,6 +209,7 @@ test.describe("Results Display Suite", () => {
         await users[3].roomPage.selectCard("8");
 
         // Reveal cards
+        await users[0].roomPage.expectVoteCount(users.length);
         await users[0].roomPage.revealCards();
 
         // Check color is gray (25% agreement)
@@ -224,6 +233,7 @@ test.describe("Results Display Suite", () => {
         await users[3].roomPage.selectCard("8");
 
         // Reveal cards
+        await users[0].roomPage.expectVoteCount(users.length);
         await users[0].roomPage.revealCards();
 
         // Get distribution
@@ -255,6 +265,7 @@ test.describe("Results Display Suite", () => {
         await users[2].roomPage.selectCard("5");
 
         // Reveal cards
+        await users[0].roomPage.expectVoteCount(users.length);
         await users[0].roomPage.revealCards();
 
         // Get distribution
@@ -279,6 +290,7 @@ test.describe("Results Display Suite", () => {
         await users[2].roomPage.selectCard("3");
 
         // Reveal cards
+        await users[0].roomPage.expectVoteCount(users.length);
         await users[0].roomPage.revealCards();
 
         // Get distribution
@@ -309,6 +321,7 @@ test.describe("Results Display Suite", () => {
         await users[0].roomPage.expectResultsNodeNotVisible();
 
         // Reveal cards
+        await users[0].roomPage.expectVoteCount(users.length);
         await users[0].roomPage.revealCards();
 
         // Results node should now be visible
@@ -327,6 +340,7 @@ test.describe("Results Display Suite", () => {
         // Vote and reveal
         await users[0].roomPage.selectCard("5");
         await users[1].roomPage.selectCard("8");
+        await users[0].roomPage.expectVoteCount(users.length);
         await users[0].roomPage.revealCards();
 
         // Results should be visible

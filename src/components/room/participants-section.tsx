@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { UserAvatar } from "@/components/user-menu/user-avatar";
 import { toast } from "@/lib/toast";
+import { runAct } from "@/lib/run-act";
 import { cn } from "@/lib/utils";
 import { rosterControls, type SharedPermissions } from "@/hooks/usePermissions";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -55,6 +56,7 @@ export function ParticipantsSection({ roomId, currentUserId, perms, isOpen }: Pa
   // Reset pending state when panel closes
   useEffect(() => {
     if (!isOpen) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional state sync with the panel's open prop
       setPendingDeleteUser(null);
       setPendingTransferUser(null);
     }
@@ -67,57 +69,39 @@ export function ParticipantsSection({ roomId, currentUserId, perms, isOpen }: Pa
   const handleConfirmRemoveUser = async () => {
     if (!pendingDeleteUser) return;
     setRemovingUserId(pendingDeleteUser.id);
-    try {
-      await settingsActions.removeUser(pendingDeleteUser.id);
+    if (await runAct(settingsActions.removeUser(pendingDeleteUser.id), "Failed to remove user")) {
       toast.success("User removed", {
         description: `${pendingDeleteUser.name} has been removed from the room.`,
       });
-    } catch (error) {
-      console.error("Failed to remove user:", error);
-      toast.error("Failed to remove user");
-    } finally {
-      setRemovingUserId(null);
-      setPendingDeleteUser(null);
     }
+    setRemovingUserId(null);
+    setPendingDeleteUser(null);
   };
 
   const handlePromote = async (userId: Id<"users">, userName: string) => {
-    try {
-      await settingsActions.promoteFacilitator(userId);
+    if (await runAct(settingsActions.promoteFacilitator(userId), "Failed to promote user")) {
       toast.success("User promoted", {
         description: `${userName} is now a facilitator.`,
       });
-    } catch (error) {
-      console.error("Failed to promote user:", error);
-      toast.error("Failed to promote user");
     }
   };
 
   const handleDemote = async (userId: Id<"users">, userName: string) => {
-    try {
-      await settingsActions.demoteFacilitator(userId);
+    if (await runAct(settingsActions.demoteFacilitator(userId), "Failed to demote user")) {
       toast.success("User demoted", {
         description: `${userName} is now a participant.`,
       });
-    } catch (error) {
-      console.error("Failed to demote user:", error);
-      toast.error("Failed to demote user");
     }
   };
 
   const handleConfirmTransfer = async () => {
     if (!pendingTransferUser) return;
-    try {
-      await settingsActions.transferOwnership(pendingTransferUser.id);
+    if (await runAct(settingsActions.transferOwnership(pendingTransferUser.id), "Failed to transfer ownership")) {
       toast.success("Ownership transferred", {
         description: `${pendingTransferUser.name} is now the room owner.`,
       });
-    } catch (error) {
-      console.error("Failed to transfer ownership:", error);
-      toast.error("Failed to transfer ownership");
-    } finally {
-      setPendingTransferUser(null);
     }
+    setPendingTransferUser(null);
   };
 
   return (

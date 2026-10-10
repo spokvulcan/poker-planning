@@ -1,8 +1,9 @@
 /**
  * buildRetroNodes / buildRetroEdges — what the retro whiteboard shows in each
  * step, from plain values: every topic is a node and a stacked sticky rides
- * inside its top, the walk ranks and spotlights topics in Discuss, a pending
- * sticky can't be touched, and a draft rides on top of the board.
+ * inside its top, the walk ranks topics once the totals show, the spotlight
+ * is drawn in Discuss, a pending sticky can't be touched, and a draft rides
+ * on top of the board.
  */
 import { describe, it, expect } from "vitest";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -11,7 +12,7 @@ import { RESOLVED_ALLOWED, type ResolvedDecision } from "@/convex/permissions";
 import { columnsFromTemplate, type RetroStep } from "@/convex/retroTemplates";
 import { padPositions, RETRO_NODE_POSITION } from "@/convex/retroLayout";
 import { buildRetroEdges, buildRetroNodes, topicLabel, type RetroNodesInput } from "./build-retro-nodes";
-import { OPTIMISTIC_PREFIX } from "./optimistic";
+import { OPTIMISTIC_PREFIX } from "@/lib/optimistic-id";
 import type { RetroBoardActions, StickyNodeData } from "./types";
 
 const DENIED: ResolvedDecision = { allowed: false, message: "Only facilitators and the owner can do this." };
@@ -124,7 +125,12 @@ describe("buildRetroNodes", () => {
     const at = (step: RetroStep) => stickyNodes(buildRetroNodes(input({ retro: { step }, board: board(stickies) })))[0].data;
 
     expect([at("write").canVote, at("vote").canVote, at("discuss").canVote]).toEqual([false, true, false]);
-    expect([at("write").canFocus, at("vote").canFocus]).toEqual([false, true]);
+    expect([at("write").canFocus, at("vote").canFocus, at("discuss").canFocus, at("done").canFocus]).toEqual([
+      false,
+      true,
+      true,
+      false,
+    ]);
     expect(at("write").members.map((m) => m.canUnstack)).toEqual([true, false]);
     expect(at("vote").members.map((m) => m.canUnstack)).toEqual([true, true]);
   });
@@ -151,10 +157,22 @@ describe("buildRetroNodes", () => {
     expect(discuss.map((n) => n.data.dimmed)).toEqual([false, true, true]);
     // s2 (#1) comes before the focus (#2), so it has been discussed.
     expect(discuss.map((n) => n.data.discussed)).toEqual([false, true, false]);
+  });
 
-    const done = at("done");
-    expect(done.map((n) => n.data.focused)).toEqual([false, false, false]);
-    expect(done.map((n) => n.data.discussed)).toEqual([true, true, false]);
+  it("once done, marks every ranked topic discussed, and neither draws the spotlight nor offers it", () => {
+    const stickies = [sticky("s1", { votes: 1 }), sticky("s2", { votes: 3 }), sticky("s3", { votes: 0 })];
+    // Finishing leaves the spotlight where the walk was, for going back to Discuss.
+    const nodes = buildRetroNodes(
+      input({ retro: { step: "done", focusStickyId: "s1" as Id<"retroStickies"> }, board: board(stickies) })
+    );
+
+    const finished = stickyNodes(nodes);
+    expect(finished.map((n) => n.data.discussed)).toEqual([true, true, false]);
+    // Nothing lifted and nothing dimmed...
+    expect(finished.map((n) => n.data.focused || n.data.dimmed)).toEqual([false, false, false]);
+    expect(nodes.find((n) => n.id === "retro")?.data).not.toHaveProperty("focusedId");
+    // ...and no topic offers to be discussed now.
+    expect(finished.map((n) => n.data.canFocus)).toEqual([false, false, false]);
   });
 
   it("tells the retro node where the walk is", () => {
@@ -176,6 +194,18 @@ describe("buildRetroNodes", () => {
         data: expect.objectContaining({ editing: true, color: "pink", draft: expect.objectContaining({ clientId: "draft-1" }) }),
       }),
     ]);
+  });
+
+  it("draws a sent draft as its sticky, pending or landed, and as written again if the sticky is refused", () => {
+    const draft = { clientId: "draft-1", columnId: "c2", position: { x: 10, y: 20 }, text: "Standups run long" };
+    const pending = sticky(`${OPTIMISTIC_PREFIX}1`, { clientId: "draft-1", columnId: "c2", mine: true, text: "Standups run long" });
+    const landed = { ...pending, _id: "s1" as Id<"retroStickies"> };
+    const at = (stickies: StickyView[]) => stickyNodes(buildRetroNodes(input({ draft, board: board(stickies) })));
+
+    expect(at([pending]).map((n) => [n.id, n.data.sticky?._id])).toEqual([["draft-1", pending._id]]);
+    expect(at([landed]).map((n) => [n.id, n.data.sticky?._id])).toEqual([["draft-1", "s1"]]);
+    // Refused: Convex takes the pending sticky back, and the editor opens again on what it said.
+    expect(at([]).map((n) => n.data.draft)).toEqual([expect.objectContaining({ clientId: "draft-1", text: "Standups run long" })]);
   });
 });
 

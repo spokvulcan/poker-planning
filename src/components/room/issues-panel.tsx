@@ -22,6 +22,7 @@ import {
 import { SidePanel } from "@/components/ui/side-panel";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "@/lib/toast";
+import { runAct } from "@/lib/run-act";
 import { cn } from "@/lib/utils";
 import { useIssues } from "./hooks/useIssues";
 import { useIssuesExport } from "./hooks/useIssuesExport";
@@ -33,6 +34,7 @@ import { exportIssuesToCSV } from "@/utils/export-issues-csv";
 import { exportIssuesToJSON } from "@/utils/export-issues-json";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { EnhancedExportableIssue } from "@/convex/model/issues";
+import { ISSUE_TITLE } from "@/convex/constants";
 import { type ResolvedDecision, RESOLVED_ALLOWED } from "@/convex/permissions";
 import { denialTooltip, permissionProps } from "@/hooks/usePermissions";
 
@@ -109,18 +111,13 @@ const IssuesPanelContent: FC<IssuesPanelContentProps> = ({
     if (!newIssueTitle.trim()) return;
 
     setIsAddingIssue(true);
-    try {
-      await createIssue(newIssueTitle.trim());
+    if (await runAct(createIssue(newIssueTitle.trim()), "Failed to add issue")) {
       setNewIssueTitle("");
       toast.success("Issue added", {
         description: `"${newIssueTitle.trim()}" has been added to the list.`,
       });
-    } catch (error) {
-      console.error("Failed to add issue:", error);
-      toast.error("Failed to add issue");
-    } finally {
-      setIsAddingIssue(false);
     }
+    setIsAddingIssue(false);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -131,58 +128,36 @@ const IssuesPanelContent: FC<IssuesPanelContentProps> = ({
 
   const handleStartVoting = async (issueId: Id<"issues">) => {
     const issue = issues.find((i) => i._id === issueId);
-    try {
-      await startVoting(issueId);
+    if (await runAct(startVoting(issueId), "Failed to start voting")) {
       toast.success(issue ? `Voting on "${issue.title}"` : "Voting started", {
         description: "All previous votes have been cleared.",
       });
-    } catch (error) {
-      console.error("Failed to start voting:", error);
-      toast.error("Failed to start voting");
     }
   };
 
   const handleSwitchToQuickVote = async () => {
     if (isQuickVoteMode) return; // Already in Quick Vote mode
-    try {
-      await switchToQuickVote();
+    if (await runAct(switchToQuickVote(), "Failed to switch mode")) {
       toast.success("Quick Vote", {
         description: "Switched to ad-hoc voting mode.",
       });
-    } catch (error) {
-      console.error("Failed to switch to Quick Vote:", error);
-      toast.error("Failed to switch mode");
     }
   };
 
   const handleUpdateTitle = async (issueId: Id<"issues">, title: string) => {
-    try {
-      await updateTitle(issueId, title);
-    } catch (error) {
-      console.error("Failed to update title:", error);
-      toast.error("Failed to update title");
-    }
+    await runAct(updateTitle(issueId, title), "Failed to update title");
   };
 
   const handleUpdateEstimate = async (
     issueId: Id<"issues">,
     estimate: string
   ) => {
-    try {
-      await updateEstimate(issueId, estimate);
-    } catch (error) {
-      console.error("Failed to update estimate:", error);
-      toast.error("Failed to update estimate");
-    }
+    await runAct(updateEstimate(issueId, estimate), "Failed to update estimate");
   };
 
   const handleDeleteIssue = async (issueId: Id<"issues">) => {
-    try {
-      await deleteIssue(issueId);
+    if (await runAct(deleteIssue(issueId), "Failed to delete issue")) {
       toast.success("Issue deleted");
-    } catch (error) {
-      console.error("Failed to delete issue:", error);
-      toast.error("Failed to delete issue");
     }
   };
 
@@ -359,6 +334,7 @@ const IssuesPanelContent: FC<IssuesPanelContentProps> = ({
                 <div className="relative group">
                   <Input
                     value={newIssueTitle}
+                    maxLength={ISSUE_TITLE.maxLength}
                     onChange={(e) => setNewIssueTitle(e.target.value)}
                     onKeyDown={handleKeyDown}
                     placeholder="Add new issue..."

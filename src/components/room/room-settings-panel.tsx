@@ -22,6 +22,7 @@ import {
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/components/ui/accordion";
 import { SidePanel } from "@/components/ui/side-panel";
 import { toast } from "@/lib/toast";
+import { runAct } from "@/lib/run-act";
 import { useLiveText } from "@/hooks/use-live-text";
 import {
   usePokerPermissions,
@@ -33,6 +34,7 @@ import { useRoomSettingsActions } from "./hooks/useRoomSettingsActions";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { RoomWithRelatedData } from "@/convex/model/rooms";
 import type { PermissionLevel, PokerPermissionCategory, RoomPermissions } from "@/convex/permissions";
+import { ROOM_NAME } from "@/convex/constants";
 
 import { ParticipantsSection } from "./participants-section";
 import { PermissionsSection } from "./permissions-section";
@@ -72,7 +74,7 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
   // What's typed wins until it's saved; someone else's rename comes in otherwise.
   const [roomName, roomNameField] = useLiveText<HTMLInputElement>({
     value: roomData.room.name,
-    save: (name) => settingsActions.rename(name),
+    save: (name) => runAct(settingsActions.rename(name), "Failed to rename room"),
     required: true,
   });
 
@@ -82,18 +84,11 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
       toast.success("Room renamed", {
         description: `Room is now called "${roomName.value.trim()}"`,
       });
-    } else {
-      toast.error("Failed to rename room");
     }
   };
 
   const handleToggleAutoReveal = async () => {
-    try {
-      await settingsActions.toggleAutoComplete();
-    } catch (error) {
-      console.error("Failed to toggle auto-reveal:", error);
-      toast.error("Failed to update setting");
-    }
+    await runAct(settingsActions.toggleAutoComplete(), "Failed to update setting");
   };
 
   const handlePermissionChange = async (category: PokerPermissionCategory, value: PermissionLevel) => {
@@ -101,12 +96,7 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
       ...perms.permissions,
       [category]: value,
     };
-    try {
-      await settingsActions.updatePermissions(newPermissions);
-    } catch (error) {
-      console.error("Failed to update permissions:", error);
-      toast.error("Failed to update permissions");
-    }
+    await runAct(settingsActions.updatePermissions(newPermissions), "Failed to update permissions");
   };
 
   return (
@@ -165,6 +155,7 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
                   id="room-name"
                   ref={roomNameField}
                   value={roomName.value}
+                  maxLength={ROOM_NAME.maxLength}
                   onChange={(e) => perms.roomSettings.allowed && roomName.setValue(e.target.value)}
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && perms.roomSettings.allowed) handleSaveRoomName();

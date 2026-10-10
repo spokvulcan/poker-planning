@@ -1,6 +1,8 @@
 import { mutation } from "./_generated/server";
 import { v } from "convex/values";
+import * as Memberships from "./model/memberships";
 import * as Roles from "./model/roles";
+import { requireRoomWrite } from "./model/auth";
 import { pokerPermissionsValidator } from "./schema";
 
 export const promoteFacilitator = mutation({
@@ -9,7 +11,13 @@ export const promoteFacilitator = mutation({
     targetUserId: v.id("users"),
   },
   handler: async (ctx, args) => {
-    await Roles.promoteFacilitator(ctx, args);
+    const { room, target } = await requireRoomWrite(
+      ctx,
+      args.roomId,
+      { kind: "relationship", verb: "promote" },
+      args.targetUserId
+    );
+    await Memberships.setRole(ctx, room, target!, "facilitator");
   },
 });
 
@@ -19,7 +27,13 @@ export const demoteFacilitator = mutation({
     targetUserId: v.id("users"),
   },
   handler: async (ctx, args) => {
-    await Roles.demoteFacilitator(ctx, args);
+    const { room, target } = await requireRoomWrite(
+      ctx,
+      args.roomId,
+      { kind: "relationship", verb: "demote" },
+      args.targetUserId
+    );
+    await Memberships.setRole(ctx, room, target!, "participant");
   },
 });
 
@@ -29,7 +43,13 @@ export const transferOwnership = mutation({
     targetUserId: v.id("users"),
   },
   handler: async (ctx, args) => {
-    await Roles.transferOwnership(ctx, args);
+    const { room, user, target } = await requireRoomWrite(
+      ctx,
+      args.roomId,
+      { kind: "relationship", verb: "transfer" },
+      args.targetUserId
+    );
+    await Roles.transferOwnership(ctx, room, user, target!);
   },
 });
 
@@ -39,6 +59,7 @@ export const updatePermissions = mutation({
     permissions: pokerPermissionsValidator,
   },
   handler: async (ctx, args) => {
-    await Roles.updatePermissions(ctx, args);
+    const { room } = await requireRoomWrite(ctx, args.roomId, { kind: "relationship", verb: "changePerms" });
+    await Roles.updatePermissions(ctx, room, args.permissions);
   },
 });

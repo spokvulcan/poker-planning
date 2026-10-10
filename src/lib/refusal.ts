@@ -1,5 +1,4 @@
-import { ConvexError } from "convex/values";
-import type { Refusal } from "@/convex/model/refusal";
+import { refusalOf } from "@/convex/model/refusal";
 
 /**
  * The copy a failed write shows. The model layer throws
@@ -9,7 +8,5 @@ import type { Refusal } from "@/convex/model/refusal";
  * failure and shows the caller's fallback.
  */
 export function failureCopy(error: unknown, fallback: string): string {
-  if (!(error instanceof ConvexError)) return fallback;
-  const message = (error.data as Partial<Refusal> | undefined)?.message;
-  return typeof message === "string" && message ? message : fallback;
+  return refusalOf(error)?.message ?? fallback;
 }

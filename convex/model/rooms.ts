@@ -3,8 +3,9 @@ import { Id, Doc } from "../_generated/dataModel";
 import * as Canvas from "./canvas";
 import * as Memberships from "./memberships";
 import * as Ownership from "./ownership";
-import { VOTING_SCALES, VotingScaleType, validateCustomScale } from "../scales";
-import { MAX_ROOM_NAME_LENGTH } from "../constants";
+import { DEFAULT_SCALE, VOTING_SCALES, VotingScaleType, validateCustomScale } from "../scales";
+import { ROOM_NAME } from "../constants";
+import { requireValid } from "./refusal";
 import { rulesOf } from "../ceremony";
 import { isRoomOwnerAbsent } from "./permissions";
 
@@ -16,20 +17,6 @@ export interface CreateRoomArgs {
     type: VotingScaleType | "custom";
     cards?: string[]; // Required only for custom type
   };
-}
-
-/**
- * Validates a room name (trims, enforces non-empty and a length cap).
- */
-export function validateRoomName(name: string): string {
-  const trimmed = name.trim();
-  if (!trimmed) {
-    throw new Error("Room name is required");
-  }
-  if (trimmed.length > MAX_ROOM_NAME_LENGTH) {
-    throw new Error(`Room name must be ${MAX_ROOM_NAME_LENGTH} characters or less`);
-  }
-  return trimmed;
 }
 
 export interface SanitizedVote extends Doc<"votes"> {
@@ -47,18 +34,8 @@ export interface RoomWithRelatedData {
  * Resolves voting scale configuration from user input
  */
 function resolveVotingScale(scaleConfig?: CreateRoomArgs["votingScale"]) {
-  // Default to Fibonacci if no scale provided
-  if (!scaleConfig) {
-    const fibonacci = VOTING_SCALES.fibonacci;
-    return {
-      type: fibonacci.type,
-      cards: [...fibonacci.cards],
-      isNumeric: fibonacci.isNumeric,
-    };
-  }
-
   // Handle custom scales
-  if (scaleConfig.type === "custom") {
+  if (scaleConfig?.type === "custom") {
     if (!scaleConfig.cards || scaleConfig.cards.length === 0) {
       throw new Error("Custom scale requires cards array");
     }
@@ -72,8 +49,8 @@ function resolveVotingScale(scaleConfig?: CreateRoomArgs["votingScale"]) {
     };
   }
 
-  // Handle predefined scales
-  const predefinedScale = VOTING_SCALES[scaleConfig.type];
+  // Handle predefined scales, and the default when none was picked
+  const predefinedScale = scaleConfig ? VOTING_SCALES[scaleConfig.type] : DEFAULT_SCALE;
   return {
     type: predefinedScale.type,
     cards: [...predefinedScale.cards],
@@ -96,7 +73,7 @@ export async function openRoom(ctx: MutationCtx, owner: Doc<"users">, fields: Ro
   const now = Date.now();
   const roomId = await ctx.db.insert("rooms", {
     ...fields,
-    name: validateRoomName(fields.name),
+    name: requireValid(ROOM_NAME, fields.name),
     createdAt: now,
     lastActivityAt: now,
     ...Ownership.initialOwnership(fields, owner),
@@ -179,7 +156,7 @@ export function sanitizeVotes(
 /**
  * The single chokepoint for room activity writes (ADR-0005). Every
  * user-initiated mutation touching room-scoped state routes its bump through
- * here, so the cleanup cascade's inactivity window (model/cleanup.ts)
+ * here, so the sweep's inactivity window (model/roomEnding.ts)
  * reflects real use — a room worked only via its timer or canvas must not
  * read as abandoned.
  *
@@ -204,13 +181,11 @@ export async function updateRoomActivity(
 }
 
 /**
- * Renames a room. The permission guard runs in the endpoint handler; the model
- * owns the validation, the write, and the activity bump.
+ * Renames a room. The handler's room-scoped step runs the permission guard and
+ * hands over the room; the model owns the validation, the write, and the
+ * activity bump.
  */
-export async function renameRoom(
-  ctx: MutationCtx,
-  args: { roomId: Id<"rooms">; name: string }
-): Promise<void> {
-  await ctx.db.patch("rooms", args.roomId, { name: validateRoomName(args.name) });
-  await updateRoomActivity(ctx, args.roomId);
+export async function renameRoom(ctx: MutationCtx, room: Doc<"rooms">, name: string): Promise<void> {
+  await ctx.db.patch("rooms", room._id, { name: requireValid(ROOM_NAME, name) });
+  await updateRoomActivity(ctx, room);
 }

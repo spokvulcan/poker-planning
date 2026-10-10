@@ -3,7 +3,6 @@ import type { GenericActionCtx } from "convex/server";
 import { convex } from "@convex-dev/better-auth/plugins";
 import { components } from "./_generated/api";
 import { DataModel } from "./_generated/dataModel";
-import { query } from "./_generated/server";
 import { betterAuth } from "better-auth";
 import { anonymous, magicLink } from "better-auth/plugins";
 import { internal } from "./_generated/api";
@@ -72,17 +71,18 @@ export const createAuth = (ctx: GenericCtx<DataModel>) => {
             if (!("runMutation" in ctx)) return;
             const actionCtx = ctx as GenericActionCtx<DataModel>;
 
-            // Skip anonymous users — they get a Convex user record
-            // via ensureGlobalUser (guest sign-in) or joinRoom.
+            // Skip anonymous users: a guest's Convex user record is made on
+            // their first room write (model/users.ts findOrMakeUser).
             if ((user as Record<string, unknown>).isAnonymous) return;
 
-            // Permanent account (Google OAuth, magic link): create Convex user record
-            const name = user.name || user.email.split("@")[0];
+            // Permanent account (Google OAuth, magic link): create Convex user
+            // record. The users model fits the provider's name to the name
+            // rule, or the email's local part when there is none (a magic link).
             await actionCtx.runMutation(
               internal.users.ensureGlobalUserFromAuth,
               {
                 authUserId: user.id,
-                name,
+                name: user.name,
                 email: user.email,
                 avatarUrl: user.image ?? undefined,
               }
@@ -138,11 +138,3 @@ export const createAuth = (ctx: GenericCtx<DataModel>) => {
     ],
   });
 };
-
-// Get the current authenticated user
-export const getCurrentUser = query({
-  args: {},
-  handler: async (ctx) => {
-    return authComponent.getAuthUser(ctx);
-  },
-});

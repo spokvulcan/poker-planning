@@ -1,149 +1,180 @@
-import { MutationCtx, QueryCtx } from "../_generated/server";
+import { MutationCtx } from "../_generated/server";
 import { Id, Doc } from "../_generated/dataModel";
 import * as AccountLifecycle from "./accountLifecycle";
+import { findUser, requireCaller, sessionAccountType, type Caller } from "./caller";
 import * as Memberships from "./memberships";
+import * as Ownership from "./ownership";
 import * as Rooms from "./rooms";
+import { requireValid } from "./refusal";
+import { PERSON_NAME } from "../constants";
 
 /**
  * People: the app's `users` rows, one per person, each linked to an auth
- * identity (BetterAuth's user id). Which rooms a person is in is
- * memberships.ts's; how an account ends, deleted or folded into another,
- * is accountLifecycle.ts's.
+ * identity (BetterAuth's user id). Who is calling, and so which row is
+ * theirs, is caller.ts's; the row is made here, on the caller's first room
+ * write or by the auth hooks, and this is the only place a row turns
+ * permanent (usersRow.test.ts fails otherwise). Which rooms a person is in is
+ * memberships.ts's; how an account ends, deleted or folded into another, is
+ * accountLifecycle.ts's. Every name a users row gets passes the person-name
+ * rule (constants.ts) here: one a person typed is refused when it breaks the
+ * rule; one a sign-in provider gives, or the one a row made before the rule
+ * already holds, is fitted to it.
  */
 
 export interface JoinRoomArgs {
   roomId: Id<"rooms">;
   name: string;
   isSpectator?: boolean;
-  authUserId: string;
 }
 
 export interface EditUserArgs {
-  userId: Id<"users">;
-  roomId: Id<"rooms">;
   name?: string;
   isSpectator?: boolean;
 }
 
 /**
- * Finds or creates a global user by authUserId
+ * The caller's users row, made when they have none. The global ways in
+ * (creating a poker room or a retro, joining a room, renaming yourself) come
+ * through here, so a signed-in person's first room write makes their row,
+ * whatever the browser did first. A new row is of the kind the session's
+ * token says (caller.ts): a permanent account's has the token's email and the
+ * name its provider gave, anyone else's a guest name. A row the token says is
+ * a permanent account's, but which isn't yet (a deleted account came back as
+ * a guest's before the server made rows), turns permanent. `name` is one the
+ * person sent, joining a room or renaming themselves: the row is made with
+ * it, or takes it (see sentName). Throws "Not authenticated".
  */
-export async function findOrCreateGlobalUser(
-  ctx: MutationCtx,
-  args: { authUserId: string; name: string }
-): Promise<Id<"users">> {
-  const existingUser = await getGlobalUserByAuthUserId(ctx, args.authUserId);
-  if (existingUser) {
-    // Update name if changed
-    if (existingUser.name !== args.name) {
-      await ctx.db.patch("users", existingUser._id, { name: args.name });
-    }
-    return existingUser._id;
-  }
+export async function findOrMakeUser(ctx: MutationCtx, typedName?: string): Promise<Doc<"users">> {
+  const caller = await requireCaller(ctx);
+  const { user } = caller;
+  const name = typedName === undefined ? undefined : sentName(user, typedName);
+  if (!user) return await makeUser(ctx, caller, name);
+  const turnsPermanent = sessionAccountType(caller) === "permanent" && user.accountType !== "permanent";
+  const renamed = name !== undefined && name !== user.name;
+  if (!turnsPermanent && !renamed) return user;
+  if (turnsPermanent) await turnPermanent(ctx, user._id, { email: caller.identity.email });
+  if (renamed) await ctx.db.patch("users", user._id, { name });
+  return (await ctx.db.get("users", user._id))!;
+}
 
-  // Don't set accountType here — we can't reliably determine it from a mutation
-  // context. The BetterAuth session (isAnonymous) is the authoritative source
-  // for the frontend. Linking an account sets "permanent" on upgrade.
-  return await ctx.db.insert("users", {
-    authUserId: args.authUserId,
-    name: args.name,
+/**
+ * A name the caller sent for their row. One they typed is refused when it
+ * breaks the person-name rule. The one their row already holds, sent back as
+ * the room page's automatic join does, is fitted to the rule instead: a row
+ * made before the rule can hold a longer one, and its owner never typed it
+ * here.
+ */
+function sentName(user: Doc<"users"> | null, sent: string): string | undefined {
+  if (user && sent === user.name) return PERSON_NAME.fit(sent) || undefined;
+  return requireValid(PERSON_NAME, sent);
+}
+
+/** A new users row for the caller, of the kind their session's token says. */
+async function makeUser(ctx: MutationCtx, caller: Caller, name?: string): Promise<Doc<"users">> {
+  const { subject, email } = caller.identity;
+  const accountType = sessionAccountType(caller);
+  if (accountType === "permanent" && email) {
+    const named = name ?? (providerName(caller.identity.name ?? "", email) || guestName());
+    return await insertAccount(ctx, subject, { email, name: named });
+  }
+  const userId = await ctx.db.insert("users", {
+    authUserId: subject,
+    name: name ?? guestName(),
+    ...(accountType ? { accountType } : {}),
     createdAt: Date.now(),
   });
+  return (await ctx.db.get("users", userId))!;
+}
+
+/** A permanent account's new row: its email, its avatar when the provider gives one, and its name. */
+async function insertAccount(
+  ctx: MutationCtx,
+  authUserId: string,
+  account: { email: string; name: string; avatarUrl?: string }
+): Promise<Doc<"users">> {
+  const userId = await ctx.db.insert("users", {
+    authUserId,
+    name: account.name,
+    email: account.email,
+    ...(account.avatarUrl ? { avatarUrl: account.avatarUrl } : {}),
+    accountType: "permanent",
+    createdAt: Date.now(),
+  });
+  return (await ctx.db.get("users", userId))!;
+}
+
+/** A guest's name until they choose one, such as "Guest 4829". */
+function guestName(): string {
+  return `Guest ${Math.floor(1000 + Math.random() * 9000)}`;
 }
 
 /**
- * Gets a global user by authUserId (without room context)
+ * The row becomes a permanent account's, with the account's email, and its
+ * avatar when the provider gives one: the only place a row turns permanent.
+ * The rooms it owns are kept from now on wherever a permanent owner keeps
+ * them (ADR-0029).
  */
-export async function getGlobalUserByAuthUserId(
-  ctx: QueryCtx,
-  authUserId: string
-): Promise<Doc<"users"> | null> {
-  return await ctx.db
-    .query("users")
-    .withIndex("by_auth_user", (q) => q.eq("authUserId", authUserId))
-    .first();
+async function turnPermanent(
+  ctx: MutationCtx,
+  userId: Id<"users">,
+  account: { email?: string; avatarUrl?: string }
+): Promise<void> {
+  await ctx.db.patch("users", userId, {
+    accountType: "permanent",
+    ...(account.email ? { email: account.email } : {}),
+    ...(account.avatarUrl ? { avatarUrl: account.avatarUrl } : {}),
+  });
+  await Ownership.ownerTurnedPermanent(ctx, userId);
 }
 
 /**
- * A person and their membership in a room, by auth identity; null when they
- * have no user row or aren't in the room.
- */
-export async function getMembershipByAuthUserId(
-  ctx: QueryCtx,
-  roomId: Id<"rooms">,
-  authUserId: string
-): Promise<{ user: Doc<"users">; membership: Doc<"roomMemberships"> } | null> {
-  const user = await getGlobalUserByAuthUserId(ctx, authUserId);
-  if (!user) return null;
-  const membership = await Memberships.getMembership(ctx, roomId, user._id);
-  if (!membership) return null;
-  return { user, membership };
-}
-
-/**
- * Joins a person to a room by auth identity, making their user row on the
- * way when this is their first room.
+ * Joins the caller to a room under the name they typed, making their users
+ * row on the way when this is their first room write.
  */
 export async function joinRoom(ctx: MutationCtx, args: JoinRoomArgs): Promise<Id<"users">> {
+  const user = await findOrMakeUser(ctx, args.name);
   const room = await ctx.db.get("rooms", args.roomId);
   if (!room) throw new Error("Room not found");
-  const userId = await findOrCreateGlobalUser(ctx, {
-    authUserId: args.authUserId,
-    name: args.name,
-  });
-  const user = (await ctx.db.get("users", userId))!;
   await Memberships.join(ctx, room, user, { isSpectator: args.isSpectator });
-  return userId;
+  return user._id;
 }
 
 /**
  * Updates a member's name (their global one) and whether they sit out as a
- * spectator in this room.
+ * spectator in this room. The handler's room-scoped step hands over the room
+ * and the member's membership.
  */
-export async function editUser(ctx: MutationCtx, args: EditUserArgs): Promise<void> {
-  const [user, room] = await Promise.all([ctx.db.get("users", args.userId), ctx.db.get("rooms", args.roomId)]);
-  if (!user) throw new Error("User not found");
-  if (!room) throw new Error("Room not found");
-  if (!(await Memberships.getMembership(ctx, room._id, user._id))) throw new Error("User not in room");
+export async function editUser(
+  ctx: MutationCtx,
+  room: Doc<"rooms">,
+  membership: Doc<"roomMemberships">,
+  args: EditUserArgs
+): Promise<void> {
+  const name = args.name === undefined ? undefined : requireValid(PERSON_NAME, args.name);
 
-  if (args.name !== undefined) {
-    await ctx.db.patch("users", args.userId, { name: args.name });
+  if (name !== undefined) {
+    await ctx.db.patch("users", membership.userId, { name });
   }
   if (args.isSpectator !== undefined) {
-    await Memberships.setSpectator(ctx, room, args.userId, args.isSpectator);
+    await Memberships.setSpectator(ctx, room, membership, args.isSpectator);
   } else {
     await Rooms.updateRoomActivity(ctx, room);
   }
 }
 
 /**
- * Takes a person out of a room: they leave, or someone removes them.
+ * The name a sign-in provider gives an account, fitted to the person-name
+ * rule: its display name, or the email's local part when it has none, as
+ * an account made by magic link has none.
  */
-export async function leaveRoom(ctx: MutationCtx, userId: Id<"users">, roomId: Id<"rooms">): Promise<void> {
-  const room = await ctx.db.get("rooms", roomId);
-  if (room) await Memberships.leave(ctx, room, userId);
+function providerName(name: string, email: string): string {
+  return PERSON_NAME.fit(name) || PERSON_NAME.fit(email.split("@")[0]);
 }
 
 /**
- * Updates a global user's name by authUserId
- */
-export async function updateGlobalUserName(
-  ctx: MutationCtx,
-  authUserId: string,
-  name: string
-): Promise<void> {
-  const user = await getGlobalUserByAuthUserId(ctx, authUserId);
-  if (!user) {
-    throw new Error("User not found");
-  }
-  await ctx.db.patch("users", user._id, { name });
-}
-
-/**
- * Creates or updates a global user record from auth provider data.
- * Called from databaseHooks when a permanent (non-anonymous) user is created in BetterAuth.
- * Unlike findOrCreateGlobalUser (used at room-join time), this sets
- * email, avatarUrl, and accountType="permanent".
+ * A permanent account was just made in BetterAuth (Google OAuth, magic link;
+ * its create hook skips guests): the account's users row, with the email,
+ * avatar and name the provider gives. A row it already has turns permanent.
  */
 export async function ensureGlobalUserFromAuth(
   ctx: MutationCtx,
@@ -154,26 +185,16 @@ export async function ensureGlobalUserFromAuth(
     avatarUrl?: string;
   }
 ): Promise<void> {
-  const existingUser = await getGlobalUserByAuthUserId(ctx, args.authUserId);
-
+  const existingUser = await findUser(ctx, args.authUserId);
   if (existingUser) {
-    // User already exists (e.g., created by a race with joinRoom).
-    // Patch in permanent account details that findOrCreateGlobalUser doesn't set.
-    await ctx.db.patch("users", existingUser._id, {
-      email: args.email,
-      accountType: "permanent" as const,
-      ...(args.avatarUrl ? { avatarUrl: args.avatarUrl } : {}),
-    });
+    await turnPermanent(ctx, existingUser._id, args);
     return;
   }
 
-  await ctx.db.insert("users", {
-    authUserId: args.authUserId,
-    name: args.name,
+  await insertAccount(ctx, args.authUserId, {
     email: args.email,
+    name: providerName(args.name, args.email),
     avatarUrl: args.avatarUrl,
-    accountType: "permanent" as const,
-    createdAt: Date.now(),
   });
 }
 
@@ -185,24 +206,17 @@ export async function syncGlobalUserAvatar(
   authUserId: string,
   avatarUrl: string
 ): Promise<void> {
-  const user = await getGlobalUserByAuthUserId(ctx, authUserId);
+  const user = await findUser(ctx, authUserId);
   if (user && user.avatarUrl !== avatarUrl) {
     await ctx.db.patch("users", user._id, { avatarUrl });
   }
 }
 
 /**
- * Deletes a person's account (on "Delete account", and on a guest's sign-out).
- */
-export async function deleteUserByAuthUserId(ctx: MutationCtx, authUserId: string): Promise<void> {
-  const user = await getGlobalUserByAuthUserId(ctx, authUserId);
-  if (user) await AccountLifecycle.deleteAccount(ctx, user);
-}
-
-/**
  * A guest signed in to a permanent account: everything the guest had becomes
- * the account's. A fresh sign-in with no guest row has nothing to carry: the
- * account's user row is made when it first joins a room.
+ * the account's (accountLifecycle.ts), and the account's row turns permanent.
+ * A fresh sign-in with no guest row has nothing to carry: the account's user
+ * row is made by the auth hook, or on its first room write.
  */
 export async function linkAnonymousToPermanent(
   ctx: MutationCtx,
@@ -214,8 +228,12 @@ export async function linkAnonymousToPermanent(
     avatarUrl?: string;
   }
 ): Promise<void> {
-  const guest = await getGlobalUserByAuthUserId(ctx, args.oldAuthUserId);
+  const guest = await findUser(ctx, args.oldAuthUserId);
   if (!guest) return;
-  const account = await getGlobalUserByAuthUserId(ctx, args.newAuthUserId);
-  await AccountLifecycle.linkAccount(ctx, guest, account, args);
+  const account = await findUser(ctx, args.newAuthUserId);
+  const userId = await AccountLifecycle.linkAccount(ctx, guest, account, {
+    newAuthUserId: args.newAuthUserId,
+    name: PERSON_NAME.fit(args.name ?? "") || undefined,
+  });
+  await turnPermanent(ctx, userId, args);
 }

@@ -2,7 +2,7 @@ import { v } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import * as Issues from "./model/issues";
 import * as VotingRound from "./model/votingRound";
-import { requireRoomReader, requireCan } from "./model/auth";
+import { requireRoomReader, requireRoomWrite } from "./model/auth";
 
 /**
  * List all issues for a room, ordered by their order field
@@ -49,7 +49,8 @@ export const getForEnhancedExport = query({
 });
 
 /**
- * Create a new issue
+ * Create a new issue, typed in the room: the same admission as an import, with
+ * no link.
  */
 export const create = mutation({
   args: {
@@ -57,8 +58,9 @@ export const create = mutation({
     title: v.string(),
   },
   handler: async (ctx, args) => {
-    await requireCan(ctx, args.roomId, { kind: "category", category: "issueManagement" });
-    return await Issues.createIssue(ctx, args);
+    const { room } = await requireRoomWrite(ctx, args.roomId, { kind: "category", category: "issueManagement" });
+    const admission = await Issues.admitIssue(ctx, { room, title: args.title });
+    return admission.issueId;
   },
 });
 
@@ -71,10 +73,12 @@ export const updateTitle = mutation({
     title: v.string(),
   },
   handler: async (ctx, args) => {
-    const issue = await ctx.db.get("issues", args.issueId);
-    if (!issue) throw new Error("Issue not found");
-    await requireCan(ctx, issue.roomId, { kind: "category", category: "issueManagement" });
-    await Issues.updateIssueTitle(ctx, args);
+    const { room, issue } = await requireRoomWrite(
+      ctx,
+      { issue: args.issueId },
+      { kind: "category", category: "issueManagement" }
+    );
+    await Issues.updateIssueTitle(ctx, room, issue, args.title);
   },
 });
 
@@ -87,10 +91,12 @@ export const updateEstimate = mutation({
     finalEstimate: v.string(),
   },
   handler: async (ctx, args) => {
-    const issue = await ctx.db.get("issues", args.issueId);
-    if (!issue) throw new Error("Issue not found");
-    await requireCan(ctx, issue.roomId, { kind: "category", category: "issueManagement" });
-    await Issues.updateIssueEstimate(ctx, args);
+    const { room, issue } = await requireRoomWrite(
+      ctx,
+      { issue: args.issueId },
+      { kind: "category", category: "issueManagement" }
+    );
+    await Issues.updateIssueEstimate(ctx, room, issue, args.finalEstimate);
   },
 });
 
@@ -100,10 +106,12 @@ export const updateEstimate = mutation({
 export const remove = mutation({
   args: { issueId: v.id("issues") },
   handler: async (ctx, args) => {
-    const issue = await ctx.db.get("issues", args.issueId);
-    if (!issue) throw new Error("Issue not found");
-    await requireCan(ctx, issue.roomId, { kind: "category", category: "issueManagement" });
-    await Issues.removeIssue(ctx, args.issueId);
+    const { room, issue } = await requireRoomWrite(
+      ctx,
+      { issue: args.issueId },
+      { kind: "category", category: "issueManagement" }
+    );
+    await Issues.removeIssue(ctx, room, issue);
   },
 });
 
@@ -116,8 +124,8 @@ export const startVoting = mutation({
     issueId: v.id("issues"),
   },
   handler: async (ctx, args) => {
-    await requireCan(ctx, args.roomId, { kind: "category", category: "gameFlow" });
-    await VotingRound.start(ctx, args);
+    const { room } = await requireRoomWrite(ctx, args.roomId, { kind: "category", category: "gameFlow" });
+    await VotingRound.start(ctx, { room, issueId: args.issueId });
   },
 });
 
@@ -130,8 +138,8 @@ export const reorder = mutation({
     issueIds: v.array(v.id("issues")),
   },
   handler: async (ctx, args) => {
-    await requireCan(ctx, args.roomId, { kind: "category", category: "issueManagement" });
-    await Issues.reorderIssues(ctx, args);
+    const { room } = await requireRoomWrite(ctx, args.roomId, { kind: "category", category: "issueManagement" });
+    await Issues.reorderIssues(ctx, room, args.issueIds);
   },
 });
 
@@ -142,7 +150,7 @@ export const reorder = mutation({
 export const clearCurrentIssue = mutation({
   args: { roomId: v.id("rooms") },
   handler: async (ctx, args) => {
-    await requireCan(ctx, args.roomId, { kind: "category", category: "gameFlow" });
-    await VotingRound.abandon(ctx, args.roomId);
+    const { room } = await requireRoomWrite(ctx, args.roomId, { kind: "category", category: "gameFlow" });
+    await VotingRound.abandon(ctx, room);
   },
 });

@@ -1,5 +1,7 @@
 /**
- * The Jira adapter's token operations with injected fetch/clock/vault key:
+ * The Jira adapter's OAuth operations with injected fetch/clock/vault
+ * key/client credentials: the code exchange (token exchange → accessible
+ * resources → best-effort user info, and every failure it reports), the
  * refresh round-trip (success + failure) and the freshness gate, driven
  * through the real code paths — no faked globals, no env vars.
  */
@@ -7,10 +9,16 @@ import { describe, it, expect, vi } from "vitest";
 import type { ActionCtx } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
 import * as TokenVault from "../model/tokenVault";
-import { getValidAccessToken, refreshJiraToken } from "./jiraAuth";
+import { exchangeJiraCode, getValidAccessToken, refreshJiraToken } from "./jiraAuth";
 
 // 64 lowercase hex chars — a valid vault key, injected explicitly.
 const TEST_KEY = "0123456789abcdef".repeat(4);
+
+// The Jira OAuth app's credentials, injected explicitly.
+const CREDENTIALS = {
+  clientId: "jira-client-id",
+  clientSecret: "jira-client-secret",
+};
 
 const PLAINTEXT_ACCESS = "plaintext-access-token!";
 const PLAINTEXT_REFRESH = "plaintext-refresh-token?";
@@ -49,19 +57,158 @@ function fakeCtx() {
   };
 }
 
-function tokenResponse(body: unknown, status = 200): Response {
+function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
     headers: { "Content-Type": "application/json" },
   });
 }
 
+describe("exchangeJiraCode", () => {
+  const DEPS = {
+    ...CREDENTIALS,
+    redirectUri: "https://agilekit.app/api/integrations/jira/callback",
+  };
+
+  const TOKENS = {
+    access_token: "access-1",
+    refresh_token: "refresh-1",
+    expires_in: 3600,
+    scope: "read:jira-work write:jira-work",
+  };
+
+  const RESOURCES = [{ id: "cloud-1", url: "https://team.atlassian.net" }];
+
+  it("runs the full exchange and shapes the connection to store", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockImplementationOnce(async () => jsonResponse(TOKENS))
+      .mockImplementationOnce(async () => jsonResponse(RESOURCES))
+      .mockImplementationOnce(async () =>
+        jsonResponse({ account_id: "jira-user-1", email: "u@example.com" })
+      );
+
+    const result = await exchangeJiraCode("the-code", {
+      ...DEPS,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      connection: {
+        accessToken: "access-1",
+        refreshToken: "refresh-1",
+        expiresIn: 3600,
+        scopes: ["read:jira-work", "write:jira-work"],
+        cloudId: "cloud-1",
+        siteUrl: "https://team.atlassian.net",
+        providerUserId: "jira-user-1",
+        providerUserEmail: "u@example.com",
+      },
+    });
+
+    // The token exchange posts the code and the app's redirect URI.
+    const [tokenUrl, tokenInit] = fetchImpl.mock.calls[0] as unknown as [
+      string,
+      RequestInit,
+    ];
+    expect(tokenUrl).toBe("https://auth.atlassian.com/oauth/token");
+    const sentBody = JSON.parse(tokenInit.body as string);
+    expect(sentBody).toMatchObject({
+      grant_type: "authorization_code",
+      client_id: "jira-client-id",
+      client_secret: "jira-client-secret",
+      code: "the-code",
+      redirect_uri: "https://agilekit.app/api/integrations/jira/callback",
+    });
+
+    // The follow-up calls authenticate with the fresh access token.
+    for (const call of fetchImpl.mock.calls.slice(1)) {
+      const [, init] = call as unknown as [string, RequestInit];
+      expect((init.headers as Record<string, string>).Authorization).toBe(
+        "Bearer access-1"
+      );
+    }
+  });
+
+  it("maps a failed token exchange to jira_token_failed", async () => {
+    const fetchImpl = vi.fn(async () =>
+      jsonResponse({ error: "invalid_grant" }, 400)
+    );
+    const result = await exchangeJiraCode("bad-code", {
+      ...DEPS,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+    expect(result).toEqual({ ok: false, error: "jira_token_failed" });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("maps a failed resources fetch to jira_resources_failed", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockImplementationOnce(async () => jsonResponse(TOKENS))
+      .mockImplementationOnce(async () => jsonResponse({}, 500));
+    const result = await exchangeJiraCode("the-code", {
+      ...DEPS,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+    expect(result).toEqual({ ok: false, error: "jira_resources_failed" });
+  });
+
+  it("maps an empty resources list to jira_no_site", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockImplementationOnce(async () => jsonResponse(TOKENS))
+      .mockImplementationOnce(async () => jsonResponse([]));
+    const result = await exchangeJiraCode("the-code", {
+      ...DEPS,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+    expect(result).toEqual({ ok: false, error: "jira_no_site" });
+  });
+
+  it.each([
+    ["a javascript: URL", "javascript:alert(1)"],
+    ["a plain-http site", "http://team.atlassian.net"],
+    ["a site outside atlassian.net", "https://team.example.com"],
+  ])("refuses %s as the site, so it never becomes a link (jira_no_site)", async (_, url) => {
+    const fetchImpl = vi
+      .fn()
+      .mockImplementationOnce(async () => jsonResponse(TOKENS))
+      .mockImplementationOnce(async () => jsonResponse([{ id: "cloud-1", url }]));
+
+    const result = await exchangeJiraCode("the-code", {
+      ...DEPS,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+
+    expect(result).toEqual({ ok: false, error: "jira_no_site" });
+  });
+
+  it("tolerates a failed /me lookup — user metadata is best-effort", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockImplementationOnce(async () => jsonResponse(TOKENS))
+      .mockImplementationOnce(async () => jsonResponse(RESOURCES))
+      .mockImplementationOnce(async () => jsonResponse({}, 403));
+    const result = await exchangeJiraCode("the-code", {
+      ...DEPS,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.connection.providerUserId).toBeUndefined();
+      expect(result.connection.providerUserEmail).toBeUndefined();
+    }
+  });
+});
+
 describe("refreshJiraToken", () => {
   it("posts the decrypted refresh token and persists re-encrypted tokens with the single-source expiresAt", async () => {
     const { ctx, runMutation } = fakeCtx();
     const connection = await fakeConnection(NOW - 1_000); // stale
     const fetchImpl = vi.fn(async () =>
-      tokenResponse({
+      jsonResponse({
         access_token: "new-access",
         refresh_token: "new-refresh",
         expires_in: 3600,
@@ -72,6 +219,7 @@ describe("refreshJiraToken", () => {
       fetchImpl: fetchImpl as typeof fetch,
       now: () => NOW,
       keyHex: TEST_KEY,
+      credentials: CREDENTIALS,
     });
 
     expect(accessToken).toBe("new-access");
@@ -124,9 +272,35 @@ describe("refreshJiraToken", () => {
         fetchImpl: fetchImpl as typeof fetch,
         now: () => NOW,
         keyHex: TEST_KEY,
+        credentials: CREDENTIALS,
       })
     ).rejects.toThrow("Failed to refresh Jira token: 400 bad refresh");
     expect(runMutation).not.toHaveBeenCalled();
+  });
+
+  it("posts the Jira OAuth app's credentials with the refresh token", async () => {
+    const { ctx } = fakeCtx();
+    const connection = await fakeConnection(NOW - 1_000);
+    const fetchImpl = vi.fn(async () =>
+      jsonResponse({
+        access_token: "new-access",
+        refresh_token: "new-refresh",
+        expires_in: 3600,
+      })
+    );
+
+    await refreshJiraToken(ctx, connection, {
+      fetchImpl: fetchImpl as typeof fetch,
+      now: () => NOW,
+      keyHex: TEST_KEY,
+      credentials: CREDENTIALS,
+    });
+
+    const [, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
+    expect(JSON.parse(init.body as string)).toMatchObject({
+      client_id: "jira-client-id",
+      client_secret: "jira-client-secret",
+    });
   });
 });
 
@@ -153,7 +327,7 @@ describe("getValidAccessToken", () => {
     // 30 seconds out — inside the vault's 60-second freshness buffer.
     const connection = await fakeConnection(NOW + 30_000);
     const fetchImpl = vi.fn(async () =>
-      tokenResponse({
+      jsonResponse({
         access_token: "refreshed-access",
         refresh_token: "refreshed-refresh",
         expires_in: 3600,
@@ -164,6 +338,7 @@ describe("getValidAccessToken", () => {
       fetchImpl: fetchImpl as typeof fetch,
       now: () => NOW,
       keyHex: TEST_KEY,
+      credentials: CREDENTIALS,
     });
 
     expect(token).toBe("refreshed-access");

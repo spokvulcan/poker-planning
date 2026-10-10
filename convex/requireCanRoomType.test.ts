@@ -3,7 +3,7 @@ import { convexTest, type TestConvex } from "convex-test";
 import { describe, it, expect } from "vitest";
 import schema from "./schema";
 import type { Id } from "./_generated/dataModel";
-import { requireCan } from "./model/auth";
+import { requireRoomWrite } from "./model/auth";
 import type { MemberRole, RetroPermissions } from "./permissions";
 
 // The guard's action assembly narrows on the ceremony before indexing a
@@ -71,12 +71,12 @@ describe("permission guard — category set keyed by room type", () => {
     await expect(
       t
         .withIdentity({ subject: "auth-p" })
-        .run((ctx) => requireCan(ctx, roomId, { kind: "category", category: "stageFlow" }))
+        .run((ctx) => requireRoomWrite(ctx, roomId, { kind: "category", category: "stageFlow" }))
     ).rejects.toThrow("Only facilitators and the owner can do this.");
 
     const bundle = await t
       .withIdentity({ subject: "auth-f" })
-      .run((ctx) => requireCan(ctx, roomId, { kind: "category", category: "stageFlow" }));
+      .run((ctx) => requireRoomWrite(ctx, roomId, { kind: "category", category: "stageFlow" }));
     expect(bundle.room._id).toBe(roomId);
   });
 
@@ -95,7 +95,7 @@ describe("permission guard — category set keyed by room type", () => {
 
     await t
       .withIdentity({ subject: "auth-p" })
-      .run((ctx) => requireCan(ctx, roomId, { kind: "category", category: "stageFlow" }));
+      .run((ctx) => requireRoomWrite(ctx, roomId, { kind: "category", category: "stageFlow" }));
   });
 
   it("a poker category on a retro room is refused as not applying to the room type", async () => {
@@ -106,7 +106,7 @@ describe("permission guard — category set keyed by room type", () => {
     await expect(
       t
         .withIdentity({ subject: "auth-o" })
-        .run((ctx) => requireCan(ctx, roomId, { kind: "category", category: "revealCards" }))
+        .run((ctx) => requireRoomWrite(ctx, roomId, { kind: "category", category: "revealCards" }))
     ).rejects.toThrow("This action does not apply to this room type.");
   });
 
@@ -118,7 +118,7 @@ describe("permission guard — category set keyed by room type", () => {
     await expect(
       t
         .withIdentity({ subject: "auth-o" })
-        .run((ctx) => requireCan(ctx, roomId, { kind: "category", category: "cardManagement" }))
+        .run((ctx) => requireRoomWrite(ctx, roomId, { kind: "category", category: "cardManagement" }))
     ).rejects.toThrow("This action does not apply to this room type.");
   });
 });
@@ -133,11 +133,11 @@ describe("permission guard — delete", () => {
 
     await t
       .withIdentity({ subject: "auth-o" })
-      .run((ctx) => requireCan(ctx, roomId, { kind: "relationship", verb: "delete" }));
+      .run((ctx) => requireRoomWrite(ctx, roomId, { kind: "relationship", verb: "delete" }));
     await expect(
       t
         .withIdentity({ subject: "auth-f" })
-        .run((ctx) => requireCan(ctx, roomId, { kind: "relationship", verb: "delete" }))
+        .run((ctx) => requireRoomWrite(ctx, roomId, { kind: "relationship", verb: "delete" }))
     ).rejects.toThrow("Only the owner can do this.");
   });
 
@@ -159,7 +159,7 @@ describe("permission guard — delete", () => {
     await expect(
       t
         .withIdentity({ subject: "auth-f" })
-        .run((ctx) => requireCan(ctx, roomId, { kind: "relationship", verb: "delete" }))
+        .run((ctx) => requireRoomWrite(ctx, roomId, { kind: "relationship", verb: "delete" }))
     ).rejects.toThrow(
       "Room owner has left. Owner-level actions are disabled until the owner returns."
     );

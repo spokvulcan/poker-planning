@@ -7,6 +7,7 @@ import { api } from "@/convex/_generated/api";
 import { JiraConnectionCard } from "./jira-connection-card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/lib/toast";
+import type { JiraConnectError } from "@/app/api/integrations/jira/refusal";
 
 export function IntegrationsSettings() {
   const connections = useQuery(api.integrations.getConnections);
@@ -28,21 +29,22 @@ export function IntegrationsSettings() {
 
     const error = searchParams.get("error");
     if (error?.startsWith("jira_")) {
-      const messages: Record<string, string> = {
+      // Every way connecting Jira can fail, as the OAuth routes name it.
+      const messages: Record<JiraConnectError, string> = {
         jira_unauthorized: "You must be signed in to connect Jira.",
         jira_not_configured:
           "Jira integration is not configured. Please contact the administrator.",
+        jira_authorize_failed: "Could not start connecting Jira. Please try again.",
         jira_denied: "Jira authorization was denied.",
         jira_invalid: "Invalid callback parameters.",
         jira_state_mismatch: "Security check failed. Please try again.",
         jira_token_failed: "Failed to exchange authorization code.",
         jira_resources_failed: "Could not fetch Jira site information.",
         jira_no_site: "No Jira site found for your account.",
-        jira_no_user: "Could not identify your user account.",
         jira_store_failed: "Failed to save connection.",
       };
       toast.error("Jira connection failed", {
-        description: messages[error] ?? "An unknown error occurred.",
+        description: messages[error as JiraConnectError] ?? "An unknown error occurred.",
       });
       const url = new URL(window.location.href);
       url.searchParams.delete("error");

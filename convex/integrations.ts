@@ -8,16 +8,23 @@ import { v } from "convex/values";
 import { providerValidator } from "./schema";
 import * as Integrations from "./model/integrations";
 import * as Issues from "./model/issues";
-import { requireAuthUser, requireRoomMember, requireCan } from "./model/auth";
+import { requireRoomReader, requireRoomWrite } from "./model/auth";
+import { getCaller, requireUser } from "./model/caller";
 
 // ---------------------------------------------------------------------------
 // Connection queries & mutations
 // ---------------------------------------------------------------------------
 
+/**
+ * The caller's connections, as Settings > Integrations lists them: none for
+ * nobody signed in, nor for a caller with no users row yet (a guest who only
+ * continued as one), who can't have connected anything.
+ */
 export const getConnections = query({
   args: {},
   handler: async (ctx) => {
-    const { user } = await requireAuthUser(ctx);
+    const user = (await getCaller(ctx))?.user;
+    if (!user) return [];
     const connections = await ctx.db
       .query("integrationConnections")
       .withIndex("by_user_provider", (q) => q.eq("userId", user._id))
@@ -31,7 +38,7 @@ export const getConnections = query({
 export const disconnect = mutation({
   args: { connectionId: v.id("integrationConnections") },
   handler: async (ctx, args) => {
-    const { user } = await requireAuthUser(ctx);
+    const { user } = await requireUser(ctx);
     const connection = await ctx.db.get("integrationConnections", args.connectionId);
     if (!connection || connection.userId !== user._id) {
       throw new Error("Connection not found");
@@ -48,7 +55,7 @@ export const disconnect = mutation({
 export const getRoomMapping = query({
   args: { roomId: v.id("rooms") },
   handler: async (ctx, args) => {
-    await requireRoomMember(ctx, args.roomId);
+    await requireRoomReader(ctx, args.roomId);
     return await ctx.db
       .query("integrationMappings")
       .withIndex("by_room", (q) => q.eq("roomId", args.roomId))
@@ -59,7 +66,7 @@ export const getRoomMapping = query({
 export const getIssueLinks = query({
   args: { roomId: v.id("rooms") },
   handler: async (ctx, args) => {
-    await requireRoomMember(ctx, args.roomId);
+    await requireRoomReader(ctx, args.roomId);
 
     // One by_room fetch via the model helper — no per-issue queries.
     const linkByIssue = await Issues.issueLinksForRoom(ctx, args.roomId);
@@ -101,10 +108,9 @@ export const saveRoomMapping = mutation({
     autoPushEstimates: v.boolean(),
   },
   handler: async (ctx, args) => {
-    await requireCan(ctx, args.roomId, { kind: "category", category: "roomSettings" });
+    const { user, room } = await requireRoomWrite(ctx, args.roomId, { kind: "category", category: "roomSettings" });
 
     // Verify the connection belongs to the current user
-    const { user } = await requireAuthUser(ctx);
     const connection = await ctx.db.get("integrationConnections", args.connectionId);
     if (!connection || connection.userId !== user._id) {
       throw new Error("Connection not found");
@@ -113,7 +119,7 @@ export const saveRoomMapping = mutation({
     // The public args keep the Jira column names (the UI is the Jira mapping
     // form); the model routes on provider-neutral names.
     return await Integrations.saveRoomMapping(ctx, {
-      roomId: args.roomId,
+      room,
       connectionId: args.connectionId,
       provider: args.provider,
       projectKey: args.jiraProjectKey,
@@ -129,8 +135,8 @@ export const saveRoomMapping = mutation({
 export const removeRoomMapping = mutation({
   args: { roomId: v.id("rooms") },
   handler: async (ctx, args) => {
-    await requireCan(ctx, args.roomId, { kind: "category", category: "roomSettings" });
+    const { room } = await requireRoomWrite(ctx, args.roomId, { kind: "category", category: "roomSettings" });
 
-    await Integrations.removeRoomMapping(ctx, args.roomId);
+    await Integrations.removeRoomMapping(ctx, room);
   },
 });

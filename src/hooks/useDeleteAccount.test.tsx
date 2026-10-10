@@ -2,22 +2,23 @@
  * useDeleteAccount — Delete account for a permanent account (spec §15.2,
  * ADR-0019): the user-deletion mutation first, then the session is signed
  * out the way the sign-out hook does, the register's line is shown and the
- * person lands on the homepage. A refused deletion (the last-admin rule)
- * surfaces the server's copy and signs nothing out.
+ * person lands on the homepage. A failed deletion signs nothing out and says
+ * why: a refusal's own message, else a readable line, never the "Server
+ * Error" production sends in place of a plain Error's message.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook } from "@testing-library/react";
 
 const spy = vi.hoisted(() => ({
   order: [] as string[],
-  deleteFails: null as string | null,
+  deleteFails: null as unknown,
   toasts: [] as { kind: string; message: string }[],
   push: vi.fn(),
 }));
 
 vi.mock("convex/react", () => ({
   useMutation: () => async () => {
-    if (spy.deleteFails) throw new Error(spy.deleteFails);
+    if (spy.deleteFails) throw spy.deleteFails;
     spy.order.push("deleteUser");
   },
 }));
@@ -35,7 +36,8 @@ vi.mock("@/lib/toast", () => ({
 }));
 
 import { useDeleteAccount } from "./useDeleteAccount";
-import { ACCOUNT_DELETED } from "@/convex/accountCopy";
+import { ACCOUNT_DELETED, DELETE_ACCOUNT_FAILED } from "@/convex/accountCopy";
+import { refusal } from "@/convex/model/refusal";
 
 beforeEach(() => {
   spy.order = [];
@@ -53,12 +55,21 @@ describe("useDeleteAccount", () => {
     expect(spy.push).toHaveBeenCalledWith("/");
   });
 
-  it("a refused deletion surfaces the server's copy and signs nothing out", async () => {
-    spy.deleteFails = "Make someone else an admin first, or delete the team.";
+  it("a refused deletion shows the refusal's message and signs nothing out", async () => {
+    spy.deleteFails = refusal("forbidden", "Your account can't be deleted right now.");
     const { result } = renderHook(() => useDeleteAccount());
     expect(await result.current()).toBe(false);
     expect(spy.order).toEqual([]);
-    expect(spy.toasts).toEqual([{ kind: "error", message: "Make someone else an admin first, or delete the team." }]);
+    expect(spy.toasts).toEqual([{ kind: "error", message: "Your account can't be deleted right now." }]);
+    expect(spy.push).not.toHaveBeenCalled();
+  });
+
+  it("a deletion that fails on the server shows a readable line, not the redacted error", async () => {
+    spy.deleteFails = new Error("[CONVEX M(users:deleteUser)] [Request ID: 2b9e4d1a] Server Error\n  Called by client");
+    const { result } = renderHook(() => useDeleteAccount());
+    expect(await result.current()).toBe(false);
+    expect(spy.order).toEqual([]);
+    expect(spy.toasts).toEqual([{ kind: "error", message: DELETE_ACCOUNT_FAILED }]);
     expect(spy.push).not.toHaveBeenCalled();
   });
 });

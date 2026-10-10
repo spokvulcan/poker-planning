@@ -22,6 +22,9 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import type { AgreementChartData } from "@/convex/analyticsMath";
+import { formatChartDay } from "./chart-day";
+import { trendView } from "./trend-view";
 
 interface AgreementDataPoint {
   date: string;
@@ -33,6 +36,7 @@ interface AgreementDataPoint {
 
 interface AgreementChartProps {
   data: AgreementDataPoint[];
+  trend: AgreementChartData["trend"];
   isLoading?: boolean;
 }
 
@@ -66,35 +70,11 @@ function aggregateByDate(
     .sort((a, b) => a.date.localeCompare(b.date));
 }
 
-function formatDate(dateStr: string): string {
-  const date = new Date(dateStr);
-  return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-}
-
-export function AgreementChart({ data, isLoading }: AgreementChartProps) {
+export function AgreementChart({ data, trend, isLoading }: AgreementChartProps) {
   const aggregated = aggregateByDate(data);
   const hasData = aggregated.length > 0;
-
-  // Calculate trend
-  let trendText = "";
-  if (aggregated.length >= 2) {
-    const recent = aggregated.slice(-3);
-    const earlier = aggregated.slice(0, 3);
-    const recentAvg =
-      recent.reduce((s, d) => s + d.agreement, 0) / recent.length;
-    const earlierAvg =
-      earlier.reduce((s, d) => s + d.agreement, 0) / earlier.length;
-    const diff = recentAvg - earlierAvg;
-
-    if (Math.abs(diff) >= 5) {
-      trendText =
-        diff > 0
-          ? `Trending up ${Math.round(diff)}%`
-          : `Trending down ${Math.round(Math.abs(diff))}%`;
-    } else {
-      trendText = "Stable trend";
-    }
-  }
+  // The read's agreement trend in words; none when it compared nothing.
+  const trendText = trendView("agreement", trend).text;
 
   if (isLoading) {
     return (
@@ -161,7 +141,7 @@ export function AgreementChart({ data, isLoading }: AgreementChartProps) {
             </TooltipProvider>
           </CardTitle>
         <CardDescription>
-          {trendText || "Team alignment over time"}
+          {trendText ?? "Team alignment over time"}
         </CardDescription>
       </CardHeader>
       <CardContent className="flex-1 flex flex-col pb-6">
@@ -190,7 +170,7 @@ export function AgreementChart({ data, isLoading }: AgreementChartProps) {
               dataKey="date"
               tickLine={false}
               axisLine={false}
-              tickFormatter={formatDate}
+              tickFormatter={formatChartDay}
               tickMargin={8}
             />
             <YAxis
@@ -202,7 +182,7 @@ export function AgreementChart({ data, isLoading }: AgreementChartProps) {
             <ChartTooltip
               content={
                 <ChartTooltipContent
-                  labelFormatter={(label) => formatDate(label as string)}
+                  labelFormatter={(label) => formatChartDay(label as string)}
                   formatter={(value) => [`${value}%`, "Agreement"]}
                 />
               }

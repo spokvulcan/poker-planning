@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 import { useLiveText } from "@/hooks/use-live-text";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { MAX_STICKY_TEXT_LENGTH } from "@/convex/retroTemplates";
+import { STICKY_TEXT } from "@/convex/retroTemplates";
 import type { Gif, StickyView } from "@/convex/model/retro";
 import type { StickyColor } from "@/convex/retroTemplates";
 import { FACE_DOWN_HEIGHT, STICKY_WIDTH, STICKY_MIN_HEIGHT } from "@/convex/retroLayout";
@@ -57,7 +57,7 @@ function StickyEditor({
   onCommit,
   onCancel,
 }: {
-  /** The sticky's saved words (empty for a new sticky). */
+  /** The sticky's saved words, or what a refused new one said (empty for a new sticky). */
   text: string;
   initialGif?: Gif;
   tone: StickyTone;
@@ -128,7 +128,7 @@ function StickyEditor({
       <textarea
         ref={textRef}
         value={text}
-        maxLength={MAX_STICKY_TEXT_LENGTH}
+        maxLength={STICKY_TEXT.maxLength}
         onChange={(e) => live.setValue(e.target.value)}
         onKeyDown={onKeyDown}
         rows={3}
@@ -285,15 +285,15 @@ function StackMember({
 /**
  * A sticky on the retro whiteboard. Face-down (scribbles) for everyone but
  * its author until the reveal, like a poker card; drop one on another to
- * stack them; vote with a dot while the retro is in Vote; in Discuss the
- * topic under discussion lifts into the spotlight.
+ * stack them; vote with a dot while the retro is in Vote; the topic in the
+ * spotlight lifts out of the board.
  */
 export const StickyNode = memo(({ id, data, selected, dragging }: NodeProps<StickyFlowNode>): ReactElement => {
   const {
     sticky,
     draft,
     color,
-    step,
+    shows,
     editing,
     canEdit,
     members,
@@ -353,8 +353,8 @@ export const StickyNode = memo(({ id, data, selected, dragging }: NodeProps<Stic
     >
       {inEditor ? (
         <StickyEditor
-          text={sticky?.text ?? ""}
-          initialGif={sticky?.gif}
+          text={draft?.text ?? sticky?.text ?? ""}
+          initialGif={draft?.gif ?? sticky?.gif}
           tone={tone}
           onCommit={(text, gif) =>
             draft ? actions.commitDraft(draft.clientId, text, gif) : sticky && actions.commitEdit(sticky._id, text, gif ?? null)
@@ -393,7 +393,7 @@ export const StickyNode = memo(({ id, data, selected, dragging }: NodeProps<Stic
       {!inEditor && sticky && (
         <div className="mt-auto flex min-h-6 items-center gap-2 pt-2">
           <span className={cn("flex min-w-0 items-center gap-1 truncate text-[11px] font-medium", tone.muted)}>
-            {hidden ? null : step === "write" && sticky.mine ? (
+            {hidden ? null : shows.faceDown && sticky.mine ? (
               <>
                 <EyeOff className="size-3 shrink-0" />
                 Only you, until the reveal
@@ -425,7 +425,7 @@ export const StickyNode = memo(({ id, data, selected, dragging }: NodeProps<Stic
               onClick={() => actions.toggleVote(sticky._id)}
             />
           )}
-          {(step === "discuss" || step === "done") && (sticky.votes ?? 0) > 0 && (
+          {shows.totals && (sticky.votes ?? 0) > 0 && (
             <span
               className="flex h-6 items-center gap-1 rounded-full bg-blue-500 px-2 font-mono text-xs font-semibold text-white tabular-nums dark:bg-blue-600"
               aria-label={`${sticky.votes} votes`}
@@ -437,8 +437,8 @@ export const StickyNode = memo(({ id, data, selected, dragging }: NodeProps<Stic
         </div>
       )}
 
-      {/* A vote is a dot sticker on the corner */}
-      {sticky?.myVote && step === "vote" && (
+      {/* A vote is a dot sticker on the corner, while votes are cast */}
+      {sticky?.myVote && canVote && (
         <span
           className="absolute -top-1.5 -right-1.5 size-4 rounded-full bg-blue-500 shadow-sm ring-2 ring-white dark:ring-surface-1"
           aria-hidden="true"

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { authClient } from "@/lib/auth-client";
 import { useAuth } from "@/components/auth/auth-provider";
+import { accountKind } from "@/components/auth/viewer";
 import { useEnsureSession } from "@/hooks/useEnsureSession";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -27,7 +28,9 @@ import { AlertCircle, CheckCircle2, Loader2 } from "lucide-react";
 export function SigninForm({ className, ...props }: React.ComponentProps<"div">) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { isAnonymous } = useAuth();
+  const { viewer } = useAuth();
+  // Signed in already, without a permanent account: the guest button only goes back
+  const isGuest = accountKind(viewer) === "guest";
   const ensureSession = useEnsureSession();
 
   const rawFrom = searchParams.get("from") || "/";
@@ -101,7 +104,7 @@ export function SigninForm({ className, ...props }: React.ComponentProps<"div">)
     setError(null);
     try {
       // Already a guest: this is cancel-and-return. Otherwise a new guest,
-      // with a user row so the user menu has a name to show.
+      // whose users row is made on their first room write.
       await ensureSession();
       router.push(from);
     } catch (err: unknown) {
@@ -225,7 +228,7 @@ export function SigninForm({ className, ...props }: React.ComponentProps<"div">)
                 {loadingGuest ? (
                   <Loader2 className="mr-2 size-4 animate-spin" />
                 ) : null}
-                {isAnonymous ? "Cancel and return to room" : "Continue as guest"}
+                {isGuest ? "Cancel and return to room" : "Continue as guest"}
               </Button>
             </div>
           )}

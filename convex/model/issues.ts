@@ -3,29 +3,11 @@ import { Id, Doc } from "../_generated/dataModel";
 import * as Canvas from "./canvas";
 import * as Rooms from "./rooms";
 import * as VotingRound from "./votingRound";
-import {
-  MAX_ISSUE_TITLE_LENGTH,
-  MAX_ISSUES_PER_ROOM,
-} from "../constants";
+import { refusal, requireValid } from "./refusal";
+import { ISSUE_TITLE, MAX_ISSUES_PER_ROOM } from "../constants";
+import { formatDuration } from "../analyticsMath";
 
 export type IssueStatus = "pending" | "voting" | "completed";
-
-/**
- * Validates an issue title (trims, enforces non-empty and a length cap).
- * Jira-imported titles ("KEY - summary") fit comfortably under the cap.
- */
-export function validateIssueTitle(title: string): string {
-  const trimmed = title.trim();
-  if (!trimmed) {
-    throw new Error("Issue title is required");
-  }
-  if (trimmed.length > MAX_ISSUE_TITLE_LENGTH) {
-    throw new Error(
-      `Issue title must be ${MAX_ISSUE_TITLE_LENGTH} characters or less`
-    );
-  }
-  return trimmed;
-}
 
 export interface ExportableIssue {
   title: string;
@@ -79,17 +61,85 @@ export async function getCurrentIssue(
   return await ctx.db.get("issues", room.currentIssueId);
 }
 
+/** Where an issue lives in a tracker: the provider, its key there, and its page. */
+export type IssueLink = Pick<Doc<"issueLinks">, "provider" | "externalId" | "externalUrl">;
+
 /**
- * Canonical issue creation, shared by local creates and integration imports:
- * enforces the per-room cap, allocates the next sequential ID, advances the
- * room counter exactly once, and appends after the current max order.
+ * What admitting an issue did: a new issue, or the room's issue that already
+ * holds the link (a tracker issue is in a room at most once).
  */
-export async function createIssueInRoom(
+export type Admission =
+  | { kind: "admitted"; issueId: Id<"issues"> }
+  | { kind: "alreadyInRoom"; issueId: Id<"issues"> };
+
+/**
+ * The room's issue holding this link, found through the room's links to its
+ * key. A link whose issue is gone holds nothing: an issue's links are
+ * deleted with it, but earlier deletions left theirs, for the daily sweep to
+ * drop.
+ *
+ * Rows written before `issueLinks.roomId` existed are invisible to the
+ * room's index until backfillIssueLinksRoomId tags them, and the field is
+ * still optional, so nothing proves that has run in production. Until it is
+ * required, this link's untagged rows are read through by_external (a
+ * handful: one per room holding the tracker issue) and their issue says
+ * whose they are.
+ */
+async function issueHoldingLink(
+  ctx: QueryCtx,
+  roomId: Id<"rooms">,
+  link: IssueLink
+): Promise<Id<"issues"> | null> {
+  const roomLinks = await ctx.db
+    .query("issueLinks")
+    .withIndex("by_room_provider_external", (q) =>
+      q.eq("roomId", roomId).eq("provider", link.provider).eq("externalId", link.externalId)
+    )
+    .collect();
+  for (const row of roomLinks) {
+    if (await ctx.db.get("issues", row.issueId)) return row.issueId;
+  }
+
+  const sameLink = await ctx.db
+    .query("issueLinks")
+    .withIndex("by_external", (q) =>
+      q.eq("provider", link.provider).eq("externalId", link.externalId)
+    )
+    .collect();
+  for (const row of sameLink) {
+    if (row.roomId !== undefined) continue;
+    const issue = await ctx.db.get("issues", row.issueId);
+    if (issue?.roomId === roomId) return issue._id;
+  }
+  return null;
+}
+
+/**
+ * The one way an issue enters a room's backlog, typed in the room or brought
+ * from a tracker with its link: the title rule, the per-room cap, a tracker
+ * issue at most once per room, the next sequential ID (the room counter
+ * advances exactly once), an order after the current last, and the link row.
+ * A full room or a link that isn't https is refused in words people see.
+ * Takes the room as its write loaded it: the room-scoped step, or the
+ * tracker import's own read.
+ */
+export async function admitIssue(
   ctx: MutationCtx,
-  args: { roomId: Id<"rooms">; title: string }
-): Promise<Id<"issues">> {
-  const room = await ctx.db.get("rooms", args.roomId);
-  if (!room) throw new Error("Room not found");
+  args: { room: Doc<"rooms">; title: string; link?: IssueLink }
+): Promise<Admission> {
+  const { room } = args;
+
+  if (args.link) {
+    // The room UI renders the link as an anchor href: only a real web URL,
+    // so a malicious integration connection can't inject a javascript: link.
+    if (!args.link.externalUrl.startsWith("https://")) {
+      throw refusal("forbidden", "Issue links must be https:// URLs");
+    }
+    // Ahead of the cap: a tracker issue already in a full room is reported
+    // as in the room, not refused.
+    const holder = await issueHoldingLink(ctx, room._id, args.link);
+    if (holder) return { kind: "alreadyInRoom", issueId: holder };
+  }
 
   // Get next sequential ID
   const nextNumber = (room.nextIssueNumber ?? 0) + 1;
@@ -97,91 +147,146 @@ export async function createIssueInRoom(
   // Get current max order
   const issues = await ctx.db
     .query("issues")
-    .withIndex("by_room", (q) => q.eq("roomId", args.roomId))
+    .withIndex("by_room", (q) => q.eq("roomId", room._id))
     .collect();
   if (issues.length >= MAX_ISSUES_PER_ROOM) {
-    throw new Error(`Rooms are limited to ${MAX_ISSUES_PER_ROOM} issues`);
+    throw refusal("forbidden", `Rooms are limited to ${MAX_ISSUES_PER_ROOM} issues`);
   }
   const maxOrder = issues.length > 0 ? Math.max(...issues.map((i) => i.order)) : 0;
 
   // Update room's next issue number
-  await ctx.db.patch("rooms", args.roomId, {
+  await ctx.db.patch("rooms", room._id, {
     nextIssueNumber: nextNumber,
   });
-  await Rooms.updateRoomActivity(ctx, args.roomId);
+  await Rooms.updateRoomActivity(ctx, room);
 
   // Create the issue
-  return await ctx.db.insert("issues", {
-    roomId: args.roomId,
+  const issueId = await ctx.db.insert("issues", {
+    roomId: room._id,
     sequentialId: nextNumber,
-    title: validateIssueTitle(args.title),
+    title: requireValid(ISSUE_TITLE, args.title),
     status: "pending",
     createdAt: Date.now(),
     order: maxOrder + 1,
   });
+
+  if (args.link) {
+    // roomId-tagged so the room's links come from one by_room read.
+    await ctx.db.insert("issueLinks", {
+      issueId,
+      roomId: room._id,
+      provider: args.link.provider,
+      externalId: args.link.externalId,
+      externalUrl: args.link.externalUrl,
+      lastSyncedAt: Date.now(),
+    });
+  }
+
+  return { kind: "admitted", issueId };
 }
 
+/** What a tracker says became of one of its issues. */
+export type TrackerChange =
+  | { kind: "retitled"; title: string }
+  | { kind: "deleted" };
+
 /**
- * Creates a new issue with an auto-incremented sequential ID
+ * Follows a change in a tracker to every issue holding the link, in every
+ * room it was brought into: a tracker issue can sit in several rooms on
+ * purpose. The link is the key and its page, and the page names the tracker's
+ * site, so the same key on another site is never reached. A rename retitles
+ * them by the title rule, and moves a room's activity clock only where the
+ * title changed (it feeds the room's analytics history, so a fresh snapshot
+ * mustn't serve the old one). A deletion drops every link to it and keeps the
+ * issues. A link whose issue is gone holds nothing and is passed over.
+ *
+ * The rows come through by_external, which reaches those written before
+ * links carried their room too: a handful, one per room holding the issue.
  */
-export async function createIssue(
+export async function followTrackerChange(
   ctx: MutationCtx,
-  args: { roomId: Id<"rooms">; title: string }
-): Promise<Id<"issues">> {
-  return await createIssueInRoom(ctx, args);
+  link: IssueLink,
+  change: TrackerChange
+): Promise<void> {
+  const rows = await ctx.db
+    .query("issueLinks")
+    .withIndex("by_external", (q) =>
+      q
+        .eq("provider", link.provider)
+        .eq("externalId", link.externalId)
+        .eq("externalUrl", link.externalUrl)
+    )
+    .collect();
+  if (change.kind === "deleted") {
+    await Promise.all(rows.map((row) => ctx.db.delete("issueLinks", row._id)));
+    return;
+  }
+
+  // A tracker's title is fitted to the title rule, never refused; one that
+  // fits as nothing leaves the titles as they are.
+  const title = ISSUE_TITLE.fit(change.title);
+  for (const row of rows) {
+    const issue = await ctx.db.get("issues", row.issueId);
+    if (!issue) continue;
+    if (title && issue.title !== title) {
+      await ctx.db.patch("issues", issue._id, { title });
+      await Rooms.updateRoomActivity(ctx, issue.roomId);
+    }
+    await ctx.db.patch("issueLinks", row._id, { lastSyncedAt: Date.now() });
+  }
 }
 
 /**
- * Updates an issue's title
+ * Updates an issue's title. The handler's room-scoped step hands over the
+ * issue and the room it is in.
  */
 export async function updateIssueTitle(
   ctx: MutationCtx,
-  args: { issueId: Id<"issues">; title: string }
+  room: Doc<"rooms">,
+  issue: Doc<"issues">,
+  title: string
 ): Promise<void> {
-  const issue = await ctx.db.get("issues", args.issueId);
-  if (!issue) throw new Error("Issue not found");
-
-  await ctx.db.patch("issues", args.issueId, { title: validateIssueTitle(args.title) });
+  await ctx.db.patch("issues", issue._id, { title: requireValid(ISSUE_TITLE, title) });
 
   // Update room activity
-  await Rooms.updateRoomActivity(ctx, issue.roomId);
+  await Rooms.updateRoomActivity(ctx, room);
 }
 
 /**
- * Updates an issue's final estimate (manual override after voting)
+ * Updates an issue's final estimate (manual override after voting). The
+ * handler's room-scoped step hands over the issue and the room it is in.
  */
 export async function updateIssueEstimate(
   ctx: MutationCtx,
-  args: { issueId: Id<"issues">; finalEstimate: string }
+  room: Doc<"rooms">,
+  issue: Doc<"issues">,
+  finalEstimate: string
 ): Promise<void> {
-  const issue = await ctx.db.get("issues", args.issueId);
-  if (!issue) throw new Error("Issue not found");
-
-  await ctx.db.patch("issues", args.issueId, { finalEstimate: args.finalEstimate });
+  await ctx.db.patch("issues", issue._id, { finalEstimate });
 
   // Update room activity
-  await Rooms.updateRoomActivity(ctx, issue.roomId);
+  await Rooms.updateRoomActivity(ctx, room);
 }
 
 /**
- * Removes an issue
+ * Removes an issue. The handler's room-scoped step hands over the issue and
+ * the room it is in.
  */
 export async function removeIssue(
   ctx: MutationCtx,
-  issueId: Id<"issues">
+  room: Doc<"rooms">,
+  issue: Doc<"issues">
 ): Promise<void> {
-  const issue = await ctx.db.get("issues", issueId);
-  if (!issue) throw new Error("Issue not found");
+  const issueId = issue._id;
 
   // Deleting the issue being voted on ends the round cleanly: delegate to the
   // round's abandon (drops the target to a Quick Vote, cancels the countdown,
   // clears votes — and bumps room activity itself) before the issue and its
   // records are removed below.
-  const room = await ctx.db.get("rooms", issue.roomId);
-  if (room?.currentIssueId === issueId) {
-    await VotingRound.abandon(ctx, issue.roomId);
+  if (room.currentIssueId === issueId) {
+    await VotingRound.abandon(ctx, room);
   } else {
-    await Rooms.updateRoomActivity(ctx, issue.roomId);
+    await Rooms.updateRoomActivity(ctx, room);
   }
 
   // Delete associated voting timestamps
@@ -201,7 +306,45 @@ export async function removeIssue(
   // Its discussion note goes with it.
   await Canvas.issueRemoved(ctx, issue.roomId, issueId);
 
-  await ctx.db.delete("issues", issueId);
+  await deleteIssueWithLinks(ctx, issueId);
+}
+
+/**
+ * Deletes an issue's row and its links: a link leaves with its issue. Links
+ * are found by issue, so rows from before links carried their room go too.
+ * The rest of what an issue owns (its timing, vote snapshots and note) is the
+ * caller's: removeIssue clears it issue by issue, a room's ending room by room.
+ */
+export async function deleteIssueWithLinks(
+  ctx: MutationCtx,
+  issueId: Id<"issues">
+): Promise<void> {
+  const links = await ctx.db
+    .query("issueLinks")
+    .withIndex("by_issue", (q) => q.eq("issueId", issueId))
+    .collect();
+  await Promise.all([
+    ...links.map((link) => ctx.db.delete("issueLinks", link._id)),
+    ctx.db.delete("issues", issueId),
+  ]);
+}
+
+/**
+ * Of these links, drops the ones whose issue went before them: a link
+ * without its issue holds nothing. Earlier deletions left theirs behind, and
+ * the sweep brings them here; a link whose issue is still there stays.
+ */
+export async function dropLinksLeftBehind(
+  ctx: MutationCtx,
+  links: Doc<"issueLinks">[]
+): Promise<void> {
+  const gone = new Set<Id<"issues">>();
+  for (const issueId of new Set(links.map((link) => link.issueId))) {
+    if (!(await ctx.db.get("issues", issueId))) gone.add(issueId);
+  }
+  await Promise.all(
+    links.filter((link) => gone.has(link.issueId)).map((link) => ctx.db.delete("issueLinks", link._id))
+  );
 }
 
 /**
@@ -230,45 +373,36 @@ export async function getIssuesForExport(
 }
 
 /**
- * Reorders issues (for drag-and-drop)
+ * Reorders issues (for drag-and-drop). The handler's room-scoped step hands
+ * over the room.
  */
 export async function reorderIssues(
   ctx: MutationCtx,
-  args: { roomId: Id<"rooms">; issueIds: Id<"issues">[] }
+  room: Doc<"rooms">,
+  issueIds: Id<"issues">[]
 ): Promise<void> {
-  // Authorization was checked against args.roomId, so every reordered issue
-  // must belong to that room — otherwise issue IDs from another room could be
+  // Authorization was checked against this room, so every reordered issue
+  // must belong to it — otherwise issue IDs from another room could be
   // smuggled into the array to scramble its ordering.
   const issues = await Promise.all(
-    args.issueIds.map((issueId) => ctx.db.get("issues", issueId))
+    issueIds.map((issueId) => ctx.db.get("issues", issueId))
   );
   for (const issue of issues) {
     if (!issue) throw new Error("Issue not found");
-    if (issue.roomId !== args.roomId) {
+    if (issue.roomId !== room._id) {
       throw new Error("Issue does not belong to this room");
     }
   }
 
   // Update order for each issue
   await Promise.all(
-    args.issueIds.map((issueId, index) =>
+    issueIds.map((issueId, index) =>
       ctx.db.patch("issues", issueId, { order: index + 1 })
     )
   );
 
   // Update room activity
-  await Rooms.updateRoomActivity(ctx, args.roomId);
-}
-
-/**
- * Formats milliseconds into a human-readable duration string (e.g., "2m 34s")
- */
-function formatDurationMs(ms: number): string {
-  const totalSeconds = Math.round(ms / 1000);
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  if (minutes === 0) return `${seconds}s`;
-  return `${minutes}m ${seconds}s`;
+  await Rooms.updateRoomActivity(ctx, room);
 }
 
 /**
@@ -360,7 +494,7 @@ export async function getEnhancedIssuesForExport(
     // completed the issue — see completeTargetIssue in model/votingRound.ts)
     const timeToConsensusMs = issue.voteStats?.timeToConsensusMs ?? null;
     const timeToConsensusFormatted =
-      timeToConsensusMs !== null ? formatDurationMs(timeToConsensusMs) : null;
+      timeToConsensusMs !== null ? formatDuration(timeToConsensusMs) : null;
 
     // Voting rounds count
     const timestamps = timestampsByIssue.get(issueId) ?? [];

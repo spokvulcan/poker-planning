@@ -6,11 +6,13 @@ import * as Canvas from "./canvas";
 import * as Votes from "./votes";
 import * as Analytics from "./analytics";
 import { getMembership } from "./memberships";
-import { cardNumericValue, computeVoterAlignment } from "./alignment";
+import { refusal } from "./refusal";
+import { computeVoterAlignment } from "./alignment";
 import { summarize, VoteStatsSummary } from "../summarize";
-import { DEFAULT_SCALE, VotingScale } from "../scales";
+import { type Deck, cardNumericValue, deckOf } from "../scales";
 import { COUNTDOWN_DURATION_MS } from "../constants";
 import { NOT_THIS_CEREMONY, rulesOf } from "../ceremony";
+import { phaseAllows, phaseOf, startAllowed } from "../phase";
 import type { UserRows } from "./userRows";
 
 /**
@@ -20,6 +22,10 @@ import type { UserRows } from "./userRows";
  * `votingTimestamps` (the `completed` transition and the one canonical
  * timestamp-close path live here, not in the issues module). Owns the
  * transitions (start, reveal, reset, abandon) and the auto-reveal countdown.
+ * A start, a reveal and a vote first ask the phase what it allows
+ * (`../phase.ts`) and change nothing when it refuses. Each transition and vote
+ * is handed the room its write already loaded (through the room-scoped step,
+ * or the scheduled reveal's own read) instead of reading it again.
  */
 
 /**
@@ -30,16 +36,19 @@ import type { UserRows } from "./userRows";
  */
 export async function start(
   ctx: MutationCtx,
-  args: { roomId: Id<"rooms">; issueId?: Id<"issues"> }
+  args: { room: Doc<"rooms">; issueId?: Id<"issues"> }
 ): Promise<void> {
-  const room = await ctx.db.get("rooms", args.roomId);
-  if (!room) throw new Error("Room not found");
+  const { room } = args;
+  const roomId = room._id;
 
   // The round writes its status, timing and results onto the issue, so an
   // issue from another room is refused as not found, before anything is written.
   if (args.issueId) {
     const issue = await ctx.db.get("issues", args.issueId);
-    if (!issue || issue.roomId !== args.roomId) throw new Error("Issue not found");
+    if (!issue || issue.roomId !== roomId) throw new Error("Issue not found");
+    // A second start of the issue already being voted on (two facilitators at
+    // once) changes nothing: its votes stay, and so does its one timed round.
+    if (!startAllowed(issue)) return;
   }
 
   // Revert a different previous issue target back to pending, closing its round.
@@ -57,19 +66,19 @@ export async function start(
   }
 
   // Cancel any countdown left over from the previous round.
-  await cancel(ctx, args.roomId);
+  await cancel(ctx, roomId);
 
   // Move to a fresh `voting` phase on the new target.
-  await ctx.db.patch("rooms", args.roomId, {
+  await ctx.db.patch("rooms", roomId, {
     currentIssueId: args.issueId,
     isGameOver: false,
   });
-  await Rooms.updateRoomActivity(ctx, args.roomId);
+  await Rooms.updateRoomActivity(ctx, room);
 
-  await clearRoomVotes(ctx, args.roomId);
+  await clearRoomVotes(ctx, roomId);
 
   if (shouldRecordTiming(args.issueId)) {
-    await openTimingRecord(ctx, args.roomId, args.issueId!);
+    await openTimingRecord(ctx, roomId, args.issueId!);
   }
 }
 
@@ -78,9 +87,8 @@ export async function start(
  * prior votes and, for an issue-backed (non-demo) round, opens a new timed
  * round (incrementing the round number).
  */
-export async function reset(ctx: MutationCtx, roomId: Id<"rooms">): Promise<void> {
-  const room = await ctx.db.get("rooms", roomId);
-  if (!room) throw new Error("Room not found");
+export async function reset(ctx: MutationCtx, room: Doc<"rooms">): Promise<void> {
+  const roomId = room._id;
 
   if (room.currentIssueId) {
     const issue = await ctx.db.get("issues", room.currentIssueId);
@@ -99,7 +107,7 @@ export async function reset(ctx: MutationCtx, roomId: Id<"rooms">): Promise<void
 
   await cancel(ctx, roomId);
   await ctx.db.patch("rooms", roomId, { isGameOver: false });
-  await Rooms.updateRoomActivity(ctx, roomId);
+  await Rooms.updateRoomActivity(ctx, room);
   await clearRoomVotes(ctx, roomId);
 }
 
@@ -111,14 +119,16 @@ export async function reset(ctx: MutationCtx, roomId: Id<"rooms">): Promise<void
  * the canvas results node. A round that completes its target issue (consensus
  * reached) also refreshes the room's analytics snapshot in the same mutation.
  */
-export async function reveal(ctx: MutationCtx, roomId: Id<"rooms">): Promise<void> {
-  const room = await ctx.db.get("rooms", roomId);
-  if (!room) throw new Error("Room not found");
+export async function reveal(ctx: MutationCtx, room: Doc<"rooms">): Promise<void> {
+  const roomId = room._id;
+  // A round reveals once: a second reveal changes nothing, so the issue isn't
+  // re-stamped and its estimate isn't pushed again.
+  if (!phaseAllows(phaseOf(room), "reveal")) return;
 
   // Cancel the countdown as one unit, then settle to `revealed`.
   await cancel(ctx, roomId);
   await ctx.db.patch("rooms", roomId, { isGameOver: true });
-  await Rooms.updateRoomActivity(ctx, roomId);
+  await Rooms.updateRoomActivity(ctx, room);
 
   // Reveal effect: the canvas shows the results.
   await Canvas.roundRevealed(ctx, room);
@@ -127,7 +137,8 @@ export async function reveal(ctx: MutationCtx, roomId: Id<"rooms">): Promise<voi
   if (room.currentIssueId) {
     // One summary feeds the snapshot, the export, and the client panel.
     const votes = await Votes.getRoomVotes(ctx, roomId);
-    const summary = summarize(votes, room.votingScale);
+    const deck = deckOf(room.votingScale);
+    const summary = summarize(votes, deck);
 
     if (summary.consensus) {
       await completeTargetIssue(ctx, {
@@ -147,7 +158,7 @@ export async function reveal(ctx: MutationCtx, roomId: Id<"rooms">): Promise<voi
       roomId,
       issueId: room.currentIssueId,
       consensusLabel: summary.consensus,
-      votingScale: room.votingScale,
+      deck,
     });
 
     // A completed target issue changes the room's completed-issue history:
@@ -181,10 +192,10 @@ async function snapshotVoterAlignment(
     roomId: Id<"rooms">;
     issueId: Id<"issues">;
     consensusLabel: string | null;
-    votingScale: VotingScale | undefined;
+    deck: Deck;
   }
 ): Promise<void> {
-  const { roomId, issueId, consensusLabel, votingScale } = args;
+  const { roomId, issueId, consensusLabel, deck } = args;
 
   // Idempotency: delete any existing snapshots for this issue.
   const existing = await ctx.db
@@ -194,7 +205,7 @@ async function snapshotVoterAlignment(
   await Promise.all(existing.map((row) => ctx.db.delete("individualVotes", row._id)));
 
   const votes = await Votes.getRoomVotes(ctx, roomId);
-  const rows = computeVoterAlignment(votes, consensusLabel, votingScale);
+  const rows = computeVoterAlignment(votes, consensusLabel, deck);
 
   const now = Date.now();
   await Promise.all(
@@ -240,9 +251,8 @@ async function scheduleJiraPushIfEnabled(
  * one unit, and clears prior votes so the Quick Vote starts clean. A no-op-ish
  * transition on a room that is already a Quick Vote (no target to drop).
  */
-export async function abandon(ctx: MutationCtx, roomId: Id<"rooms">): Promise<void> {
-  const room = await ctx.db.get("rooms", roomId);
-  if (!room) throw new Error("Room not found");
+export async function abandon(ctx: MutationCtx, room: Doc<"rooms">): Promise<void> {
+  const roomId = room._id;
 
   // Revert the issue target (if any) to pending, closing its open round.
   if (room.currentIssueId) {
@@ -261,7 +271,7 @@ export async function abandon(ctx: MutationCtx, roomId: Id<"rooms">): Promise<vo
     currentIssueId: undefined,
     isGameOver: false,
   });
-  await Rooms.updateRoomActivity(ctx, roomId);
+  await Rooms.updateRoomActivity(ctx, room);
 
   // Clear prior votes so the Quick Vote starts clean.
   await clearRoomVotes(ctx, roomId);
@@ -273,10 +283,10 @@ export async function abandon(ctx: MutationCtx, roomId: Id<"rooms">): Promise<vo
  */
 export async function cancelCountdown(
   ctx: MutationCtx,
-  roomId: Id<"rooms">
+  room: Doc<"rooms">
 ): Promise<void> {
-  await Rooms.updateRoomActivity(ctx, roomId);
-  await cancel(ctx, roomId);
+  await Rooms.updateRoomActivity(ctx, room);
+  await cancel(ctx, room._id);
 }
 
 /**
@@ -288,10 +298,11 @@ export async function cancelCountdown(
  */
 export async function setAutoComplete(
   ctx: MutationCtx,
-  roomId: Id<"rooms">,
+  room: Doc<"rooms">,
   enabled: boolean
 ): Promise<void> {
-  await Rooms.updateRoomActivity(ctx, roomId);
+  const roomId = room._id;
+  await Rooms.updateRoomActivity(ctx, room);
   if (!enabled) {
     await cancel(ctx, roomId);
     await ctx.db.patch("rooms", roomId, { autoCompleteVoting: false });
@@ -481,10 +492,11 @@ async function completeTargetIssue(
 }
 
 export interface CastVoteArgs {
-  roomId: Id<"rooms">;
-  userId: Id<"users">;
+  /** The room the vote is cast in, as the room-scoped step loaded it. */
+  room: Doc<"rooms">;
+  /** The voter's seat in it: the caller's membership. */
+  voter: Doc<"roomMemberships">;
   cardLabel: string;
-  cardValue: number;
   cardIcon?: string;
 }
 
@@ -494,42 +506,35 @@ export interface CastVoteArgs {
  * countdown once every non-spectator has voted.
  */
 export async function castVote(ctx: MutationCtx, args: CastVoteArgs): Promise<void> {
+  const { room, voter } = args;
   // Spectators are voteless: the round refuses a spectator's ballot at its sole
   // write site rather than recording a vote that `areAllVotesIn` would ignore.
   // This keeps the votes table free of spectator rows, so a member admitted
   // mid-countdown (un-spectated, or joining) can never already hold a vote — the
   // premise that lets admission skip reconciliation (ADR-0004).
-  const membership = await ctx.db
-    .query("roomMemberships")
-    .withIndex("by_room_user", (q) =>
-      q.eq("roomId", args.roomId).eq("userId", args.userId)
-    )
-    .first();
-  if (membership?.isSpectator) {
+  if (voter.isSpectator) {
     throw new Error("Spectators cannot vote");
   }
 
-  // Validate the card against the room's voting scale and re-derive its numeric
-  // value server-side. pickCard is public, so an unchecked label/value would
+  // Validate the card against the room's deck and read its value from it, never
+  // from the client. pickCard is public, so an unchecked label/value would
   // flow into vote stats, exports, and auto-pushed Jira estimates.
-  const room = await ctx.db.get("rooms", args.roomId);
-  if (!room) throw new Error("Room not found");
-  if (!rulesOf(room).votingRounds) throw new Error(NOT_THIS_CEREMONY);
-  const scale = room.votingScale ?? DEFAULT_SCALE;
-  const scaleCards: readonly string[] = scale.cards;
-  if (!scaleCards.includes(args.cardLabel)) {
+  if (!rulesOf(room).votingRounds) throw refusal("missing", NOT_THIS_CEREMONY);
+  if (!deckOf(room.votingScale).isLegalBallot(args.cardLabel)) {
     throw new Error("Card is not in this room's voting scale");
   }
-  const cardValue = scale.isNumeric
-    ? (cardNumericValue(args.cardLabel) ?? 0)
-    : 0;
+  const cardValue = cardNumericValue(args.cardLabel);
 
-  await Rooms.updateRoomActivity(ctx, args.roomId);
+  // Votes close at the reveal: a card that lands after it (picked as the
+  // countdown ran out) changes nothing, so the cards keep matching the results.
+  if (!phaseAllows(phaseOf(room), "vote")) return;
+
+  await Rooms.updateRoomActivity(ctx, room);
 
   const existing = await ctx.db
     .query("votes")
     .withIndex("by_room_user", (q) =>
-      q.eq("roomId", args.roomId).eq("userId", args.userId)
+      q.eq("roomId", room._id).eq("userId", voter.userId)
     )
     .first();
 
@@ -541,38 +546,42 @@ export async function castVote(ctx: MutationCtx, args: CastVoteArgs): Promise<vo
     });
   } else {
     await ctx.db.insert("votes", {
-      roomId: args.roomId,
-      userId: args.userId,
+      roomId: room._id,
+      userId: voter.userId,
       cardLabel: args.cardLabel,
       cardValue,
       cardIcon: args.cardIcon,
     });
   }
 
-  await evaluate(ctx, args.roomId);
+  await evaluate(ctx, room._id);
 }
 
 /**
  * retractVote — remove a participant's card. Re-evaluates the countdown state
  * via the private helper, cancelling the countdown when the room is no longer
- * fully voted.
+ * fully voted. Takes the room as the room-scoped step loaded it.
  */
 export async function retractVote(
   ctx: MutationCtx,
-  args: { roomId: Id<"rooms">; userId: Id<"users"> }
+  args: { room: Doc<"rooms">; userId: Id<"users"> }
 ): Promise<void> {
-  await Rooms.updateRoomActivity(ctx, args.roomId);
+  const { room } = args;
+  // Votes close at the reveal: a card taken back after it stays on the table.
+  if (!phaseAllows(phaseOf(room), "vote")) return;
+
+  await Rooms.updateRoomActivity(ctx, room);
 
   const vote = await ctx.db
     .query("votes")
     .withIndex("by_room_user", (q) =>
-      q.eq("roomId", args.roomId).eq("userId", args.userId)
+      q.eq("roomId", room._id).eq("userId", args.userId)
     )
     .first();
 
   if (vote) {
     await ctx.db.delete("votes", vote._id);
-    await evaluate(ctx, args.roomId);
+    await evaluate(ctx, room._id);
   }
 }
 
@@ -619,7 +628,7 @@ export async function autoReveal(
   if (!room.autoRevealCountdownStartedAt) return; // no countdown active
   if (room.autoRevealCountdownStartedAt !== args.token) return; // stale token — inert
 
-  await reveal(ctx, args.roomId);
+  await reveal(ctx, room);
 }
 
 /**

@@ -1,22 +1,22 @@
 import { v } from "convex/values";
 import { mutation } from "./_generated/server";
 import * as Timer from "./model/timer";
-import { requireActingUser } from "./model/auth";
+import { requireRoomWrite } from "./model/auth";
 
 // Start the timer
 export const startTimer = mutation({
   args: {
     roomId: v.id("rooms"),
     nodeId: v.string(),
-    userId: v.id("users"),
+    userId: v.optional(v.id("users")), // Ignored: the caller's own id, which old browsers still send
   },
   handler: async (ctx, args) => {
-    await requireActingUser(ctx, args.roomId, args.userId);
+    const { room, user } = await requireRoomWrite(ctx, args.roomId);
     await Timer.updateTimerState(ctx, {
-      roomId: args.roomId,
+      room,
       nodeId: args.nodeId,
       action: "start",
-      userId: args.userId,
+      userId: user._id,
     });
   },
 });
@@ -26,15 +26,15 @@ export const pauseTimer = mutation({
   args: {
     roomId: v.id("rooms"),
     nodeId: v.string(),
-    userId: v.id("users"),
+    userId: v.optional(v.id("users")), // Ignored: the caller's own id, which old browsers still send
   },
   handler: async (ctx, args) => {
-    await requireActingUser(ctx, args.roomId, args.userId);
+    const { room, user } = await requireRoomWrite(ctx, args.roomId);
     await Timer.updateTimerState(ctx, {
-      roomId: args.roomId,
+      room,
       nodeId: args.nodeId,
       action: "pause",
-      userId: args.userId,
+      userId: user._id,
     });
   },
 });
@@ -44,15 +44,15 @@ export const resetTimer = mutation({
   args: {
     roomId: v.id("rooms"),
     nodeId: v.string(),
-    userId: v.id("users"),
+    userId: v.optional(v.id("users")), // Ignored: the caller's own id, which old browsers still send
   },
   handler: async (ctx, args) => {
-    await requireActingUser(ctx, args.roomId, args.userId);
+    const { room, user } = await requireRoomWrite(ctx, args.roomId);
     await Timer.updateTimerState(ctx, {
-      roomId: args.roomId,
+      room,
       nodeId: args.nodeId,
       action: "reset",
-      userId: args.userId,
+      userId: user._id,
     });
   },
 });

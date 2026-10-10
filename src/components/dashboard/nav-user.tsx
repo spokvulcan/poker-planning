@@ -2,12 +2,13 @@
 
 import { useState } from "react";
 import { useTheme } from "next-themes";
-import { useMutation, useQuery } from "convex/react";
+import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useAuth } from "@/components/auth/auth-provider";
 import { useSignOut } from "@/hooks/useSignOut";
 import { UserAvatar } from "@/components/user-menu/user-avatar";
 import { EditNameDialog } from "@/components/user-menu/edit-name-dialog";
+import { MenuProfile, MenuSignIn, menuName } from "@/components/user-menu/viewer-menu-items";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -29,27 +30,22 @@ import {
 } from "@/components/ui/sidebar";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { MoreHorizontalIcon } from "@hugeicons/core-free-icons";
-import { Moon, Sun, LogOut, UserPen, Monitor, LogIn } from "lucide-react";
-import Link from "next/link";
+import { Moon, Sun, LogOut, UserPen, Monitor } from "lucide-react";
 import { toast } from "@/lib/toast";
 
 export function NavUser() {
-  const { authUserId, isAnonymous, isAuthenticated, email } = useAuth();
+  const { viewer } = useAuth();
   const { theme, setTheme } = useTheme();
   const { isMobile } = useSidebar();
   const [editDialogOpen, setEditDialogOpen] = useState(false);
-
-  const globalUser = useQuery(
-    api.users.getGlobalUser,
-    isAuthenticated ? {} : "skip"
-  );
 
   const editGlobalUser = useMutation(api.users.editGlobalUser);
   // The one sign-out policy (anonymous-account deletion included). Called
   // above the early return below, per the rules of hooks.
   const handleSignOut = useSignOut();
 
-  if (!authUserId || !globalUser) {
+  // A guest signed in with no users row yet gets the menu too, as "Guest".
+  if (viewer.status !== "signedIn") {
     return (
       <SidebarMenu>
         <SidebarMenuItem>
@@ -65,7 +61,8 @@ export function NavUser() {
     );
   }
 
-  const userName = globalUser.name || "Guest";
+  const { avatarUrl, email } = viewer;
+  const userName = menuName(viewer);
 
   const handleEditName = async (name: string) => {
     try {
@@ -88,7 +85,7 @@ export function NavUser() {
                 />
               }
             >
-              <UserAvatar name={userName} size="sm" className="size-8" />
+              <UserAvatar name={userName} avatarUrl={avatarUrl} size="sm" className="size-8" />
               <div className="grid flex-1 text-left text-sm leading-tight">
                 <span className="truncate font-semibold">{userName}</span>
                 <span className="truncate text-xs text-muted-foreground">
@@ -107,28 +104,11 @@ export function NavUser() {
               align="end"
               sideOffset={4}
             >
-              <div className="flex items-center gap-3 px-2 py-2">
-                <UserAvatar name={userName} size="lg" />
-                <div className="flex min-w-0 flex-col">
-                  <span className="truncate text-sm font-medium">
-                    {userName}
-                  </span>
-                  <span className="text-xs text-muted-foreground">{email || "Guest"}</span>
-                </div>
-              </div>
+              <MenuProfile viewer={viewer} />
 
               <DropdownMenuSeparator />
 
-              {/* Sign in link - only for anonymous users, shown first */}
-              {isAnonymous && (
-                <>
-                  <DropdownMenuItem render={<Link href="/auth/signin?from=/dashboard" />}>
-                    <LogIn className="mr-2 size-4" />
-                    Sign in
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                </>
-              )}
+              <MenuSignIn viewer={viewer} href="/auth/signin?from=/dashboard" />
 
               <DropdownMenuItem onClick={() => setEditDialogOpen(true)}>
                 <UserPen className="mr-2 size-4" />

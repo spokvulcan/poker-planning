@@ -1,8 +1,5 @@
-import { SITE_ORIGIN } from "@/lib/site-config";
+import { SITE_ORIGIN, siteConfig } from "@/lib/site-config";
 import { WEB_APPLICATION, FAQ_SCHEMA } from "./copy";
-
-// A raster logo: Google reads Organization logos of at least 112x112px.
-const logoUrl = `${SITE_ORIGIN}/logo-512.png`;
 
 // Google retired HowTo rich results in 2023, so the homepage carries no
 // HowTo schema: markup is kept only where it describes the page for a
@@ -16,7 +13,7 @@ export function WebSiteSchema() {
   const schema = {
     "@context": "https://schema.org",
     "@type": "WebSite",
-    name: "AgileKit",
+    name: siteConfig.name,
     url: `${SITE_ORIGIN}/`,
   };
 
@@ -32,7 +29,7 @@ export function WebApplicationSchema() {
   const schema = {
     "@context": "https://schema.org",
     "@type": "WebApplication",
-    name: WEB_APPLICATION.name,
+    name: siteConfig.name,
     applicationCategory: "BusinessApplication",
     operatingSystem: "All",
     offers: {
@@ -44,7 +41,7 @@ export function WebApplicationSchema() {
     url: SITE_ORIGIN,
     author: {
       "@type": "Organization",
-      name: "AgileKit",
+      name: siteConfig.author.name,
       url: "https://github.com/spokvulcan/poker-planning",
     },
     screenshot: `${SITE_ORIGIN}/og-image.png`,
@@ -63,9 +60,9 @@ export function OrganizationSchema() {
   const schema = {
     "@context": "https://schema.org",
     "@type": "Organization",
-    name: "AgileKit",
+    name: siteConfig.name,
     url: SITE_ORIGIN,
-    logo: logoUrl,
+    logo: siteConfig.logo,
     sameAs: ["https://github.com/spokvulcan/poker-planning"],
   };
 
@@ -149,15 +146,15 @@ export function BlogPostingSchema({
     dateModified: dateModified || datePublished,
     author: {
       "@type": "Organization",
-      name: "AgileKit",
+      name: siteConfig.author.name,
       url: SITE_ORIGIN,
     },
     publisher: {
       "@type": "Organization",
-      name: "AgileKit",
+      name: siteConfig.name,
       logo: {
         "@type": "ImageObject",
-        url: logoUrl,
+        url: siteConfig.logo,
       },
     },
     mainEntityOfPage: {

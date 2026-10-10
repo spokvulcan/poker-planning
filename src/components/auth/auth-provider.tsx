@@ -1,15 +1,19 @@
 "use client";
 
 import { createContext, useContext, useEffect, useMemo, useState, ReactNode } from "react";
-import { usePathname } from "next/navigation";
 import { useConvexAuth, useQuery } from "convex/react";
 import { authClient } from "@/lib/auth-client";
 import { api } from "@/convex/_generated/api";
+import type { Doc } from "@/convex/_generated/dataModel";
 import { createAuthWaiters } from "@/lib/auth-waiters";
+import type { Viewer } from "./viewer";
 
 /** The auth state a sign-in waits on. */
 export interface AuthSnapshot {
+  // BetterAuth's session: a null authUserId means no session only once it has loaded
   authUserId: string | null;
+  isSessionPending: boolean;
+  // Convex's auth state
   isLoading: boolean;
   isAuthenticated: boolean;
 }
@@ -20,30 +24,37 @@ export interface AuthSnapshot {
  */
 export type WhenAuth = (ready: (state: AuthSnapshot) => boolean, timeoutMs: number) => Promise<AuthSnapshot>;
 
+export type { SignedInViewer, Viewer } from "./viewer";
+
+/** The viewer, from Convex's auth state and the caller's users row (undefined until it answers). */
+function viewerOf(isLoading: boolean, isAuthenticated: boolean, row: Doc<"users"> | null | undefined): Viewer {
+  if (isLoading) return { status: "loading" };
+  if (!isAuthenticated) return { status: "visitor" };
+  if (row === undefined) return { status: "loading" };
+  return {
+    status: "signedIn",
+    name: row?.name ?? null,
+    avatarUrl: row?.avatarUrl ?? null,
+    email: row?.email ?? null,
+    isPermanent: row?.accountType === "permanent",
+  };
+}
+
 interface AuthContextType {
-  // BetterAuth user ID (sent to join/ensureGlobalUser, which check it names the caller)
-  authUserId: string | null;
-  // Whether the user is anonymous (from BetterAuth session)
-  isAnonymous: boolean;
   // Auth loading state (from Convex - waits for token validation)
   isLoading: boolean;
   // Whether user is authenticated (from Convex - token validated)
   isAuthenticated: boolean;
-  // User's email address (for permanent accounts)
-  email: string | null;
-  // Whether this is a guest or permanent account
-  accountType: "anonymous" | "permanent" | null;
+  // Who is looking, with the name, avatar and kind of account their users row has
+  viewer: Viewer;
   // Waits for the auth state to reach a condition (see useEnsureSession)
   whenAuth: WhenAuth;
 }
 
 const AuthContext = createContext<AuthContextType>({
-  authUserId: null,
-  isAnonymous: false,
   isLoading: true,
   isAuthenticated: false,
-  email: null,
-  accountType: null,
+  viewer: { status: "loading" },
   whenAuth: () => Promise.reject(new Error("No AuthProvider")),
 });
 
@@ -52,46 +63,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Per docs: "Better Auth will reflect an authenticated user before Convex does"
   const { isAuthenticated, isLoading: convexAuthLoading } = useConvexAuth();
 
-  // Still need BetterAuth session for authUserId (used in mutations)
-  const { data: session } = authClient.useSession();
+  // BetterAuth's session, for the sign-in's waits only: whether there is a session at all
+  const { data: session, isPending: isSessionPending } = authClient.useSession();
   const authUserId = session?.user?.id;
 
-  // Zero reads on /demo (ADR-0003): the demo is a client-side simulation with
-  // no backend participation, so even this root subscription must not open for a
-  // returning visitor with a live session. Route-based (not the
-  // DemoSimulationProvider seam) because AuthProvider sits at the root, above
-  // the provider. On /demo the session fallbacks below already supply email and
-  // accountType, so context consumers see the same values.
-  const pathname = usePathname();
-  const isDemoRoute = pathname === "/demo" || pathname.startsWith("/demo/");
-
   const [waiters] = useState(() =>
-    createAuthWaiters<AuthSnapshot>({ authUserId: null, isLoading: true, isAuthenticated: false })
+    createAuthWaiters<AuthSnapshot>({ authUserId: null, isSessionPending: true, isLoading: true, isAuthenticated: false })
   );
   useEffect(() => {
-    waiters.update({ authUserId: authUserId ?? null, isLoading: convexAuthLoading, isAuthenticated });
-  }, [waiters, authUserId, convexAuthLoading, isAuthenticated]);
+    waiters.update({ authUserId: authUserId ?? null, isSessionPending, isLoading: convexAuthLoading, isAuthenticated });
+  }, [waiters, authUserId, isSessionPending, convexAuthLoading, isAuthenticated]);
 
+  // The caller's users row: the app's one subscription to it, read through the viewer
   const globalUser = useQuery(
     api.users.getGlobalUser,
-    isAuthenticated && !isDemoRoute ? {} : "skip"
+    isAuthenticated ? {} : "skip"
   );
 
   // Memoize context value to prevent cascading re-renders in consumers
   const value = useMemo(
     () => ({
-      authUserId: authUserId ?? null,
-      isAnonymous: session?.user?.isAnonymous ?? false,
       isLoading: convexAuthLoading,
       isAuthenticated,
-      // For permanent accounts, fall back to BetterAuth session email when app user email isn't set yet
-      // (e.g., merge case race condition where auto-join creates user before onLinkAccount).
-      // Anonymous users get a fake temp@xxx.com email from BetterAuth — never expose it.
-      email: globalUser?.email ?? (session?.user?.isAnonymous ? null : session?.user?.email ?? null),
-      accountType: globalUser?.accountType ?? (session?.user?.isAnonymous === false ? "permanent" : null),
+      viewer: viewerOf(convexAuthLoading, isAuthenticated, globalUser),
       whenAuth: waiters.when,
     }),
-    [session, convexAuthLoading, isAuthenticated, globalUser, authUserId, waiters],
+    [convexAuthLoading, isAuthenticated, globalUser, waiters],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

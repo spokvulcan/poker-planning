@@ -19,19 +19,19 @@ What an actor is attempting. Either a **category action** (one of the room type'
 _Avoid_: operation, command, capability
 
 **Permission guard**:
-The backend adapter (`requireCan`) over the **permission decision**. It does the IO — reads the room, the actor's membership, the target's membership, and whether the owner is absent — assembles the **Action**, calls `evaluate`, and throws a reason-derived message on denial. Two entry points share the one IO assembly: `requireCan` (identity from `ctx.auth`, for queries/mutations) and `requireCanForUser` (an already-resolved user, for action contexts such as the Jira integration). Identity rules (self-transfer, authoritative `ownerId`) stay in the calling handler, not the guard.
+The backend adapter over the **permission decision**. It does the IO — reads the room, the actor's membership, the target's membership, and whether the owner is absent — assembles the **Action**, calls `evaluate`, and throws a reason-derived message on denial. Two entry points share the one IO assembly: the **room-scoped step** (identity from `ctx.auth`, for a room write that names its **Action**) and `requireCanForUser` (an already-resolved user, for action contexts such as the Jira integration). Identity rules (self-transfer, authoritative `ownerId`) stay with the write, not the guard.
 _Avoid_: middleware, interceptor, auth wrapper
 
-**Acting-user guard**:
-The backend adapter (`requireActingUser`) for "authenticated ∧ room member ∧ acting as this `userId`" — the one place that triple check lives. Handlers that take a client-supplied `userId` call it instead of re-checking membership and identity inline.
-_Avoid_: self-check, impersonation check
+**Room-scoped step**:
+Where every room write but joining the room works out who is calling, which room it lands in and what it acts on (`requireRoomWrite`). It seats the caller — whoever is signed in, refused without **room attendance** — in the room the write names, or in the room of the one **issue**, **sticky** or **action item** it acts on, runs the **permission guard** when the write names an **Action**, and hands the write the rows it loaded. A user id the browser sends never says who is calling: old browsers' own ids are ignored, and a presence heartbeat, which names its user, is refused unless that user is the seated caller.
+_Avoid_: acting-user guard (retired: it compared the user id a browser sent), write guard, preamble
 
 **Room access**:
-May this person *read* this room's contents — today, exactly when they have **room attendance**. Still its own question with its own guard (`requireRoomReader`), which read-only queries on room contents take and which returns the room, never a membership (see [ADR-0009](docs/adr/0009-room-access-and-room-attendance-are-separate-guards.md)).
+May this person *read* this room's contents — today, exactly when they have **room attendance**. Still its own question with its own guard (`requireRoomReader`), which read-only queries on room contents take and which reads only the caller and their membership, returning neither the room nor a membership (see [ADR-0009](docs/adr/0009-room-access-and-room-attendance-are-separate-guards.md)).
 _Avoid_: visibility (that is the property being protected), read permission
 
 **Room attendance**:
-Is this person *in* this room — a `roomMemberships` row, which is what puts them on the roster, in the presence list, and in the non-spectator count a **voting round** reads. Enforced by `requireRoomMember`, which every mutation keeps.
+Is this person *in* this room — a `roomMemberships` row, which is what puts them on the roster, in the presence list, and in the non-spectator count a **voting round** reads. Enforced by `requireRoomMember`, with which the **room-scoped step** seats every room write's caller.
 _Avoid_: presence (that is the live connection signal), participation
 
 **Denial reason**:
@@ -147,7 +147,7 @@ The `discuss` step's walk through the **topics** that got votes, most votes firs
 _Avoid_: agenda, discussion walk (the team retro's snapshotted walk), coverage
 
 **Spotlight**:
-The one **topic** the **discussion** is on. A person who may run the retro moves it next or back along the order, or puts any revealed topic in it, voted for or not; everyone's view follows it. It stays on its topic when the topic is stacked onto another, and goes out when the topic leaves the board.
+The one **topic** the **discussion** is on. A person who may run the retro moves it next or back along the order, or puts any revealed topic in it, voted for or not, which from `vote` opens the discussion; everyone's view follows it. It stays on its topic when the topic is stacked onto another, and goes out when the topic leaves the board or the retro moves to `write` or `vote`. In `done` it is neither drawn nor moved: it stays where the walk was, so going back to `discuss` resumes the walk there.
 _Avoid_: focus (fine in code), current topic, raise (the team retro's)
 
 **Action item**:
@@ -193,7 +193,7 @@ A round's derived lifecycle state — `voting`, `countingDown` (auto-reveal arme
 _Avoid_: game state, mode, idle; do not conflate with issue **status**, nor with a retro **step** (stored, and moved by a person)
 
 **Transition**:
-A control action that moves the **phase**: **start** (begin a round on a target), **reveal** (settle and compute results), **reset** (begin a fresh round on the same target), **abandon** (drop the issue target, falling back to a target-less **Quick Vote**, still `voting`). Gated by the **game flow** / **reveal cards** permission categories. Casting or retracting a vote is a participant action, not a transition, though it may arm or cancel the countdown.
+A control action that moves the **phase**: **start** (begin a round on a target), **reveal** (settle and compute results), **reset** (begin a fresh round on the same target), **abandon** (drop the issue target, falling back to a target-less **Quick Vote**, still `voting`). Gated by the **game flow** / **reveal cards** permission categories. Casting or retracting a vote is a participant action, not a transition, though it may arm or cancel the countdown. The **phase** says which can happen at all (`convex/phase.ts`), as a retro **step** does: a round reveals once, and its votes close at the reveal. A start reads its target's **status** instead, so the issue already being voted on isn't started again. Reset and abandon are open in every phase. The round refuses quietly, changing nothing, the way a stale scheduled reveal reveals nothing.
 _Avoid_: event, command
 
 **Auto-reveal countdown**:
@@ -208,15 +208,27 @@ _Avoid_: kick (the `remove` relationship action is one trigger, not the concept)
 The looping illustration on `/demo`. It is **not a room and runs no voting round** — there is no `rooms` row, no membership, no persisted vote, and the backend never participates. Bots, issues, and **phase** transitions are computed entirely on the viewer's machine and discarded. It *imitates* a round's **phase** lifecycle and reuses the one pure results computation (`summarize`) so its revealed numbers match a real round's, but it lives deliberately outside the **voting round** module's authority. Paused while its tab is hidden (see [ADR-0003](docs/adr/0003-demo-is-a-client-simulation.md)).
 _Avoid_: demo room (there is no room), demo game, bot round
 
+**Deck**:
+What a poker room's cards mean, read from its stored voting scale by `deckOf` (`convex/scales.ts`): which cards are dealt, whether a label is a legal ballot (a card the deck deals; the round refuses any other), and what a card reads as a number. A legacy room that stores no scale deals the default deck, Fibonacci, and so does the **demo simulation**; a new room stores it when its creator picks none, and it is defined once. The special cards `?`, `☕` and `∞` are dealt and played but estimate nothing: no consensus, average or alignment counts them. A card is read as a number in one place (`cardNumericValue`, where a literal "Infinity" reads as none): the round, `summarize`, alignment, the Jira push and the card row ask the deck, and analytics shares that reading without a deck, since a final estimate can be free text. No second parse may be introduced.
+_Avoid_: card set, card values; scale for anything but the stored setting a deck is read from
+
 **Voter alignment**:
-The per-voter distance-from-consensus picture (spec 04), persisted as `individualVotes` rows at reveal. Computed pure in `convex/model/alignment.ts` (`computeVoterAlignment`); the single card→numeric conversion (`cardNumericValue`) is shared by alignment, the round's cast-vote path, and the `summarize` results computation — no second parse may be introduced.
+The per-voter distance-from-consensus picture (spec 04), persisted as `individualVotes` rows at reveal. Computed pure in `convex/model/alignment.ts` (`computeVoterAlignment`), reading each card through the room's **deck**: steps from the consensus are counted only along a numeric deck.
 _Avoid_: agreement score (that is `voteStats.agreement` on the issue), deviation, spread
 
 ### Room activity
 
 **Room activity** (`lastActivityAt`):
-The room's liveness clock — the field the cleanup cascade reads to delete rooms silent for five days, unless they are **retained**. Written only through the model-layer chokepoint `Rooms.updateRoomActivity`: every user-initiated model mutation calls it (voting, issues, canvas, timer, roles, integration mappings, every retro write), and endpoint handlers never patch the field directly. Internal effects (relayout, countdown arm/cancel, scheduled cascades) do not bump — their initiating mutation already did. The chokepoint also owns the clock's *precision*: exact for a poker room, whose analytics freshness compares it exactly, and **coarse** — written at most once an hour — for a retro room, whose readers (the sweep and the dashboard's last-activity time) need nothing finer. Reads and presence never are. See [ADR-0005](docs/adr/0005-room-activity-has-one-model-layer-chokepoint.md) and [ADR-0018](docs/adr/0018-the-activity-chokepoint-owns-the-clocks-precision.md).
+The room's liveness clock — the field the **sweep** reads to end rooms silent for five days, unless they are **retained**. Written only through the model-layer chokepoint `Rooms.updateRoomActivity`: every user-initiated model mutation calls it (voting, issues, canvas, timer, roles, integration mappings, every retro write), and endpoint handlers never patch the field directly. Internal effects (relayout, countdown arm/cancel, the steps of a **room ending**) do not bump — their initiating mutation already did. The chokepoint also owns the clock's *precision*: exact for a poker room, whose analytics freshness compares it exactly, and **coarse** — written at most once an hour — for a retro room, whose readers (the sweep and the dashboard's last-activity time) need nothing finer. Reads and presence never are. See [ADR-0005](docs/adr/0005-room-activity-has-one-model-layer-chokepoint.md) and [ADR-0018](docs/adr/0018-the-activity-chokepoint-owns-the-clocks-precision.md).
 _Avoid_: touch point, heartbeat, keep-alive
+
+**Room ending**:
+A room going, with everything it owns: when its owner deletes a **retro**, at a **hand-off** with nobody to hand it to, in the **sweep**, or in the admin wipe. One module ends rooms (`convex/model/roomEnding.ts`), a bounded step at a time; only the owners with a rule of their own let go of their rows themselves: an issue goes with its links, a mapping's webhook through the **webhook reconcile**, and presence in its component.
+_Avoid_: cascade, room aggregate, cleanup
+
+**Sweep**:
+The daily job that ends what is stale, a page at a time: each room not **retained** after five days without **room activity**, and whatever a room deleted some other way left behind, whose **room ending** it finishes.
+_Avoid_: cleanup, orphan sweep, orphan net
 
 ### Analytics
 
@@ -231,8 +243,12 @@ The module (`convex/model/tokenVault.ts`) that owns the token-field contract for
 _Avoid_: encryption utils (the pure primitive is `convex/lib/encryption.ts` — the vault is the policy owner, not a second crypto implementation)
 
 **Integration provider registry**:
-The seam (`convex/integrations/registry.ts`) that maps a connection's `provider` to its adapter's handler — webhook lifecycle, token refresh, client construction. The generic integrations module (`convex/model/integrations.ts`) routes through it and never names a provider; an unregistered provider throws loudly rather than silently skipping. Adapter functions take their effects (fetch, clock, sleep) as injected dependencies so they are testable without faking globals. Jira is the sole adapter; GitHub (spec 07) is the planned second. See [ADR-0006](docs/adr/0006-integration-providers-sit-behind-a-registry.md).
+The seam (`convex/integrations/registry.ts`) that maps a connection's `provider` to its adapter's handler — its **webhook reconcile**, token refresh, client construction. The generic integrations module (`convex/model/integrations.ts`) routes through it and never names a provider; an unregistered provider throws loudly rather than silently skipping. Adapter functions take their effects (fetch, clock, sleep) as injected dependencies so they are testable without faking globals. Jira is the sole adapter; GitHub (spec 07) is the planned second. See [ADR-0006](docs/adr/0006-integration-providers-sit-behind-a-registry.md).
 _Avoid_: service layer, plugin, provider factory
+
+**Webhook reconcile**:
+The one owner of each room mapping's remote webhook, one per provider behind the **integration provider registry** (`convex/integrations/jiraWebhookReconcile.ts` for Jira). A mapping wants one webhook for its project while auto-push is on, made with the mapping's own connection at an address naming that connection's Jira site, so what it delivers reaches only that site's issues (the same key on another site is another issue); its record says which webhook is live, the connection that made it and the project it was made for. Everything that changes or ends a mapping hands over its case (saving it, the weekly renewal, removing it, its **room ending**, a disconnect), and the reconcile registers, replaces or removes the webhook, always deleting an old one with the connection that made it. A failed registration is recorded on the mapping, and the room's settings show it.
+_Avoid_: webhook sync, webhook manager
 
 ## Flagged ambiguities
 

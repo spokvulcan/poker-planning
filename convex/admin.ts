@@ -5,17 +5,21 @@
 
 import { internalMutation } from "./_generated/server";
 import { v } from "convex/values";
-import { ROOM_OWNED_TABLES } from "./model/roomAggregate";
+import * as Integrations from "./model/integrations";
+import * as RoomEnding from "./model/roomEnding";
 
 const DELETE_CONFIRMATION = "I understand this will delete all data permanently";
 
 /**
  * Permanently deletes ALL data from the database.
  *
- * Tables affected: every room-owned table from the one inventory
- * (convex/model/roomAggregate.ts — the poker tables and the retro tables)
- * plus issueLinks (room-owned via its issue), rooms, and the user-scoped /
- * global tables (users, integrationConnections, webhookEvents).
+ * Every room ends the way any room does (convex/model/roomEnding.ts), in
+ * steps of its own that finish shortly after this returns: everything it
+ * owns goes, its mappings' webhooks are removed and its presence is cleared.
+ * A sweep follows, for what rooms deleted some other way left behind. Every
+ * integration connection disconnects, so the webhooks it made are removed
+ * with its credentials before its row goes. The rest is global or names
+ * people, and goes here: users, webhookEvents, gifSearchUsage.
  *
  * This action cannot be undone.
  *
@@ -39,28 +43,28 @@ export const dangerouslyDeleteAllData = internalMutation({
       );
     }
 
-    // Room-owned tables come from the one inventory; issueLinks are room-owned
-    // through their issues. The rest are user-scoped or global — this wipe's
-    // own concern, not the inventory's.
-    const tables = [
-      ...ROOM_OWNED_TABLES,
-      "issueLinks",
-      "integrationConnections",
-      "webhookEvents",
-      "rooms",
-      "users",
-    ] as const;
+    const rooms = await ctx.db.query("rooms").collect();
+    for (const room of rooms) {
+      await RoomEnding.endRoom(ctx, room._id);
+    }
+    // A sweep finishes what rooms deleted some other way left behind.
+    await RoomEnding.endStaleRooms(ctx);
 
-    const results: Record<string, number> = {};
+    const connections = await ctx.db.query("integrationConnections").collect();
+    for (const connection of connections) {
+      await Integrations.disconnectConnection(ctx, connection._id);
+    }
 
-    for (const table of tables) {
-      let count = 0;
+    const results: Record<string, number> = {
+      roomsEnding: rooms.length,
+      connectionsDisconnecting: connections.length,
+    };
+    for (const table of ["users", "webhookEvents", "gifSearchUsage"] as const) {
       const docs = await ctx.db.query(table).collect();
       for (const doc of docs) {
         await ctx.db.delete(table, doc._id);
-        count++;
       }
-      results[table] = count;
+      results[table] = docs.length;
     }
 
     console.log("All data deleted:", results);

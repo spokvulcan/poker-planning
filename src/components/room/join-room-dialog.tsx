@@ -5,12 +5,14 @@ import { useState } from "react";
 import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { rulesOf } from "@/convex/ceremony";
+import { PERSON_NAME } from "@/convex/constants";
 import { Doc, Id } from "@/convex/_generated/dataModel";
 import { SESSION_FAILED, useEnsureSession } from "@/hooks/useEnsureSession";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { runAct } from "@/lib/run-act";
 import { toast } from "@/lib/toast";
 
 interface JoinRoomDialogProps {
@@ -31,35 +33,27 @@ export function JoinRoomDialog({ roomId, roomName, roomType }: JoinRoomDialogPro
   const [isJoining, setIsJoining] = useState(false);
 
   const handleJoin = async () => {
-    if (!userName.trim()) {
-      toast.error("Please enter your name");
+    // One join at a time: Enter gets here even while the button is disabled.
+    if (isJoining) return;
+    // The rule the server keeps a name by, in its own words.
+    const checked = PERSON_NAME.check(userName);
+    if (!checked.ok) {
+      toast.error(checked.message);
       return;
     }
 
     setIsJoining(true);
     try {
-      // A guest session Convex already has. The join writes the user row
-      // with the typed name, so the session doesn't write one first.
-      let authUserId: string;
-      try {
-        authUserId = await ensureSession({ createUser: false });
-      } catch (error) {
-        toast.error(error instanceof Error ? error.message : SESSION_FAILED);
-        return;
-      }
+      // A session Convex already has. The join makes the users row, with
+      // the typed name, when this is the person's first room.
+      if (!(await runAct(ensureSession(), SESSION_FAILED))) return;
 
-      await joinRoom({
-        roomId,
-        name: userName,
-        isSpectator,
-        authUserId,
-      });
-
-      // No need to set state - existingMembership query will auto-update
-      // and room-content.tsx will re-render with the new membership
-    } catch (error) {
-      console.error("Failed to join room:", error);
-      toast.error(`Failed to join ${noun.toLowerCase()}`);
+      // No need to set state on success - existingMembership query will
+      // auto-update and room-content.tsx will re-render with the new membership
+      await runAct(
+        joinRoom({ roomId, name: checked.value, isSpectator }),
+        `Failed to join ${noun.toLowerCase()}`
+      );
     } finally {
       setIsJoining(false);
     }
@@ -80,6 +74,7 @@ export function JoinRoomDialog({ roomId, roomName, roomType }: JoinRoomDialogPro
               id="name"
               placeholder="Enter your name"
               autoComplete="name"
+              maxLength={PERSON_NAME.maxLength}
               value={userName}
               onChange={(e) => setUserName(e.target.value)}
               onKeyDown={(e) => {
