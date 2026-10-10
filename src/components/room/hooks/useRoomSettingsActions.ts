@@ -29,9 +29,9 @@ interface UseRoomSettingsActionsProps {
  * Owns the demo-vs-real decision once, at the action seam: inside a demo context
  * every method is a no-op, so "the demo never writes to the backend" (ADR-0003)
  * is one adapter rather than a guard at every control. Unlike useCanvasActions
- * the methods propagate failures instead of swallowing them — the panel owns the
- * failure toast. Frozen method identity comes from useStableActions, the
- * shared stabilizer every *Actions seam returns through.
+ * the methods propagate failures instead of showing them: the panel runs each
+ * write through runAct, with copy of its own. Frozen method identity comes from
+ * useStableActions, the shared stabilizer every *Actions seam returns through.
  */
 export function useRoomSettingsActions({
   roomId,

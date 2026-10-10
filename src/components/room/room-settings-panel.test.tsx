@@ -5,9 +5,9 @@
  * prop) and the real rosterControls, so a denied actor sees every control
  * visible-but-disabled with the decision's denial copy as its accessible label
  * — and no onClick that would reach a mutation — while an allowed actor gets
- * live controls that reach the action seam. Convex IO, toast, presence, demo
- * mode, and the write seam (useRoomSettingsActions) are mocked; the decisions
- * are not.
+ * live controls that reach the action seam, and a refused write shows the
+ * refusal's message. Convex IO, toast, presence, demo mode, and the write seam
+ * (useRoomSettingsActions) are mocked; the decisions are not.
  */
 import { describe, it, expect, vi, afterEach } from "vitest";
 import {
@@ -32,10 +32,13 @@ import {
 // Hoisted recorders shared with the (hoisted) vi.mock factories below.
 const mocks = vi.hoisted(() => ({
   roster: vi.fn((): UserWithPresence[] => []),
-  removeUser: vi.fn(() => Promise.resolve(undefined)),
+  rename: vi.fn((): Promise<unknown> => Promise.resolve(undefined)),
+  removeUser: vi.fn((): Promise<unknown> => Promise.resolve(undefined)),
   promoteFacilitator: vi.fn(() => Promise.resolve(undefined)),
   demoteFacilitator: vi.fn(() => Promise.resolve(undefined)),
   transferOwnership: vi.fn(() => Promise.resolve(undefined)),
+  // Every error toast's message: what the person is shown when a write fails.
+  errors: [] as string[],
 }));
 
 vi.mock("convex/react", () => ({
@@ -52,7 +55,7 @@ vi.mock("next/link", () => ({
 vi.mock("@/hooks/use-mobile", () => ({ useIsMobile: () => false }));
 
 vi.mock("@/lib/toast", () => ({
-  toast: { success: () => {}, error: () => {} },
+  toast: { success: () => {}, error: (message: string) => mocks.errors.push(message) },
 }));
 
 vi.mock("./demo/DemoSimulationProvider", () => ({
@@ -65,10 +68,10 @@ vi.mock("./room-presence", () => ({
   usePresenceRoster: () => mocks.roster(),
 }));
 
-// The write seam: record the four roster mutations, no-op the rest.
+// The write seam: record the rename and the four roster mutations, no-op the rest.
 vi.mock("./hooks/useRoomSettingsActions", () => ({
   useRoomSettingsActions: () => ({
-    rename: () => Promise.resolve(undefined),
+    rename: mocks.rename,
     toggleAutoComplete: () => Promise.resolve(undefined),
     removeUser: mocks.removeUser,
     promoteFacilitator: mocks.promoteFacilitator,
@@ -78,6 +81,7 @@ vi.mock("./hooks/useRoomSettingsActions", () => ({
   }),
 }));
 
+import { refusal } from "@/convex/model/refusal";
 import { RoomSettingsPanel } from "./room-settings-panel";
 
 const allEveryone: RoomPermissions = {
@@ -155,14 +159,20 @@ const PROMOTE_TARGET_DENIAL = denialMessage(
   { kind: "relationship", verb: "promote", targetRole: "facilitator" },
   "target-rank"
 );
+const TARGET_RANK_REMOVE_DENIAL = denialMessage(
+  { kind: "relationship", verb: "remove", targetRole: "facilitator" },
+  "target-rank"
+);
 
 afterEach(() => {
   cleanup();
   mocks.roster.mockReset();
-  mocks.removeUser.mockClear();
+  mocks.rename.mockReset();
+  mocks.removeUser.mockReset();
   mocks.promoteFacilitator.mockClear();
   mocks.demoteFacilitator.mockClear();
   mocks.transferOwnership.mockClear();
+  mocks.errors.length = 0;
 });
 
 describe("RoomSettingsPanel — roster denied for a participant actor", () => {
@@ -302,5 +312,39 @@ describe("RoomSettingsPanel — the room name", () => {
     renderPanel("owner");
 
     expect((screen.getByLabelText("Room Name") as HTMLInputElement).maxLength).toBe(100);
+  });
+});
+
+describe("RoomSettingsPanel — a refused write says why", () => {
+  it("a refused removal shows the refusal's message", async () => {
+    // Bob was made a facilitator after the panel last heard, so the server
+    // turns a facilitator's removal of him away.
+    mocks.removeUser.mockRejectedValue(refusal("forbidden", TARGET_RANK_REMOVE_DENIAL));
+    mocks.roster.mockReturnValue([
+      rosterUser(ME, "Me", "facilitator"),
+      rosterUser(BOB, "Bob", "participant"),
+    ]);
+    renderPanel("facilitator");
+
+    fireEvent.click(within(rowFor("Bob")).getByRole("button", { name: "Remove Bob" }));
+    const confirm = await screen.findByRole("button", { name: "Remove" });
+    await act(async () => {
+      fireEvent.click(confirm);
+    });
+
+    expect(mocks.errors).toEqual([TARGET_RANK_REMOVE_DENIAL]);
+  });
+
+  it("a refused rename shows the refusal's message, once", async () => {
+    // The owner kept room settings to facilitators after the panel last heard.
+    mocks.rename.mockRejectedValue(refusal("forbidden", "Only facilitators and the owner can do this."));
+    renderPanel("participant");
+
+    fireEvent.change(screen.getByLabelText("Room Name"), { target: { value: "Sprint 42" } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    });
+
+    expect(mocks.errors).toEqual(["Only facilitators and the owner can do this."]);
   });
 });

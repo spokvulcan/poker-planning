@@ -8,6 +8,7 @@
  *     no acting user they no-op silently (the same guard as selectCard & co.).
  *  3. The display still derives from the persisted timer state via the shared
  *     math — the seam changed only where writes go.
+ *  4. A refused timer write shows the refusal's message.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createElement, type ReactNode } from "react";
@@ -17,18 +18,28 @@ import type { TimerState } from "@/convex/timerState";
 
 // Hoisted recorder shared with the (hoisted) vi.mock factory below. Every
 // useMutation returns a recording function, so any backend write is observable.
+// `failure` makes every mutation reject with it.
 const writes = vi.hoisted(() => ({
   calls: [] as { args: unknown }[],
+  failure: null as unknown,
 }));
+
+// What the person is shown when a write fails: every error toast's message.
+const toasts = vi.hoisted(() => [] as string[]);
 
 vi.mock("convex/react", () => ({
   useMutation: () => (args: unknown) => {
     writes.calls.push({ args });
-    return Promise.resolve(undefined);
+    return writes.failure ? Promise.reject(writes.failure) : Promise.resolve(undefined);
   },
   useQuery: () => undefined,
 }));
 
+vi.mock("@/lib/toast", () => ({
+  toast: { error: (message: string) => toasts.push(message) },
+}));
+
+import { refusal } from "@/convex/model/refusal";
 import { DemoSimulationProvider } from "../demo/DemoSimulationProvider";
 import { useTimerSync } from "./use-timer-sync";
 
@@ -46,6 +57,8 @@ const STOPPED_TIMER_STATE: TimerState = {
 
 beforeEach(() => {
   writes.calls = [];
+  writes.failure = null;
+  toasts.length = 0;
 });
 
 describe("use-timer-sync — demo no-op", () => {
@@ -134,5 +147,30 @@ describe("use-timer-sync — real room", () => {
 
     expect(result.current.isRunning).toBe(true);
     expect(result.current.displayTime).toBe("1:05");
+  });
+});
+
+describe("use-timer-sync — a refused write says why", () => {
+  it.each([
+    ["start", "onStart"],
+    ["pause", "onPause"],
+    ["reset", "onReset"],
+  ] as const)("a refused timer %s shows the refusal's message", async (_, control) => {
+    // Someone removed the viewer from the room while the board was open.
+    writes.failure = refusal("forbidden", "Not a member of this room");
+    const { result } = renderHook(() =>
+      useTimerSync({
+        roomId: ROOM_ID,
+        nodeId: "timer",
+        userId: USER_ID,
+        timerState: STOPPED_TIMER_STATE,
+      }),
+    );
+
+    await act(async () => {
+      await result.current[control]();
+    });
+
+    expect(toasts).toEqual(["Not a member of this room"]);
   });
 });
