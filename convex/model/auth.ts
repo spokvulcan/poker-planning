@@ -63,7 +63,8 @@ export async function requireRoomMember(
  * membership alone, and returns the identity and user. It reads no room: a
  * guard's reads join the read set of every query that takes it, so a room
  * patch would re-run them all. A query that needs the room reads it itself.
- * Every read-only query on room-owned data takes this guard; every room write
+ * Anyone else is refused as attendance refuses them (ADR-0031). Every
+ * read-only query on room-owned data takes this guard; every room write
  * takes `requireRoomMember` (attendance) through the room-scoped step.
  */
 export async function requireRoomReader(
@@ -76,7 +77,7 @@ export async function requireRoomReader(
   const { identity, user } = await requireUser(ctx);
   const membership = await getMembership(ctx, roomId, user._id);
   if (!membership) {
-    throw new Error("You don't have access to this room");
+    throw refusal("forbidden", "Not a member of this room");
   }
   return { identity, user };
 }

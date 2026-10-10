@@ -10,11 +10,15 @@ import { withComponents } from "./components.setup";
 
 // Room access (ADR-0009): `requireRoomReader` answers "may you read this
 // room's contents?" from the caller's membership alone, and returns neither
-// the room nor a membership row. It passes a room member and nobody else. The
+// the room nor a membership row. It passes a room member and nobody else,
+// refusing anyone else as the attendance guard does (ADR-0031). The
 // enforcement net: a non-member cannot read canvas nodes, either issue
 // export, or a retro's board and action items.
 
 const modules = import.meta.glob("./**/*.*s");
+
+/** How every guard refuses a caller who isn't in the room (ADR-0031). */
+const NOT_A_MEMBER = "Not a member of this room";
 
 async function addMember(
   t: T,
@@ -72,7 +76,7 @@ describe("requireRoomReader — the room access guard", () => {
     expect(metrics.documentsRead.used).toBe(2);
   });
 
-  it("rejects an authenticated non-member", async () => {
+  it("refuses an authenticated non-member with the coded refusal the browser can show", async () => {
     const t = convexTest(schema, modules);
     const roomId = await seedRoom(t);
     await addMember(t, roomId, "auth-m");
@@ -80,7 +84,7 @@ describe("requireRoomReader — the room access guard", () => {
 
     await expect(
       t.withIdentity({ subject: "auth-x" }).run((ctx) => requireRoomReader(ctx, roomId))
-    ).rejects.toThrow("You don't have access to this room");
+    ).rejects.toMatchObject({ data: { code: "forbidden", message: NOT_A_MEMBER } });
   });
 
   it("rejects an unauthenticated caller", async () => {
@@ -102,7 +106,7 @@ describe("requireRoomReader — the room access guard", () => {
     // No separate "Room not found": the cascade took the membership with the room.
     await expect(
       t.withIdentity({ subject: "auth-m" }).run((ctx) => requireRoomReader(ctx, roomId))
-    ).rejects.toThrow("You don't have access to this room");
+    ).rejects.toThrow(NOT_A_MEMBER);
   });
 });
 
@@ -116,7 +120,7 @@ describe("room-owned reads take the reader guard", () => {
 
     await expect(
       t.withIdentity({ subject: "auth-x" }).query(api.canvas.getCanvasNodes, { roomId })
-    ).rejects.toThrow("You don't have access to this room");
+    ).rejects.toThrow(NOT_A_MEMBER);
 
     const nodes = await t
       .withIdentity({ subject: "auth-m" })
@@ -132,7 +136,7 @@ describe("room-owned reads take the reader guard", () => {
 
     await expect(
       t.withIdentity({ subject: "auth-x" }).query(api.issues.getForExport, { roomId })
-    ).rejects.toThrow("You don't have access to this room");
+    ).rejects.toThrow(NOT_A_MEMBER);
 
     await expect(
       t.withIdentity({ subject: "auth-m" }).query(api.issues.getForExport, { roomId })
@@ -147,7 +151,7 @@ describe("room-owned reads take the reader guard", () => {
 
     await expect(
       t.withIdentity({ subject: "auth-x" }).query(api.issues.getForEnhancedExport, { roomId })
-    ).rejects.toThrow("You don't have access to this room");
+    ).rejects.toThrow(NOT_A_MEMBER);
 
     await expect(
       t.withIdentity({ subject: "auth-m" }).query(api.issues.getForEnhancedExport, { roomId })
@@ -164,13 +168,13 @@ describe("room-owned reads take the reader guard", () => {
     await asMember.mutation(api.users.join, { roomId, name: "M", authUserId: "auth-m" });
 
     await expect(asOutsider.query(api.retro.board, { roomId })).rejects.toThrow(
-      "You don't have access to this room"
+      NOT_A_MEMBER
     );
     await expect(asOutsider.query(api.retro.actionItems, { roomId })).rejects.toThrow(
-      "You don't have access to this room"
+      NOT_A_MEMBER
     );
     await expect(asOutsider.query(api.retro.votesCast, { roomId })).rejects.toThrow(
-      "You don't have access to this room"
+      NOT_A_MEMBER
     );
 
     expect(await asMember.query(api.retro.board, { roomId })).toEqual({
@@ -191,10 +195,10 @@ describe("room-owned reads take the reader guard", () => {
     const asOutsider = t.withIdentity({ subject: "auth-x" });
 
     await expect(asOutsider.query(api.integrations.getRoomMapping, { roomId })).rejects.toThrow(
-      "You don't have access to this room"
+      NOT_A_MEMBER
     );
     await expect(asOutsider.query(api.integrations.getIssueLinks, { roomId })).rejects.toThrow(
-      "You don't have access to this room"
+      NOT_A_MEMBER
     );
 
     expect(await asMember.query(api.integrations.getRoomMapping, { roomId })).toBeNull();
