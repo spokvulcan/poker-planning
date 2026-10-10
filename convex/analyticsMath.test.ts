@@ -1,9 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   agreementTrend,
-  velocityByDay,
   voteDistribution,
-  participationStats,
   timeToConsensus,
   voterAlignment,
   predictability,
@@ -53,41 +51,6 @@ describe("agreementTrend", () => {
   });
 });
 
-describe("velocityByDay", () => {
-  it("buckets story points and issue counts by day", () => {
-    const points = velocityByDay([
-      entry("A", issue({ finalEstimate: "5", votedAt: DAY1 })),
-      entry("B", issue({ finalEstimate: "3", votedAt: DAY1 })),
-      entry("A", issue({ finalEstimate: "8", votedAt: DAY2 })),
-    ]);
-    expect(points).toEqual([
-      { date: "2026-01-10", storyPoints: 8, issueCount: 2 },
-      { date: "2026-01-11", storyPoints: 8, issueCount: 1 },
-    ]);
-  });
-
-  it("skips non-numeric estimates, missing estimates, and missing votedAt", () => {
-    const points = velocityByDay([
-      entry("A", issue({ finalEstimate: "M" })), // non-numeric scale card
-      entry("A", issue({ finalEstimate: undefined })),
-      entry("A", issue({ finalEstimate: "5", votedAt: undefined })),
-    ]);
-    expect(points).toEqual([]);
-  });
-
-  it("never counts a literal \"Infinity\" estimate as points", () => {
-    const points = velocityByDay([
-      entry("A", issue({ finalEstimate: "Infinity", votedAt: DAY1 })),
-      entry("A", issue({ finalEstimate: "5", votedAt: DAY1 })),
-    ]);
-    expect(points).toEqual([{ date: "2026-01-10", storyPoints: 5, issueCount: 1 }]);
-  });
-
-  it("returns a defined empty result for empty history", () => {
-    expect(velocityByDay([])).toEqual([]);
-  });
-});
-
 describe("voteDistribution", () => {
   it("counts estimates with percentages, sorted by count descending", () => {
     const dist = voteDistribution([
@@ -104,9 +67,9 @@ describe("voteDistribution", () => {
     ]);
   });
 
-  it("counts whatever history it is given — the aggregate owns the window", () => {
+  it("counts whatever history it is given — the dashboard read owns the window", () => {
     // The old inline code leaked issues without a votedAt into RANGED results.
-    // Range filtering now happens once in completedIssueHistory, so a
+    // Range filtering now happens once in the dashboard read, so a
     // votedAt-less row simply never reaches this projection on a ranged call;
     // on an unranged call it is legitimately part of the history and counted.
     const dist = voteDistribution([issue({ finalEstimate: "5", votedAt: undefined })]);
@@ -115,25 +78,6 @@ describe("voteDistribution", () => {
 
   it("returns a defined empty result for empty history", () => {
     expect(voteDistribution([])).toEqual([]);
-  });
-});
-
-describe("participationStats", () => {
-  it("averages real votes cast per session, rounded", () => {
-    expect(participationStats({ totalSessions: 3, totalIssuesVoted: 3, totalVotesCast: 10 }))
-      .toEqual({ totalSessions: 3, totalIssuesVoted: 3, totalVotesCast: 10, averageVotesPerSession: 3 });
-  });
-
-  it("votes cast can exceed issues voted (several voters per issue)", () => {
-    // The fake old counter made these two equal by construction.
-    const stats = participationStats({ totalSessions: 1, totalIssuesVoted: 2, totalVotesCast: 5 });
-    expect(stats.totalVotesCast).toBe(5);
-    expect(stats.averageVotesPerSession).toBe(5);
-  });
-
-  it("returns zeros for empty history", () => {
-    expect(participationStats({ totalSessions: 0, totalIssuesVoted: 0, totalVotesCast: 0 }))
-      .toEqual({ totalSessions: 0, totalIssuesVoted: 0, totalVotesCast: 0, averageVotesPerSession: 0 });
   });
 });
 
