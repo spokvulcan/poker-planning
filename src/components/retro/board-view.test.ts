@@ -11,9 +11,9 @@ import {
   applyTopicChange,
   applyVoteToggle,
   applyWalk,
-  isOptimistic,
   topicOrder,
 } from "./board-view";
+import { isOptimistic } from "@/lib/optimistic-id";
 
 // What a browser sees of the retro, moved by the same topic, step and field
 // rules the server applies: what the optimistic updates show before the

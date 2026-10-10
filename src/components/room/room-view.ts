@@ -9,6 +9,7 @@ import type { Id } from "@/convex/_generated/dataModel";
 import type { RoomWithRelatedData } from "@/convex/model/rooms";
 import { phaseAllows, phaseOf } from "@/convex/phase";
 import { deckOf } from "@/convex/scales";
+import { optimisticId } from "@/lib/optimistic-id";
 
 /**
  * The room once a voter's card pick lands: their vote cast, or changed to that
@@ -34,7 +35,7 @@ export function applyCardPick(
         ...data.votes,
         // A stand-in until the server's vote arrives.
         {
-          _id: `optimistic:${voterId}` as Id<"votes">,
+          _id: optimisticId<"votes">(voterId),
           _creationTime: 0,
           roomId: data.room._id,
           userId: voterId,

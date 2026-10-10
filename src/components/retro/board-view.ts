@@ -14,29 +14,17 @@
  */
 import type { FunctionArgs } from "convex/server";
 import type { api } from "@/convex/_generated/api";
-import type { Id, TableNames } from "@/convex/_generated/dataModel";
+import type { Id } from "@/convex/_generated/dataModel";
 import type { ActionItemView, BoardView, RetroState, StickyView } from "@/convex/model/retro";
 import { edited, ownedBy } from "@/convex/retroFields";
 import { ACTION_ITEM_TEXT, STICKY_TEXT, type RetroColumn, type RetroStep } from "@/convex/retroTemplates";
 import * as Topics from "@/convex/retroTopics";
 import { discussionOrder, stepShows, walk, withSpotlight } from "@/convex/retroSteps";
 import { stickyView, type RetroViewer, type StickyRow } from "@/convex/retroStickyView";
+import { optimisticId } from "@/lib/optimistic-id";
 import type { RetroMember } from "./types";
 
 type StickyId = Id<"retroStickies">;
-
-/** The id a row wears until the server's arrives. */
-export const OPTIMISTIC_PREFIX = "optimistic:";
-
-/** Whether an id is still the client's stand-in: nothing can be done to it yet. */
-export function isOptimistic(id: string): boolean {
-  return id.startsWith(OPTIMISTIC_PREFIX);
-}
-
-/** A new row's stand-in id, from a key the client made for it. */
-function pendingId<T extends TableNames>(key: string): Id<T> {
-  return `${OPTIMISTIC_PREFIX}${key}` as Id<T>;
-}
 
 /** The discussion's order of topics, from the totals the board carries from Discuss on. */
 export function topicOrder(board: BoardView | undefined, columns: readonly RetroColumn[]): StickyId[] {
@@ -62,7 +50,7 @@ export function applyNewSticky(
   const text = STICKY_TEXT.check(sticky.text);
   if (!text.ok) return board;
   const view = stickyView(
-    { ...sticky, _id: pendingId<"retroStickies">(sticky.clientId), authorId: by.viewerId, text: text.value },
+    { ...sticky, _id: optimisticId<"retroStickies">(sticky.clientId), authorId: by.viewerId, text: text.value },
     {
       retro: by.retro,
       viewerId: by.viewerId,
@@ -202,7 +190,7 @@ export function applyNewActionItem(
   return [
     ...items,
     {
-      _id: pendingId<"retroActionItems">(item.key),
+      _id: optimisticId<"retroActionItems">(item.key),
       text: text.value,
       done: false,
       ...ownedBy(item.ownerId, nameIn(members)),

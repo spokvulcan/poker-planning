@@ -5,6 +5,7 @@ import type { RoomUserData } from "@/convex/model/memberships";
 import type { MemberRole, PokerPermissionCategory, ResolvedDecision } from "@/convex/permissions";
 import type { Phase } from "@/convex/phase";
 import type { TimerState } from "@/convex/timerState";
+import type { CanvasActions } from "./hooks/useCanvasActions";
 
 // Demo mode constants
 export const DEMO_VIEWER_ID = "demo-viewer" as const;
@@ -14,20 +15,15 @@ export const DEMO_VIEWER_ID = "demo-viewer" as const;
  * object that rides in each node's data, as on the retro's board: no node gets
  * a handler of its own, so a node nothing changed keeps its object through the
  * whiteboard's merge and its memo holds. The board's adapter builds it over
- * the canvas writes.
+ * the canvas writes, adding opening the issues; its `deleteNote` takes an
+ * empty note off at once, and asks first when the note has words in it.
  */
-export interface PokerBoardActions {
-  reveal: () => void;
-  reset: () => void;
-  toggleAutoComplete: () => void;
-  cancelAutoReveal: () => void;
-  selectCard: (cardLabel: string) => void;
+export type PokerBoardActions = Pick<
+  CanvasActions,
+  "reveal" | "reset" | "toggleAutoComplete" | "cancelAutoReveal" | "selectCard" | "updateNoteContent" | "deleteNote"
+> & {
   openIssues: () => void;
-  /** Resolves to whether the note's text landed, for the field to keep it until it has. */
-  updateNoteContent: (nodeId: string, content: string) => Promise<boolean>;
-  /** Takes an empty note off at once, and asks first when it has words in it. */
-  deleteNote: (nodeId: string) => void;
-}
+};
 
 // Node data types
 export type PlayerNodeData = {
