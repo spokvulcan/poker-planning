@@ -7,32 +7,46 @@ import {
   stepAllows,
   stepChange,
   stepped,
+  stepShows,
   stickyActAllowed,
   stickyEditDecision,
   walk,
   type StepAct,
+  type StepShows,
 } from "./retroSteps";
 
-// What each step allows and what moving between steps does: the one table
-// the model's refusals and the board's controls both read.
+// What each step allows and shows, and what moving between steps does: the
+// one table the model, the board read and the board's controls all read.
 
 const STEPS: RetroStep[] = ["write", "vote", "discuss", "done"];
 
-describe("stepAllows", () => {
-  // Every act in every step: the rules of ADR-0026 as one table.
-  const table: Record<StepAct, Record<RetroStep, boolean>> = {
+describe("stepAllows and stepShows", () => {
+  // Every act and everything shown, in every step: the rules of ADR-0026 as
+  // one table. An act row says whether the step lets it happen at all; a
+  // "shows" row, whether everyone's board shows it.
+  const table: Record<StepAct | `shows ${keyof StepShows}`, Record<RetroStep, boolean>> = {
     editOthers: { write: false, vote: true, discuss: true, done: true },
     stackOthers: { write: false, vote: true, discuss: true, done: true },
     unstackOthers: { write: false, vote: true, discuss: true, done: true },
     vote: { write: false, vote: true, discuss: false, done: false },
     spotlight: { write: false, vote: true, discuss: true, done: true },
     walk: { write: false, vote: false, discuss: true, done: false },
+    "shows faceDown": { write: true, vote: false, discuss: false, done: false },
+    "shows totals": { write: false, vote: false, discuss: true, done: true },
+    "shows spotlight": { write: false, vote: false, discuss: true, done: true },
   };
 
-  for (const [act, byStep] of Object.entries(table) as [StepAct, Record<RetroStep, boolean>][]) {
+  for (const [row, byStep] of Object.entries(table) as [keyof typeof table, Record<RetroStep, boolean>][]) {
+    const shown = row.startsWith("shows ") ? (row.slice("shows ".length) as keyof StepShows) : undefined;
     for (const step of STEPS) {
-      it(`${byStep[step] ? "allows" : "refuses"} ${act} in ${step}`, () => {
-        const decision = stepAllows(step, act);
+      if (shown) {
+        it(`${byStep[step] ? "shows" : "doesn't show"} ${shown} in ${step}`, () => {
+          expect(stepShows(step)[shown]).toBe(byStep[step]);
+        });
+        continue;
+      }
+      it(`${byStep[step] ? "allows" : "refuses"} ${row} in ${step}`, () => {
+        const decision = stepAllows(step, row as StepAct);
         expect(decision.allowed).toBe(byStep[step]);
         if (!decision.allowed) {
           expect(decision.code).toBe("stage");
@@ -95,13 +109,16 @@ describe("stepChange", () => {
   it("starts the discussion on its first topic when entering it from before", () => {
     expect(stepChange("vote", "discuss")!.spotlight).toBe("first");
     expect(stepChange("write", "discuss")!.spotlight).toBe("first");
-    expect(stepChange("done", "discuss")!.spotlight).toBe("keep");
-    expect(stepChange("discuss", "done")!.spotlight).toBe("keep");
   });
 
-  it("takes the spotlight off when going back to Write or Vote", () => {
+  it("back from Done, takes the discussion to whatever was put in the spotlight there", () => {
+    expect(stepChange("done", "discuss")!.spotlight).toBe("keep");
+  });
+
+  it("takes the spotlight off when going back to Write or Vote, and when the retro is finished", () => {
     expect(stepChange("discuss", "vote")!.spotlight).toBe("clear");
     expect(stepChange("done", "write")!.spotlight).toBe("clear");
+    expect(stepChange("discuss", "done")!.spotlight).toBe("clear");
   });
 });
 
@@ -135,6 +152,14 @@ describe("spotlightStepChange", () => {
 
   it("would be a reveal from Write, so no path can leave Write without one", () => {
     expect(spotlightStepChange("write")).toMatchObject({ to: "discuss", reveal: true });
+  });
+
+  it("leaves the retro where the spotlight is drawn, from every step that takes it", () => {
+    const taking = STEPS.filter((step) => stepAllows(step, "spotlight").allowed);
+    expect(taking).toEqual(["vote", "discuss", "done"]);
+    for (const from of taking) {
+      expect(stepShows(spotlightStepChange(from)?.to ?? from).spotlight).toBe(true);
+    }
   });
 });
 

@@ -147,7 +147,7 @@ The `discuss` step's walk through the **topics** that got votes, most votes firs
 _Avoid_: agenda, discussion walk (the team retro's snapshotted walk), coverage
 
 **Spotlight**:
-The one **topic** the **discussion** is on. A person who may run the retro moves it next or back along the order, or puts any revealed topic in it, voted for or not; everyone's view follows it. It stays on its topic when the topic is stacked onto another, and goes out when the topic leaves the board.
+The one **topic** the **discussion** is on. A person who may run the retro moves it next or back along the order, or puts any revealed topic in it, voted for or not; everyone's view follows it. Putting a topic in it works in `done` too, and keeps the retro done. It stays on its topic when the topic is stacked onto another, and goes out when the topic leaves the board or the retro moves to `write`, `vote` or `done`.
 _Avoid_: focus (fine in code), current topic, raise (the team retro's)
 
 **Action item**:

@@ -1,6 +1,7 @@
 import { format } from "date-fns";
 import type { RetroColumn, RetroStep } from "@/convex/retroTemplates";
 import type { ActionItemView, StickyView } from "@/convex/model/retro";
+import { stepShows } from "@/convex/retroSteps";
 
 export interface RetroSummaryInput {
   name: string;
@@ -55,9 +56,9 @@ export function buildRetroSummary(input: RetroSummaryInput): string {
     lines.push("");
   }
 
-  const discussed = input.step === "discuss" || input.step === "done";
+  // The topics' order comes from their totals, so it shows with them.
   const topics = input.topics.map((id) => byId.get(id)).filter((s): s is StickyView => !!s);
-  if (discussed && topics.length > 0) {
+  if (stepShows(input.step).totals && topics.length > 0) {
     lines.push("## Top topics", "");
     topics.forEach((topic, i) => {
       const votes = topic.votes ?? 0;
