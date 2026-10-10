@@ -100,7 +100,7 @@ function RetroCanvasInner({ roomData, currentUserId }: RetroCanvasProps): ReactE
   const votesCast = useQuery(api.retro.votesCast, retro.step === "vote" ? { roomId } : "skip");
   const items = useQuery(api.retro.actionItems, { roomId });
   const canvasNodes = useQuery(api.canvas.getCanvasNodes, { roomId });
-  const m = useRetroMutations(roomId);
+  const m = useRetroMutations(roomId, currentUserId);
 
   const { draft, ...drafting } = useStickyDraft((sticky) =>
     runAct(m.addSticky({ roomId, ...sticky }), "That sticky didn't stick. Try again.")
