@@ -141,7 +141,7 @@ describe("useCanvasActions — identity stability", () => {
 });
 
 describe("useCanvasActions — selectCard value handling", () => {
-  it("sends the fractional value for a non-integer card (parseFloat, not parseInt)", async () => {
+  it("picks a card by its label alone: the server reads its value from the deck", async () => {
     const setSelectedCardValue = vi.fn();
     const { result } = renderHook(() =>
       useCanvasActions({
@@ -155,9 +155,10 @@ describe("useCanvasActions — selectCard value handling", () => {
     await act(async () => result.current.selectCard("0.5"));
 
     expect(writes.calls).toHaveLength(1);
-    expect(writes.calls[0].args).toMatchObject({
+    expect(writes.calls[0].args).toEqual({
+      roomId: ROOM_ID,
+      userId: USER_ID,
       cardLabel: "0.5",
-      cardValue: 0.5,
     });
   });
 
