@@ -294,7 +294,7 @@ describe("the nodes' controls", () => {
     await act(async () => fireEvent.click(screen.getByRole("button", { name: "Vote 5" })));
 
     expect(server.writes).toEqual([
-      { name: "votes:pickCard", args: { roomId: ROOM_ID, userId: ME, cardLabel: "5", cardValue: 5 } },
+      { name: "votes:pickCard", args: { roomId: ROOM_ID, userId: ME, cardLabel: "5" } },
     ]);
   });
 
