@@ -115,6 +115,8 @@ Every Convex mutation enforces authorization with a guard from `convex/model/aut
 
 `requireCan` and `requireCanForUser` share one IO assembly, so both reach the same decision and throw the same messages. `resolveRoomAction` is that assembly returning the decision instead of throwing, for a caller whose denial depends on the target (someone else's retro sticky).
 
+A guard's refusal is a coded refusal (`refusal()` in `convex/model/refusal.ts`), a `ConvexError` whose message the browser shows as written, because production redacts a plain Error's message (ADR-0031): a denied decision is `forbidden` with the resolved decision's message, a caller outside the room is `forbidden`, and a category from the other ceremony is `missing`. Not being signed in, a missing room or target, and the acting-user mismatch still throw plain Errors: they are caller errors, not refusals.
+
 ### Which guard to use
 
 - **Room-scoped mutations that take a `userId`** (votes, canvas, timer, presence, `users.edit`, `users.leave`): `requireActingUser`. It is the one place the authenticated + member + acting-as-`userId` check lives; never rebuild it from `requireRoomMember` and a `user._id` comparison.

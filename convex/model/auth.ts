@@ -12,6 +12,7 @@ import {
 } from "../permissions";
 import { isRoomOwnerAbsent } from "./permissions";
 import { getMembership } from "./memberships";
+import { refusal } from "./refusal";
 import { NOT_THIS_CEREMONY } from "../ceremony";
 
 /**
@@ -111,7 +112,7 @@ export async function requireRoomMember(
     )
     .first();
   if (!membership) {
-    throw new Error("Not a member of this room");
+    throw refusal("forbidden", "Not a member of this room");
   }
   const room = await ctx.db.get("rooms", roomId);
   if (!room) {
@@ -250,7 +251,7 @@ export async function requireCanForUser(
     )
     .first();
   if (!membership) {
-    throw new Error("Not a member of this room");
+    throw refusal("forbidden", "Not a member of this room");
   }
   const room = await ctx.db.get("rooms", roomId);
   if (!room) {
@@ -262,8 +263,9 @@ export async function requireCanForUser(
 /**
  * The guard's shared IO assembly, given the actor's user, membership and room
  * from either authentication mode. Resolves the action through
- * `resolveRoomAction` and throws the resolved decision's message on denial.
- * Returns the loaded bundle.
+ * `resolveRoomAction` and refuses with the resolved decision's message on
+ * denial, a coded refusal the browser can show (ADR-0031). Returns the
+ * loaded bundle.
  */
 async function guardRoomAction(
   ctx: QueryCtx | MutationCtx,
@@ -281,7 +283,7 @@ async function guardRoomAction(
     targetUserId
   );
   if (!decision.allowed) {
-    throw new Error(decision.message);
+    throw refusal("forbidden", decision.message);
   }
   return { user, membership, room, target };
 }
@@ -313,7 +315,7 @@ export async function resolveRoomAction(
     // A category from the other ceremony has no level here (ADR-0013).
     const level = categoryLevel(effective, spec.category);
     if (level === undefined) {
-      throw new Error(NOT_THIS_CEREMONY);
+      throw refusal("missing", NOT_THIS_CEREMONY);
     }
     action = { kind: "category", category: spec.category, level };
   } else {
