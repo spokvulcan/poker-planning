@@ -7,32 +7,46 @@ import {
   stepAllows,
   stepChange,
   stepped,
+  stepShows,
   stickyActAllowed,
   stickyEditDecision,
   walk,
   type StepAct,
+  type StepShows,
 } from "./retroSteps";
 
-// What each step allows and what moving between steps does: the one table
-// the model's refusals and the board's controls both read.
+// What each step allows and shows, and what moving between steps does: the
+// one table the model, the board read and the board's controls all read.
 
 const STEPS: RetroStep[] = ["write", "vote", "discuss", "done"];
 
-describe("stepAllows", () => {
-  // Every act in every step: the rules of ADR-0026 as one table.
-  const table: Record<StepAct, Record<RetroStep, boolean>> = {
+describe("stepAllows and stepShows", () => {
+  // Every act and everything shown, in every step: the rules of ADR-0026 as
+  // one table. An act row says whether the step lets it happen at all; a
+  // "shows" row, whether everyone's board shows it.
+  const table: Record<StepAct | `shows ${keyof StepShows}`, Record<RetroStep, boolean>> = {
     editOthers: { write: false, vote: true, discuss: true, done: true },
     stackOthers: { write: false, vote: true, discuss: true, done: true },
     unstackOthers: { write: false, vote: true, discuss: true, done: true },
     vote: { write: false, vote: true, discuss: false, done: false },
     spotlight: { write: false, vote: true, discuss: true, done: true },
     walk: { write: false, vote: false, discuss: true, done: false },
+    "shows faceDown": { write: true, vote: false, discuss: false, done: false },
+    "shows totals": { write: false, vote: false, discuss: true, done: true },
+    "shows spotlight": { write: false, vote: false, discuss: true, done: false },
   };
 
-  for (const [act, byStep] of Object.entries(table) as [StepAct, Record<RetroStep, boolean>][]) {
+  for (const [row, byStep] of Object.entries(table) as [keyof typeof table, Record<RetroStep, boolean>][]) {
+    const shown = row.startsWith("shows ") ? (row.slice("shows ".length) as keyof StepShows) : undefined;
     for (const step of STEPS) {
-      it(`${byStep[step] ? "allows" : "refuses"} ${act} in ${step}`, () => {
-        const decision = stepAllows(step, act);
+      if (shown) {
+        it(`${byStep[step] ? "shows" : "doesn't show"} ${shown} in ${step}`, () => {
+          expect(stepShows(step)[shown]).toBe(byStep[step]);
+        });
+        continue;
+      }
+      it(`${byStep[step] ? "allows" : "refuses"} ${row} in ${step}`, () => {
+        const decision = stepAllows(step, row as StepAct);
         expect(decision.allowed).toBe(byStep[step]);
         if (!decision.allowed) {
           expect(decision.code).toBe("stage");
