@@ -15,6 +15,7 @@ import {
   COLUMN_TITLE,
   columnsFromTemplate,
   DEFAULT_VOTES_PER_PERSON,
+  GIF_TITLE,
   MAX_ACTIONS_PER_ROOM,
   MAX_COLUMNS,
   MAX_STICKIES_PER_ROOM,
@@ -475,11 +476,12 @@ function validateGif(gif: Gif): Gif {
   const url = normalizeGifUrl(gif.url);
   if (!url) throw refusal("forbidden", "That GIF link can't be used. Try GIPHY, Tenor or Imgur.");
   const size = (n: number) => (Number.isFinite(n) && n > 0 ? Math.min(Math.round(n), 2000) : 200);
+  const title = GIF_TITLE.fit(gif.title ?? "");
   return {
     url,
     width: size(gif.width),
     height: size(gif.height),
-    ...(gif.title ? { title: gif.title.slice(0, 140) } : {}),
+    ...(title ? { title } : {}),
   };
 }
 

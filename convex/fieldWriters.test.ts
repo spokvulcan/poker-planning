@@ -9,7 +9,7 @@ import { type T, seedUser as seedNamedUser } from "./analytics.seeds";
 import { as, join, seedUser } from "./people.seeds";
 import type { FieldRule } from "./fieldRule";
 import { DISCUSSION_NOTE, ISSUE_TITLE, PERSON_NAME, ROOM_NAME } from "./constants";
-import { ACTION_ITEM_TEXT, COLUMN_EMOJI, COLUMN_TITLE, STICKY_TEXT } from "./retroTemplates";
+import { ACTION_ITEM_TEXT, COLUMN_EMOJI, COLUMN_TITLE, GIF_TITLE, STICKY_TEXT } from "./retroTemplates";
 
 // Every writer of a text field keeps it by that field's rule (fieldRule.ts;
 // the rules themselves are tested in fieldRules.test.ts): what a person
@@ -192,6 +192,26 @@ const userRow = (t: T, authUserId: string) =>
 
 /** A Google display name ten characters past the person-name limit. */
 const LONG_GOOGLE_NAME = "  Maximiliana Alexandra Konstantinopoulou-Vanderbilt the Third ";
+
+describe("a GIF's title, as its source names it", () => {
+  it("is fitted to the GIF title rule on the sticky it's put on", async () => {
+    const t = withComponents(convexTest(schema, modules));
+    const { retroId } = await seedRooms(t);
+    const gif = { url: "https://media.giphy.com/media/abc/giphy.gif", width: 480, height: 270 };
+
+    const stickyId = await as(t, "owner").mutation(api.retro.addSticky, {
+      roomId: retroId,
+      clientId: "sticky-gif",
+      columnId: "c1",
+      text: "",
+      gif: { ...gif, title: `  ${"x".repeat(GIF_TITLE.maxLength + 10)}` },
+      position: { x: 0, y: 300 },
+    });
+
+    const sticky = await t.run((ctx) => ctx.db.get("retroStickies", stickyId));
+    expect(sticky?.gif?.title).toBe("x".repeat(GIF_TITLE.maxLength));
+  });
+});
 
 describe("a name a sign-in provider gives", () => {
   it("is fitted to the person-name rule when the account is made", async () => {

@@ -137,6 +137,11 @@ export const STICKY_TEXT = fieldRule({
   maxLength: MAX_STICKY_TEXT_LENGTH,
   tooLong: `Keep stickies to ${MAX_STICKY_TEXT_LENGTH} characters.`,
 });
+/** A sticky's GIF's title, as its source names it: from outside, so fitted, never refused. */
+export const GIF_TITLE = fieldRule({
+  maxLength: 140,
+  tooLong: "Keep GIF titles to 140 characters.",
+});
 export const MAX_STICKIES_PER_ROOM = 400;
 export const MAX_COLUMNS = 6;
 export const MAX_COLUMN_TITLE_LENGTH = 40;
