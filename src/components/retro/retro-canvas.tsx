@@ -28,12 +28,11 @@ import { StickyNode } from "./nodes/sticky-node";
 import { ActionsNode } from "./nodes/actions-node";
 import { RetroSettingsPanel } from "./retro-settings-panel";
 import { buildRetroEdges, buildRetroNodes } from "./build-retro-nodes";
-import { topicOrder } from "./board-view";
+import { isOptimistic, topicOrder } from "./board-view";
 import { buildRetroSummary } from "./retro-summary";
 import { freshHeights, type MeasuredSticky } from "./sticky-heights";
 import { useRetroMutations } from "./use-retro-mutations";
 import { useStickyDraft } from "./use-sticky-draft";
-import { isOptimistic } from "./optimistic";
 import type { RetroBoardActions, RetroFlowNode, StickyFlowNode } from "./types";
 
 // Outside the component so React Flow sees a stable object.
