@@ -8,8 +8,8 @@ import {
   stepChange,
   stepped,
   stepShows,
-  stickyActAllowed,
   stickyEditDecision,
+  topicActAllowed,
   walk,
   type StepAct,
   type StepShows,
@@ -57,20 +57,56 @@ describe("stepAllows and stepShows", () => {
   }
 });
 
-describe("stickyActAllowed", () => {
-  it("lets a person change, stack and unstack their own stickies in every step", () => {
+describe("topicActAllowed", () => {
+  // Ann's board: her stack A (with Bob's B under it, built once revealed) and
+  // her loose C; Bob's stack D with Ann's E under it; Ann's loose F and G.
+  const stickies = [
+    { _id: "A", createdAt: 1, position: { x: 0, y: 0 }, author: "ann" },
+    { _id: "B", createdAt: 2, position: { x: 0, y: 0 }, author: "bob", stackId: "A" },
+    { _id: "C", createdAt: 3, position: { x: 0, y: 0 }, author: "ann" },
+    { _id: "D", createdAt: 4, position: { x: 0, y: 0 }, author: "bob" },
+    { _id: "E", createdAt: 5, position: { x: 0, y: 0 }, author: "ann", stackId: "D" },
+    { _id: "F", createdAt: 6, position: { x: 0, y: 0 }, author: "ann" },
+    { _id: "G", createdAt: 7, position: { x: 0, y: 0 }, author: "ann", stackId: "F" },
+  ];
+  const annsOwn = (s: { author: string }) => s.author === "ann";
+  const stackAct = (stickyId: string, ontoId: string) => ({ kind: "stack", stickyId, ontoId }) as const;
+  const unstackAct = (stickyId: string) => ({ kind: "unstack", stickyId }) as const;
+  const allowed = (step: RetroStep, act: Parameters<typeof topicActAllowed>[1]) =>
+    topicActAllowed(step, act, stickies, annsOwn);
+
+  it("lets a person stack and unstack their own stickies in every step", () => {
     for (const step of STEPS) {
-      for (const act of ["edit", "stack", "unstack"] as const) {
-        expect(stickyActAllowed(step, act, true).allowed).toBe(true);
+      expect(allowed(step, stackAct("C", "F")).allowed).toBe(true);
+      expect(allowed(step, stackAct("F", "C")).allowed).toBe(true);
+      expect(allowed(step, unstackAct("G")).allowed).toBe(true);
+      // Her own sticky off Bob's stack: it touches nothing of his.
+      expect(allowed(step, unstackAct("E")).allowed).toBe(true);
+    }
+  });
+
+  it("while writing, judges a drop by every sticky it groups, not only the two it names", () => {
+    // A brings Bob's B along onto her own C.
+    expect(allowed("write", stackAct("A", "C"))).toMatchObject({ allowed: false, code: "stage" });
+    // Her C joins the topic her E sits in, which Bob's D tops.
+    expect(allowed("write", stackAct("C", "E"))).toMatchObject({ allowed: false, code: "stage" });
+    // Her C joins her own A, whose stack holds Bob's B.
+    expect(allowed("write", stackAct("C", "A"))).toMatchObject({ allowed: false, code: "stage" });
+    // B alone is Bob's.
+    expect(allowed("write", stackAct("B", "C"))).toMatchObject({ allowed: false, code: "stage" });
+    expect(allowed("write", unstackAct("B"))).toMatchObject({ allowed: false, code: "stage" });
+  });
+
+  it("lets anyone group and ungroup anyone's stickies once they're revealed", () => {
+    for (const step of ["vote", "discuss", "done"] as const) {
+      for (const act of [stackAct("A", "C"), stackAct("C", "E"), stackAct("B", "C"), unstackAct("B")]) {
+        expect(allowed(step, act).allowed).toBe(true);
       }
     }
   });
 
-  it("keeps everyone off stickies they can't read yet", () => {
-    for (const act of ["edit", "stack", "unstack"] as const) {
-      expect(stickyActAllowed("write", act, false)).toMatchObject({ allowed: false, code: "stage" });
-      expect(stickyActAllowed("vote", act, false).allowed).toBe(true);
-    }
+  it("allows a drop that groups nothing new", () => {
+    expect(allowed("write", stackAct("B", "A")).allowed).toBe(true);
   });
 });
 

@@ -11,7 +11,7 @@ import {
   stepAllows,
   stepChange,
   stepped,
-  stickyActAllowed,
+  topicActAllowed,
   withSpotlight,
 } from "@/convex/retroSteps";
 import { useMoveCanvasNodes } from "@/components/whiteboard/use-move-canvas-nodes";
@@ -102,7 +102,8 @@ export function useRetroMutations(roomId: Id<"rooms">, viewerId: Id<"users">) {
     const sticky = board?.stickies.find((s) => s._id === args.stickyId);
     const onto = board?.stickies.find((s) => s._id === args.ontoId);
     if (!board || !retro || !sticky || !onto) return;
-    if (!stickyActAllowed(retro.step, "stack", sticky.mine && onto.mine).allowed) return;
+    const act = { kind: "stack", stickyId: sticky._id, ontoId: onto._id } as const;
+    if (!topicActAllowed(retro.step, act, board.stickies, (s) => s.mine).allowed) return;
     changeTopics(store, Topics.stack(board.stickies, args.stickyId, args.ontoId));
   });
 
@@ -111,7 +112,7 @@ export function useRetroMutations(roomId: Id<"rooms">, viewerId: Id<"users">) {
     const retro = retroOf(store);
     const sticky = board?.stickies.find((s) => s._id === args.stickyId);
     if (!board || !retro || !sticky) return;
-    if (!stickyActAllowed(retro.step, "unstack", sticky.mine).allowed) return;
+    if (!topicActAllowed(retro.step, { kind: "unstack", stickyId: sticky._id }, [sticky], (s) => s.mine).allowed) return;
     changeTopics(store, Topics.unstack(board.stickies, args.stickyId, args.position));
   });
 

@@ -107,6 +107,21 @@ export function stack<S extends string>(
 }
 
 /**
+ * Every sticky a drop of one sticky on another groups: what `stack` moves
+ * (the dragged sticky, and its whole stack when it's a root) and every sticky
+ * of the topic it joins, root and members. Empty when the drop groups nothing
+ * new. `stickies` must hold both topics whole.
+ */
+export function grouped<S extends string, T extends TopicSticky<S>>(stickies: readonly T[], stickyId: S, ontoId: S): T[] {
+  const change = stack(stickies, stickyId, ontoId);
+  if (!change) return [];
+  const byId = indexOf(stickies);
+  const target = rootOf(byId.get(ontoId)!);
+  const ids = new Set<string>([...change.stickies.keys(), target, ...membersOf(stickies, target).map((s) => s._id)]);
+  return [...ids].flatMap((id) => byId.get(id) ?? []);
+}
+
+/**
  * Taking a sticky off its stack and putting it down at `position`. It starts
  * a topic of its own with no votes: the votes stay with the stack. Null for a
  * sticky that isn't in a stack.

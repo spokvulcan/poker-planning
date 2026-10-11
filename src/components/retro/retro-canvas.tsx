@@ -10,7 +10,7 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { RoomWithRelatedData } from "@/convex/model/rooms";
 import type { RetroStep } from "@/convex/retroTemplates";
-import { stepShows, stickyActAllowed } from "@/convex/retroSteps";
+import { stepShows, topicActAllowed } from "@/convex/retroSteps";
 import { nextStickyPosition, PAD_WIDTH, padNodeId, STICKY_MIN_HEIGHT, STICKY_WIDTH } from "@/convex/retroLayout";
 import { CanvasNavigation } from "@/components/room/canvas-navigation";
 import { TimerNode } from "@/components/room/nodes/TimerNode";
@@ -230,7 +230,12 @@ function RetroCanvasInner({ roomData, currentUserId }: RetroCanvasProps): ReactE
       !!dragged.data.sticky &&
       !!target.data.sticky &&
       !isOptimistic(target.data.sticky._id) &&
-      stickyActAllowed(retro.step, "stack", dragged.data.sticky.mine && target.data.sticky.mine).allowed,
+      topicActAllowed(
+        retro.step,
+        { kind: "stack", stickyId: dragged.data.sticky._id, ontoId: target.data.sticky._id },
+        board?.stickies ?? [],
+        (s) => s.mine
+      ).allowed,
     onDrop: ({ nodes, target }: WhiteboardDrop<RetroFlowNode>) => {
       const [only] = nodes;
       if (target?.type === "sticky" && target.data.sticky && only?.type === "sticky" && only.data.sticky) {

@@ -38,8 +38,8 @@ import {
   stepAllows,
   stepChange,
   stepShows,
-  stickyActAllowed,
   stickyEditDecision,
+  topicActAllowed,
   walk,
   withSpotlight,
   type RetroDecision,
@@ -730,8 +730,10 @@ export async function deleteSticky(
 
 /**
  * Drops a sticky on another: its topic joins the other's, and a person who
- * voted for both keeps one vote (ADR-0028). While writing, a person stacks
- * only their own stickies: nobody groups what they cannot read.
+ * voted for both keeps one vote (ADR-0028). While writing, a drop may group
+ * only the person's own stickies, the stack it brings and the topic it joins
+ * included: nobody groups what they cannot read. The step rule judges the
+ * topics read here, so it sees every sticky the drop would group.
  */
 export async function stackSticky(
   ctx: MutationCtx,
@@ -744,8 +746,9 @@ export async function stackSticky(
   const onto = await stickyInRoom(ctx, room._id, ontoId);
   // Already one topic: nothing to refuse, or to read.
   if (Topics.rootOf(sticky) === Topics.rootOf(onto)) return;
-  requireAllowed(stickyActAllowed(retro.step, "stack", sticky.authorId === user._id && onto.authorId === user._id));
   const around = await topicsAround(ctx, room._id, [sticky, onto]);
+  const act = { kind: "stack", stickyId: sticky._id, ontoId: onto._id } as const;
+  requireAllowed(topicActAllowed(retro.step, act, around, (s) => s.authorId === user._id));
   const change = Topics.stack(around, sticky._id, onto._id);
   if (change) await applyTopicChange(ctx, room, retro, around, change);
 }
@@ -764,7 +767,8 @@ export async function unstackSticky(
   const retro = retroOf(room);
   // Not in a stack: nothing to refuse, or to read.
   if (sticky.stackId === undefined) return;
-  requireAllowed(stickyActAllowed(retro.step, "unstack", sticky.authorId === user._id));
+  const act = { kind: "unstack", stickyId: sticky._id } as const;
+  requireAllowed(topicActAllowed(retro.step, act, [sticky], (s) => s.authorId === user._id));
   const around = await topicsAround(ctx, room._id, [sticky]);
   const change = Topics.unstack(around, sticky._id, Canvas.validPosition(position));
   if (change) await applyTopicChange(ctx, room, retro, around, change);

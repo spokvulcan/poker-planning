@@ -4,6 +4,7 @@ import {
   followVotes,
   followVotesInView,
   foldVotes,
+  grouped,
   heirOf,
   patched,
   remove,
@@ -45,6 +46,28 @@ function votesAfter(stickies: TopicSticky[], votes: TopicVote[], change: TopicCh
 function topicsOf(votes: TopicVote[]): string[] {
   return votes.map((v) => `${v.voterId}:${v.stickyId}`).sort();
 }
+
+describe("grouped", () => {
+  // a tops b; c is loose; d tops e.
+  const board = [sticky("a", 1), sticky("b", 2, "a"), sticky("c", 3), sticky("d", 4), sticky("e", 5, "d")];
+  const ids = (stickyId: string, ontoId: string) => grouped(board, stickyId, ontoId).map((s) => s._id).sort();
+
+  it("holds what a drop moves and the whole topic it joins", () => {
+    // A root brings its stack; c's topic is c alone.
+    expect(ids("a", "c")).toEqual(["a", "b", "c"]);
+    // A loose sticky joins d's whole stack, dropped on its top or on a member.
+    expect(ids("c", "d")).toEqual(["c", "d", "e"]);
+    expect(ids("c", "e")).toEqual(["c", "d", "e"]);
+    // A member moves alone, into the other topic.
+    expect(ids("b", "e")).toEqual(["b", "d", "e"]);
+  });
+
+  it("is empty when the drop groups nothing new", () => {
+    expect(ids("b", "a")).toEqual([]);
+    expect(ids("a", "b")).toEqual([]);
+    expect(ids("a", "gone")).toEqual([]);
+  });
+});
 
 describe("rootOf and heirOf", () => {
   it("names a loose sticky's topic by itself, and a stacked one's by its stack's root", () => {

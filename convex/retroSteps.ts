@@ -17,7 +17,7 @@
 
 import type { ResolvedDecision } from "./permissions";
 import type { RetroColumn, RetroStep } from "./retroTemplates";
-import { rootOf, type TopicSticky } from "./retroTopics";
+import { grouped, rootOf, type TopicSticky } from "./retroTopics";
 
 /** Something done on the board that the step may refuse. */
 export type StepAct =
@@ -87,13 +87,33 @@ export function stepShows(step: RetroStep): StepShows {
   return SHOWS[step];
 }
 
+/** An act on the board's topics: a drop of one sticky on another, or one sticky taken off its stack. */
+export type TopicAct<S extends string = string> =
+  | { kind: "stack"; stickyId: S; ontoId: S }
+  | { kind: "unstack"; stickyId: S };
+
 /**
- * Whether a sticky act can happen now: always when every sticky it touches
- * is the actor's own, otherwise only once the step allows touching others'.
+ * Whether a topic act can happen now: always when every sticky it touches is
+ * the actor's own, otherwise only once the step allows touching others'.
+ * Which stickies an act touches is decided here, not by the caller: an
+ * unstack touches the one sticky it takes off, and a drop every sticky it
+ * groups (`grouped`): the dragged one, the stack a root brings along and the
+ * whole topic it joins, so nobody groups what they cannot read. `stickies`
+ * must hold the topics the act touches whole, as the act itself needs them,
+ * and `isMine` says whether a sticky is the actor's.
  */
-export function stickyActAllowed(step: RetroStep, act: "edit" | "stack" | "unstack", mine: boolean): RetroDecision {
-  if (mine) return ALLOWED;
-  return stepAllows(step, act === "edit" ? "editOthers" : act === "stack" ? "stackOthers" : "unstackOthers");
+export function topicActAllowed<S extends string, T extends TopicSticky<S>>(
+  step: RetroStep,
+  act: TopicAct<S>,
+  stickies: readonly T[],
+  isMine: (sticky: T) => boolean
+): RetroDecision {
+  const touched =
+    act.kind === "stack"
+      ? grouped(stickies, act.stickyId, act.ontoId)
+      : stickies.filter((sticky) => sticky._id === act.stickyId);
+  if (touched.every(isMine)) return ALLOWED;
+  return stepAllows(step, act.kind === "stack" ? "stackOthers" : "unstackOthers");
 }
 
 /**
@@ -106,8 +126,9 @@ export function stickyEditDecision(
   mine: boolean,
   cardManagement: ResolvedDecision
 ): RetroDecision {
-  const byStep = stickyActAllowed(step, "edit", mine);
-  if (!byStep.allowed || mine) return byStep;
+  if (mine) return ALLOWED;
+  const byStep = stepAllows(step, "editOthers");
+  if (!byStep.allowed) return byStep;
   return cardManagement.allowed ? ALLOWED : { allowed: false, code: "forbidden", message: cardManagement.message };
 }
 

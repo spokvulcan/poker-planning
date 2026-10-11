@@ -8,8 +8,8 @@ import type { Id } from "@/convex/_generated/dataModel";
 import type { ActionItemView, BoardView, RetroState, StickyView } from "@/convex/model/retro";
 import type { CanvasNode } from "@/convex/model/canvas";
 import type { ResolvedDecision, RetroPermissionCategory } from "@/convex/permissions";
-import type { RetroColumn } from "@/convex/retroTemplates";
-import { stepAllows, stepShows, stickyActAllowed, stickyEditDecision } from "@/convex/retroSteps";
+import type { RetroColumn, RetroStep } from "@/convex/retroTemplates";
+import { stepAllows, stepShows, stickyEditDecision, topicActAllowed } from "@/convex/retroSteps";
 import {
   actionsPosition,
   padNodeId,
@@ -47,6 +47,10 @@ export interface RetroNodesInput {
  * keeps a new node hidden, and a draft's editor couldn't take focus.
  */
 const STICKY_SIZE = { initialWidth: STICKY_WIDTH, initialHeight: STICKY_MIN_HEIGHT };
+
+/** Whether the viewer may take a sticky off its stack in this step: their own always, anyone's once revealed. */
+const canUnstack = (step: RetroStep, member: StickyView): boolean =>
+  topicActAllowed(step, { kind: "unstack", stickyId: member._id }, [member], (s) => s.mine).allowed;
 
 /** A short, readable label for a topic: its words, its GIF's title, or its face. */
 export function topicLabel(sticky: StickyView | undefined): string | undefined {
@@ -160,7 +164,7 @@ export function buildRetroNodes(input: RetroNodesInput): RetroFlowNode[] {
         canEdit,
         members: (membersOf.get(sticky._id) ?? [])
           .sort((a, b) => a.createdAt - b.createdAt)
-          .map((member) => ({ ...member, canUnstack: !pending && stickyActAllowed(step, "unstack", member.mine).allowed })),
+          .map((member) => ({ ...member, canUnstack: !pending && canUnstack(step, member) })),
         columnColors,
         expanded: input.expandedIds.has(sticky._id),
         canVote: canVote && !pending,

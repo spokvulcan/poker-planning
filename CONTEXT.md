@@ -131,7 +131,7 @@ A retro's setting, off by default, that names each revealed **sticky**'s author 
 _Avoid_: anonymous mode, anonymity, attribution (the team retro's stored-or-not promise)
 
 **Stack**:
-**Stickies** grouped by dropping one on another: one level deep, unnamed, filed under the sticky on top, and voted on and discussed as one **topic**. Unstacking puts a sticky back on the board as a topic of its own, with no votes: they stay with the stack. While the retro is in `write`, a person can stack and unstack only their own stickies.
+**Stickies** grouped by dropping one on another: one level deep, unnamed, filed under the sticky on top, and voted on and discussed as one **topic**. Unstacking puts a sticky back on the board as a topic of its own, with no votes: they stay with the stack. While the retro is in `write`, a person stacks only their own stickies, the stack one brings and the whole topic it joins included, and unstacks only their own: nobody groups what they cannot read.
 _Avoid_: cluster, group, theme (the team retro's clusters had names; a stack has none), pile
 
 **Topic**:
