@@ -28,21 +28,25 @@ export interface VoterAlignment {
 /**
  * Computes each voter's alignment with the consensus. Special cards and
  * voteless rows are excluded (they carry no estimate to align). `deltaSteps`
- * is the scale-index distance from consensus — only on a numeric deck, where
- * both the vote and the consensus are cards it deals.
+ * is the distance from consensus in steps along the deck's numbers, lowest
+ * to highest — only on a numeric deck, where both the vote and the consensus
+ * are cards it deals.
  */
 export function computeVoterAlignment(
   votes: AlignmentVote[],
   consensusLabel: string | null,
   deck: Deck
 ): VoterAlignment[] {
-  // Scale index map for deltaSteps; special cards hold no scale position.
-  const scaleIndexMap = new Map<string, number>();
-  deck.cards.forEach((card, idx) => {
-    if (!isSpecialCard(card)) {
-      scaleIndexMap.set(card, idx);
-    }
-  });
+  // Each estimating card's step along the deck, from its lowest number to its
+  // highest, whatever order the deck lays them out in: a creator's own deck
+  // can list its numbers in any order, and put `?` among them. Special cards
+  // hold no step.
+  const scaleIndexMap = new Map(
+    deck.cards
+      .filter((card) => !isSpecialCard(card) && cardNumericValue(card) !== undefined)
+      .sort((a, b) => cardNumericValue(a)! - cardNumericValue(b)!)
+      .map((card, step) => [card, step] as const)
+  );
   const numericScale = deck.isNumeric;
 
   const consensusIndex = consensusLabel

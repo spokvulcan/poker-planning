@@ -56,6 +56,7 @@ describe("a creator's pick — the one reading of what a new room deals and stor
     ["words", ["S", "M", "L"]],
     ["numbers and a word", ["1", "2", "Spike"]],
     ["numbers and a literal Infinity", ["1", "2", "Infinity"]],
+    ["numbers with something after them", ["1d", "2d", "3d"]],
     ["special cards alone, where nothing reads as a number", ["?", "☕", "∞"]],
   ])("stores a deck of %s as not numeric", (_case, cards) => {
     expect(storedNumeric(cards)).toBe(false);
@@ -164,5 +165,13 @@ describe("the deck — what a room's cards mean", () => {
     // A custom card or a typed final estimate; parsing alone would read Infinity.
     expect(cardNumericValue("Infinity")).toBeUndefined();
     expect(cardNumericValue("-Infinity")).toBeUndefined();
+  });
+
+  it("reads only a plain number: nothing is guessed from a number with something after it", () => {
+    expect(cardNumericValue(" 8 ")).toBe(8);
+    expect(cardNumericValue(".5")).toBe(0.5);
+    for (const label of ["2d", "5 points", "1,5", "0x10", "1e3", "3 days"]) {
+      expect(cardNumericValue(label)).toBeUndefined();
+    }
   });
 });

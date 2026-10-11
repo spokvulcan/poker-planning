@@ -112,15 +112,22 @@ export function isSpecialCard(label: string): boolean {
   return SPECIAL_CARDS.includes(label);
 }
 
+/** A plain decimal number, and nothing else: "5", "0.5", "-1", ".5". */
+const PLAIN_NUMBER = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/;
+
 /**
  * What a label reads as a number: the ONE numeric reading. It needs no deck,
- * so analytics shares it for final estimates, which can be free text. A
- * special card, a word or a non-finite number such as "Infinity" reads as
- * none: `undefined`, never NaN, so no stat can store NaN or an infinity.
+ * so analytics shares it for final estimates, which can be free text. Only a
+ * label that is a plain number reads as one: a special card, a word, a
+ * number with something after it ("2d", "5 points", "1,5") or a non-finite
+ * one such as "Infinity" reads as none, `undefined`, never NaN, so no stat
+ * guesses at a number or stores NaN or an infinity, and a custom deck of
+ * "1d, 2d, 3d" isn't taken for a deck of numbers.
  */
 export function cardNumericValue(label: string): number | undefined {
-  if (isSpecialCard(label)) return undefined;
-  const value = Number.parseFloat(label);
+  const text = label.trim();
+  if (isSpecialCard(text) || !PLAIN_NUMBER.test(text)) return undefined;
+  const value = Number(text);
   return Number.isFinite(value) ? value : undefined;
 }
 
