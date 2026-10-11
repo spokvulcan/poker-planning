@@ -10,7 +10,7 @@ AgileKit is an open-source online planning poker tool for Scrum teams. The proje
 
 - **Frontend**: Next.js 16 (App Router), React 19, TypeScript
 - **Backend**: Convex (serverless TypeScript functions with real-time reactivity)
-- **Auth**: BetterAuth with anonymous sessions (see [docs/authentication.md](docs/authentication.md))
+- **Auth**: BetterAuth with anonymous sessions (see [docs/authentication.md](docs/authentication.md)). In the browser a page asks the viewer (`useAuth().viewer`) who is looking, reads as them through `useCallerQuery`, and takes what they are offered of their account (places, Sign in, the way back) from `src/components/auth/account.ts`
 - **Styling**: read [docs/design-tokens.md](docs/design-tokens.md) before styling UI. shadcn/ui, Tailwind CSS 4, semantic colour tokens
 - **UI Primitives**: Base UI (`@base-ui/react`). A component takes another element through its `render` prop (e.g., `<DropdownMenuItem render={<Link href="..." />}>`); the lint (`eslint.config.mjs`) fails Radix imports, `asChild` and `--radix-*` variables.
 - **Canvas**: @xyflow/react for the whiteboard interface
