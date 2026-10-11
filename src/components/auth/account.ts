@@ -53,12 +53,17 @@ const THIS_SITE = "https://agilekit.invalid";
  * this site, else the home page. A path that resolves to another site is not
  * one: `//host`, and `/\host`, which browsers read the same way, so a link to
  * the sign-in page can't be made to send a person elsewhere once they're in.
+ * The path comes back as the browser reads it, and is kept only if it still
+ * names a page here when read again: dot segments can collapse `/..//host`
+ * (or `/%2e%2e//host`) into `//host`, another site's address.
  */
 export function returnPath(from: string | null | undefined): string {
   if (!from?.startsWith("/")) return "/";
   try {
     const url = new URL(from, THIS_SITE);
-    return url.origin === THIS_SITE ? `${url.pathname}${url.search}${url.hash}` : "/";
+    const path = `${url.pathname}${url.search}${url.hash}`;
+    const staysHere = url.origin === THIS_SITE && !path.startsWith("//") && new URL(path, THIS_SITE).origin === THIS_SITE;
+    return staysHere ? path : "/";
   } catch {
     return "/";
   }

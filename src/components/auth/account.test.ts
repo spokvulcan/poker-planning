@@ -23,7 +23,21 @@ describe("returnPath", () => {
     expect(returnPath("/dashboard/sessions?range=30d#top")).toBe("/dashboard/sessions?range=30d#top");
   });
 
-  it.each([null, undefined, "", "room/room-1", "https://evil.example", "//evil.example", "/\\evil.example", "/\\/evil.example"])(
+  it.each([
+    null,
+    undefined,
+    "",
+    "room/room-1",
+    "https://evil.example",
+    "//evil.example",
+    "/\\evil.example",
+    "/\\/evil.example",
+    // Dot segments collapse into a protocol-relative address once read
+    "/..//evil.example",
+    "/%2e%2e//evil.example",
+    "/a/../..//evil.example",
+    "/./\\\\evil.example",
+  ])(
     "comes home for %s, which is no page on this site",
     (from) => {
       expect(returnPath(from)).toBe("/");

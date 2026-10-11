@@ -76,7 +76,7 @@ describe("SigninForm's way back", () => {
     expect(await continueAsGuest()).toEqual(["/room/room-1"]);
   });
 
-  it.each(["//evil.example", "/\\evil.example", "https://evil.example/room"])(
+  it.each(["//evil.example", "/\\evil.example", "/..//evil.example", "/%2e%2e//evil.example", "https://evil.example/room"])(
     "comes home instead of going to another site from %s",
     async (from) => {
       mocks.from = from;
