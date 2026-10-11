@@ -77,7 +77,7 @@ export function ViewerMenu({
             <UserAvatar name={name} avatarUrl={viewer.avatarUrl} size="lg" />
             <div className="flex min-w-0 flex-col">
               <span className="truncate text-sm font-medium">{name}</span>
-              <span className="text-xs text-muted-foreground">{viewer.email || "Guest"}</span>
+              <span className="truncate text-xs text-muted-foreground">{viewer.email || "Guest"}</span>
             </div>
           </div>
 

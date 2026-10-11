@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -28,12 +27,9 @@ export const NavigationSheet = () => {
 
   return (
     <Sheet>
-      <VisuallyHidden>
-        <SheetTitle>Navigation Menu</SheetTitle>
-      </VisuallyHidden>
-
       <SheetTrigger render={<Button className="rounded-full" size="icon" variant="outline" />}><Menu /></SheetTrigger>
       <SheetContent className="flex flex-col px-6 py-6">
+        <SheetTitle className="sr-only">Navigation Menu</SheetTitle>
         <Logo />
 
         <nav className="mt-8 flex flex-col gap-1">

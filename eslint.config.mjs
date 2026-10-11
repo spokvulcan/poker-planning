@@ -111,11 +111,59 @@ const backendStandards = [
   })),
 ];
 
+/**
+ * The UI primitives are Base UI (CLAUDE.md). Radix's patterns still compile
+ * under it and do nothing: a component takes another element through
+ * `render`, never `asChild`, and Base UI sets its own CSS variables
+ * (`--anchor-width`, `--available-height`), never a `--radix-*` one.
+ */
+const baseUiStandards = {
+  files: ["src/**/*.{ts,tsx}"],
+  rules: {
+    "no-restricted-imports": [
+      "error",
+      { patterns: [{ group: ["@radix-ui/*"], message: "The UI primitives are Base UI (@base-ui/react)." }] },
+    ],
+    "no-restricted-syntax": [
+      "error",
+      {
+        selector: "JSXAttribute[name.name='asChild']",
+        message: 'Base UI has no asChild: pass the element through `render` (e.g. render={<Link href="…" />}).',
+      },
+      {
+        selector: "Literal[value=/--radix-/], TemplateElement[value.raw=/--radix-/]",
+        message: "Base UI sets no --radix-* CSS variable: use its own, such as --anchor-width or --available-height.",
+      },
+    ],
+  },
+};
+
+/** A spec takes `test` from the suite's fixtures, which fail a test on a React hydration error. */
+const e2eStandards = {
+  files: ["tests/**/*.spec.ts"],
+  rules: {
+    "no-restricted-imports": [
+      "error",
+      {
+        paths: [
+          {
+            name: "@playwright/test",
+            importNames: ["test", "expect"],
+            message: "Import test and expect from tests/fixtures/test-fixtures.ts, which fails a test on a hydration error.",
+          },
+        ],
+      },
+    ],
+  },
+};
+
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
   ...convexPlugin.configs.recommended,
   ...backendStandards,
+  baseUiStandards,
+  e2eStandards,
   {
     rules: {
       "@typescript-eslint/no-unused-vars": "off",

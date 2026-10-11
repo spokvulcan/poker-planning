@@ -68,7 +68,11 @@ _Avoid_: claim (the retired team retro's verb), orphan, inheritance
 
 **Guest**:
 A person using AgileKit without signing in: an anonymous account that lives in their browser. Signing out deletes it.
-_Avoid_: anonymous user (anonymous is the account type), visitor
+_Avoid_: anonymous user (anonymous is the account type), visitor (who has no account yet)
+
+**Visitor**:
+Someone on AgileKit with no account at all, not even a **guest**'s. Creating or joining a room, or continuing as a guest, makes them a guest; a guest who signs out is a visitor again.
+_Avoid_: guest, anonymous user
 
 **Account link**:
 A **guest** signing in to a permanent account, after which everything the guest had is the account's. A new account simply takes over the guest; an existing one has the guest folded into it, keeping one of anything both had in the same place: the more senior **role** in a room, one **vote** per **topic** within the **vote budget** in a retro.

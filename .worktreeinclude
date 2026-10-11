@@ -1,0 +1,5 @@
+# Gitignored files Claude Code copies into every worktree it makes
+# (https://code.claude.com/docs/en/worktrees): without .env.local a worktree's
+# dev server can't reach Convex, and launch.json names the dev servers to run.
+.env.local
+.claude/launch.json

@@ -20,3 +20,37 @@ jobs:
       - run: npm run lint
       - run: npm run ts:check
       - run: npm run test
+
+  e2e:
+    name: End-to-End
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # A local Convex backend with no account, so there's no deployment or secret to provision
+      CONVEX_AGENT_MODE: anonymous
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Start a local Convex backend
+        # The first run makes the deployment and writes .env.local. Its push
+        # fails until auth's environment is set, and it writes a
+        # convex/tsconfig.json without the root's path aliases, which would
+        # break every push after it.
+        run: |
+          npx convex dev --once || true
+          rm -f convex/tsconfig.json
+          npx convex env set SITE_URL http://localhost:3000
+          npx convex env set BETTER_AUTH_SECRET "$(openssl rand -base64 32)"
+          npx convex dev --once
+      - run: npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-traces
+          path: test-results/
+          retention-days: 7

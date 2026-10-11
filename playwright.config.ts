@@ -1,4 +1,20 @@
+import { createHash } from "node:crypto";
+import { statSync } from "node:fs";
 import { defineConfig, devices } from "@playwright/test";
+
+/**
+ * The port this checkout's dev server runs on: 3000 in the main checkout, and
+ * in a git worktree (whose `.git` is a file) one derived from its path, so a
+ * run there never reuses another checkout's server. PORT overrides either.
+ */
+function devServerPort(): number {
+  if (process.env.PORT) return Number(process.env.PORT);
+  if (!statSync(".git", { throwIfNoEntry: false })?.isFile()) return 3000;
+  return 3100 + (createHash("sha1").update(process.cwd()).digest().readUInt16BE(0) % 800);
+}
+
+const DEV_SERVER_PORT = devServerPort();
+const DEV_SERVER_URL = `http://localhost:${DEV_SERVER_PORT}`;
 
 /**
  * Read environment variables from file.
@@ -34,7 +50,7 @@ export default defineConfig({
   /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
   use: {
     /* Base URL to use in actions like `await page.goto('/')`. */
-    baseURL: process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:3000',
+    baseURL: process.env.PLAYWRIGHT_BASE_URL || DEV_SERVER_URL,
 
     /* Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer */
     trace: process.env.CI ? 'on-first-retry' : 'retain-on-failure',
@@ -118,8 +134,8 @@ export default defineConfig({
       timeout: 120 * 1000,
     },
     {
-      command: "npm run dev",
-      url: "http://localhost:3000",
+      command: `npm run dev -- --port ${DEV_SERVER_PORT}`,
+      url: DEV_SERVER_URL,
       reuseExistingServer: !process.env.CI,
       timeout: 120 * 1000,
     }

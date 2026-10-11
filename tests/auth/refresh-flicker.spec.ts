@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "../fixtures/test-fixtures";
 import { RoomPage } from "../pages/room-page";
 import { createAndJoinRoom } from "../utils/room-helpers";
 import { mockClipboardAPI } from "../utils/test-helpers";

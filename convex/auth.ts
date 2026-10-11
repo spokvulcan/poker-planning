@@ -7,7 +7,7 @@ import { betterAuth } from "better-auth";
 import { anonymous, magicLink } from "better-auth/plugins";
 import { internal } from "./_generated/api";
 import authConfig from "./auth.config";
-import { getSiteUrl } from "@/lib/site-config";
+import { authTrustedOrigins, getSiteUrl } from "@/lib/site-config";
 
 const siteUrl = getSiteUrl();
 if (!siteUrl) {
@@ -57,12 +57,7 @@ export const createAuth = (ctx: GenericCtx<DataModel>) => {
         trustedProviders: ["google"],
       },
     },
-    trustedOrigins: [
-      siteUrl,
-      "https://agilekit.app",
-      "https://*.agilekit.app",
-      "https://*.vercel.app", // Vercel preview deployments
-    ],
+    trustedOrigins: authTrustedOrigins(siteUrl),
     // Sync auth provider data to Convex users table
     databaseHooks: {
       user: {
