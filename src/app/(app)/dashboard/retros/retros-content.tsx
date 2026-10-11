@@ -1,11 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useQuery } from "convex/react";
 import { formatDistanceToNow } from "date-fns";
 import { ArrowRight, CircleCheckBig, Clock, Plus, StickyNote } from "lucide-react";
 import { api } from "@/convex/_generated/api";
-import { useAuth } from "@/components/auth/auth-provider";
+import { useCallerQuery } from "@/components/auth/use-caller-query";
 import { DashboardHeader } from "@/components/dashboard";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -25,8 +24,7 @@ const STEP_LABELS: Record<RetroStep, string> = {
  * sessions: where each one got to, its columns, and its action items.
  */
 export function RetrosContent() {
-  const { isAuthenticated } = useAuth();
-  const retros = useQuery(api.retro.listMine, isAuthenticated ? {} : "skip");
+  const retros = useCallerQuery(api.retro.listMine, {});
 
   return (
     <>

@@ -13,6 +13,7 @@ const signedIn = (isPermanent: boolean): Viewer => ({
   avatarUrl: null,
   email: null,
   isPermanent,
+  confirmed: true,
 });
 
 describe("accountKind", () => {

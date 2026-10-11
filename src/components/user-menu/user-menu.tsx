@@ -10,6 +10,7 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { rulesOf } from "@/convex/ceremony";
 import { useAuth } from "@/components/auth/auth-provider";
+import { useCallerQuery } from "@/components/auth/use-caller-query";
 import { DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
@@ -22,19 +23,14 @@ import { ViewerMenu, menuName } from "./viewer-menu";
 const PILL = "flex items-center gap-2 rounded-full border bg-background px-2 py-1.5";
 
 export function UserMenu() {
-  const { isAuthenticated, viewer } = useAuth();
+  const { viewer } = useAuth();
 
   // Get roomId from URL params (if on a room page)
   const params = useParams();
   const roomId = params.roomId as Id<"rooms"> | undefined;
 
   // Get room membership data (for spectator status) - only if in a room
-  const roomMembership = useQuery(
-    api.users.getMyMembership,
-    isAuthenticated && roomId
-      ? { roomId }
-      : "skip"
-  );
+  const roomMembership = useCallerQuery(api.users.getMyMembership, roomId ? { roomId } : "skip");
 
   // Only some ceremonies have spectators (a retro has none); the room page
   // already holds this subscription, so reading the room here costs nothing.

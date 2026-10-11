@@ -75,6 +75,33 @@ export function isGuest(caller: Caller): boolean {
 }
 
 /**
+ * What the person signed in is shown of themselves: their row's name, avatar
+ * and email (none until a row is made, but a permanent account's token
+ * carries its name and email), and whether the account is permanent, as the
+ * session's token says, falling back to the row's kind when a token doesn't
+ * say. The browser's viewer and the page's first paint both read it
+ * (users.getViewer), so neither works one out from a users row.
+ */
+export interface CallerView {
+  name: string | null;
+  avatarUrl: string | null;
+  email: string | null;
+  isPermanent: boolean;
+}
+
+export function callerView(caller: Caller): CallerView {
+  const isPermanent = (sessionAccountType(caller) ?? caller.user?.accountType) === "permanent";
+  // A guest's token names BetterAuth's anonymous user, never the person
+  const profile: Partial<UserIdentity> = isPermanent ? caller.identity : {};
+  return {
+    name: caller.user?.name ?? profile.name ?? null,
+    avatarUrl: caller.user?.avatarUrl ?? null,
+    email: caller.user?.email ?? profile.email ?? null,
+    isPermanent,
+  };
+}
+
+/**
  * The users row of the person signed in as `authUserId`, or null: for code
  * that is told who the person is rather than asking (BetterAuth's hooks).
  */

@@ -2,7 +2,9 @@
  * The room page's join gate, from the viewer AuthProvider hands out: a
  * signed-in viewer whose users row has a name is joined under it without
  * being asked; one signed in with no row yet (as after "Continue as guest")
- * is ready all the same and gets the join dialog, like a visitor. The room
+ * is ready all the same and gets the join dialog, like a visitor. The
+ * membership is read as the viewer (useCallerQuery), only once Convex has
+ * confirmed their session. The room
  * shell and the caller's membership are reads the test answers; the boards
  * and the join dialog are stand-ins.
  */
@@ -19,8 +21,6 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/components/auth/auth-provider", () => ({
   useAuth: () => ({
-    isLoading: mocks.viewer.status === "loading",
-    isAuthenticated: mocks.viewer.status === "signedIn",
     viewer: mocks.viewer,
   }),
 }));
@@ -70,7 +70,7 @@ afterEach(cleanup);
 
 describe("RoomContent's join gate", () => {
   it("joins a signed-in viewer whose users row has a name under it", async () => {
-    mocks.viewer = { status: "signedIn", name: "Ann", avatarUrl: null, email: null, isPermanent: false };
+    mocks.viewer = { status: "signedIn", name: "Ann", avatarUrl: null, email: null, isPermanent: false, confirmed: true };
     mocks.membership = null;
     await renderRoom();
 
@@ -78,7 +78,7 @@ describe("RoomContent's join gate", () => {
   });
 
   it("gives a viewer signed in with no users row yet the join dialog, and joins no one", async () => {
-    mocks.viewer = { status: "signedIn", name: null, avatarUrl: null, email: null, isPermanent: false };
+    mocks.viewer = { status: "signedIn", name: null, avatarUrl: null, email: null, isPermanent: false, confirmed: true };
     mocks.membership = null;
     await renderRoom();
 
@@ -102,8 +102,18 @@ describe("RoomContent's join gate", () => {
     expect(mocks.joins).toEqual([]);
   });
 
+  it("checks the membership only once Convex confirms the server's viewer, and joins no one before", async () => {
+    // The first paint's viewer, from the server: Convex hasn't authenticated the session yet.
+    mocks.viewer = { status: "signedIn", name: "Ann", avatarUrl: null, email: null, isPermanent: false, confirmed: false };
+    mocks.membership = null;
+    await renderRoom();
+
+    expect(screen.getByText("Checking membership")).toBeTruthy();
+    expect(mocks.joins).toEqual([]);
+  });
+
   it("shows a member the board", async () => {
-    mocks.viewer = { status: "signedIn", name: "Ann", avatarUrl: null, email: null, isPermanent: false };
+    mocks.viewer = { status: "signedIn", name: "Ann", avatarUrl: null, email: null, isPermanent: false, confirmed: true };
     mocks.membership = { _id: "user-ann" };
     await renderRoom();
 

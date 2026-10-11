@@ -11,6 +11,7 @@ import { JoinRoomDialog } from "@/components/room/join-room-dialog";
 import { CenteredMessage } from "@/components/centered-message";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/components/auth/auth-provider";
+import { useCallerQuery } from "@/components/auth/use-caller-query";
 import { Id } from "@/convex/_generated/dataModel";
 import { toast } from "@/lib/toast";
 import type { RoomWithRelatedData } from "@/convex/model/rooms";
@@ -29,15 +30,10 @@ type MyMembership = { _id: Id<"users"> };
 export function RoomContent() {
   const params = useParams();
   const roomId = params.roomId as Id<"rooms">;
-  const { isAuthenticated } = useAuth();
-
   // Room data query - currentUserId for vote unsanitization is derived server-side from auth context
   const roomData = useQuery(api.rooms.get, { roomId });
-  // Query for existing membership in this room (derived server-side from auth)
-  const existingMembership = useQuery(
-    api.users.getMyMembership,
-    isAuthenticated ? { roomId } : "skip"
-  );
+  // The viewer's membership in this room, read as them once Convex knows their session
+  const existingMembership = useCallerQuery(api.users.getMyMembership, { roomId });
 
   if (roomData === undefined) {
     return <CenteredMessage title="Loading..." body="Fetching room data" />;

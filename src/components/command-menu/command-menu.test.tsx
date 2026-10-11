@@ -11,7 +11,7 @@ const spy = vi.hoisted(() => ({
   push: vi.fn(),
   setTheme: vi.fn(),
   theme: "dark" as string | undefined,
-  auth: { isLoading: false, isAuthenticated: false },
+  auth: { viewer: { status: "visitor" } } as Record<string, unknown>,
 }));
 
 vi.mock("next/navigation", () => ({
@@ -52,7 +52,7 @@ beforeEach(() => {
   spy.push.mockReset();
   spy.setTheme.mockReset();
   spy.theme = "dark";
-  spy.auth = { isLoading: false, isAuthenticated: false };
+  spy.auth = { viewer: { status: "visitor" } };
 });
 
 afterEach(() => {
@@ -140,7 +140,9 @@ describe("the command menu", () => {
   });
 
   it("offers a signed-in person their dashboard", async () => {
-    spy.auth = { isLoading: false, isAuthenticated: true };
+    spy.auth = {
+      viewer: { status: "signedIn", name: "Ada", avatarUrl: null, email: null, isPermanent: true, confirmed: true },
+    };
     renderMenu();
     pressShortcut({ metaKey: true });
 
@@ -160,7 +162,7 @@ describe("the command menu", () => {
   });
 
   it("offers neither while it does not know who is looking", async () => {
-    spy.auth = { isLoading: true, isAuthenticated: false };
+    spy.auth = { viewer: { status: "loading" } };
     renderMenu();
     pressShortcut({ metaKey: true });
     await screen.findByRole("dialog");

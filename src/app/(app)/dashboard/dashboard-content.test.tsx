@@ -27,7 +27,9 @@ vi.mock("next/link", () => ({
 }));
 
 vi.mock("@/components/auth/auth-provider", () => ({
-  useAuth: () => ({ isLoading: false, isAuthenticated: true }),
+  useAuth: () => ({
+    viewer: { status: "signedIn", name: "Ada", avatarUrl: null, email: null, isPermanent: true, confirmed: true },
+  }),
 }));
 
 // The sidebar's desktop branch: jsdom has no matchMedia.

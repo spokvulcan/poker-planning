@@ -33,7 +33,7 @@ export function useOpenCommandMenu(): (() => void) | null {
  */
 export function CommandMenuProvider({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
-  const { isLoading, isAuthenticated } = useAuth();
+  const { viewer } = useAuth();
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -60,7 +60,7 @@ export function CommandMenuProvider({ children }: { children: ReactNode }) {
       >
         <CommandPalette
           surface="dialog"
-          signedIn={isLoading ? undefined : isAuthenticated}
+          signedIn={viewer.status === "loading" ? undefined : viewer.status === "signedIn"}
           onDone={() => setOpen(false)}
         />
       </CommandDialog>

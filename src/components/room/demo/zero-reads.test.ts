@@ -11,7 +11,7 @@
  * so it is probed for regressions but lists no query.) Directly protects user
  * stories 12/14/17 (ADR-0003).
  *
- * The shell is covered too: AuthProvider subscribes `api.users.getGlobalUser`
+ * The shell is covered too: AuthProvider subscribes `api.users.getViewer`
  * whenever a session is live, on any route, so what keeps it off the demo is
  * the shell: /demo's route group mounts no AuthProvider. The probe renders the
  * real demo shell (the (demo) layout) over the demo tree with a live session
@@ -113,7 +113,7 @@ const SUBSCRIPTIONS = [
 // The subscription the app shell mounts above every page (AuthProvider). The
 // shell, not the provider seam, keeps it off the demo, so it gets its own
 // probe below.
-const ROOT_SUBSCRIPTIONS = [getFunctionName(api.users.getGlobalUser)];
+const ROOT_SUBSCRIPTIONS = [getFunctionName(api.users.getViewer)];
 
 // Names + args of the captured subscription calls (ignoring queries we don't
 // guard here, e.g. the integration queries owned by their own sites).
@@ -263,7 +263,7 @@ describe("zero-reads guard: the demo shell mounts no auth", () => {
     expect(spy.sessionReads).toBe(0);
   });
 
-  it("AuthProvider, which only the app shell mounts, opens getGlobalUser for a live session on any route", () => {
+  it("AuthProvider, which only the app shell mounts, opens getViewer for a live session on any route", () => {
     renderToStaticMarkup(
       createElement(AuthProvider, null, createElement(RealRoomProbe)),
     );

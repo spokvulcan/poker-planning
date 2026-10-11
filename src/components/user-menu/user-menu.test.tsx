@@ -14,8 +14,6 @@ const mocks = vi.hoisted(() => ({ viewer: { status: "loading" } as Viewer }));
 
 vi.mock("@/components/auth/auth-provider", () => ({
   useAuth: () => ({
-    isLoading: mocks.viewer.status === "loading",
-    isAuthenticated: mocks.viewer.status === "signedIn",
     viewer: mocks.viewer,
   }),
 }));
@@ -70,7 +68,7 @@ afterEach(cleanup);
 
 describe("UserMenu", () => {
   it("is there for a guest signed in with no users row yet, as Guest, with Sign in", () => {
-    mocks.viewer = { status: "signedIn", name: null, avatarUrl: null, email: null, isPermanent: false };
+    mocks.viewer = { status: "signedIn", name: null, avatarUrl: null, email: null, isPermanent: false, confirmed: true };
     render(<UserMenu />);
 
     expect(within(screen.getByTestId("user-menu-trigger")).getByText("Guest")).toBeTruthy();
@@ -84,6 +82,7 @@ describe("UserMenu", () => {
       avatarUrl: "https://lh3.googleusercontent.com/a/ada",
       email: "ada@example.com",
       isPermanent: true,
+      confirmed: true,
     };
     render(<UserMenu />);
 
@@ -97,7 +96,7 @@ describe("UserMenu", () => {
   });
 
   it("offers Sign in to a guest whose row has a name", () => {
-    mocks.viewer = { status: "signedIn", name: "Bob", avatarUrl: null, email: null, isPermanent: false };
+    mocks.viewer = { status: "signedIn", name: "Bob", avatarUrl: null, email: null, isPermanent: false, confirmed: true };
     render(<UserMenu />);
 
     expect(within(screen.getByTestId("user-menu-trigger")).getByText("Bob")).toBeTruthy();

@@ -13,8 +13,6 @@ const mocks = vi.hoisted(() => ({ viewer: { status: "loading" } as Viewer }));
 
 vi.mock("@/components/auth/auth-provider", () => ({
   useAuth: () => ({
-    isLoading: mocks.viewer.status === "loading",
-    isAuthenticated: mocks.viewer.status === "signedIn",
     viewer: mocks.viewer,
   }),
 }));
@@ -44,7 +42,7 @@ afterEach(cleanup);
 
 describe("SigninForm's guest button", () => {
   it("takes a guest signed in with no users row yet back", () => {
-    mocks.viewer = { status: "signedIn", name: null, avatarUrl: null, email: null, isPermanent: false };
+    mocks.viewer = { status: "signedIn", name: null, avatarUrl: null, email: null, isPermanent: false, confirmed: true };
     render(<SigninForm />);
 
     expect(screen.getByRole("button", { name: "Cancel and return to room" })).toBeTruthy();

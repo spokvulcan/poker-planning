@@ -58,7 +58,7 @@ The authentication system consists of three layers:
 | `src/app/(app)/auth/signin/page.tsx` | Dedicated Sign In Page for permanent account upgrade |
 | `src/app/(app)/auth/verify/page.tsx` | Magic Link Verification Page |
 | `src/app/api/auth/[...all]/route.ts` | Next.js API route handler |
-| `src/components/auth/auth-provider.tsx` | React context for auth state and the viewer (who is looking, from their users row), and `whenAuth` for waiting on it |
+| `src/components/auth/auth-provider.tsx` | React context for the viewer (who is looking, as `users.getViewer` answers, and whether Convex has confirmed their session) and `whenAuth` for waiting on auth state; `use-caller-query.ts` reads as the viewer |
 | `src/hooks/useEnsureSession.ts` | The session every guest way in goes through (see [Guest flow](#first-time-user-joining-a-room-guest)) |
 | `src/lib/auth-waiters.ts` | Promises on the changing auth state, held by the auth provider |
 
@@ -280,7 +280,7 @@ Use this for pages that require authentication (e.g., dashboard). Client-side re
 
 ```
 1. User visits /room/[roomId]
-2. The auth provider's viewer is a visitor (Convex's useConvexAuth says nobody is signed in) → JoinRoomDialog shown
+2. The auth provider's viewer is a visitor (Convex says nobody is signed in) → JoinRoomDialog shown
 3. User enters a name and clicks Join
 4. JoinRoomDialog calls ensureSession() (useEnsureSession):
    a. Waits until BetterAuth's session and Convex's auth state have both loaded (isSessionPending and isLoading false)
@@ -352,40 +352,41 @@ The server tells a guest by the session's token (`isGuest`, see [Who is calling]
 
 ## Auth Provider Context
 
-The auth provider (`src/components/auth/auth-provider.tsx`) takes auth state from Convex (`useConvexAuth()`, which waits for token validation) and holds the app's one subscription to the caller's users row (`users.getGlobalUser`, once Convex has the session), which it hands out as the viewer. BetterAuth's session only feeds the waits (`whenAuth`). Only the app shell mounts it: `/demo` sits in its own route group, whose shell has no auth at all (ADR-0003).
+The auth provider (`src/components/auth/auth-provider.tsx`) takes auth state from Convex (`useConvexAuth()`, which waits for token validation) and holds the app's one subscription to Convex's answer about the person signed in (`users.getViewer`, once Convex has the session), which it hands out as the viewer. BetterAuth's session only feeds the waits (`whenAuth`). Only the app shell mounts it: `/demo` sits in its own route group, whose shell has no auth at all (ADR-0003).
 
 ```typescript
 interface AuthContextType {
-  isLoading: boolean;           // Auth loading state (from Convex: waits for token validation)
-  isAuthenticated: boolean;     // Whether Convex has validated the token
-  viewer: Viewer;               // Who is looking, with the name, avatar and kind of account their users row has
+  viewer: Viewer;               // Who is looking, and whether Convex has confirmed their session
   whenAuth: WhenAuth;           // Waits for the auth state to reach a condition
 }
 
 type Viewer =
-  | { status: "loading" }       // Convex's auth state or the caller's users row hasn't answered yet
+  | { status: "loading" }       // Convex's auth state or its answer hasn't come yet
   | { status: "visitor" }       // Nobody is signed in
   | {
       status: "signedIn";
       name: string | null;      // The users row's, as are the avatar and email: null while there is none
-      avatarUrl: string | null;
+      avatarUrl: string | null; // (a permanent account's token names it, and gives its email)
       email: string | null;
-      isPermanent: boolean;     // Whether the row says "permanent"
+      isPermanent: boolean;     // Whether the account is permanent, as the session's token says
+      confirmed: boolean;       // Whether Convex has confirmed the session in this browser
     };
 
 interface AuthSnapshot {
   authUserId: string | null;    // From BetterAuth's session: null means no session only once it has loaded
   isSessionPending: boolean;    // Whether BetterAuth's session is still loading
-  isLoading: boolean;           // From Convex, as in AuthContextType
-  isAuthenticated: boolean;     // From Convex, as in AuthContextType
+  isLoading: boolean;           // Convex's auth state, for the sign-in's waits only
+  isAuthenticated: boolean;
 }
 
 type WhenAuth = (ready: (state: AuthSnapshot) => boolean, timeoutMs: number) => Promise<AuthSnapshot>;
 ```
 
-The viewer is the frontend's one answer to who is looking (its type and `accountKind` are in `src/components/auth/viewer.ts`). The user menus (UserMenu, NavUser, both opening `ViewerMenu` in `src/components/user-menu/viewer-menu.tsx`) and the room's join gate take the name and avatar from it and never subscribe to the row themselves, and whatever tells a permanent account apart (the Account tab, the retention note on `/retro/new`, the sign-in page's guest button) goes by `accountKind(viewer)`. The account kind is the row's only: neither BetterAuth's `isAnonymous` nor its session's email stands in for the row. A signed-in caller has no row until their first room write makes it (a guest who only continued as one, or a deleted account that came back), and is ready all the same, with no name, avatar or email, and not taken for a permanent account: the menus show them as "Guest" with Sign in, and the join gate asks their name rather than joining them under one. Nor is a row with no kind (a guest's made before the server made rows) taken for one. The server goes by the session's token instead: an account's first room write makes it a permanent row, or turns its row permanent.
+The viewer is the frontend's one answer to who is looking (its type and `accountKind` are in `src/components/auth/viewer.ts`), and Convex's auth state is the provider's alone to read: a page asks the viewer, never Convex's booleans (`auth-provider.test.tsx` holds every other module off `useConvexAuth`). It answers two questions. Who the page shows: the user menus (UserMenu, NavUser, both opening `ViewerMenu` in `src/components/user-menu/viewer-menu.tsx`) and the room's join gate take the name and avatar from it and never subscribe to a row themselves, and whatever tells a permanent account apart (the Account tab, the retention note on `/retro/new`, the sign-in page's guest button) goes by `accountKind(viewer)`. And when a page may read as the viewer: a read whose answer depends on who is calling (their membership, their history) goes through `useCallerQuery` (`src/components/auth/use-caller-query.ts`), which opens once the viewer is `confirmed` and answers undefined until then, so a page never takes a read made before Convex knew the session for its answer. A visitor is the viewer's status, which the dashboard redirects on.
 
-The first paint already knows the viewer. The app shell's layout reads it on the server (`getServerViewer` in `src/components/auth/server-viewer.ts`: no read when there is no token, else one read of the users row with the token the request already fetched) and hands it to the provider, which shows it until Convex first answers in the browser and goes by Convex alone after. So a refresh draws the menus, or Sign in, at once, the same on the server and in the browser; the menus show a skeleton only when the server couldn't read the viewer or Convex is checking a session that changed. `getServerViewer` and the provider are the only readers of the row (`auth-provider.test.tsx` holds them to that).
+What the viewer says of the person is Convex's answer, `users.getViewer`, which `callerView` in `convex/model/caller.ts` works out as the server goes by: the kind of account from the session's token (`sessionAccountType`), falling back to the row's kind only for a token without the claim, and never from BetterAuth's `isAnonymous` in the browser, which reads false while the session loads. A signed-in caller has no row until their first room write makes it (a guest who only continued as one, or a deleted account that came back) and is ready all the same: a guest with no name, avatar or email, whom the menus show as "Guest" with Sign in and the join gate asks for a name; a permanent account named by its token, and kept as one. `users.getGlobalUser`, the row whole, stays for tabs opened before the viewer asked `getViewer`.
+
+The first paint already knows the viewer. The app shell's layout reads it on the server (`getServerViewer` in `src/components/auth/server-viewer.ts`: no read when there is no token, else one read of `users.getViewer` with the token the request already fetched) and hands it to the provider, which shows it, unconfirmed, until Convex first answers in the browser (confirming it as soon as Convex has the session) and goes by Convex alone after. So a refresh draws the menus, or Sign in, at once, the same on the server and in the browser, while reads made as the viewer wait for Convex; the menus show a skeleton only when the server couldn't read the viewer or Convex is checking a session that changed. `getServerViewer` and the provider are the only modules that ask who is signed in (`auth-provider.test.tsx` holds them to that).
 
 `whenAuth(ready, timeoutMs)` resolves with the first auth state `ready` accepts (at once if the current one does, else on the update that makes it hold) and rejects after `timeoutMs`. The provider holds the waiters (`createAuthWaiters` in `src/lib/auth-waiters.ts`) and feeds them every change of `authUserId`, `isSessionPending`, `isLoading` and `isAuthenticated`. It sits in the app shell's layout, above the page, so a wait outlives the component that started it. Outside an `AuthProvider`, `whenAuth` rejects.
 

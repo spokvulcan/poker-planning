@@ -13,8 +13,6 @@ const mocks = vi.hoisted(() => ({ viewer: { status: "loading" } as Viewer }));
 
 vi.mock("@/components/auth/auth-provider", () => ({
   useAuth: () => ({
-    isLoading: mocks.viewer.status === "loading",
-    isAuthenticated: mocks.viewer.status === "signedIn",
     viewer: mocks.viewer,
   }),
 }));
@@ -79,7 +77,7 @@ afterEach(cleanup);
 
 describe("NavUser", () => {
   it("is there for a guest signed in with no users row yet, as Guest, with Sign in", () => {
-    mocks.viewer = { status: "signedIn", name: null, avatarUrl: null, email: null, isPermanent: false };
+    mocks.viewer = { status: "signedIn", name: null, avatarUrl: null, email: null, isPermanent: false, confirmed: true };
     renderNavUser();
 
     expect(screen.getAllByText("Guest").length).toBeGreaterThan(0);
@@ -93,6 +91,7 @@ describe("NavUser", () => {
       avatarUrl: "https://lh3.googleusercontent.com/a/ada",
       email: "ada@example.com",
       isPermanent: true,
+      confirmed: true,
     };
     renderNavUser();
 
