@@ -22,6 +22,9 @@ colors:
   status-error-bg: "oklch(0.95 0.03 25)"
   status-error-fg: "oklch(0.50 0.20 25)"
   destructive: "oklch(0.577 0.245 27.325)"
+  golden-indigo: "#613CFF"
+  golden-indigo-deep: "#3C259E"
+  golden-indigo-night: "#170E3C"
 typography:
   display:
     fontFamily: "Outfit, ui-sans-serif, system-ui, sans-serif"
@@ -138,6 +141,12 @@ components:
     textColor: "{colors.pencil-gray}"
     rounded: "{rounded.pill}"
     padding: "6px 16px"
+  logo-mark:
+    backgroundColor: "{colors.golden-indigo}"
+    textColor: "{colors.paper}"
+    rounded: "7px"
+    height: "32px"
+    width: "32px"
 ---
 
 # Design System: AgileKit
@@ -169,12 +178,116 @@ testimonial walls, no decorative bounce.
 - Both light and dark themes are first-class; neither is the "default."
 - Status communicates through a four-color quartet (info / success / warning
   / error), reserved strictly for semantic feedback.
+- One brand mark: a Fibonacci spiral on golden indigo, kept apart from the
+  interface's blue accent.
 
-## 2. Colors: The Drafting Palette
+## 2. Logo: The Golden Spiral
+
+The mark is a single white stroke on a golden indigo tile: a Fibonacci
+spiral, drawn the way the desk would draw it, on a grid and with a compass.
+It names no ceremony. Planning poker and retros were AgileKit's first two
+features, and the mark has to outlast both, so it says *agile* rather than
+*cards* or *stickies*. The public explanation is the blog post "Our New Logo
+Is a Fibonacci Spiral. Here's Why" (`content/blog/fibonacci-spiral-logo/`,
+served at `/blog/fibonacci-spiral-logo`).
+
+### Construction
+
+Every measure comes from the Fibonacci numbers on the planning poker deck.
+
+- **Tile:** 64 × 64, corner radius 14.
+- **Grid:** unit u = 3.45. The 13u × 8u Fibonacci rectangle (44.85 × 27.6)
+  tiles into squares of side 8, 5, 3, 2, 1 and 1. It is centred across the
+  tile and sits 2 units below its centre, to balance the weight of the top
+  arc.
+- **Stroke:** four quarter-circles, one per square from the 8-square inward,
+  with radii 8u, 5u, 3u and 2u (27.6, 17.25, 10.35 and 6.9). Each arc ends
+  where the next begins, heading the same way, so the stroke has no corners.
+- **Weight:** 5.6 with round caps, in white. That is 1.62u: φ again, to
+  within a third of a percent.
+- **The spiral stops at the 2-square.** In a 16 px favicon the 1-square arcs
+  would have a radius under a pixel; the round end of the stroke stands in
+  for them.
+
+### Colour: Golden Indigo
+
+The tile's colour is a formula, not a pick. With φ = (1 + √5) / 2:
+
+| Name | RGB (0–1) | Hex | OKLCH | Use |
+|---|---|---|---|---|
+| Golden Indigo | (1/φ², 1/φ³, 1) | `#613CFF` | `oklch(0.536 0.266 281.3)` | The logo tile |
+| Golden Indigo Deep | (1/φ³, 1/φ⁴, 1/φ) | `#3C259E` | `oklch(0.382 0.182 282.2)` | Brand text on light backgrounds |
+| Golden Indigo Night | (1/φ⁵, 1/φ⁶, 1/φ³) | `#170E3C` | `oklch(0.210 0.084 285.7)` | Backgrounds of brand illustrations |
+
+The derivation: give a colour the two parts of a line cut in the golden
+ratio, 1/φ ≈ 0.618 as its saturation and 1/φ² ≈ 0.382 as its lightness
+(HSL). At the hue 240° + 30°/φ² ≈ 251.5°, pure blue turned by a twelfth of
+the golden angle, all three channels land on powers of φ: that is Golden
+Indigo Deep. Multiplying every channel by φ keeps the hue and gives Golden
+Indigo; dividing Deep by φ² gives Night.
+
+White on Golden Indigo is 5.8:1, and the tile reads against a near-black
+page at 3.4:1. White on Golden Indigo Deep is 10.8:1.
+
+### Files and sizes
+
+| File | Used by |
+|---|---|
+| `public/logo.svg` | The navbar (`src/components/logo.tsx`), footer, dashboard sidebar, sign-in page and README |
+| `src/app/icon.svg` | The favicon; the same SVG as `public/logo.svg` |
+| `public/logo-512.png` | The Organization logo in structured data (`siteConfig.logo`) |
+| `public/logo-64.png` | The icon of the RSS and Atom feeds |
+| `public/logo-{32,128,256}.png` | Other raster uses |
+
+The PNGs are rendered from `public/logo.svg`. After changing the SVG,
+render all five again at their exact sizes, for example with `sharp`, which
+Next.js installs:
+
+```bash
+node -e 'const sharp = require("sharp"); const svg = require("fs").readFileSync("public/logo.svg"); for (const s of [32, 64, 128, 256, 512]) sharp(svg, { density: (72 * s) / 64 }).resize(s, s).png({ compressionLevel: 9 }).toFile(`public/logo-${s}.png`);'
+```
+
+The mark shows at 32 px beside the "AgileKit" wordmark (Outfit 700) in the
+navbar, footer and dashboard sidebar, and at 24 px on the sign-in page. Its
+smallest size is the 16 px favicon.
+
+### What It Stands For
+
+Read from the centre out:
+
+- **It iterates.** Each quarter-circle sweeps 90° and hands over to the
+  next: four iterations, one stroke.
+- **Each turn is built on the last.** Every radius is the sum of the two
+  before it.
+- **It turns without stopping.** The arcs share a tangent where they meet,
+  so the line changes direction with no corner. The tightest turn (radius 2)
+  turns four times as sharply as the widest (radius 8).
+- **It grows at a steady pace.** Each turn is about φ times the one inside
+  it.
+- **It never closes.** The outer end is open where a fifth turn, radius 13,
+  would begin.
+
+### Named Rules
+
+**The Grid Rule.** Every measure of the mark comes from the Fibonacci grid.
+Don't redraw it by eye, add the 1-square turns, change a radius or thin the
+stroke.
+
+**The Mark-Not-Accent Rule.** Golden Indigo belongs to the mark and to brand
+illustrations, such as the blog post's diagrams. The interface keeps
+Blueprint Blue as its accent: never use Golden Indigo for selection, CTAs or
+status.
+
+**The Untouched Mark Rule.** Don't rotate or mirror the mark (the stroke
+runs clockwise from the bottom left, the direction of reading), stretch it,
+outline it, add shadows or gradients to it, or set it on a busy background.
+
+## 3. Colors: The Drafting Palette
 
 Restrained palette. Ink and paper carry 90%+ of every screen; one engineered
 blue carries the rest; status colors appear only when the interface is
-reporting state.
+reporting state. The brand's Golden Indigo lives in the logo, outside this
+budget.
 
 ### Primary
 - **Blueprint Blue** (`oklch(0.55 0.22 250)`, Tailwind `blue-500`): the single
@@ -184,6 +297,14 @@ reporting state.
 - **Blueprint Blue Deep** (`oklch(0.45 0.22 250)`, Tailwind `blue-600`): hover
   and active state of the accent. The depression of the colored pencil
   against the paper.
+
+### Brand (logo only)
+- **Golden Indigo** (`#613CFF`, `oklch(0.536 0.266 281.3)`): the logo tile,
+  and nowhere in the interface. Its red, green and blue are 1/φ², 1/φ³ and 1
+  (see §2).
+- **Golden Indigo Deep** (`#3C259E`) and **Golden Indigo Night**
+  (`#170E3C`): the same hue, one and three φ-steps darker. Brand text on
+  light backgrounds, and the backgrounds of brand illustrations.
 
 ### Neutral
 - **Ink** (`oklch(0.145 0 0)` light / `oklch(0.985 0 0)` dark): body text and
@@ -241,7 +362,7 @@ the *maximum* drift permitted in any neutral.
 brand accents, never on the marketing site outside genuine feedback
 contexts.
 
-## 3. Typography: The Drafted Letterform
+## 4. Typography: The Drafted Letterform
 
 **Display / Body Font:** Outfit (with `ui-sans-serif, system-ui, sans-serif`
 fallback)
@@ -293,7 +414,7 @@ No gradient text, no italics, no underlines, no decorative pulls.
 averages, vote counts in motion) uses Geist Mono with `tabular-nums`. Stops
 the layout from twitching as numbers tick.
 
-## 4. Elevation: Flat With Intent
+## 5. Elevation: Flat With Intent
 
 The system is flat at rest. Cards sit on the page rather than above it;
 surfaces use tonal layering (Surface 1 → 2 → 3) to convey depth instead of
@@ -340,7 +461,7 @@ elements that are *literally* edges (the stroke around a voting card, the
 chassis of the session node). Don't use a thick colored border to imply
 emphasis. Use background fill, lift, or selection state instead.
 
-## 5. Components
+## 6. Components
 
 ### Buttons
 
@@ -467,7 +588,7 @@ leading-none`), followed by the message and a `chevron-right`. This pattern
 (announcement pill with bold version chip) is reserved for marketing
 surfaces only. It does not appear in the room.
 
-## 6. Do's and Don'ts
+## 7. Do's and Don'ts
 
 ### Do:
 - **Do** keep Blueprint Blue at ≤10% surface coverage. Selection, primary
@@ -482,6 +603,8 @@ surfaces only. It does not appear in the room.
   (countdowns, averages, vote tallies).
 - **Do** keep both light and dark themes first-class. Test every new
   component in both before shipping.
+- **Do** take every measure of the logo from its Fibonacci grid, and render
+  the PNGs again from `public/logo.svg` whenever it changes.
 - **Do** match-and-refuse against the Don'ts below. When a layout feels
   safe, it's likely the training-data answer; pick the harder, more specific
   direction.
@@ -502,6 +625,8 @@ surfaces only. It does not appear in the room.
   justify its own row, cut it.
 - **Don't** tint colors with brand hue when they should be semantic. The
   status quartet is for status only; never decorative.
+- **Don't** use Golden Indigo in the interface. It is the logo's colour;
+  selection and CTAs stay Blueprint Blue.
 - **Don't** use solid colored borders >1px as decorative emphasis.
   `border-l-4 border-amber-500` callouts are forbidden. Use background tint
   or a leading icon instead.
