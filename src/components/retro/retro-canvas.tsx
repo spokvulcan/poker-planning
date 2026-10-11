@@ -16,6 +16,7 @@ import { nextStickyPosition, PAD_WIDTH, padNodeId, STICKY_MIN_HEIGHT, STICKY_WID
 import { BoardChrome, type ChromeBoard, type ChromePanel, type ShareEntry } from "@/components/room/board-chrome";
 import { TimerNode } from "@/components/room/nodes/TimerNode";
 import { UserMenu } from "@/components/user-menu";
+import { useSeatControls } from "@/components/room/seat-controls";
 import {
   Whiteboard,
   WhiteboardProviders,
@@ -340,8 +341,15 @@ function RetroCanvasInner({ roomData, currentUserId }: RetroCanvasProps): ReactE
     [actions, gestures]
   );
 
+  // The viewer's seat, from the roster the room already holds, for the account menu.
+  const seat = useSeatControls({
+    roomId,
+    room: roomData.room,
+    me: roomData.users.find((user) => user._id === currentUserId),
+  });
+
   return (
-    <BoardChrome board={chromeBoard} panels={panels} share={share} account={<UserMenu />}>
+    <BoardChrome board={chromeBoard} panels={panels} share={share} account={<UserMenu seat={seat?.items} />}>
       <Whiteboard
         nodes={nodes}
         edges={edges}
@@ -356,6 +364,8 @@ function RetroCanvasInner({ roomData, currentUserId }: RetroCanvasProps): ReactE
         overlay={
           <>
             <StickyHeights onHeights={gestures.measureStickies} />
+            {/* Leaving the retro, confirmed outside the account menu */}
+            {seat?.dialog}
             {board && board.stickies.length === 0 && !draft && retro.step === "write" && (
               <div className="pointer-events-none absolute inset-x-0 bottom-6 flex justify-center px-4">
                 <p className="rounded-full bg-white/95 px-4 py-2 text-sm text-gray-600 shadow-lg ring-1 ring-foreground/10 backdrop-blur-sm dark:bg-surface-1/95 dark:text-gray-300">

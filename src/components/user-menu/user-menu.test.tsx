@@ -18,13 +18,16 @@ vi.mock("@/components/auth/auth-provider", () => ({
   }),
 }));
 
-// Outside a room, and no read answers: what the menu shows of the viewer is AuthProvider's.
+// The menu reads nothing itself: what it shows of the viewer is AuthProvider's,
+// and on a board the room hands it the seat (room/seat-controls.tsx).
 vi.mock("convex/react", () => ({
-  useQuery: () => undefined,
+  useQuery: () => {
+    throw new Error("The account menu reads nothing of its own");
+  },
   useMutation: () => async () => {},
 }));
 
-vi.mock("next/navigation", () => ({ useParams: () => ({}), usePathname: () => "/blog" }));
+vi.mock("next/navigation", () => ({ usePathname: () => "/blog" }));
 
 vi.mock("next/link", () => ({
   default: ({ children, href }: { children?: ReactNode; href: string }) => <a href={href}>{children}</a>,
@@ -109,6 +112,13 @@ describe("UserMenu", () => {
     expect(screen.getByTestId("user-menu-skeleton")).toBeTruthy();
     expect(screen.queryByTestId("user-menu-trigger")).toBeNull();
     expect(screen.queryByRole("link", { name: "Sign in" })).toBeNull();
+  });
+
+  it("draws the seat the room hands it, after Edit name", () => {
+    mocks.viewer = { status: "signedIn", name: "Bob", avatarUrl: null, email: null, isPermanent: false, confirmed: true };
+    render(<UserMenu seat={<button>Leave room</button>} />);
+
+    expect(screen.getByRole("button", { name: "Leave room" })).toBeTruthy();
   });
 
   it("draws nothing for a visitor", () => {

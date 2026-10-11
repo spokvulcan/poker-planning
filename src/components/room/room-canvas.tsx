@@ -17,6 +17,7 @@ import { useRoundClockActions } from "./hooks/useRoundClockActions";
 import { toast } from "@/lib/toast";
 import { NodePickerToolbar } from "./node-picker-toolbar";
 import { UserMenu } from "@/components/user-menu";
+import { useSeatControls } from "./seat-controls";
 import { ShinyButton } from "@/components/ui/shiny-button";
 import { rulesOf } from "@/convex/ceremony";
 import { api } from "@/convex/_generated/api";
@@ -254,7 +255,13 @@ function RoomCanvasInner({ roomData, currentUserId, isEmbedded = false }: RoomCa
   const board: ChromeBoard = isDemoMode
     ? { name: roomName, link: "/demo", noun: "Demo", tag: "Demo" }
     : { name: roomName, link: `/room/${roomId}`, noun };
-  const account = isDemoMode ? <CreateRoomButton /> : <UserMenu />;
+  // The viewer's seat, from the roster the room already holds, for the account menu.
+  const seat = useSeatControls({
+    roomId,
+    room: roomData.room,
+    me: roomData.users.find((user) => user._id === currentUserId),
+  });
+  const account = isDemoMode ? <CreateRoomButton /> : <UserMenu seat={seat?.items} />;
 
   // The panels docked beside the board, drawn from the room as it is now.
   const panels: ChromePanel[] = [
@@ -310,6 +317,9 @@ function RoomCanvasInner({ roomData, currentUserId, isEmbedded = false }: RoomCa
 
             {/* Demo explainer - only shown in demo mode, not when embedded */}
             {isDemoMode && !isEmbedded && <DemoExplainer />}
+
+            {/* Leaving the room, confirmed outside the account menu */}
+            {seat?.dialog}
 
             {/* Delete note confirmation dialog */}
             <AlertDialog open={!!pendingNote} onOpenChange={(open) => !open && gestures.dismissNote()}>
