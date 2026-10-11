@@ -3,6 +3,8 @@ title: "Which Agile Estimation Technique Should You Use? 7 Methods Compared"
 date: "2025-01-27"
 spoiler: "Compare Planning Poker, T-Shirt Sizing, Affinity Estimation, and more. Find which method fits your team size, precision needs, and context."
 tags: ["estimation", "agile", "scrum", "planning-poker", "sprint-planning", "remote-teams", "t-shirt-sizing"]
+thumbnail: "/images/blog/agile-estimation-techniques-compared/thumbnail.svg"
+thumbnailDark: "/images/blog/agile-estimation-techniques-compared/thumbnail-dark.svg"
 ---
 
 <Tldr>

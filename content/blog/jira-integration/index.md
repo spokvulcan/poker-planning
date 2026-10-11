@@ -3,6 +3,8 @@ title: "Jira Integration Is Here: Import Issues, Push Estimates, Stay in Sync"
 date: "2026-02-27"
 spoiler: "AgileKit now connects to Jira Cloud. Pull sprint issues into your planning sessions, push story point estimates back when your team agrees on a number, and stop copy-pasting between tabs."
 tags: ["jira", "integration", "agile", "estimation", "planning-poker", "scrum"]
+thumbnail: "/images/blog/jira-integration/thumbnail.svg"
+thumbnailDark: "/images/blog/jira-integration/thumbnail-dark.svg"
 ---
 
 <Tldr>

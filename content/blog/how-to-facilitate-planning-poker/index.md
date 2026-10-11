@@ -3,6 +3,8 @@ title: "How to Facilitate Planning Poker: A Complete Guide for Scrum Teams"
 date: "2025-01-07"
 spoiler: "Master facilitating planning poker. This guide covers the process, the science behind why it works, and practical tips from real sprint planning sessions."
 tags: ["planning-poker", "estimation", "scrum", "agile"]
+thumbnail: "/images/blog/how-to-facilitate-planning-poker/thumbnail.svg"
+thumbnailDark: "/images/blog/how-to-facilitate-planning-poker/thumbnail-dark.svg"
 ---
 
 <Tldr>

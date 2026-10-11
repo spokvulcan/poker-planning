@@ -423,6 +423,17 @@ export const FAQ = {
   ],
 };
 
+// --- The newest blog posts, above the closing call to action ---
+
+export const LATEST_POSTS = {
+  eyebrow: "From the blog",
+  heading: "Why it works,",
+  headingMuted: "and what's new.",
+  description:
+    "Guides to planning poker and retros, the research behind them, and news from AgileKit.",
+  all: { label: "All posts", href: "/blog" } satisfies Cta,
+};
+
 // --- Closing call to action ---
 
 export const CALL_TO_ACTION = {
