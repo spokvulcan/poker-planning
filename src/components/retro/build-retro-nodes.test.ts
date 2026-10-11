@@ -180,7 +180,42 @@ describe("buildRetroNodes", () => {
     const retro = buildRetroNodes(
       input({ retro: { step: "discuss", focusStickyId: "s1" as Id<"retroStickies"> }, board: board(stickies) })
     ).find((n) => n.id === "retro")!;
-    expect(retro.data).toMatchObject({ topicIndex: 1, topicCount: 2, focusedId: "s1", focusedLabel: "Sticky s1" });
+    expect(retro.data).toMatchObject({
+      discussion: { label: "Topic 2 of 2", progress: { value: 2, max: 2 }, previous: true, next: false, atEnd: true },
+      focusedId: "s1",
+      focusedLabel: "Sticky s1",
+    });
+  });
+
+  it("keeps the walk's place through a detour to a topic nobody voted for", () => {
+    const stickies = [sticky("s1", { votes: 1 }), sticky("s2", { votes: 3 }), sticky("s3", { votes: 0 })];
+    const nodes = buildRetroNodes(
+      input({
+        retro: {
+          step: "discuss",
+          focusStickyId: "s3" as Id<"retroStickies">,
+          walkStickyId: "s2" as Id<"retroStickies">,
+        },
+        board: board(stickies),
+      })
+    );
+
+    expect(nodes.find((n) => n.id === "retro")?.data).toMatchObject({
+      discussion: { label: "Not voted for", progress: { value: 1, max: 2 }, previous: true, next: true, atEnd: false },
+    });
+    // s2 (#1) is the topic the walk left, so it has been discussed.
+    expect(stickyNodes(nodes).map((n) => n.data.discussed)).toEqual([false, true, false]);
+  });
+
+  it("ranks nothing while a board read in Vote hasn't caught up with a move to Discuss", () => {
+    // The step moved on the click; the totals come with the server's board.
+    const stickies = [sticky("s1"), sticky("s2"), sticky("s3")];
+    const nodes = buildRetroNodes(input({ retro: { step: "discuss" }, board: board(stickies) }));
+
+    expect(stickyNodes(nodes).map((n) => n.data.rank)).toEqual([undefined, undefined, undefined]);
+    expect(nodes.find((n) => n.id === "retro")?.data).toMatchObject({
+      discussion: { label: "Counting votes…", previous: false, next: false, atEnd: false },
+    });
   });
 
   it("shows a draft as an open editor on top of the board", () => {

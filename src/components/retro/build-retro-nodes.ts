@@ -9,7 +9,14 @@ import type { ActionItemView, BoardView, RetroState, StickyView } from "@/convex
 import type { CanvasNode } from "@/convex/model/canvas";
 import type { ResolvedDecision, RetroPermissionCategory } from "@/convex/permissions";
 import type { RetroColumn, RetroStep } from "@/convex/retroTemplates";
-import { stepAllows, stepShows, stickyEditDecision, topicActAllowed } from "@/convex/retroSteps";
+import {
+  discussionAt,
+  stepAllows,
+  stepShows,
+  stickyEditDecision,
+  topicActAllowed,
+  type DiscussionPlace,
+} from "@/convex/retroSteps";
 import {
   actionsPosition,
   padNodeId,
@@ -19,9 +26,10 @@ import {
   STICKY_WIDTH,
 } from "@/convex/retroLayout";
 import { buildTimerNode } from "@/components/room/hooks/buildCanvasNodes";
-import type { RetroBoardActions, RetroFlowNode, RetroMember, StickyDraft } from "./types";
+import type { DiscussionView, RetroBoardActions, RetroFlowNode, RetroMember, StickyDraft } from "./types";
 import { isOptimistic } from "@/lib/optimistic-id";
 import { topicOrder } from "./board-view";
+import { plural } from "./retro-summary";
 
 export interface RetroNodesInput {
   roomId: Id<"rooms">;
@@ -52,6 +60,25 @@ const STICKY_SIZE = { initialWidth: STICKY_WIDTH, initialHeight: STICKY_MIN_HEIG
 const canUnstack = (step: RetroStep, member: StickyView): boolean =>
   topicActAllowed(step, { kind: "unstack", stickyId: member._id }, [member], (s) => s.mine).allowed;
 
+/**
+ * The discussion's controls on the retro node: where the walk is, how far it
+ * has come, and which way it can move. Nothing is guessed while the order
+ * isn't known: the board waits for the totals.
+ */
+export function discussionView(place: DiscussionPlace): DiscussionView {
+  const moves = { previous: place.previous !== undefined, next: place.next !== undefined, atEnd: place.atEnd };
+  if (!place.known) return { label: "Counting votes…", previous: false, next: false, atEnd: false };
+  const label =
+    place.count === 0
+      ? "No topics"
+      : place.spotlight === "onOrder"
+        ? `Topic ${place.at} of ${place.count}`
+        : place.spotlight === "detour"
+          ? "Not voted for"
+          : `${plural(place.count, "topic")} to discuss`;
+  return { label, progress: { value: place.at, max: place.count }, ...moves };
+}
+
 /** A short, readable label for a topic: its words, its GIF's title, or its face. */
 export function topicLabel(sticky: StickyView | undefined): string | undefined {
   if (!sticky) return undefined;
@@ -69,13 +96,10 @@ export function buildRetroNodes(input: RetroNodesInput): RetroFlowNode[] {
   const defaultPads = padPositions(columns.length);
   const nodes: RetroFlowNode[] = [];
 
-  // The walk: once the totals show, the topics in the order they give and
-  // where the spotlight is in it. While it runs, the topics it has passed are
-  // discussed; once it's over, all of them.
-  const order = shows.totals ? topicOrder(board, columns) : [];
-  const focusIndex = retro.focusStickyId ? order.indexOf(retro.focusStickyId) : -1;
+  // Where the discussion stands, once the totals show: the walk's controls
+  // and each topic's rank and tick read the one answer (convex/retroSteps.ts).
+  const place = discussionAt(shows.totals ? topicOrder(board, columns) : null, retro);
   const focused = stickies.find((s) => s._id === retro.focusStickyId);
-  const walking = stepAllows(step, "walk").allowed;
   const openActions = (input.items ?? []).filter((i) => !i.done).length;
 
   nodes.push({
@@ -91,8 +115,7 @@ export function buildRetroNodes(input: RetroNodesInput): RetroFlowNode[] {
       votesCast: input.votesCast,
       votesPerPerson: retro.votesPerPerson,
       myVotes: board?.myVotes ?? 0,
-      topicIndex: focusIndex,
-      topicCount: order.length,
+      discussion: discussionView(place),
       ...(retro.focusStickyId && shows.spotlight ? { focusedId: retro.focusStickyId } : {}),
       ...(shows.spotlight ? { focusedLabel: topicLabel(focused) } : {}),
       ...(retro.nextRoomId ? { nextRoomId: retro.nextRoomId } : {}),
@@ -137,7 +160,8 @@ export function buildRetroNodes(input: RetroNodesInput): RetroFlowNode[] {
   for (const s of stickies) {
     if (s.stackId) membersOf.set(s.stackId, [...(membersOf.get(s.stackId) ?? []), s]);
   }
-  const votesLeft = retro.votesPerPerson - (board?.myVotes ?? 0);
+  // A budget lowered mid-vote leaves none, never fewer.
+  const votesLeft = Math.max(retro.votesPerPerson - (board?.myVotes ?? 0), 0);
   // What the step lets anyone do right now; who may do it is the permissions'.
   const canVote = stepAllows(step, "vote").allowed;
   const canSpotlight = stepAllows(step, "spotlight").allowed && perms.stageFlow.allowed;
@@ -147,7 +171,7 @@ export function buildRetroNodes(input: RetroNodesInput): RetroFlowNode[] {
     // Nobody but the author touches a sticky before the reveal.
     const canEdit = !pending && stickyEditDecision(step, sticky.mine, perms.cardManagement).allowed;
     const editing = input.editingId === sticky._id;
-    const rank = order.indexOf(sticky._id);
+    const rank = place.rank(sticky._id);
     const isFocused = shows.spotlight && sticky._id === retro.focusStickyId;
     nodes.push({
       id: sticky.clientId,
@@ -169,9 +193,9 @@ export function buildRetroNodes(input: RetroNodesInput): RetroFlowNode[] {
         expanded: input.expandedIds.has(sticky._id),
         canVote: canVote && !pending,
         votesLeft,
-        ...(rank >= 0 ? { rank: rank + 1 } : {}),
+        ...(rank !== undefined ? { rank } : {}),
         focused: isFocused,
-        discussed: rank >= 0 && (!walking || (focusIndex >= 0 && rank < focusIndex)),
+        discussed: place.discussed(sticky._id),
         dimmed: shows.spotlight && !!retro.focusStickyId && !isFocused,
         canFocus: canSpotlight && !pending,
         actions,

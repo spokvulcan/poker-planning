@@ -30,6 +30,7 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { ActionItemView, BoardView, RetroState, StickyView } from "@/convex/model/retro";
 import { columnsFromTemplate } from "@/convex/retroTemplates";
+import { stepShows } from "@/convex/retroSteps";
 import { isOptimistic } from "@/lib/optimistic-id";
 import { useRetroMutations } from "./use-retro-mutations";
 
@@ -66,6 +67,8 @@ function sticky(_id: Id<"retroStickies">, createdAt: number, extra: Partial<Stic
  * written, by name, and with their arguments when they aren't this retro's.
  */
 function heldRetro(retro: Partial<RetroState> = {}) {
+  // From Discuss on, the board carries each topic's total, as the server sends it.
+  const totalled = (s: StickyView) => (stepShows(retro.step ?? "vote").totals && !s.stackId ? { ...s, votes: 0 } : s);
   const seeded: [Query, Record<string, unknown>, unknown][] = [
     [
       api.rooms.get,
@@ -99,7 +102,7 @@ function heldRetro(retro: Partial<RetroState> = {}) {
           sticky(MINE, 1, { mine: true }),
           sticky(ADAS, 2, { myVote: true }),
           sticky(UNDER, 3, { stackId: ADAS }),
-        ],
+        ].map(totalled),
         writers: 2,
         myVotes: 1,
       } satisfies BoardView,

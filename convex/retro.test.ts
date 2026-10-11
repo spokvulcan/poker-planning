@@ -722,6 +722,32 @@ describe("the discussion", () => {
     expect((await retroState(t, roomId)).focusStickyId).toBe(most);
   });
 
+  it("a detour to a topic nobody voted for keeps the walk's place: Next carries on, Previous goes back", async () => {
+    const t = withComponents(convexTest(schema, modules));
+    const { roomId, most, some, none } = await seedVoted(t);
+    await setStep(t, roomId, "discuss");
+    const walk = async (direction: "next" | "previous") => {
+      await as(t, "owner").mutation(api.retro.stepDiscussion, { roomId, direction });
+      return retroState(t, roomId);
+    };
+
+    await focus(t, roomId, none);
+    expect(await retroState(t, roomId)).toMatchObject({ focusStickyId: none, walkStickyId: most });
+    expect(await walk("next")).toMatchObject({ focusStickyId: some });
+    expect(await retroState(t, roomId)).not.toHaveProperty("walkStickyId");
+
+    await focus(t, roomId, none);
+    expect(await walk("previous")).toMatchObject({ focusStickyId: some });
+
+    // The detour's topic leaves the board; the walk keeps its place, and Next at the end changes nothing.
+    await focus(t, roomId, none);
+    await as(t, "ann").mutation(api.retro.deleteSticky, { stickyId: none });
+    expect(await retroState(t, roomId)).toEqual(expect.objectContaining({ walkStickyId: some }));
+    expect(await retroState(t, roomId)).not.toHaveProperty("focusStickyId");
+    expect(await walk("next")).toMatchObject({ walkStickyId: some });
+    expect(await walk("previous")).toMatchObject({ focusStickyId: some });
+  });
+
   it("going back from Done to Discuss resumes the walk where it was, and nothing takes the spotlight while done", async () => {
     const t = withComponents(convexTest(schema, modules));
     const { roomId, some, none } = await seedVoted(t);

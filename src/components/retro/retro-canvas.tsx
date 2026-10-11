@@ -123,7 +123,7 @@ function RetroCanvasInner({ roomData, currentUserId }: RetroCanvasProps): ReactE
       step: retro.step,
       columns: retro.columns,
       stickies: board.stickies,
-      topics: topicOrder(board, retro.columns),
+      topics: topicOrder(board, retro.columns) ?? [],
       actionItems: items ?? [],
     });
     const slug = room.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") || "retro";

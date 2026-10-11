@@ -33,6 +33,7 @@ import { cutTo } from "../fieldRule";
 import * as Topics from "../retroTopics";
 import {
   discussionOrder,
+  followDiscussion,
   spotlightStepChange,
   stepped,
   stepAllows,
@@ -342,10 +343,11 @@ async function applyStepChange(
   change: StepChange | null,
   spotlight?: StickyId
 ): Promise<void> {
-  let next = stepped(retro, change, spotlight);
-  if (!spotlight && change?.spotlight === "first") {
-    next = withSpotlight(next, (await orderOf(ctx, room._id, retro.columns))[0]);
-  }
+  // A picked topic is placed against the order (a detour keeps the walk's place), and the first is its top.
+  const first = !spotlight && change?.spotlight === "first";
+  const order = spotlight || first ? await orderOf(ctx, room._id, retro.columns) : undefined;
+  let next = stepped(retro, change, spotlight, order);
+  if (first) next = withSpotlight(next, order![0]);
   await ctx.db.patch("rooms", room._id, { retro: next });
   if (change?.reveal) await settleRevealed(ctx, room._id);
   await updateRoomActivity(ctx, room);
@@ -379,8 +381,12 @@ export async function stepDiscussion(
 ): Promise<void> {
   const retro = retroOf(room);
   requireAllowed(stepAllows(retro.step, "walk"));
-  const spotlight = walk(await orderOf(ctx, room._id, retro.columns), retro.focusStickyId, direction);
-  await ctx.db.patch("rooms", room._id, { retro: withSpotlight(retro, spotlight) });
+  const order = await orderOf(ctx, room._id, retro.columns);
+  const topic = walk(order, retro, direction);
+  // Past either end the walk stays put, keeping any place a detour left.
+  if (topic !== retro.focusStickyId) {
+    await ctx.db.patch("rooms", room._id, { retro: withSpotlight(retro, topic, order) });
+  }
   await updateRoomActivity(ctx, room);
 }
 
@@ -704,10 +710,8 @@ async function applyTopicChange(
     ...[...refile].map(([id, stickyId]) => ctx.db.patch("retroStickyVotes", id, { stickyId })),
   ]);
 
-  const spotlight = Topics.followSpotlight(retro.focusStickyId, change);
-  if (spotlight !== retro.focusStickyId) {
-    await ctx.db.patch("rooms", room._id, { retro: withSpotlight(retro, spotlight) });
-  }
+  const discussion = followDiscussion(retro, change);
+  if (discussion !== retro) await ctx.db.patch("rooms", room._id, { retro: discussion });
   await updateRoomActivity(ctx, room);
 }
 

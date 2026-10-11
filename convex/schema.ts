@@ -81,6 +81,12 @@ export const retroStateValidator = v.object({
   showAuthors: v.boolean(),
   /** The topic (a loose sticky or a stack's root) the discussion is on. */
   focusStickyId: v.optional(v.id("retroStickies")),
+  /**
+   * While a person has put a topic off the discussion's order in the
+   * spotlight: the topic the walk left for it, which Next carries on from
+   * and Previous goes back to (convex/retroSteps.ts).
+   */
+  walkStickyId: v.optional(v.id("retroStickies")),
   /** The retro started from this one's wrap-up, for everyone to follow. */
   nextRoomId: v.optional(v.id("rooms")),
 });

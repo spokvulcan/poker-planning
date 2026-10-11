@@ -22,6 +22,7 @@ A retro is a `rooms` row with `roomType: "retro"`, `ownerId` (the creator), `ret
 | `votesPerPerson` | 1 to 10, default 3 |
 | `showAuthors` | default `false` |
 | `focusStickyId?` | the spotlight: a topic's top sticky |
+| `walkStickyId?` | while the spotlight is on a topic off the discussion's order: the topic the walk left for it |
 | `nextRoomId?` | the retro that "Start the next retro" opened |
 
 Three tables, all room-owned: the room cascade empties them and the daily orphan sweep skips them.
@@ -69,7 +70,7 @@ In every step stickies are written and moved, authors edit or delete their own, 
 
 - **Votes.** `toggleVote` works only in `vote` (otherwise `stage`), at most once per person per topic (a vote on any sticky of a stack is the stack's), and within `votesPerPerson` per person (otherwise `budget`, which the board never sends). Voting again takes the vote back. Lowering the budget keeps votes already cast. A vote is filed under its topic's top and moves with the topic, so totals are per topic and nobody holds two votes on one. Nobody is shown who voted for what: the board sends each viewer their own votes and, from `discuss` on, the totals, and `retro.votesCast` sends the count cast.
 - **Order.** `discussionOrder`: the topics with a vote, most first, ties by column order and then creation; with no votes at all, every topic, column by column. Server and browser compute it from the same rows; it is never stored.
-- **Spotlight.** `stepDiscussion` moves it to the next or previous topic (`discuss` only; it stops at either end). `focusTopic` ("Discuss this now") puts any face-up topic in it in `vote` and `discuss`, and from `vote` also moves the retro to `discuss`; in `done` the board doesn't offer it and the server refuses it with `stage`. Both are `stageFlow`. Every viewer's canvas pans to the spotlight, the other stickies dim, and each ranked topic shows its place (#1, #2, …), ticked once passed.
+- **Spotlight.** `stepDiscussion` moves it to the next or previous topic (`discuss` only; it stops at either end). A topic off the order put in the spotlight is a detour that keeps the walk's place (`walkStickyId`): Next carries on after the topic the walk left and Previous goes back to it, and the topics up to it stay ticked. Where the discussion stands (its label, progress, the moves Next and Previous make, each topic's rank and tick) is one pure answer, `discussionAt` in `convex/retroSteps.ts`, which the board's builder reads; while a board read in `vote` hasn't caught up with a move to `discuss`, it ranks nothing rather than guess the order. `focusTopic` ("Discuss this now") puts any face-up topic in it in `vote` and `discuss`, and from `vote` also moves the retro to `discuss`; in `done` the board doesn't offer it and the server refuses it with `stage`. Both are `stageFlow`. Every viewer's canvas pans to the spotlight, the other stickies dim, and each ranked topic shows its place (#1, #2, …), ticked once passed.
 
 ## 7. Action items and the next retro
 

@@ -57,6 +57,19 @@ export interface RetroMember {
   avatarUrl?: string;
 }
 
+/** The discussion's controls on the retro node (build-retro-nodes.ts: discussionView). */
+export type DiscussionView = {
+  /** Where the walk is: "Topic 2 of 5", "Not voted for" for a topic off the order, "No topics"... */
+  label: string;
+  /** How far the walk has come: the topic it stands on of those it walks; none while the order isn't known. */
+  progress?: { value: number; max: number };
+  /** Whether Previous and Next move the spotlight. */
+  previous: boolean;
+  next: boolean;
+  /** Nothing comes after where the walk stands: the main button finishes the retro. */
+  atEnd: boolean;
+};
+
 export type RetroNodeData = {
   name: string;
   step: RetroStep;
@@ -66,9 +79,8 @@ export type RetroNodeData = {
   votesCast: number;
   votesPerPerson: number;
   myVotes: number;
-  /** The walk: where the focus is (0-based, -1 when off the list) and how long it is. */
-  topicIndex: number;
-  topicCount: number;
+  /** The discussion's controls, from where the discussion stands. */
+  discussion: DiscussionView;
   focusedId?: Id<"retroStickies">;
   focusedLabel?: string;
   nextRoomId?: Id<"rooms">;
