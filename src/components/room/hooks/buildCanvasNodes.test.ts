@@ -42,6 +42,12 @@ const ACTIONS: PokerBoardActions = {
   openIssues: () => {},
   updateNoteContent: async () => true,
   deleteNote: () => {},
+  startTimebox: () => {},
+  extendTimebox: () => {},
+  stopTimebox: () => {},
+  pauseClock: () => {},
+  resumeClock: () => {},
+  setTimeNodeShown: () => {},
 };
 
 const EVERYTHING_ALLOWED = {
@@ -108,6 +114,7 @@ function nodesInput(overrides?: Partial<CanvasNodesInput>): CanvasNodesInput {
       name: "Sprint 42",
       autoCompleteVoting: false,
       autoRevealCountdownStartedAt: null,
+      lastActivityAt: 0,
       votingScale: undefined,
     },
     members: [],
@@ -133,11 +140,11 @@ function edgesInput(overrides?: Partial<CanvasEdgesInput>): CanvasEdgesInput {
 }
 
 describe("buildCanvasEdges", () => {
-  it("emits one session-to-player edge per member and the timer edge always", () => {
+  it("emits one session-to-player edge per member and the timer edge while the timer shows", () => {
     const edges = buildCanvasEdges(
       edgesInput({
         members: [member("u1"), member("u2")],
-        canvasNodes: [playerCanvasNode("u1"), playerCanvasNode("u2")],
+        canvasNodes: [playerCanvasNode("u1"), playerCanvasNode("u2"), timeCanvasNode("timer")],
       }),
     );
 
@@ -159,6 +166,21 @@ describe("buildCanvasEdges", () => {
       target: "session-current",
       type: "straight",
     });
+  });
+
+  it("joins session time to the session node's top while it shows, and drops a hidden time node's edge", () => {
+    const shown = buildCanvasEdges(edgesInput({ canvasNodes: [timeCanvasNode("sessionTime")] }));
+    expect(shown.find((e) => e.id === "session-time-to-session")).toMatchObject({
+      source: "session-time",
+      target: "session-current",
+      targetHandle: "top",
+    });
+
+    const hidden = buildCanvasEdges(
+      edgesInput({ canvasNodes: [timeCanvasNode("timer", true), timeCanvasNode("sessionTime", true)] }),
+    );
+    expect(hidden.find((e) => e.id === "timer-to-session")).toBeUndefined();
+    expect(hidden.find((e) => e.id === "session-time-to-session")).toBeUndefined();
   });
 
   it("emits the session-to-results edge only when the round is revealed", () => {
@@ -266,6 +288,14 @@ describe("buildCanvasNodes — player nodes", () => {
   });
 });
 
+/** The timer's or session time's row, shown unless `hidden`. */
+function timeCanvasNode(type: "timer" | "sessionTime", hidden = false): CanvasNode {
+  const row = { roomId: ROOM_ID, position: { x: 0, y: 0 }, lastUpdatedAt: 0, ...(hidden && { isHidden: true }) };
+  return type === "timer"
+    ? { ...row, nodeId: "timer", type, data: { startedAt: null, pausedAt: null, elapsedSeconds: 0, lastAction: null } }
+    : { ...row, nodeId: "session-time", type, data: {} };
+}
+
 function sessionCanvasNode(): CanvasNode {
   return {
     roomId: ROOM_ID,
@@ -314,7 +344,7 @@ describe("buildCanvasNodes — session node", () => {
       }),
     )[0];
 
-    if (!("permissions" in data)) throw new Error("expected session data");
+    if (!("sessionName" in data)) throw new Error("expected session data");
     expect(data.permissions.revealCards).toBe(denied);
     expect(data.permissions.gameFlow).toBe(RESOLVED_ALLOWED);
     expect(data.permissions.roomSettings).toBe(denied);
@@ -346,6 +376,7 @@ describe("buildCanvasNodes — session node", () => {
           name: "",
           autoCompleteVoting: true,
           autoRevealCountdownStartedAt: 12345,
+          lastActivityAt: 0,
         },
         canvasNodes: [sessionCanvasNode()],
       }),
@@ -357,6 +388,15 @@ describe("buildCanvasNodes — session node", () => {
       autoCompleteVoting: true,
       autoRevealCountdownStartedAt: 12345,
     });
+  });
+
+  it("tells the session node which time nodes the room shows, for its right-click menu", () => {
+    const { data } = buildCanvasNodes(
+      nodesInput({ canvasNodes: [sessionCanvasNode(), timeCanvasNode("timer", true), timeCanvasNode("sessionTime")] }),
+    ).find((n) => n.type === "session")!;
+
+    if (!("sessionName" in data)) throw new Error("expected session data");
+    expect(data.timeNodes).toEqual({ timer: false, sessionTime: true });
   });
 });
 
@@ -381,6 +421,7 @@ describe("buildCanvasNodes — results node", () => {
         name: "Sprint 42",
         autoCompleteVoting: false,
         autoRevealCountdownStartedAt: null,
+        lastActivityAt: 0,
         votingScale: { cards: ["S", "M", "L"], isNumeric: false },
       },
     };
@@ -451,40 +492,39 @@ describe("buildCanvasNodes — note node", () => {
   });
 });
 
-describe("buildCanvasNodes — timer node", () => {
-  it("passes the persisted timer state through with sync identifiers", () => {
-    const timerNode: CanvasNode = {
-      roomId: ROOM_ID,
-      nodeId: "timer",
-      position: { x: -500, y: -250 },
-      lastUpdatedAt: 0,
-      type: "timer",
-      data: {
-        startedAt: 111,
-        pausedAt: null,
-        elapsedSeconds: 42,
-        lastAction: "start",
-      },
-    };
+describe("buildCanvasNodes — time nodes", () => {
+  it("makes the timer the round clock's node: its room, the room's last action, and the controls' decisions", () => {
+    const denied = { allowed: false as const, message: "Only facilitators can do that" };
     const nodes = buildCanvasNodes(
-      nodesInput({ canvasNodes: [timerNode], viewerId: "u2" as Id<"users"> }),
-    ).filter((n) => n.type === "timer");
+      nodesInput({
+        canvasNodes: [timeCanvasNode("timer")],
+        room: { name: "R", autoCompleteVoting: false, autoRevealCountdownStartedAt: null, lastActivityAt: 777 },
+        permissions: { ...EVERYTHING_ALLOWED, gameFlow: denied },
+      }),
+    ).filter((n) => n.type === "roundTimer");
 
-    expect(nodes).toHaveLength(1);
-    expect(nodes[0]).toMatchObject({
-      id: "timer",
-      type: "timer",
-      data: {
-        startedAt: 111,
-        pausedAt: null,
-        elapsedSeconds: 42,
-        isRunning: false,
-        lastAction: "start",
-        roomId: ROOM_ID,
-        userId: "u2",
-        nodeId: "timer",
-      },
-    });
+    expect(nodes).toEqual([
+      expect.objectContaining({
+        id: "timer",
+        type: "roundTimer",
+        data: {
+          roomId: ROOM_ID,
+          lastActivityAt: 777,
+          permissions: { gameFlow: denied, roomSettings: RESOLVED_ALLOWED },
+          actions: ACTIONS,
+        },
+      }),
+    ]);
+  });
+
+  it("shows session time only while the room shows it, and never a hidden timer", () => {
+    const types = (canvasNodes: CanvasNode[]) =>
+      buildCanvasNodes(nodesInput({ canvasNodes }))
+        .map((n) => n.type)
+        .filter((type) => type === "roundTimer" || type === "sessionTime");
+
+    expect(types([timeCanvasNode("timer"), timeCanvasNode("sessionTime", true)])).toEqual(["roundTimer"]);
+    expect(types([timeCanvasNode("timer", true), timeCanvasNode("sessionTime")])).toEqual(["sessionTime"]);
   });
 });
 
@@ -498,6 +538,7 @@ describe("buildCanvasNodes — voting-card row", () => {
     name: "Sprint 42",
     autoCompleteVoting: false,
     autoRevealCountdownStartedAt: null,
+    lastActivityAt: 0,
     votingScale: scale,
   };
   const viewer = "u1" as Id<"users">;

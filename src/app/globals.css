@@ -276,6 +276,20 @@
   animation: hold-drain 3s linear both;
 }
 
+/* The timebox's sand timer turning over: in steps, like a pixel animation */
+@keyframes hourglass-turn {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(180deg);
+  }
+}
+
+.animate-hourglass-turn {
+  animation: hourglass-turn 540ms steps(9, end) both;
+}
+
 /* Disable transition during drag operations */
 .react-flow__node-player.dragging,
 .react-flow__node-session.dragging {

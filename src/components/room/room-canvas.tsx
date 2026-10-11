@@ -9,8 +9,10 @@ import { RoomSettingsPanel } from "./room-settings-panel";
 import { IssuesPanel } from "./issues-panel";
 import { DemoExplainer } from "./demo-explainer";
 import { useDemoSimulation, useIsDemoMode } from "./demo/DemoSimulationProvider";
-import { buildCanvasEdges, buildCanvasNodes, isNoteForIssue } from "./hooks/buildCanvasNodes";
+import { buildCanvasEdges, buildCanvasNodes, isNoteForIssue, timeNodesShown } from "./hooks/buildCanvasNodes";
 import { useCanvasActions } from "./hooks/useCanvasActions";
+import { useRoundClockActions } from "./hooks/useRoundClockActions";
+import { toast } from "@/lib/toast";
 import { usePanelState } from "./hooks/usePanelState";
 import { NodePickerToolbar } from "./node-picker-toolbar";
 import { api } from "@/convex/_generated/api";
@@ -19,8 +21,9 @@ import {
   NoteNode,
   PlayerNode,
   ResultsNode,
+  RoundTimerNode,
   SessionNode,
-  TimerNode,
+  SessionTimeNode,
   VotingCardNode,
 } from "./nodes";
 import { DEMO_VIEWER_ID, type CustomNodeType, type PokerBoardActions } from "./types";
@@ -53,7 +56,8 @@ const nodeTypes: NodeTypes = {
   session: SessionNode,
   votingCard: VotingCardNode,
   results: ResultsNode,
-  timer: TimerNode,
+  roundTimer: RoundTimerNode,
+  sessionTime: SessionTimeNode,
 } as const;
 
 /** A player a Delete will remove once the viewer confirms. */
@@ -102,6 +106,7 @@ function RoomCanvasInner({ roomData, currentUserId, isEmbedded = false }: RoomCa
   // Every backend write the board makes, frozen. Under /demo each one no-ops.
   // A card pick lands on `roomData` at once, which raises the card.
   const writes = useCanvasActions({ roomId, currentUserId });
+  const clockWrites = useRoundClockActions({ roomId, currentUserId });
 
   // Docked-panel state: mutual exclusion + Escape-to-close.
   const { isIssuesPanelOpen, isSettingsOpen, openIssues, openSettings, closeAll } =
@@ -130,6 +135,7 @@ function RoomCanvasInner({ roomData, currentUserId, isEmbedded = false }: RoomCa
     cancelAutoReveal: writes.cancelAutoReveal,
     selectCard: writes.selectCard,
     updateNoteContent: writes.updateNoteContent,
+    ...clockWrites,
     openIssues,
     deleteNote,
   }));
@@ -139,14 +145,20 @@ function RoomCanvasInner({ roomData, currentUserId, isEmbedded = false }: RoomCa
   const gestures = useStableActions({
     onDrop: ({ nodes: moved }: WhiteboardDrop<CustomNodeType>) =>
       writes.moveNodes(moved.map((node) => ({ nodeId: node.id, position: node.position }))),
-    // Delete takes a note off as its ✕ does, and asks once about every player
-    // the viewer may remove, never themselves. Nothing else on this board can
-    // be deleted.
+    // Delete takes a note off as its ✕ does, hides a time node for the room
+    // when its settings allow (the clock keeps running), and asks once about
+    // every player the viewer may remove, never themselves. Nothing else on
+    // this board can be deleted.
     onDeleteNodes: (doomed: CustomNodeType[]) => {
       const players: PendingPlayer[] = [];
       for (const node of doomed) {
         if (node.type === "note") {
           actions.deleteNote(node.id);
+        } else if ((node.type === "roundTimer" || node.type === "sessionTime") && permissions.roomSettings.allowed) {
+          actions.setTimeNodeShown(node.type === "roundTimer" ? "timer" : "sessionTime", false);
+          toast(node.type === "roundTimer" ? "Timer hidden" : "Session time hidden", {
+            description: "Right-click the session node to show it again. Time is tracked either way.",
+          });
         } else if (
           node.type === "player" &&
           !node.data.isCurrentUser &&
@@ -186,6 +198,7 @@ function RoomCanvasInner({ roomData, currentUserId, isEmbedded = false }: RoomCa
         autoCompleteVoting: room.autoCompleteVoting,
         autoRevealCountdownStartedAt: room.autoRevealCountdownStartedAt ?? null,
         votingScale: room.votingScale,
+        lastActivityAt: room.lastActivityAt,
       },
       members: users,
       votes,
@@ -310,6 +323,8 @@ function RoomCanvasInner({ roomData, currentUserId, isEmbedded = false }: RoomCa
             currentUserId={isDemoMode ? undefined : (currentUserId as Id<"users">)}
             isOpen={isSettingsOpen}
             onClose={closeAll}
+            timeNodes={timeNodesShown(canvasNodes ?? [])}
+            onSetTimeNodeShown={actions.setTimeNodeShown}
           />
           <IssuesPanel
             roomId={roomId}

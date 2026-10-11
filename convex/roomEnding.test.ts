@@ -265,6 +265,9 @@ async function seedFullRoom(
       cardLabel: "5",
       votedAt: Date.now(),
     });
+    await ctx.db.insert("roundClocks", { roomId, sessionStartedAt: Date.now() });
+    await ctx.db.insert("roomAttendance", { roomId, lastSeenAt: Date.now() });
+    await ctx.db.insert("roomBreaks", { roomId, from: Date.now() - 60_000, to: Date.now(), kind: "pause" });
     await ctx.db.insert("roomAnalyticsSnapshots", {
       roomId,
       history: {

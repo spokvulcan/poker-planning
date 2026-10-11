@@ -16,6 +16,8 @@ import { useCopyRoomUrlToClipboard } from "@/hooks/use-copy-room-url-to-clipboar
 import { SCALE_VALIDATION, VotingScaleType, validateCustomScale } from "@/convex/scales";
 import { ROOM_NAME } from "@/convex/constants";
 import { CustomDeck, PresetDeck } from "./deck-table";
+import { useRememberedTimeNodes } from "./use-remembered-time-nodes";
+import { Switch } from "@/components/ui/switch";
 
 type ScaleChoice = VotingScaleType | "custom";
 
@@ -55,6 +57,8 @@ export function CreateContent() {
   // Whether the custom deck's field takes focus: for a click, not for arrow keys.
   const [focusDeck, setFocusDeck] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
+  // The time nodes the board shows, remembered for the next room (ADR-0032).
+  const [timeNodes, setTimeNodes] = useRememberedTimeNodes();
 
   const router = useRouter();
   const createRoom = useMutation(api.rooms.create);
@@ -82,6 +86,7 @@ export function CreateContent() {
         name: roomName.trim() || `Game ${new Date().toLocaleTimeString()}`,
         roomType: "canvas",
         votingScale,
+        timeNodes,
       });
       trackConversion("create_poker_room");
       router.push(`/room/${roomId}`);
@@ -99,7 +104,7 @@ export function CreateContent() {
         console.error("Failed to copy room URL to clipboard:", error);
       }
     }
-  }, [roomName, scale, customCards, createRoom, ensureSession, router, copyRoomUrlToClipboard]);
+  }, [roomName, scale, customCards, timeNodes, createRoom, ensureSession, router, copyRoomUrlToClipboard]);
 
   const start = () => void handleCreate();
 
@@ -150,6 +155,30 @@ export function CreateContent() {
           <PresetDeck scale={scale} />
         )}
       </ChoiceSection>
+      <section aria-labelledby="time-heading" className="mt-14 flex flex-col items-center">
+        <h2 id="time-heading" className="text-xs font-medium tracking-wider text-muted-foreground uppercase">
+          Time
+        </h2>
+        <div className="mt-4 flex flex-wrap justify-center gap-x-8 gap-y-3">
+          <label className="flex items-center gap-2.5 text-sm">
+            <Switch
+              checked={timeNodes.timer}
+              onCheckedChange={(timer) => setTimeNodes({ ...timeNodes, timer })}
+            />
+            Timer
+          </label>
+          <label className="flex items-center gap-2.5 text-sm">
+            <Switch
+              checked={timeNodes.sessionTime}
+              onCheckedChange={(sessionTime) => setTimeNodes({ ...timeNodes, sessionTime })}
+            />
+            Session time
+          </label>
+        </div>
+        <p className="mt-3 text-center text-sm text-balance text-muted-foreground">
+          Time is tracked either way. Your choice is kept for the next room.
+        </p>
+      </section>
     </CreatePage>
   );
 }

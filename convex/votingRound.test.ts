@@ -610,7 +610,7 @@ describe("VotingRound.start", () => {
     expect(timestamps[0].votingEndedAt).toBeUndefined(); // open round
   });
 
-  it("starts a Quick Vote (no issue): clears votes and records no timing", async () => {
+  it("starts a Quick Vote (no issue): clears votes and times the round, against no issue", async () => {
     const t = withComponents(convexTest(schema, modules));
     const roomId = await seedRoom(t);
     const a = await addMember(t, roomId);
@@ -628,7 +628,10 @@ describe("VotingRound.start", () => {
         .withIndex("by_room", (q) => q.eq("roomId", roomId))
         .collect()
     );
-    expect(ts).toHaveLength(0);
+    expect(ts).toHaveLength(1);
+    expect(ts[0].issueId).toBeUndefined();
+    expect(ts[0].roundNumber).toBe(1);
+    expect(ts[0].endedAt).toBeUndefined(); // open round
   });
 
   it("switching to a new issue reverts the previous issue to pending", async () => {

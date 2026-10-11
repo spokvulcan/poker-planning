@@ -11,6 +11,13 @@ import {
   useEffect,
 } from "react";
 
+import {
+  ContextMenu,
+  ContextMenuCheckboxItem,
+  ContextMenuContent,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import { cn } from "@/lib/utils";
 import { COUNTDOWN_DURATION_MS } from "@/convex/constants";
 import { permissionProps } from "@/hooks/usePermissions";
@@ -20,8 +27,9 @@ import type { SessionNodeType } from "../types";
 /** How long New Round holds after the round settles. */
 const NEW_ROUND_HOLD_SECONDS = 3;
 
-export const SessionNode = memo(
-  ({ data, selected }: NodeProps<SessionNodeType>): ReactElement => {
+/** The session node's card: the round's name, target, progress and its one control. */
+const SessionCard = memo(
+  ({ data, selected }: Pick<NodeProps<SessionNodeType>, "data" | "selected">): ReactElement => {
     // Resolved decisions in, by permission category; `.allowed` drives each
     // control's own onClick, className, and non-permission disabled state.
     // The denial copy and the disabled-when-denied state are layered on via
@@ -354,5 +362,46 @@ export const SessionNode = memo(
     );
   },
 );
+
+SessionCard.displayName = "SessionCard";
+
+/**
+ * The session node: its card, with a right-click menu that shows or hides
+ * the board's time nodes for the room (ADR-0032).
+ */
+export const SessionNode = memo(({ data, selected }: NodeProps<SessionNodeType>): ReactElement => {
+  const {
+    timeNodes,
+    permissions: { roomSettings },
+    actions,
+  } = data;
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger render={<div />}>
+        <SessionCard data={data} selected={selected} />
+      </ContextMenuTrigger>
+      <ContextMenuContent className="min-w-52">
+        <ContextMenuCheckboxItem
+          checked={timeNodes.timer}
+          onCheckedChange={(shown) => actions.setTimeNodeShown("timer", shown)}
+          disabled={!roomSettings.allowed}
+        >
+          Timer
+        </ContextMenuCheckboxItem>
+        <ContextMenuCheckboxItem
+          checked={timeNodes.sessionTime}
+          onCheckedChange={(shown) => actions.setTimeNodeShown("sessionTime", shown)}
+          disabled={!roomSettings.allowed}
+        >
+          Session time
+        </ContextMenuCheckboxItem>
+        <ContextMenuSeparator />
+        <p className="max-w-56 px-1.5 py-1 text-xs text-muted-foreground">
+          {roomSettings.allowed ? "Everyone in the room sees the same. Time is tracked either way." : roomSettings.message}
+        </p>
+      </ContextMenuContent>
+    </ContextMenu>
+  );
+});
 
 SessionNode.displayName = "SessionNode";

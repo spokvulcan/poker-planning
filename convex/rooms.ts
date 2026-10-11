@@ -12,6 +12,7 @@ export const create = mutation({
     name: v.string(),
     roomType: v.optional(v.literal("canvas")), // Optional, defaults to canvas
     autoCompleteVoting: v.optional(v.boolean()),
+    timeNodes: v.optional(v.object({ timer: v.boolean(), sessionTime: v.boolean() })), // Which time nodes the board shows
     votingScale: v.optional(
       v.object({
         type: v.union(

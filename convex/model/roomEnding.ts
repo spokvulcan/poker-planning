@@ -32,6 +32,9 @@ const PLAIN_TABLES = [
   "votingTimestamps",
   "individualVotes",
   "roomAnalyticsSnapshots",
+  "roundClocks",
+  "roomAttendance",
+  "roomBreaks",
 ] as const;
 
 /**

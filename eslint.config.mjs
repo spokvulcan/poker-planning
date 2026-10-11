@@ -63,6 +63,17 @@ const BACKEND_STANDARDS = [
     message: "One writer per concern (CLAUDE.md): only model/votingRound.ts writes poker votes.",
   },
   {
+    selector: writeTo("votingTimestamps"),
+    except: ["convex/model/votingRound.ts", "convex/model/issues.ts"],
+    message:
+      "One writer per concern (CLAUDE.md): only model/votingRound.ts writes round records, and model/issues.ts lets an issue's go with it.",
+  },
+  {
+    selector: writeTo("roundClocks|roomAttendance|roomBreaks"),
+    except: ["convex/model/roundClock.ts"],
+    message: "One writer per concern (CLAUDE.md): only model/roundClock.ts writes the round clock (ADR-0032).",
+  },
+  {
     // The standards above see a write by the table it names.
     selector:
       "CallExpression[callee.object.property.name='db'][callee.property.name=/^(insert|patch|replace|delete)$/]:not([arguments.0.type='Literal'])",

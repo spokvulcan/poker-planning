@@ -3,6 +3,7 @@ import { Id } from "./_generated/dataModel";
 import { v } from "convex/values";
 import { requireRoomWrite } from "./model/auth";
 import { presence } from "./model/presence";
+import * as RoundClock from "./model/roundClock";
 
 export const heartbeat = mutation({
   args: {
@@ -16,10 +17,12 @@ export const heartbeat = mutation({
     // must name the caller the step seats in this room — otherwise any client
     // could spoof another user's online status or inject phantom presence
     // into arbitrary rooms.
-    const { user } = await requireRoomWrite(ctx, roomId as Id<"rooms">);
+    const { user, room } = await requireRoomWrite(ctx, roomId as Id<"rooms">);
     if (user._id !== userId) {
       throw new Error("Cannot heartbeat as another user");
     }
+    // Someone has the room open: the round clock keeps attendance (ADR-0032).
+    await RoundClock.noteAttendance(ctx, room);
     return await presence.heartbeat(ctx, roomId, userId, sessionId, interval);
   },
 });

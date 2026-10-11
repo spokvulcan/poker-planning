@@ -30,6 +30,12 @@ function boardActions(): PokerBoardActions {
     openIssues: vi.fn(),
     updateNoteContent: vi.fn(async () => true),
     deleteNote: vi.fn(),
+    startTimebox: vi.fn(),
+    extendTimebox: vi.fn(),
+    stopTimebox: vi.fn(),
+    pauseClock: vi.fn(),
+    resumeClock: vi.fn(),
+    setTimeNodeShown: vi.fn(),
   };
 }
 
@@ -43,6 +49,7 @@ function makeData(overrides: Partial<SessionNodeData> = {}): SessionNodeData {
     autoCompleteVoting: true,
     autoRevealCountdownStartedAt: null,
     currentIssue: null,
+    timeNodes: { timer: true, sessionTime: false },
     permissions: EVERYTHING_ALLOWED,
     actions: boardActions(),
     ...overrides,
@@ -195,5 +202,30 @@ describe("SessionNode — New Round holds after the round settles", () => {
     fireEvent.click(screen.getByRole("button", { name: /start a new voting round/i }));
 
     expect(actions.reset).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("SessionNode — the time nodes' menu", () => {
+  it("right-click shows and hides the timer and session time for the room", async () => {
+    const actions = boardActions();
+    renderSession(makeData({ actions, timeNodes: { timer: true, sessionTime: false } }));
+
+    fireEvent.contextMenu(screen.getByText("Planning Session"));
+    const timer = await screen.findByRole("menuitemcheckbox", { name: "Timer" });
+    const sessionTime = screen.getByRole("menuitemcheckbox", { name: "Session time" });
+    expect(timer.getAttribute("aria-checked")).toBe("true");
+    expect(sessionTime.getAttribute("aria-checked")).toBe("false");
+
+    fireEvent.click(sessionTime);
+    expect(actions.setTimeNodeShown).toHaveBeenCalledWith("sessionTime", true);
+  });
+
+  it("leaves the switches to whoever may change the room's settings", async () => {
+    const denied = { allowed: false as const, message: "Only facilitators can change room settings" };
+    renderSession(makeData({ permissions: { ...EVERYTHING_ALLOWED, roomSettings: denied } }));
+
+    fireEvent.contextMenu(screen.getByText("Planning Session"));
+    expect((await screen.findByRole("menuitemcheckbox", { name: "Timer" })).getAttribute("aria-disabled")).toBe("true");
+    expect(screen.getByText(denied.message)).toBeDefined();
   });
 });

@@ -21,6 +21,11 @@ const nodesOf = (t: T, roomId: Id<"rooms">) =>
       .collect()
   );
 const nodeIds = async (t: T, roomId: Id<"rooms">) => (await nodesOf(t, roomId)).map((n) => n.nodeId).sort();
+const hiddenNodeIds = async (t: T, roomId: Id<"rooms">) =>
+  (await nodesOf(t, roomId))
+    .filter((n) => n.isHidden)
+    .map((n) => n.nodeId)
+    .sort();
 
 async function pokerRoom(t: T) {
   const ownerId = await seedUser(t, "owner");
@@ -29,11 +34,12 @@ async function pokerRoom(t: T) {
 }
 
 describe("a new board", () => {
-  it("a poker room starts with its timer, its session node and its owner's player node", async () => {
+  it("a poker room starts with its timer, its session node, its session time (hidden) and its owner's player node", async () => {
     const t = withComponents(convexTest(schema, modules));
     const { roomId, ownerId } = await pokerRoom(t);
 
-    expect(await nodeIds(t, roomId)).toEqual([`player-${ownerId}`, "session-current", "timer"].sort());
+    expect(await nodeIds(t, roomId)).toEqual([`player-${ownerId}`, "session-current", "session-time", "timer"].sort());
+    expect(await hiddenNodeIds(t, roomId)).toEqual(["session-time"]);
   });
 
   it("a retro starts with its retro node, timer, action items and a pad per column, and no player nodes", async () => {
@@ -300,5 +306,77 @@ describe("who a write on the board is from", () => {
 
     await ann.mutation(api.timer.resetTimer, { roomId, nodeId: "timer", userId: ownerId });
     expect(await nodeById(t, roomId, "timer")).toMatchObject({ data: { lastAction: "reset" }, lastUpdatedBy: annId });
+  });
+});
+
+describe("the time nodes", () => {
+  it("the creator's choice decides which time nodes a new room shows", async () => {
+    const t = withComponents(convexTest(schema, modules));
+    await seedUser(t, "owner");
+    const roomId = await as(t, "owner").mutation(api.rooms.create, {
+      name: "Planning",
+      timeNodes: { timer: false, sessionTime: true },
+    });
+
+    expect(await hiddenNodeIds(t, roomId)).toEqual(["timer"]);
+  });
+
+  it("whoever may change the room's settings shows and hides them for everyone", async () => {
+    const t = withComponents(convexTest(schema, modules));
+    const { roomId } = await pokerRoom(t);
+    const owner = as(t, "owner");
+
+    await owner.mutation(api.canvas.setTimeNodeShown, { roomId, node: "timer", shown: false });
+    await owner.mutation(api.canvas.setTimeNodeShown, { roomId, node: "sessionTime", shown: true });
+    expect(await hiddenNodeIds(t, roomId)).toEqual(["timer"]);
+
+    await owner.mutation(api.canvas.setTimeNodeShown, { roomId, node: "timer", shown: true });
+    expect(await hiddenNodeIds(t, roomId)).toEqual([]);
+  });
+
+  it("a room from before session time gets the node the first time it is shown", async () => {
+    const t = withComponents(convexTest(schema, modules));
+    const { roomId } = await pokerRoom(t);
+    await t.run(async (ctx) => {
+      const node = (await ctx.db
+        .query("canvasNodes")
+        .withIndex("by_room_node", (q) => q.eq("roomId", roomId).eq("nodeId", "session-time"))
+        .unique())!;
+      await ctx.db.delete("canvasNodes", node._id);
+    });
+    const owner = as(t, "owner");
+
+    await owner.mutation(api.canvas.setTimeNodeShown, { roomId, node: "sessionTime", shown: false });
+    expect(await nodeIds(t, roomId)).not.toContain("session-time");
+
+    await owner.mutation(api.canvas.setTimeNodeShown, { roomId, node: "sessionTime", shown: true });
+    expect(await nodeIds(t, roomId)).toContain("session-time");
+    expect(await hiddenNodeIds(t, roomId)).toEqual([]);
+  });
+
+  it("only those the room's settings permission allows may show or hide them", async () => {
+    const t = withComponents(convexTest(schema, modules));
+    const { roomId } = await pokerRoom(t);
+    await join(t, roomId, "ann");
+    await t.run((ctx) =>
+      ctx.db.patch("rooms", roomId, {
+        permissions: { revealCards: "everyone", gameFlow: "everyone", issueManagement: "everyone", roomSettings: "facilitators" },
+      })
+    );
+
+    await expect(
+      as(t, "ann").mutation(api.canvas.setTimeNodeShown, { roomId, node: "timer", shown: false })
+    ).rejects.toThrow();
+    expect(await hiddenNodeIds(t, roomId)).toEqual(["session-time"]);
+  });
+
+  it("a retro has no time nodes to show", async () => {
+    const t = withComponents(convexTest(schema, modules));
+    await seedUser(t, "owner");
+    const retroId = await as(t, "owner").mutation(api.retro.create, { name: "Sprint 41 retro" });
+
+    await expect(
+      as(t, "owner").mutation(api.canvas.setTimeNodeShown, { roomId: retroId, node: "timer", shown: false })
+    ).rejects.toThrow();
   });
 });

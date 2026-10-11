@@ -41,6 +41,19 @@ export const updateNodePosition = mutation({
   },
 });
 
+/** Shows or hides the timer or session time for everyone in the room: a room setting. */
+export const setTimeNodeShown = mutation({
+  args: {
+    roomId: v.id("rooms"),
+    node: v.union(v.literal("timer"), v.literal("sessionTime")),
+    shown: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    const { room } = await requireRoomWrite(ctx, args.roomId, { kind: "category", category: "roomSettings" });
+    await Canvas.setTimeNodeShown(ctx, room, args.node, args.shown);
+  },
+});
+
 // Create a note node for an issue
 export const createNote = mutation({
   args: {
