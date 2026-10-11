@@ -41,7 +41,9 @@ export class SettingsPanelPage {
 
     // Auto-reveal toggle (the Switch component from Base UI)
     // Find the switch using its data-slot attribute within the settings panel
-    this.autoRevealSwitch = this.settingsPanel.locator('[data-slot="switch"]');
+    // The auto-reveal switch by its label: the panel has other switches (the
+    // board's Timer and Session time).
+    this.autoRevealSwitch = this.settingsPanel.getByRole("switch", { name: "Auto-reveal cards" });
 
     // Theme buttons
     this.themeButtons = {
