@@ -38,7 +38,10 @@ export function AppPreview() {
   const slot = APP_PREVIEW[ceremony];
 
   return (
-    <section id="app-preview" className="bg-white dark:bg-black py-24 sm:py-32">
+    // Clipped sideways: below lg the window's glow reaches past the page's
+    // padding, and the page would scroll. The section spans the viewport, so
+    // only what is off screen is cut; the glow above and below stays.
+    <section id="app-preview" className="overflow-x-clip bg-white dark:bg-black py-24 sm:py-32">
       <CeremonyTabs
         value={ceremony}
         onValueChange={setCeremony}
