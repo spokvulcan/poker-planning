@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "../fixtures/test-fixtures";
 import { SettingsPanelPage } from "../pages/settings-panel-page";
 import { JoinRoomPage } from "../pages/join-room-page";
 import {

@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures/test-fixtures";
 
 /**
  * The first release in CHANGELOG.md carries every pre-1.0 commit, so rendering

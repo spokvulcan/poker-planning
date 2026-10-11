@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures/test-fixtures";
 import { HomePage } from "./pages/home-page";
 import {
   mockClipboardAPI,

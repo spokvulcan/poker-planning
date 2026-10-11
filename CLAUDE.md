@@ -11,8 +11,8 @@ AgileKit is an open-source online planning poker tool for Scrum teams. The proje
 - **Frontend**: Next.js 16 (App Router), React 19, TypeScript
 - **Backend**: Convex (serverless TypeScript functions with real-time reactivity)
 - **Auth**: BetterAuth with anonymous sessions (see [docs/authentication.md](docs/authentication.md))
-- **Styling**: shadcn/ui, Tailwind CSS 4, semantic colour tokens (read [docs/design-tokens.md](docs/design-tokens.md) before styling UI)
-- **UI Primitives**: Base UI (`@base-ui/react`) - NOT Radix UI. Components like Dialog, DropdownMenu, etc. use Base UI primitives. Base UI does not support `asChild` pattern; use `render` prop instead (e.g., `<DropdownMenuItem render={<Link href="..." />}>`).
+- **Styling**: read [docs/design-tokens.md](docs/design-tokens.md) before styling UI. shadcn/ui, Tailwind CSS 4, semantic colour tokens
+- **UI Primitives**: Base UI (`@base-ui/react`). A component takes another element through its `render` prop (e.g., `<DropdownMenuItem render={<Link href="..." />}>`); the lint (`eslint.config.mjs`) fails Radix imports, `asChild` and `--radix-*` variables.
 - **Canvas**: @xyflow/react for the whiteboard interface
 
 ### Route Groups
@@ -45,16 +45,6 @@ convex/
 
 **Room ending**: a room is deleted only through `model/roomEnding.ts`: `endRoom` (deleting a retro, the hand-off, the admin wipe) and `endStaleRooms` (the daily sweep), in bounded steps it schedules itself. It deletes the room's rows itself; only issues (with their links), integration mappings (through the webhook reconcile) and presence let go of their own. A table that gains a `roomId` joins its inventory, or `convex/roomEnding.test.ts` fails.
 
-Example usage in frontend:
-
-```typescript
-import { useQuery, useMutation } from "convex/react";
-import { api } from "@/convex/_generated/api";
-
-const room = useQuery(api.rooms.get, { roomId });
-const createRoom = useMutation(api.rooms.create);
-```
-
 ### Canvas Node System
 
 Both ceremonies are drawn on one whiteboard (`src/components/whiteboard/whiteboard.tsx`). It owns React Flow's node buffer, saving drops (one `canvas.moveNodes` write per drop, with an optimistic update), keyboard nudges, Delete, dropping one node onto another, fitting and following a node. Each ceremony is an adapter that derives its nodes from the server and says what the gestures mean:
@@ -71,7 +61,7 @@ Playwright specs act through the page objects in `tests/pages/` (guide: [tests/R
 ## Important Notes
 
 - **shadcn/ui components**: Always use `npx shadcn@latest add [component-name]` - never create manually
-- **Local servers**: run `npx convex dev` alongside `npm run dev`; Playwright (`npm run test:e2e`) starts both itself
+- **Local servers**: run `npx convex dev` alongside `npm run dev`; Playwright (`npm run test:e2e`) starts both itself. Every checkout, worktrees included, shares one Convex dev deployment, and `npx convex dev` pushes this checkout's `convex/` to it
 
 ## Releases
 

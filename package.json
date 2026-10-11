@@ -22,7 +22,6 @@
     "@hugeicons/core-free-icons": "4.3.0",
     "@hugeicons/react": "1.1.10",
     "@next/third-parties": "16.3.4",
-    "@radix-ui/react-visually-hidden": "1.2.11",
     "@vercel/speed-insights": "2.0.0",
     "@xyflow/react": "12.11.6",
     "better-auth": "1.6.30",

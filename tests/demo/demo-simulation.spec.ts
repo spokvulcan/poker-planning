@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "../fixtures/test-fixtures";
 
 /**
  * Smoke coverage for the client-side Demo simulation (ADR-0003).

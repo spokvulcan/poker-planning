@@ -50,13 +50,10 @@ Updated `playwright.config.ts` with:
 - Video/screenshot capture on failure
 - Environment-specific configurations
 - Improved reporter settings
+- A dev server port per checkout: 3000 in the main checkout, one derived from its path in a git worktree, so a run never reuses another checkout's server (`PORT` overrides it)
 
 ### 5. Custom Test Fixtures
-Created reusable fixtures for:
-- Automatic page setup
-- Animation disabling
-- Request/response logging
-- Default timeout configuration
+Every spec imports `test` and `expect` from `fixtures/test-fixtures.ts` (the lint holds it to that). A test fails when any page it opened, in any browser context, hits a React hydration error. The fixtures also offer `homePage`.
 
 ## Retro
 

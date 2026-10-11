@@ -25,6 +25,24 @@ export function getSiteUrl(): string {
   return "http://localhost:3000";
 }
 
+/**
+ * The origins auth takes requests from: the deployment's own, production's
+ * and Vercel's previews. A development deployment (its site on localhost)
+ * takes every local port too, so each worktree's dev server can sign in:
+ * BetterAuth checks the origin of every request that carries cookies, and a
+ * browser sends its localhost cookies to every port.
+ */
+export function authTrustedOrigins(siteUrl: string): string[] {
+  const development = new URL(siteUrl).hostname === "localhost";
+  return [
+    siteUrl,
+    ...(development ? ["http://localhost:*"] : []),
+    SITE_ORIGIN,
+    "https://*.agilekit.app",
+    "https://*.vercel.app", // Vercel preview deployments
+  ];
+}
+
 export const siteConfig = {
   name: "AgileKit",
   url: SITE_ORIGIN,

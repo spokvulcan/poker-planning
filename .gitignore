@@ -51,3 +51,5 @@ node_modules/
 
 # Claude Code local worktrees (ephemeral, not part of the repo)
 .claude/worktrees/
+# Claude Code's dev servers: each session adds its own, so it's local, and copied into worktrees (.worktreeinclude)
+.claude/launch.json

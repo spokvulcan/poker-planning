@@ -1,59 +1,56 @@
 /* eslint-disable react-hooks/rules-of-hooks */
-import { test as base } from "@playwright/test";
+import { test as base, expect, type BrowserContext } from "@playwright/test";
 import { HomePage } from "../pages/home-page";
 
-// Define custom fixtures
-type TestFixtures = {
-  homePage: HomePage;
-};
+/** React's hydration errors in development: the server's HTML and the browser's first render differ. */
+const HYDRATION_ERROR = /hydrat/i;
 
-// Extend base test with custom fixtures
-export const test = base.extend<TestFixtures>({
-  // Auto-initialize HomePage for tests
+/** The hydration errors the running test's pages have hit. */
+let hydrationErrors: string[] = [];
+
+function watchForHydrationErrors(context: BrowserContext): BrowserContext {
+  context.on("console", (message) => {
+    if (message.type() === "error" && HYDRATION_ERROR.test(message.text())) {
+      hydrationErrors.push(message.text());
+    }
+  });
+  // A mismatch React can't patch ("Hydration failed…") is thrown, not logged
+  context.on("weberror", (webError) => {
+    const { message } = webError.error();
+    if (HYDRATION_ERROR.test(message)) hydrationErrors.push(message);
+  });
+  return context;
+}
+
+/**
+ * Playwright's `test` with this suite's fixtures. Every spec imports `test`
+ * and `expect` from here (the lint holds them to it), so a test fails when
+ * any page it opened hit a React hydration error: through `page`, or a
+ * context of its own, as the multi-user specs open.
+ */
+export const test = base.extend<{ homePage: HomePage; hydrationGuard: void }>({
   homePage: async ({ page }, use) => {
-    const homePage = new HomePage(page);
-    await use(homePage);
+    await use(new HomePage(page));
   },
-  
-  // Auto-setup for better test isolation
-  page: async ({ page }, use) => {
-    // Set default timeout for actions
-    page.setDefaultTimeout(10000);
-    
-    // Set default navigation timeout
-    page.setDefaultNavigationTimeout(15000);
-    
-    // Add request interceptor for better debugging
-    page.on("request", (request) => {
-      if (request.url().includes("/api/") || request.url().includes("convex")) {
-        console.log("API Request:", request.method(), request.url());
-      }
-    });
-    
-    // Add response interceptor for error tracking
-    page.on("response", (response) => {
-      if (response.status() >= 400) {
-        console.error("Error Response:", response.status(), response.url());
-      }
-    });
-    
-    // Ensure animations are disabled for stable tests
-    await page.addInitScript(() => {
-      // Disable animations
-      const style = document.createElement("style");
-      style.innerHTML = `
-        *, *::before, *::after {
-          animation-duration: 0s !important;
-          animation-delay: 0s !important;
-          transition-duration: 0s !important;
-          transition-delay: 0s !important;
-        }
-      `;
-      document.head.appendChild(style);
-    });
-    
-    await use(page);
-  },
+
+  // Every context the worker's browser opens, the default one included
+  browser: [
+    async ({ browser }, use) => {
+      const newContext = browser.newContext.bind(browser);
+      browser.newContext = async (options) => watchForHydrationErrors(await newContext(options));
+      await use(browser);
+    },
+    { scope: "worker" },
+  ],
+
+  hydrationGuard: [
+    async ({}, use) => {
+      hydrationErrors = [];
+      await use();
+      expect(hydrationErrors, "React hydration errors").toEqual([]);
+    },
+    { auto: true },
+  ],
 });
 
-export { expect } from "@playwright/test";
+export { expect };
