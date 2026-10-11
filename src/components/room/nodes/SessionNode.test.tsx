@@ -7,7 +7,7 @@
  * category and asks the board's one actions object (#379).
  */
 import { describe, it, expect, afterEach, vi } from "vitest";
-import { render, screen, cleanup, fireEvent } from "@testing-library/react";
+import { act, render, screen, cleanup, fireEvent } from "@testing-library/react";
 import { ReactFlowProvider, type NodeProps } from "@xyflow/react";
 import { RESOLVED_ALLOWED } from "@/convex/permissions";
 import type { PokerBoardActions, SessionNodeData, SessionNodeType } from "../types";
@@ -49,14 +49,18 @@ function makeData(overrides: Partial<SessionNodeData> = {}): SessionNodeData {
   };
 }
 
-function renderSession(data: SessionNodeData) {
-  return render(
+function sessionNode(data: SessionNodeData) {
+  return (
     <ReactFlowProvider>
       <SessionNode
         {...({ id: "session-current", data } as NodeProps<SessionNodeType>)}
       />
-    </ReactFlowProvider>,
+    </ReactFlowProvider>
   );
+}
+
+function renderSession(data: SessionNodeData) {
+  return render(sessionNode(data));
 }
 
 afterEach(() => {
@@ -139,5 +143,57 @@ describe("SessionNode — the board's actions and the viewer's decisions", () =>
 
     expect(reveal.disabled).toBe(true);
     expect(actions.reveal).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * New Round takes the place of the control that settled the round, so a
+ * second click meant for Reveal (a double-click, or a tap on Cancel as the
+ * countdown ends) would land on it and wipe the results. It holds for a few
+ * seconds after the round settles under the viewer's eyes.
+ */
+describe("SessionNode — New Round holds after the round settles", () => {
+  function passSeconds(seconds: number) {
+    for (let i = 0; i < seconds; i++) {
+      act(() => {
+        vi.advanceTimersByTime(1000);
+      });
+    }
+  }
+
+  it("ignores a click that lands just after the reveal, then starts a round", () => {
+    vi.useFakeTimers();
+    const actions = boardActions();
+    const { rerender } = renderSession(makeData({ phase: "voting", actions }));
+
+    rerender(sessionNode(makeData({ phase: "revealed", actions })));
+    fireEvent.click(screen.getByRole("button", { name: /please wait/i }));
+    expect(actions.reset).not.toHaveBeenCalled();
+
+    passSeconds(3);
+    fireEvent.click(screen.getByRole("button", { name: /start a new voting round/i }));
+    expect(actions.reset).toHaveBeenCalledTimes(1);
+  });
+
+  it("holds when the countdown reveals the round under a tap meant for Cancel", () => {
+    vi.useFakeTimers();
+    const actions = boardActions();
+    const { rerender } = renderSession(
+      makeData({ phase: "countingDown", autoRevealCountdownStartedAt: Date.now(), actions }),
+    );
+
+    rerender(sessionNode(makeData({ phase: "revealed", actions })));
+    fireEvent.click(screen.getByRole("button", { name: /please wait/i }));
+
+    expect(actions.reset).not.toHaveBeenCalled();
+  });
+
+  it("starts a round at once for a viewer who arrives to it already revealed", () => {
+    const actions = boardActions();
+    renderSession(makeData({ phase: "revealed", actions }));
+
+    fireEvent.click(screen.getByRole("button", { name: /start a new voting round/i }));
+
+    expect(actions.reset).toHaveBeenCalledTimes(1);
   });
 });

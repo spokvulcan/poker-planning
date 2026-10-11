@@ -355,5 +355,30 @@ test.describe("Results Display Suite", () => {
         await cleanupUsers(users);
       }
     });
+
+    test("keeps the results when a second click lands on New Round just after the reveal", async ({
+      browser,
+    }) => {
+      const users = await createMultipleUsers(browser, 1);
+      const { roomPage } = users[0];
+
+      try {
+        await roomPage.selectCard("5");
+        await roomPage.expectVoteCount(users.length);
+        await roomPage.revealCards();
+
+        // New Round now sits where Reveal was: the second click lands on it.
+        await roomPage.clickSessionActionAtOnce();
+
+        // A later write showing means a reset sent by that click has landed.
+        await roomPage.toggleAutoReveal();
+        await roomPage.expectResultsNodeVisible();
+
+        // Once the hold is over, New Round starts a round.
+        await roomPage.resetVotes();
+      } finally {
+        await cleanupUsers(users);
+      }
+    });
   });
 });
