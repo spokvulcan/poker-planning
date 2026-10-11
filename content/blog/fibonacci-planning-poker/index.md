@@ -1,6 +1,7 @@
 ---
 title: "Why Planning Poker Uses the Fibonacci Sequence (And Why It Works)"
 date: "2025-01-11"
+updated: "2026-10-11"
 spoiler: "The Fibonacci sequence isn't agile tradition or arbitrary convention. It's built on how human perception actually works. Here's the science behind why 1, 2, 3, 5, 8, 13 makes your estimates better."
 tags: ["planning-poker", "fibonacci", "estimation", "agile", "story-points"]
 ---
@@ -66,7 +67,7 @@ Notice what changed at the high end. Instead of 21, 34, 55, 89, he switched to r
 
 His reasoning was practical: "21" gives stakeholders a false sense of precision. When you say a story is "21 points," it sounds like you've calculated something specific. "20 points" signals what it actually is—a rough estimate of something big. The rounded numbers communicate uncertainty more honestly.
 
-Most planning poker implementations follow Cohn's modified scale, and that's what you'll find in AgileKit's default Fibonacci deck.
+Most planning poker implementations follow Cohn's modified scale. In AgileKit, it's the **Standard** deck, which you can pick when you create a room. The default Fibonacci deck keeps the traditional 21, 34, 55, 89.
 
 ## What About Other Sequences?
 
@@ -120,7 +121,7 @@ The Fibonacci sequence optimizes for those conversations by creating natural bre
 
 ## Using AgileKit for Fibonacci Estimation
 
-AgileKit's default deck uses the modified Fibonacci scale: 0, 1, 2, 3, 5, 8, 13, 20, 40, 100, plus ?, ☕, and ∞ for special cases. The simultaneous reveal ensures nobody anchors to someone else's number—estimates stay independent until everyone has committed.
+AgileKit's default deck uses the traditional Fibonacci sequence: 0, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, plus ∞, ?, and ☕ for special cases. For Cohn's modified scale, pick **Standard** when you create a room: 0, 0.5, 1, 2, 3, 5, 8, 13, 20, 40, 100, plus ? and ☕. The simultaneous reveal ensures nobody anchors to someone else's number—estimates stay independent until everyone has committed.
 
 <Cta>
 Try a free planning poker session with your team. No signup required.
