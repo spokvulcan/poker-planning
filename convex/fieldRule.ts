@@ -1,10 +1,10 @@
 /**
  * What a text field's rule is: how long its value may be, whether a blank
  * one is refused, whether the spaces around it count, and the words a
- * refusal uses. Each field's rule sits beside its limit, in constants.ts or
- * retroTemplates.ts, and the model's writers and the browser's inputs both
- * read it, so a limit and its words are written once. Pure: no IO, no
- * Convex runtime.
+ * refusal uses. Each field's rule sits beside its limit, in constants.ts,
+ * retroTemplates.ts or scales.ts, and the model's writers and the browser's
+ * inputs both read it, so a limit and its words are written once. Pure: no
+ * IO, no Convex runtime.
  *
  * A value a person wrote is checked: it's kept, or refused in the rule's
  * words (the model throws that as a refusal, an input shows it). A value

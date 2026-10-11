@@ -4,17 +4,20 @@
  * The cards a new poker room will deal, lying on the create page's stage: a
  * preset's deck, or a custom one typed onto it card by card. The table has
  * room for two full rows, so a deck growing to its limit doesn't move the
- * page.
+ * page. What a pick deals and whether it can be dealt are the deck's to say
+ * (`checkPick`, convex/scales): the table shows its answer, and lays each
+ * typed card by asking it.
  */
 
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
 import { X } from "lucide-react";
 
 import { Stage, type StageTone } from "@/components/create/choice-section";
-import { SCALE_VALIDATION, VOTING_SCALES, type VotingScaleType } from "@/convex/scales";
+import { cutTo } from "@/convex/fieldRule";
+import { CUSTOM_DECK, VOTING_SCALES, checkPick, type CheckedPick, type VotingScaleType } from "@/convex/scales";
 import { cn } from "@/lib/utils";
 
-const { minCards, maxCards, maxCardLength } = SCALE_VALIDATION;
+const { maxCards, card: cardRule } = CUSTOM_DECK;
 
 const TABLE = "flex min-h-[196px] flex-col items-center justify-center gap-4 p-4 sm:p-6";
 
@@ -33,12 +36,12 @@ function TableCard({ value, className, style }: { value: string; className?: str
   );
 }
 
-/** A preset's deck, dealt onto the table card by card. */
-export function PresetDeck({ scale }: { scale: VotingScaleType }) {
-  const cards = VOTING_SCALES[scale].cards;
+/** A preset's deck, the cards its pick deals, dealt onto the table card by card. */
+export function PresetDeck({ cards }: { cards: readonly string[] }) {
   return (
     <Stage className={TABLE} note={`${cards.length} cards. ? means not sure, ☕ asks for a break.`}>
-      <div key={scale} className="flex flex-wrap justify-center gap-1.5 sm:gap-2">
+      {/* Keyed by its cards, so another preset is dealt afresh under the same note. */}
+      <div key={cards.join(" ")} className="flex flex-wrap justify-center gap-1.5 sm:gap-2">
         {cards.map((card, i) => (
           <TableCard
             key={card}
@@ -55,25 +58,29 @@ export function PresetDeck({ scale }: { scale: VotingScaleType }) {
 /**
  * A custom deck, typed onto the table. Enter or a comma lays the card down,
  * so a pasted list lays them all; Backspace on an empty field picks the last
- * one up. A duplicate isn't laid: the card already there flashes instead.
- * Enter on an empty field starts the room once the deck is ready.
+ * one up. The table keeps no rule of its own: it lays a card by asking the
+ * deck what the table would be with it, laying it as the deck keeps it while
+ * the deck is fine or only short of cards, and otherwise saying why in the
+ * deck's words (the card already there flashes). The field takes no more
+ * than a card holds, as an input's maxLength would. Enter on an empty field
+ * starts the room once the deck is ready.
  */
 export function CustomDeck({
-  cards,
+  deck,
   onChange,
-  error,
   autoFocus,
   canStart,
   onStart,
 }: {
-  cards: string[];
+  /** The deck's reading of the cards on the table (`checkPick`): the cards it deals, and any rule it breaks. */
+  deck: CheckedPick;
+  /** Takes the table's new cards, each as the deck keeps it. */
   onChange: (cards: string[]) => void;
-  /** Why the deck can't be dealt yet, from the shared validator. */
-  error: string | null;
   autoFocus: boolean;
   canStart: boolean;
   onStart: () => void;
 }) {
+  const { cards } = deck;
   const [draft, setDraft] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
@@ -86,22 +93,21 @@ export function CustomDeck({
   }, [flash]);
 
   const lay = (values: string[]) => {
-    const next = [...cards];
+    let next = cards;
     for (const value of values) {
-      const card = value.trim().slice(0, maxCardLength);
-      if (!card) continue;
-      if (next.includes(card)) {
-        setFlash(card);
-        setNotice(`${card} is already on the table.`);
+      // Nothing typed between two commas lays nothing.
+      if (!value.trim()) continue;
+      const tried = checkPick({ type: "custom", cards: [...next, value] });
+      // A deck only short of cards is still being dealt.
+      if (tried.ok || tried.rule === "tooFew") {
+        next = tried.cards;
         continue;
       }
-      if (next.length >= maxCards) {
-        setNotice(`A deck holds ${maxCards} cards at most.`);
-        break;
-      }
-      next.push(card);
+      setNotice(tried.message);
+      if (tried.rule === "duplicate") setFlash(tried.card);
+      if (tried.rule === "tooMany") break;
     }
-    if (next.length !== cards.length) onChange(next);
+    if (next !== cards) onChange([...next]);
   };
 
   const pickUp = (card: string) => {
@@ -115,8 +121,11 @@ export function CustomDeck({
     const parts = value.split(",");
     const rest = parts.pop() ?? "";
     if (parts.length) lay(parts);
-    if (rest.trim().length > maxCardLength) setNotice(`A card fits ${maxCardLength} characters.`);
-    setDraft(rest.trimStart().slice(0, maxCardLength));
+    // The field takes no more than a card holds, and says so in the card's
+    // rule; a blank one just isn't typed yet.
+    const card = cardRule.check(rest);
+    if (!card.ok && rest.trim()) setNotice(card.message);
+    setDraft(cutTo(rest.trimStart(), cardRule.maxLength));
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
@@ -154,11 +163,10 @@ export function CustomDeck({
     ? [notice, "notice"]
     : cards.length === 0
       ? ["Type a card and press Enter. A comma works too, so you can paste a list.", "muted"]
-      : cards.length < minCards
-        ? [`Add ${minCards - cards.length} more: a deck needs at least ${minCards} cards.`, "muted"]
-        : error
-          ? [error, "error"]
-          : ["Backspace picks up the last card. Hover a card to remove it.", "muted"];
+      : !deck.ok
+        ? // A deck only short of cards is still being dealt, not wrong.
+          [deck.message, deck.rule === "tooFew" ? "muted" : "error"]
+        : ["Backspace picks up the last card. Hover a card to remove it.", "muted"];
 
   return (
     <Stage

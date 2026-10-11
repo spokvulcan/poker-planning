@@ -4,9 +4,9 @@ import * as Canvas from "./canvas";
 import * as Memberships from "./memberships";
 import * as Ownership from "./ownership";
 import * as RoundClock from "./roundClock";
-import { DEFAULT_SCALE, VOTING_SCALES, VotingScaleType, validateCustomScale } from "../scales";
+import { checkPick, type DeckPick } from "../scales";
 import { ROOM_NAME } from "../constants";
-import { requireValid } from "./refusal";
+import { refusal, requireValid } from "./refusal";
 import { rulesOf } from "../ceremony";
 import { isRoomOwnerAbsent } from "./permissions";
 
@@ -16,10 +16,8 @@ export interface CreateRoomArgs {
   autoCompleteVoting?: boolean;
   /** Which time nodes the board shows; the room's defaults when absent. */
   timeNodes?: Canvas.TimeNodesShown;
-  votingScale?: {
-    type: VotingScaleType | "custom";
-    cards?: string[]; // Required only for custom type
-  };
+  /** The deck its creator picked: a preset, or their own cards as typed; the default when absent. */
+  votingScale?: DeckPick;
 }
 
 export interface SanitizedVote extends Doc<"votes"> {
@@ -31,34 +29,6 @@ export interface RoomWithRelatedData {
   users: Memberships.RoomUserData[];
   votes: SanitizedVote[];
   isOwnerAbsent: boolean;
-}
-
-/**
- * Resolves voting scale configuration from user input
- */
-function resolveVotingScale(scaleConfig?: CreateRoomArgs["votingScale"]) {
-  // Handle custom scales
-  if (scaleConfig?.type === "custom") {
-    if (!scaleConfig.cards || scaleConfig.cards.length === 0) {
-      throw new Error("Custom scale requires cards array");
-    }
-    // The one custom-scale validator (../scales) — direct Convex clients
-    // can't bypass it with oversized card arrays.
-    validateCustomScale(scaleConfig.cards);
-    return {
-      type: "custom" as const,
-      cards: scaleConfig.cards,
-      isNumeric: false, // Custom scales default to non-numeric
-    };
-  }
-
-  // Handle predefined scales, and the default when none was picked
-  const predefinedScale = scaleConfig ? VOTING_SCALES[scaleConfig.type] : DEFAULT_SCALE;
-  return {
-    type: predefinedScale.type,
-    cards: [...predefinedScale.cards],
-    isNumeric: predefinedScale.isNumeric,
-  };
 }
 
 /** The fields a new room of either ceremony is written with, besides its own. */
@@ -92,17 +62,23 @@ export async function openRoom(
   return roomId;
 }
 
-/** Opens a planning poker room with its voting scale. */
+/**
+ * Opens a planning poker room with the scale its creator's pick stores, read
+ * as the create page read it (`checkPick`). A custom deck that breaks a rule
+ * is refused in the rule's own words, whoever sent it.
+ */
 export async function createRoom(
   ctx: MutationCtx,
   args: CreateRoomArgs & { owner: Doc<"users"> }
 ): Promise<Id<"rooms">> {
+  const checked = checkPick(args.votingScale);
+  if (!checked.ok) throw refusal("forbidden", checked.message);
   return await openRoom(ctx, args.owner, {
     name: args.name,
     roomType: "canvas",
     autoCompleteVoting: args.autoCompleteVoting ?? false,
     isGameOver: false,
-    votingScale: resolveVotingScale(args.votingScale),
+    votingScale: checked.scale,
   }, args.timeNodes);
 }
 

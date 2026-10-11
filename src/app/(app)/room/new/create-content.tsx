@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
@@ -13,7 +13,7 @@ import { failureCopy } from "@/lib/refusal";
 import { runAct } from "@/lib/run-act";
 import { trackConversion } from "@/lib/analytics";
 import { useCopyRoomUrlToClipboard } from "@/hooks/use-copy-room-url-to-clipboard";
-import { SCALE_VALIDATION, VotingScaleType, validateCustomScale } from "@/convex/scales";
+import { CUSTOM_DECK, checkPick, type VotingScaleType } from "@/convex/scales";
 import { ROOM_NAME } from "@/convex/constants";
 import { CustomDeck, PresetDeck } from "./deck-table";
 import { useRememberedTimeNodes } from "./use-remembered-time-nodes";
@@ -32,19 +32,8 @@ const DESCRIPTIONS: Record<ScaleChoice, string> = {
   fibonacci: "The usual choice. Gaps widen as uncertainty grows.",
   standard: "Fibonacci with half points and round big numbers.",
   tshirt: "Rough sizing for roadmaps and early refinement.",
-  custom: `Your own deck: ${SCALE_VALIDATION.minCards} to ${SCALE_VALIDATION.maxCards} cards, up to ${SCALE_VALIDATION.maxCardLength} characters each.`,
+  custom: `Your own deck: ${CUSTOM_DECK.minCards} to ${CUSTOM_DECK.maxCards} cards, up to ${CUSTOM_DECK.card.maxLength} characters each.`,
 };
-
-// The one validator lives in convex/scales (throwing form, shared with the
-// backend); the page adapts it to a line under the table.
-function customScaleError(cards: string[]): string | null {
-  try {
-    validateCustomScale(cards);
-    return null;
-  } catch (error) {
-    return error instanceof Error ? error.message : "Invalid scale";
-  }
-}
 
 /**
  * `/room/new`: a name (optional) and the cards to deal, then the board. The
@@ -65,13 +54,19 @@ export function CreateContent() {
   const ensureSession = useEnsureSession();
   const { copyRoomUrlToClipboard } = useCopyRoomUrlToClipboard();
 
-  const customError = scale === "custom" ? customScaleError(customCards) : null;
-  const canCreate = !isCreating && customError === null;
+  // What the creator picked, and the deck's one reading of it (convex/scales),
+  // asked on every change: the cards the table shows and whether the room can
+  // start. Room creation reads the same pick the same way, so what the page
+  // shows is what the room stores.
+  const pick = useMemo(
+    () => (scale === "custom" ? { type: scale, cards: customCards } : { type: scale }),
+    [scale, customCards]
+  );
+  const checked = checkPick(pick);
+  const canCreate = !isCreating && checked.ok;
 
   const handleCreate = useCallback(async () => {
     setIsCreating(true);
-    const votingScale: { type: ScaleChoice; cards?: string[] } =
-      scale === "custom" ? { type: "custom", cards: customCards } : { type: scale };
 
     // A guest session, ready in Convex before the create that needs it.
     if (!(await runAct(ensureSession(), SESSION_FAILED))) {
@@ -85,7 +80,7 @@ export function CreateContent() {
       roomId = await createRoom({
         name: roomName.trim() || `Game ${new Date().toLocaleTimeString()}`,
         roomType: "canvas",
-        votingScale,
+        votingScale: pick,
         timeNodes,
       });
       trackConversion("create_poker_room");
@@ -104,7 +99,7 @@ export function CreateContent() {
         console.error("Failed to copy room URL to clipboard:", error);
       }
     }
-  }, [roomName, scale, customCards, timeNodes, createRoom, ensureSession, router, copyRoomUrlToClipboard]);
+  }, [roomName, pick, timeNodes, createRoom, ensureSession, router, copyRoomUrlToClipboard]);
 
   const start = () => void handleCreate();
 
@@ -126,7 +121,7 @@ export function CreateContent() {
         onSubmit: start,
       }}
       caption={
-        customError && !isCreating
+        !checked.ok && !isCreating
           ? "Finish your deck below to start."
           : "No name? It’s named after the time it starts. The invite link is copied for you."
       }
@@ -144,15 +139,14 @@ export function CreateContent() {
       >
         {scale === "custom" ? (
           <CustomDeck
-            cards={customCards}
+            deck={checked}
             onChange={setCustomCards}
-            error={customError}
             autoFocus={focusDeck}
             canStart={canCreate}
             onStart={start}
           />
         ) : (
-          <PresetDeck scale={scale} />
+          <PresetDeck cards={checked.cards} />
         )}
       </ChoiceSection>
       <section aria-labelledby="time-heading" className="mt-14 flex flex-col items-center">

@@ -2,9 +2,13 @@
  * Voting scale definitions for planning poker, and the deck they deal.
  * A scale is the cards a room stores, picked when it is created; the deck says
  * what those cards mean: which are dealt, whether a label is a legal ballot,
- * and what a card reads as a number. Pure, so the server and the browser read
- * a card one way (CONTEXT.md: Deck).
+ * and what a card reads as a number. A creator's pick is read here too: the
+ * cards it deals, whether a room can be dealt it, and the scale the room
+ * stores. Pure, so the server and the browser read a card, and a pick, one
+ * way (CONTEXT.md: Deck).
  */
+
+import { fieldRule } from "./fieldRule";
 
 export const VOTING_SCALES = {
   fibonacci: {
@@ -67,39 +71,6 @@ export type VotingScale = {
   isNumeric: boolean;
 };
 
-/** Custom scale validation limits — shared by argument validation and the model. */
-export const SCALE_VALIDATION = {
-  minCards: 3,
-  maxCards: 20,
-  maxCardLength: 10,
-} as const;
-
-/**
- * The one custom-scale validator. Throws on the first violated rule.
- * Lives here (not in the model) so the same rules back endpoint argument
- * validation and any direct Convex client — the model calls it on room
- * creation, so an oversized or malformed deck is unrepresentable.
- */
-export function validateCustomScale(cards: string[]): void {
-  if (cards.length < SCALE_VALIDATION.minCards) {
-    throw new Error(`Minimum ${SCALE_VALIDATION.minCards} cards required`);
-  }
-  if (cards.length > SCALE_VALIDATION.maxCards) {
-    throw new Error(`Maximum ${SCALE_VALIDATION.maxCards} cards allowed`);
-  }
-  if (new Set(cards).size !== cards.length) {
-    throw new Error("Duplicate card values not allowed");
-  }
-  if (cards.some((c) => c.trim() === "")) {
-    throw new Error("Empty card values not allowed");
-  }
-  if (cards.some((c) => c.length > SCALE_VALIDATION.maxCardLength)) {
-    throw new Error(
-      `Card values must be ${SCALE_VALIDATION.maxCardLength} characters or less`
-    );
-  }
-}
-
 /**
  * The one default scale: what a room that stores none deals (legacy rooms and
  * the demo), and what a new room stores when its creator picks none.
@@ -151,4 +122,112 @@ export function cardNumericValue(label: string): number | undefined {
   if (isSpecialCard(label)) return undefined;
   const value = Number.parseFloat(label);
   return Number.isFinite(value) ? value : undefined;
+}
+
+// ---------------------------------------------------------------------------
+// A creator's pick
+// ---------------------------------------------------------------------------
+
+const MIN_CARDS = 3;
+const MAX_CARDS = 20;
+const MAX_CARD_LENGTH = 10;
+
+/**
+ * A custom deck's limits, and a card's own rule beside its limit and words:
+ * kept without the spaces around it, never blank, and short (`./fieldRule`).
+ * The rest of a deck's rules, no card twice and how many cards, are read
+ * with them in one place, `checkPick`, which room creation and the create
+ * page's table both ask.
+ */
+export const CUSTOM_DECK = {
+  minCards: MIN_CARDS,
+  maxCards: MAX_CARDS,
+  card: fieldRule({
+    maxLength: MAX_CARD_LENGTH,
+    blank: "A card can't be blank.",
+    tooLong: `A card fits ${MAX_CARD_LENGTH} characters.`,
+  }),
+} as const;
+
+/**
+ * What a room's creator picks: a preset by its type, or a deck of their own,
+ * its cards as typed. The shape `rooms.create` takes, so a pick an old open
+ * tab sends reads the same; a preset ignores any cards sent with it.
+ */
+export type DeckPick =
+  | { type: VotingScaleType; cards?: readonly string[] }
+  | { type: "custom"; cards?: readonly string[] };
+
+/**
+ * The first rule a custom deck breaks, classified, and in the rule's own
+ * words: a card's own rule (blank, or too long), a card it already holds
+ * (`card`, as the deck keeps it), more cards than it holds, or fewer than it
+ * needs. The create page's table reacts to which; the words are what a
+ * person reads, from the table or from a refused room creation.
+ */
+export type BrokenRule =
+  | { rule: "card" | "tooMany" | "tooFew"; message: string }
+  | { rule: "duplicate"; card: string; message: string };
+
+/**
+ * A pick, read: the cards it deals, in order, each as the deck keeps it, and
+ * either the scale a room stores for it or the first rule it breaks. A deck
+ * that breaks one still says the cards it keeps, leaving out a card it
+ * refuses, so the create page lays out a deck that is only short of cards.
+ */
+export type CheckedPick =
+  | { ok: true; cards: readonly string[]; scale: VotingScale }
+  | ({ ok: false; cards: readonly string[] } & BrokenRule);
+
+/**
+ * The ONE reading of a creator's pick (CONTEXT.md: Deck). The create page asks
+ * it on every change, its table asks it of each card laid, and room creation
+ * stores its answer, so the page can't offer a deck the server refuses, nor
+ * show cards the room won't deal. No pick reads as the default. A custom
+ * deck's cards are read in order, the first one refused saying why; then its
+ * size.
+ */
+export function checkPick(pick?: DeckPick): CheckedPick {
+  if (pick?.type !== "custom") {
+    const { type, cards, isNumeric } = pick ? VOTING_SCALES[pick.type] : DEFAULT_SCALE;
+    return { ok: true, cards, scale: { type, cards: [...cards], isNumeric } };
+  }
+  const cards: string[] = [];
+  let broken: BrokenRule | null = null;
+  for (const typed of pick.cards ?? []) {
+    const card = CUSTOM_DECK.card.check(typed);
+    if (!card.ok) {
+      broken ??= { rule: "card", message: card.message };
+    } else if (cards.includes(card.value)) {
+      // Compared as kept, so two cards equal once trimmed are the same card.
+      broken ??= { rule: "duplicate", card: card.value, message: `${card.value} is already in the deck.` };
+    } else {
+      cards.push(card.value);
+    }
+  }
+  broken ??= sizeRule(cards.length);
+  return broken
+    ? { ok: false, cards, ...broken }
+    : { ok: true, cards, scale: { type: "custom", cards, isNumeric: isNumericDeck(cards) } };
+}
+
+/** The rule a deck of `count` cards breaks by its size alone, or null when it breaks none. */
+function sizeRule(count: number): BrokenRule | null {
+  if (count > MAX_CARDS) return { rule: "tooMany", message: `A deck holds ${MAX_CARDS} cards at most.` };
+  if (count < MIN_CARDS) {
+    return { rule: "tooFew", message: `Add ${MIN_CARDS - count} more: a deck needs at least ${MIN_CARDS} cards.` };
+  }
+  return null;
+}
+
+/**
+ * Whether a custom deck is numeric, so its results average: at least one card
+ * reads as a number, and every card but the special ones does. "1, 2, 3, 5,
+ * 8, ?" is; "S, M, L" and "1, 2, Spike" aren't. The presets agree with it.
+ */
+function isNumericDeck(cards: readonly string[]): boolean {
+  return (
+    cards.some((card) => cardNumericValue(card) !== undefined) &&
+    cards.every((card) => isSpecialCard(card) || cardNumericValue(card) !== undefined)
+  );
 }
