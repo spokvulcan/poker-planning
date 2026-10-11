@@ -376,7 +376,11 @@ export async function refreshJiraToken(
   return tokens.access_token;
 }
 
-/** Builds a JiraClient on a valid (freshly refreshed when needed) token. */
+/**
+ * Builds a JiraClient on a valid (freshly refreshed when needed) token. Jira
+ * access (jiraAccess.ts) is its one caller: the adapter's actions act on Jira
+ * through it, never by building a client themselves.
+ */
 export async function buildJiraClient(
   ctx: ActionCtx,
   connection: Doc<"integrationConnections">,

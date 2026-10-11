@@ -8,7 +8,8 @@
  * Covered through importIssuesWithClient with a fake Jira client, each
  * admission the real one through the adapter's registered mutation, run as
  * the importer; and through the registered action for the refusals that come
- * before Jira is asked anything.
+ * before Jira is asked anything. The action end to end, against the
+ * in-memory Jira, is in jiraActions.test.ts.
  */
 import { convexTest, type TestConvex } from "convex-test";
 import { describe, it, expect, vi, afterEach } from "vitest";
@@ -99,14 +100,16 @@ function fakeJira(known: Record<string, string>) {
   return { client, asked };
 }
 
-/** Imports the keys into the room as `subject`, each admission on the step as the action would run it. */
+/**
+ * Imports the keys into the room as `subject`, from their connection's site,
+ * each admission on the step as the action would run it.
+ */
 function importInto(
   t: T,
   roomId: Id<"rooms">,
   subject: string,
   client: Pick<JiraClient, "getIssue">,
   keys: string[],
-  connection: { siteUrl?: string } = { siteUrl: SITE },
   afterEachAdmission: () => Promise<void> = async () => {}
 ) {
   const importer = t.withIdentity({ subject });
@@ -117,7 +120,7 @@ function importInto(
       await afterEachAdmission();
       return admission;
     },
-    { keys, siteUrl: connection.siteUrl }
+    { keys, site: SITE }
   );
 }
 
@@ -200,23 +203,6 @@ describe("Jira import", () => {
     });
     expect(await roomIssueTitles(t, roomId)).toEqual(["PROJ-1 - Login form"]);
   });
-
-  it("refuses every key when the Jira connection has no site, without asking Jira", async () => {
-    const t = convexTest(schema, modules);
-    const roomId = await seedRoom(t);
-    await seatIn(t, roomId, "auth-ann");
-    const { client, asked } = fakeJira({ "PROJ-1": "Login form" });
-
-    const result = await importInto(t, roomId, "auth-ann", client, ["PROJ-1"], {});
-
-    expect(result).toEqual({
-      imported: 0,
-      skipped: 0,
-      refused: [{ key: "PROJ-1", reason: "Your Jira connection has no site address; reconnect Jira" }],
-    });
-    expect(asked).toEqual([]);
-    expect(await roomIssueTitles(t, roomId)).toEqual([]);
-  });
 });
 
 describe("the import takes the room-scoped step", () => {
@@ -263,7 +249,7 @@ describe("the import takes the room-scoped step", () => {
     const { client } = fakeJira({ "PROJ-1": "Login form", "PROJ-2": "Signup" });
 
     // The owner narrows issue management while the import runs.
-    const result = await importInto(t, roomId, "auth-ann", client, ["PROJ-1", "PROJ-2"], { siteUrl: SITE }, () =>
+    const result = await importInto(t, roomId, "auth-ann", client, ["PROJ-1", "PROJ-2"], () =>
       onlyFacilitatorsManageIssues(t, roomId)
     );
 

@@ -25,6 +25,7 @@ import type * as gifUsage from "../gifUsage.js";
 import type * as http from "../http.js";
 import type * as integrations from "../integrations.js";
 import type * as integrations_jira from "../integrations/jira.js";
+import type * as integrations_jiraAccess from "../integrations/jiraAccess.js";
 import type * as integrations_jiraAuth from "../integrations/jiraAuth.js";
 import type * as integrations_jiraClient from "../integrations/jiraClient.js";
 import type * as integrations_jiraWebhook from "../integrations/jiraWebhook.js";
@@ -107,6 +108,7 @@ declare const fullApi: ApiFromModules<{
   http: typeof http;
   integrations: typeof integrations;
   "integrations/jira": typeof integrations_jira;
+  "integrations/jiraAccess": typeof integrations_jiraAccess;
   "integrations/jiraAuth": typeof integrations_jiraAuth;
   "integrations/jiraClient": typeof integrations_jiraClient;
   "integrations/jiraWebhook": typeof integrations_jiraWebhook;
