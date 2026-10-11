@@ -1,5 +1,49 @@
 # Changelog
 
+## [2.11.0](https://github.com/spokvulcan/poker-planning/compare/agilekit-v2.10.4...agilekit-v2.11.0) (2026-10-11)
+
+
+### Features
+
+* ⌘K command menu, and a 404 page that searches with it ([#411](https://github.com/spokvulcan/poker-planning/issues/411)) ([9e7c9d3](https://github.com/spokvulcan/poker-planning/commit/9e7c9d3d186961c2c6ea8d2022c3057d84335365))
+* quick-start create pages for planning poker and retros ([#415](https://github.com/spokvulcan/poker-planning/issues/415)) ([eacf981](https://github.com/spokvulcan/poker-planning/commit/eacf981246f305584239b535ffa017eb727701d0))
+
+
+### Bug Fixes
+
+* give the homepage GitHub button a solid background ([#410](https://github.com/spokvulcan/poker-planning/issues/410)) ([b57287c](https://github.com/spokvulcan/poker-planning/commit/b57287c40b4983b9e9762599f61a4a436b59e1c8))
+* move the navbar menu beside the logo ([#416](https://github.com/spokvulcan/poker-planning/issues/416)) ([3bfe88c](https://github.com/spokvulcan/poker-planning/commit/3bfe88cd623d84e0ad4f98b551a8093acc126032))
+* show the user menu on the first paint ([#412](https://github.com/spokvulcan/poker-planning/issues/412)) ([9e1da61](https://github.com/spokvulcan/poker-planning/commit/9e1da613c884b0ce6b81d303099950c5481fdb13))
+* the board paints already fitted on first load ([#409](https://github.com/spokvulcan/poker-planning/issues/409)) ([f4edaaf](https://github.com/spokvulcan/poker-planning/commit/f4edaafb30b84da2673162000f83129534fd1ac9))
+* the home page no longer scrolls sideways at tablet widths ([#418](https://github.com/spokvulcan/poker-planning/issues/418)) ([8c7a7fe](https://github.com/spokvulcan/poker-planning/commit/8c7a7fe6eec9ee9098344e073cab5edd9b3a84f6))
+* the homepage previews show the whole board ([#413](https://github.com/spokvulcan/poker-planning/issues/413)) ([2f97629](https://github.com/spokvulcan/poker-planning/commit/2f976291b94e96070097876fdd60707b9c38f560))
+
+
+### Documentation
+
+* a push to main deploys Convex with the Vercel build ([#408](https://github.com/spokvulcan/poker-planning/issues/408)) ([17c9c29](https://github.com/spokvulcan/poker-planning/commit/17c9c294e5be38c36e792a949f50748836afca78))
+* presence worker runbook, design tokens doc and a shorter CLAUDE.md ([#405](https://github.com/spokvulcan/poker-planning/issues/405)) ([3b018af](https://github.com/spokvulcan/poker-planning/commit/3b018af6d39e75f7743b5d5c50108f74233cbcea))
+
+
+### Miscellaneous
+
+* **deps:** bump brace-expansion from 5.0.9 to 5.0.12 ([#402](https://github.com/spokvulcan/poker-planning/issues/402)) ([cb8a859](https://github.com/spokvulcan/poker-planning/commit/cb8a85963b78e3c47aad2b4e4eb28758e5d72ff2))
+* **deps:** bump fast-uri from 3.1.7 to 3.1.8 ([#400](https://github.com/spokvulcan/poker-planning/issues/400)) ([4bfe857](https://github.com/spokvulcan/poker-planning/commit/4bfe8576442323152b9c914633a7e39592071d41))
+* **deps:** bump postcss-selector-parser from 7.1.4 to 7.1.6 ([#401](https://github.com/spokvulcan/poker-planning/issues/401)) ([cc56dc4](https://github.com/spokvulcan/poker-planning/commit/cc56dc4d40750db29d21b3c7ac274a23ae84f908))
+* **deps:** refresh the lockfile ([#407](https://github.com/spokvulcan/poker-planning/issues/407)) ([dea31de](https://github.com/spokvulcan/poker-planning/commit/dea31ded595a09420f8aae1ffd1a671ff90730d9))
+* give each worktree its own stack, and run e2e in CI ([#417](https://github.com/spokvulcan/poker-planning/issues/417)) ([037f9f6](https://github.com/spokvulcan/poker-planning/commit/037f9f6655d7a22b96b709c3aa3810d4b652d942))
+* lint the backend's mechanical standards and hold the generated API to its modules ([#414](https://github.com/spokvulcan/poker-planning/issues/414)) ([030bd43](https://github.com/spokvulcan/poker-planning/commit/030bd43a23085aed0eedfdce007d7d7bba14c0d0))
+
+
+### Code Refactoring
+
+* carry out the October 2026 architecture review ([#406](https://github.com/spokvulcan/poker-planning/issues/406)) ([7f92e62](https://github.com/spokvulcan/poker-planning/commit/7f92e62d262b3e1c77940b8b198c86f915df0da9))
+
+
+### CI/CD
+
+* refresh the lockfile weekly and check PR titles ([#404](https://github.com/spokvulcan/poker-planning/issues/404)) ([e528998](https://github.com/spokvulcan/poker-planning/commit/e528998b96285808fdc607eba85cf7442820990a))
+
 ## [2.10.4](https://github.com/spokvulcan/poker-planning/compare/agilekit-v2.10.3...agilekit-v2.10.4) (2026-10-10)
 
 
