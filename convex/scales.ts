@@ -168,8 +168,8 @@ export type DeckPick =
 /**
  * The first rule a custom deck breaks, classified, and in the rule's own
  * words: a card's own rule (blank, or too long), a card it already holds
- * (`card`, as the deck keeps it), more cards than it holds, or fewer than it
- * needs. The create page's table reacts to which; the words are what a
+ * (`card`, as the deck keeps it: the same words, or the same number), more
+ * cards than it holds, or fewer than it needs. The create page's table reacts to which; the words are what a
  * person reads, from the table or from a refused room creation.
  */
 export type BrokenRule =
@@ -205,17 +205,32 @@ export function checkPick(pick?: DeckPick): CheckedPick {
     const card = CUSTOM_DECK.card.check(typed);
     if (!card.ok) {
       broken ??= { rule: "card", message: card.message };
-    } else if (cards.includes(card.value)) {
-      // Compared as kept, so two cards equal once trimmed are the same card.
-      broken ??= { rule: "duplicate", card: card.value, message: `${card.value} is already in the deck.` };
     } else {
-      cards.push(card.value);
+      const twin = cards.find((kept) => sameCard(kept, card.value));
+      if (twin === undefined) cards.push(card.value);
+      else broken ??= { rule: "duplicate", card: twin, message: duplicateMessage(card.value, twin) };
     }
   }
   broken ??= sizeRule(cards.length);
   return broken
     ? { ok: false, cards, ...broken }
     : { ok: true, cards, scale: { type: "custom", cards, isNumeric: isNumericDeck(cards) } };
+}
+
+/**
+ * Whether two cards, as the deck keeps them, are the same card: the same
+ * words, or the same number ("1", "01" and "1.0" are one estimate, and a
+ * deck dealing all three would count steps between them).
+ */
+function sameCard(kept: string, typed: string): boolean {
+  if (kept === typed) return true;
+  const number = cardNumericValue(kept);
+  return number !== undefined && number === cardNumericValue(typed);
+}
+
+/** What a person reads when a card is already in the deck, naming the card it's the same as. */
+function duplicateMessage(typed: string, twin: string): string {
+  return typed === twin ? `${typed} is already in the deck.` : `${typed} is already in the deck, as ${twin}.`;
 }
 
 /** The rule a deck of `count` cards breaks by its size alone, or null when it breaks none. */

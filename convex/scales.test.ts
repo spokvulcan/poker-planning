@@ -107,6 +107,12 @@ describe("a creator's pick — the one reading of what a new room deals and stor
       ],
       ["a card twice", ["1", "2", "2"], { rule: "duplicate", card: "2", message: "2 is already in the deck." }],
       ["two cards equal once trimmed", ["1", "2", " 2 "], { rule: "duplicate", card: "2", message: "2 is already in the deck." }],
+      [
+        "two cards of the same number",
+        ["1", "2", "1.0"],
+        { rule: "duplicate", card: "1", message: "1.0 is already in the deck, as 1." },
+      ],
+      ["a number written another way", ["01", "2", "1"], { rule: "duplicate", card: "01", message: "1 is already in the deck, as 01." }],
       // A card's own rule and a card twice come before the deck's size.
       ["a card twice in a deck short of cards", ["1", "1"], { rule: "duplicate", card: "1", message: "1 is already in the deck." }],
     ] as [string, string[] | undefined, object][])("%s", (_case, cards, broken) => {
