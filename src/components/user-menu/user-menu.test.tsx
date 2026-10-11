@@ -24,7 +24,7 @@ vi.mock("convex/react", () => ({
   useMutation: () => async () => {},
 }));
 
-vi.mock("next/navigation", () => ({ useParams: () => ({}) }));
+vi.mock("next/navigation", () => ({ useParams: () => ({}), usePathname: () => "/blog" }));
 
 vi.mock("next/link", () => ({
   default: ({ children, href }: { children?: ReactNode; href: string }) => <a href={href}>{children}</a>,
@@ -72,7 +72,7 @@ describe("UserMenu", () => {
     render(<UserMenu />);
 
     expect(within(screen.getByTestId("user-menu-trigger")).getByText("Guest")).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Sign in" }).getAttribute("href")).toBe("/auth/signin");
+    expect(screen.getByRole("link", { name: "Sign in" }).getAttribute("href")).toBe("/auth/signin?from=%2Fblog");
   });
 
   it("shows a permanent account's name, avatar and email, and no Sign in", () => {

@@ -1,17 +1,16 @@
 "use client";
 
 import { useParams } from "next/navigation";
-import Link from "next/link";
 import { useMutation, useQuery } from "convex/react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowDown01Icon } from "@hugeicons/core-free-icons";
-import { Eye, LayoutDashboard, History, MessagesSquare } from "lucide-react";
+import { Eye } from "lucide-react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { rulesOf } from "@/convex/ceremony";
 import { useAuth } from "@/components/auth/auth-provider";
 import { useCallerQuery } from "@/components/auth/use-caller-query";
-import { DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
@@ -71,7 +70,7 @@ export function UserMenu() {
       viewer={viewer}
       align="end"
       className="w-56"
-      signInHref={roomId ? `/auth/signin?from=/room/${roomId}` : "/auth/signin"}
+      withPlaces
       trigger={
         <DropdownMenuTrigger
           data-testid="user-menu-trigger"
@@ -87,22 +86,6 @@ export function UserMenu() {
             className="size-4 text-muted-foreground"
           />
         </DropdownMenuTrigger>
-      }
-      links={
-        <>
-          <DropdownMenuItem render={<Link href="/dashboard" />}>
-            <LayoutDashboard className="mr-2 size-4" />
-            Dashboard
-          </DropdownMenuItem>
-          <DropdownMenuItem render={<Link href="/dashboard/sessions" />}>
-            <History className="mr-2 size-4" />
-            Planning poker
-          </DropdownMenuItem>
-          <DropdownMenuItem render={<Link href="/dashboard/retros" />}>
-            <MessagesSquare className="mr-2 size-4" />
-            Retros
-          </DropdownMenuItem>
-        </>
       }
       settings={
         // Spectator toggle - only where the ceremony has spectators

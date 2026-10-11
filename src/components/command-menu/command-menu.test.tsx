@@ -146,15 +146,28 @@ describe("the command menu", () => {
     renderMenu();
     pressShortcut({ metaKey: true });
 
-    fireEvent.click(await option(/^Your retros/));
+    fireEvent.click(await option(/^Retros/));
     expect(spy.push).toHaveBeenCalledWith("/dashboard/retros");
+  });
+
+  it("offers a guest their dashboard, and Sign in back to the page they are on", async () => {
+    spy.auth = {
+      viewer: { status: "signedIn", name: "Guest 4829", avatarUrl: null, email: null, isPermanent: false, confirmed: true },
+    };
+    renderMenu();
+    pressShortcut({ metaKey: true });
+
+    expect(await option(/^Planning poker/)).toBeTruthy();
+    type("sign in");
+    fireEvent.click(await option(/^Sign in/));
+    expect(spy.push).toHaveBeenCalledWith("/auth/signin?from=%2Fpricing");
   });
 
   it("offers a visitor sign-in instead, back to the page they are on", async () => {
     renderMenu();
     pressShortcut({ metaKey: true });
     await screen.findByRole("dialog");
-    expect(screen.queryByRole("option", { name: /^Your retros/ })).toBeNull();
+    expect(screen.queryByRole("option", { name: /^Retros/ })).toBeNull();
 
     type("sign in");
     fireEvent.click(await option(/^Sign in/));
@@ -169,7 +182,7 @@ describe("the command menu", () => {
 
     type("s");
     await waitFor(() => expect(screen.getAllByRole("option").length).toBeGreaterThan(0));
-    expect(screen.queryByRole("option", { name: /^Your retros/ })).toBeNull();
+    expect(screen.queryByRole("option", { name: /^Retros/ })).toBeNull();
     expect(screen.queryByRole("option", { name: /^Sign in/ })).toBeNull();
   });
 

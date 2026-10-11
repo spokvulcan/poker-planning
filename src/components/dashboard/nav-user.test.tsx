@@ -36,6 +36,7 @@ vi.mock("@/hooks/useSignOut", () => ({ useSignOut: () => async () => {} }));
 
 // The sidebar's desktop branch: jsdom has no matchMedia.
 vi.mock("@/hooks/use-mobile", () => ({ useIsMobile: () => false }));
+vi.mock("next/navigation", () => ({ usePathname: () => "/dashboard" }));
 
 // The menu's content, drawn in place whether it is open or not.
 vi.mock("@/components/ui/dropdown-menu", async () => {
@@ -81,7 +82,7 @@ describe("NavUser", () => {
     renderNavUser();
 
     expect(screen.getAllByText("Guest").length).toBeGreaterThan(0);
-    expect(screen.getByRole("link", { name: "Sign in" }).getAttribute("href")).toBe("/auth/signin?from=/dashboard");
+    expect(screen.getByRole("link", { name: "Sign in" }).getAttribute("href")).toBe("/auth/signin?from=%2Fdashboard");
   });
 
   it("shows a permanent account's name, avatar and email, and no Sign in", () => {

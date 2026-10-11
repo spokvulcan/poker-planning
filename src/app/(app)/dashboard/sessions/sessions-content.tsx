@@ -2,6 +2,7 @@
 
 import { api } from "@/convex/_generated/api";
 import { useCallerQuery } from "@/components/auth/use-caller-query";
+import { place } from "@/components/auth/account";
 import { DashboardHeader, SessionHistory } from "@/components/dashboard";
 import { useDateRange } from "@/components/dashboard/date-range-context";
 
@@ -14,7 +15,7 @@ export function SessionsContent() {
 
   return (
     <>
-      <DashboardHeader title="Sessions" />
+      <DashboardHeader title={place("sessions").label} />
       <div className="flex-1 p-6">
         <SessionHistory sessions={sessions ?? []} isLoading={isLoading} />
       </div>

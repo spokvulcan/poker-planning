@@ -47,13 +47,15 @@ import {
   CommandShortcut,
 } from "@/components/ui/command";
 import { Kbd } from "@/components/ui/kbd";
-import { COMMAND_MENU, DASHBOARD, PAGES, SIGN_IN, START, THEMES, type MenuLink } from "./copy";
+import { useAuth } from "@/components/auth/auth-provider";
+import { accountEntries, THEMES, type Place } from "@/components/auth/account";
+import { COMMAND_MENU, PAGES, SIGN_IN, START, type MenuLink } from "./copy";
 import { rank } from "./rank";
 import { useBlogPosts } from "./use-blog-posts";
 
 type CommandId =
   | (typeof START)[number]["id"]
-  | (typeof DASHBOARD)[number]["id"]
+  | Place["id"]
   | (typeof PAGES)[number]["id"]
   | typeof SIGN_IN.id
   | (typeof THEMES)[number]["id"];
@@ -62,7 +64,7 @@ const ICONS: Record<CommandId, LucideIcon> = {
   estimate: Vote,
   retro: MessagesSquare,
   demo: Play,
-  overview: LayoutDashboard,
+  dashboard: LayoutDashboard,
   sessions: History,
   retros: StickyNote,
   settings: Settings,
@@ -85,22 +87,24 @@ const noSubscribe = () => () => {};
 
 /**
  * The command menu's body: a search over the site's places and actions.
- * The ⌘K dialog draws it, and so does the 404 page, inline.
+ * The ⌘K dialog draws it, and so does the 404 page, inline. What it offers
+ * of the viewer's account (their places, Sign in) is the account menus'
+ * (components/auth/account.ts); the 404, outside the app shell, knows no
+ * viewer and offers neither.
  */
 export function CommandPalette({
   surface,
-  signedIn,
   onDone,
 }: {
   /** In the ⌘K dialog, or inline on a page (the 404). */
   surface: "dialog" | "page";
-  /** Offers the dashboard when true and sign-in when false; neither while unknown. */
-  signedIn?: boolean;
   /** Runs once a command has, e.g. to close the dialog. */
   onDone?: () => void;
 }) {
   const router = useRouter();
   const pathname = usePathname();
+  const { viewer } = useAuth();
+  const entries = accountEntries(viewer, pathname);
   const { theme, setTheme } = useTheme();
   // The stored theme is only known in the browser: ticking it any earlier
   // would not match the server's HTML.
@@ -165,9 +169,9 @@ export function CommandPalette({
           ))}
         </CommandGroup>
 
-        {signedIn === true && (
+        {entries.places.length > 0 && (
           <CommandGroup heading={COMMAND_MENU.groups.dashboard}>
-            {DASHBOARD.map((link) => (
+            {entries.places.map((link) => (
               <LinkItem key={link.id} link={link} onSelect={go} />
             ))}
           </CommandGroup>
@@ -193,12 +197,9 @@ export function CommandPalette({
           </CommandGroup>
         )}
 
-        {signedIn === false && shown(SIGN_IN) && (
+        {entries.signIn && shown(SIGN_IN) && (
           <CommandGroup heading={COMMAND_MENU.groups.account}>
-            <LinkItem
-              link={{ ...SIGN_IN, href: `${SIGN_IN.href}?from=${encodeURIComponent(pathname)}` }}
-              onSelect={go}
-            />
+            <LinkItem link={{ ...SIGN_IN, href: entries.signIn }} onSelect={go} />
           </CommandGroup>
         )}
 

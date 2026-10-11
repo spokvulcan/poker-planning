@@ -11,7 +11,6 @@ import {
 } from "react";
 import { Search } from "lucide-react";
 
-import { useAuth } from "@/components/auth/auth-provider";
 import { Button } from "@/components/ui/button";
 import { CommandDialog } from "@/components/ui/command";
 import { Kbd } from "@/components/ui/kbd";
@@ -33,7 +32,6 @@ export function useOpenCommandMenu(): (() => void) | null {
  */
 export function CommandMenuProvider({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
-  const { viewer } = useAuth();
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -58,11 +56,7 @@ export function CommandMenuProvider({ children }: { children: ReactNode }) {
         description={COMMAND_MENU.description}
         className="top-[12vh] gap-0 rounded-2xl! bg-white/95 shadow-2xl backdrop-blur-xl sm:max-w-xl dark:bg-zinc-950/95"
       >
-        <CommandPalette
-          surface="dialog"
-          signedIn={viewer.status === "loading" ? undefined : viewer.status === "signedIn"}
-          onDone={() => setOpen(false)}
-        />
+        <CommandPalette surface="dialog" onDone={() => setOpen(false)} />
       </CommandDialog>
     </OpenCommandMenu>
   );

@@ -5,6 +5,7 @@ import { formatDistanceToNow } from "date-fns";
 import { ArrowRight, CircleCheckBig, Clock, Plus, StickyNote } from "lucide-react";
 import { api } from "@/convex/_generated/api";
 import { useCallerQuery } from "@/components/auth/use-caller-query";
+import { place } from "@/components/auth/account";
 import { DashboardHeader } from "@/components/dashboard";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -28,7 +29,7 @@ export function RetrosContent() {
 
   return (
     <>
-      <DashboardHeader title="Retros" showDateRange={false} />
+      <DashboardHeader title={place("retros").label} showDateRange={false} />
       <div className="flex-1 space-y-6 p-6">
         <div className="flex items-start justify-between gap-4">
           <div>

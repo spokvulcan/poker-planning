@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { authClient } from "@/lib/auth-client";
 import { useAuth } from "@/components/auth/auth-provider";
 import { accountKind } from "@/components/auth/viewer";
+import { returnPath } from "@/components/auth/account";
 import { useEnsureSession } from "@/hooks/useEnsureSession";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -33,9 +34,8 @@ export function SigninForm({ className, ...props }: React.ComponentProps<"div">)
   const isGuest = accountKind(viewer) === "guest";
   const ensureSession = useEnsureSession();
 
-  const rawFrom = searchParams.get("from") || "/";
-  // Prevent open redirect: only allow relative paths, reject protocol-relative URLs
-  const from = rawFrom.startsWith("/") && !rawFrom.startsWith("//") ? rawFrom : "/";
+  // Only a page on this site: a `from` that resolves elsewhere (`//host`, `/\host`) comes home instead
+  const from = returnPath(searchParams.get("from"));
 
   const [email, setEmail] = useState("");
   const [loadingGoogle, setLoadingGoogle] = useState(false);

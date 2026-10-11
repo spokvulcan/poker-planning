@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useAuth } from "@/components/auth/auth-provider";
+import { signInHref } from "@/components/auth/account";
 import { accountKind } from "@/components/auth/viewer";
 import { CreatePage } from "@/components/create/create-page";
 import { ChoiceSection, type Choice } from "@/components/create/choice-section";
@@ -97,7 +98,7 @@ export function CreateRetroContent() {
           ) : (
             <>
               Guest retros are removed after 5 quiet days.{" "}
-              <Link href="/auth/signin?from=/retro/new" className="underline underline-offset-4 hover:text-foreground">
+              <Link href={signInHref("/retro/new")} className="underline underline-offset-4 hover:text-foreground">
                 Sign in
               </Link>{" "}
               to keep yours.

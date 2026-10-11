@@ -27,30 +27,20 @@ import {
 } from "@/components/ui/sidebar";
 import { CommandMenuShortcut, useOpenCommandMenu } from "@/components/command-menu/command-menu";
 import { COMMAND_MENU } from "@/components/command-menu/copy";
+import { place } from "@/components/auth/account";
 import { NavUser } from "./nav-user";
 
+// The account's places (components/auth/account.ts), as every menu names them
 const navMain = [
-  {
-    title: "Overview",
-    url: "/dashboard",
-    icon: LayoutDashboard,
-  },
-  {
-    title: "Planning poker",
-    url: "/dashboard/sessions",
-    icon: History,
-  },
-  {
-    title: "Retros",
-    url: "/dashboard/retros",
-    icon: MessagesSquare,
-  },
-];
+  { ...place("dashboard"), icon: LayoutDashboard },
+  { ...place("sessions"), icon: History },
+  { ...place("retros"), icon: MessagesSquare },
+].map(({ label, href, icon }) => ({ title: label, url: href, icon }));
 
 const navSecondary: { title: string; url: string; icon: typeof Settings; external?: boolean }[] = [
   {
-    title: "Settings",
-    url: "/dashboard/settings",
+    title: place("settings").label,
+    url: place("settings").href,
     icon: Settings,
   },
   {
