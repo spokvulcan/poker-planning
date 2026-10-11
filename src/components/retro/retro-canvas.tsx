@@ -15,7 +15,12 @@ import { nextStickyPosition, PAD_WIDTH, padNodeId, STICKY_MIN_HEIGHT, STICKY_WID
 import { CanvasNavigation } from "@/components/room/canvas-navigation";
 import { TimerNode } from "@/components/room/nodes/TimerNode";
 import { usePanelState } from "@/components/room/hooks/usePanelState";
-import { Whiteboard, WhiteboardProviders, centerOn, type WhiteboardDrop } from "@/components/whiteboard/whiteboard";
+import {
+  Whiteboard,
+  WhiteboardProviders,
+  useWhiteboardView,
+  type WhiteboardDrop,
+} from "@/components/whiteboard/whiteboard";
 import { useRetroPermissions } from "@/hooks/usePermissions";
 import { useStableActions } from "@/hooks/useStableActions";
 import { toast } from "@/lib/toast";
@@ -91,6 +96,7 @@ function RetroCanvasInner({ roomData, currentUserId }: RetroCanvasProps): ReactE
   const retro = room.retro!;
   const perms = useRetroPermissions(roomData, currentUserId);
   const flow = useReactFlow<RetroFlowNode>();
+  const view = useWhiteboardView();
 
   const board = useQuery(api.retro.board, { roomId });
   // Everyone's vote count shows only while voting.
@@ -154,17 +160,9 @@ function RetroCanvasInner({ roomData, currentUserId }: RetroCanvasProps): ReactE
       }
       setEditingId(null);
       drafting.start(columnId, position);
-      // Bring the new sticky into view if it landed off screen: the
-      // smallest pan that shows it whole, at the zoom the person chose.
-      const { x, y, zoom } = flow.getViewport();
-      const margin = 96;
-      const topLeft = flow.flowToScreenPosition(position);
-      const bottomRight = flow.flowToScreenPosition({ x: position.x + STICKY_WIDTH, y: position.y + STICKY_MIN_HEIGHT * 1.6 });
-      const dx =
-        topLeft.x < margin ? margin - topLeft.x : bottomRight.x > window.innerWidth - margin ? window.innerWidth - margin - bottomRight.x : 0;
-      const dy =
-        topLeft.y < margin ? margin - topLeft.y : bottomRight.y > window.innerHeight - margin ? window.innerHeight - margin - bottomRight.y : 0;
-      if (dx !== 0 || dy !== 0) void flow.setViewport({ x: x + dx, y: y + dy, zoom }, { duration: 300 });
+      // The new sticky, as tall as its open editor, comes into view if it
+      // landed outside the board's pane.
+      view.bringIntoView({ ...position, width: STICKY_WIDTH, height: STICKY_MIN_HEIGHT * 1.6 });
     },
     commitDraft: (clientId, text, gif) => void drafting.commit(clientId, text, gif),
     cancelDraft: (clientId) => drafting.cancel(clientId),
@@ -205,7 +203,7 @@ function RetroCanvasInner({ roomData, currentUserId }: RetroCanvasProps): ReactE
     focusTopic: (stickyId) => void runAct(m.focusTopic({ roomId, stickyId }), WRITE_FAILED),
     panToTopic: (stickyId) => {
       const sticky = stickyOf(stickyId);
-      if (sticky) centerOn(flow, sticky.clientId);
+      if (sticky) view.centerOn(sticky.clientId);
     },
     setStep: (step: RetroStep) => void runAct(m.setStep({ roomId, step }), WRITE_FAILED),
     stepDiscussion: (direction) => void runAct(m.stepDiscussion({ roomId, direction }), WRITE_FAILED),

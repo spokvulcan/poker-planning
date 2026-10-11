@@ -45,6 +45,7 @@ vi.mock("@xyflow/react", async () => {
       setCenter: () => Promise.resolve(true),
       getZoom: () => 1,
     }),
+    useStoreApi: () => ({ getState: () => ({ width: 1000, height: 800, transform: [0, 0, 1] }) }),
   };
 });
 

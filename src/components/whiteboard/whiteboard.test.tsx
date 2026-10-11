@@ -4,16 +4,46 @@
  * call, the way a drag, a drop, an arrow key or Delete would.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { act, cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { ConnectionMode, type Node, type NodeChange, type ReactFlowProps } from "@xyflow/react";
 
-const flow = vi.hoisted(() => ({
-  props: {} as ReactFlowProps<Node>,
-  renders: 0,
-  nodes: [] as Node[],
-  intersecting: [] as Node[],
-  fitView: (() => Promise.resolve(true)) as (options?: unknown) => Promise<boolean>,
-  setCenter: (() => Promise.resolve(true)) as (x: number, y: number, options?: unknown) => Promise<boolean>,
+const flow = vi.hoisted(() => {
+  const flow = {
+    props: {} as ReactFlowProps<Node>,
+    renders: 0,
+    nodes: [] as Node[],
+    intersecting: [] as Node[],
+    /** Where the view is, and the size of the pane React Flow measured. */
+    viewport: { x: 0, y: 0, zoom: 1 },
+    pane: { width: 1000, height: 800 },
+    fitView: (() => Promise.resolve(true)) as (options?: unknown) => Promise<boolean>,
+    zoomIn: (() => Promise.resolve(true)) as (options?: unknown) => Promise<boolean>,
+    zoomOut: (() => Promise.resolve(true)) as (options?: unknown) => Promise<boolean>,
+    setCenter: (() => Promise.resolve(true)) as (x: number, y: number, options?: unknown) => Promise<boolean>,
+    setViewport: (() => Promise.resolve(true)) as (viewport: unknown, options?: unknown) => Promise<boolean>,
+    // React Flow's store, as the view reads it at the moment it moves.
+    store: {
+      getState: () => ({
+        width: flow.pane.width,
+        height: flow.pane.height,
+        transform: [flow.viewport.x, flow.viewport.y, flow.viewport.zoom],
+      }),
+    },
+  };
+  return flow;
+});
+
+// One instance for the board's life, as React Flow's own is.
+const instance = vi.hoisted(() => ({
+  getNode: (id: string) => flow.nodes.find((n) => n.id === id),
+  getIntersectingNodes: () => flow.intersecting,
+  screenToFlowPosition: ({ x, y }: { x: number; y: number }) => ({ x: x * 2, y: y * 2 }),
+  fitView: (options?: unknown) => flow.fitView(options),
+  zoomIn: (options?: unknown) => flow.zoomIn(options),
+  zoomOut: (options?: unknown) => flow.zoomOut(options),
+  setCenter: (x: number, y: number, options?: unknown) => flow.setCenter(x, y, options),
+  setViewport: (viewport: unknown, options?: unknown) => flow.setViewport(viewport, options),
+  getZoom: () => flow.viewport.zoom,
 }));
 
 vi.mock("@xyflow/react", async () => {
@@ -37,21 +67,21 @@ vi.mock("@xyflow/react", async () => {
     },
     ReactFlowProvider: ({ children }: { children: React.ReactNode }) => children,
     useNodesInitialized: () => true,
-    useReactFlow: () => ({
-      getNode: (id: string) => flow.nodes.find((n) => n.id === id),
-      getIntersectingNodes: () => flow.intersecting,
-      screenToFlowPosition: ({ x, y }: { x: number; y: number }) => ({ x: x * 2, y: y * 2 }),
-      fitView: (options?: unknown) => flow.fitView(options),
-      setCenter: (x: number, y: number, options?: unknown) => flow.setCenter(x, y, options),
-      getZoom: () => 1,
-    }),
+    useReactFlow: () => instance,
+    useStoreApi: () => flow.store,
   };
 });
 
 vi.mock("@/components/canvas-dots-background", () => ({ CanvasDotsBackground: () => null }));
 vi.mock("@/hooks/use-mobile", () => ({ useIsMobile: () => false }));
 
-import { useIsDropTarget, Whiteboard, type WhiteboardProps } from "./whiteboard";
+import {
+  useIsDropTarget,
+  useWhiteboardView,
+  Whiteboard,
+  type WhiteboardProps,
+  type WhiteboardView,
+} from "./whiteboard";
 
 const node = (id: string, x = 0): Node => ({
   id,
@@ -69,11 +99,28 @@ function renderBoard(props: Partial<WhiteboardProps<Node>> = {}) {
 
 const event = {} as never;
 
+/** A control drawn on the board, as the chrome's and the boards' are, that moves the view once. */
+function ViewControl({ move }: { move: (view: WhiteboardView) => void }) {
+  const view = useWhiteboardView();
+  return <button onClick={() => move(view)}>Move the view</button>;
+}
+
+/** Moves the view as the chrome or a board would, from inside the board. */
+function moveView(move: (view: WhiteboardView) => void) {
+  renderBoard({ overlay: <ViewControl move={move} /> });
+  fireEvent.click(screen.getByRole("button", { name: "Move the view" }));
+}
+
 beforeEach(() => {
   vi.useFakeTimers();
   flow.intersecting = [];
+  flow.viewport = { x: 0, y: 0, zoom: 1 };
+  flow.pane = { width: 1000, height: 800 };
   flow.fitView = vi.fn(() => Promise.resolve(true));
+  flow.zoomIn = vi.fn(() => Promise.resolve(true));
+  flow.zoomOut = vi.fn(() => Promise.resolve(true));
   flow.setCenter = vi.fn(() => Promise.resolve(true));
+  flow.setViewport = vi.fn(() => Promise.resolve(true));
 });
 
 afterEach(() => {
@@ -228,6 +275,51 @@ describe("the view", () => {
     rerender({ followNodeId: "b" });
 
     expect(flow.setCenter).toHaveBeenCalledWith(250, 50, expect.anything());
+  });
+
+  it("fits for the chrome exactly as it fits itself: never past 100%, however small the board", () => {
+    moveView((view) => view.fit());
+
+    expect(flow.props.fitViewOptions).toMatchObject({ maxZoom: 1 });
+    expect(flow.fitView).toHaveBeenCalledWith(expect.objectContaining(flow.props.fitViewOptions));
+  });
+
+  it("zooms a step at a time, within the board's limits", () => {
+    moveView((view) => {
+      view.zoomIn();
+      view.zoomOut();
+    });
+
+    expect(flow.zoomIn).toHaveBeenCalledTimes(1);
+    expect(flow.zoomOut).toHaveBeenCalledTimes(1);
+    expect(flow.props).toMatchObject({ minZoom: 0.1, maxZoom: 2.5 });
+  });
+
+  it("centres a node at a readable zoom when the view is further out", () => {
+    flow.viewport = { x: 0, y: 0, zoom: 0.3 };
+
+    moveView((view) => view.centerOn("a"));
+
+    expect(flow.setCenter).toHaveBeenCalledWith(50, 50, expect.objectContaining({ zoom: 0.7 }));
+  });
+
+  it("brings a box into view within its own pane, which a docked panel narrows, not the window", () => {
+    // A panel is docked beside the board: the pane is 600px of the window.
+    flow.pane = { width: 600, height: 800 };
+    // A sticky past the pane's right edge, though well inside the window.
+    const sticky = { x: 500, y: 200, width: 220, height: 200 };
+    expect(sticky.x + sticky.width).toBeLessThan(window.innerWidth - 96);
+
+    moveView((view) => view.bringIntoView(sticky));
+
+    // The smallest pan that shows it whole, 96px clear of the edge, at the same zoom.
+    expect(flow.setViewport).toHaveBeenCalledWith({ x: 600 - 96 - 720, y: 0, zoom: 1 }, expect.anything());
+  });
+
+  it("leaves the view alone for a box already in the pane", () => {
+    moveView((view) => view.bringIntoView({ x: 200, y: 200, width: 220, height: 200 }));
+
+    expect(flow.setViewport).not.toHaveBeenCalled();
   });
 
   it("turns a double-click on empty board into a board position", () => {

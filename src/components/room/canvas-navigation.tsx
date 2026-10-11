@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useReactFlow } from "@xyflow/react";
 import {
   Copy,
   ZoomIn,
@@ -47,6 +46,7 @@ import { rulesOf } from "@/convex/ceremony";
 import { copyTextToClipboard } from "@/utils/copy-text-to-clipboard";
 import { UserPresenceAvatars } from "./user-presence-avatars";
 import { useIsDemoMode } from "./demo/DemoSimulationProvider";
+import { useWhiteboardView } from "@/components/whiteboard/whiteboard";
 
 // `document.fullscreenEnabled` is a client-only capability. Reading it through
 // useSyncExternalStore — with a `false` server snapshot — keeps SSR and the
@@ -86,7 +86,8 @@ export const CanvasNavigation = memo(function CanvasNavigation({
   const isDemoMode = useIsDemoMode();
   // What the link and the settings are called: a room, or a retro.
   const linkNoun = rulesOf(roomData.room).noun;
-  const { zoomIn, zoomOut, fitView } = useReactFlow();
+  // Zoom and fit move the board's view by the whiteboard's own rule.
+  const view = useWhiteboardView();
   const router = useRouter();
 
   // Fullscreen support is a client-only capability resolved via the store
@@ -119,17 +120,9 @@ export const CanvasNavigation = memo(function CanvasNavigation({
     }
   };
 
-  const handleZoomIn = () => {
-    zoomIn({ duration: 300 });
-  };
-
-  const handleZoomOut = () => {
-    zoomOut({ duration: 300 });
-  };
-
-  const handleFitView = () => {
-    fitView({ padding: 0.2, duration: 300 });
-  };
+  const handleZoomIn = view.zoomIn;
+  const handleZoomOut = view.zoomOut;
+  const handleFitView = view.fit;
 
   const handleFullscreen = () => {
     if (!isFullscreenSupported) return;
