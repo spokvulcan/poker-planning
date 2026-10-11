@@ -23,6 +23,8 @@ const backend = vi.hoisted(() => {
   const backend = {
     /** Whether the visitor has a live session. */
     liveSession: false,
+    /** Whether the server can reach Convex for the session. */
+    reachable: true,
     /** Whether the document is the homepage's frame or a page of its own. */
     framed: false,
     /** Every request that reached the backend, from the server or the browser. */
@@ -94,25 +96,31 @@ const backend = vi.hoisted(() => {
   return backend;
 });
 
-// The server fetches the session's token, and reads the viewer with it,
-// through this module.
+// The server fetches the session's token through this module, and reads the
+// viewer with it through Convex's.
 vi.mock("@/lib/auth-server", () => ({
   getToken: async () => {
     backend.requests.push("server: /api/auth/convex/token");
+    if (!backend.reachable) throw new TypeError("fetch failed");
     return backend.liveSession ? backend.token : null;
   },
-  isAuthenticated: async () => backend.liveSession,
-  fetchAuthQuery: async () => {
+}));
+vi.mock("convex/nextjs", () => ({
+  fetchQuery: async () => {
     backend.requests.push("server: /api/query");
     return null;
   },
 }));
 
 // The request the document is served for, from a visitor who has not made an
-// analytics choice yet.
+// analytics choice yet, with the session cookie of a live session.
 vi.mock("next/headers", () => ({
   cookies: async () => ({ get: () => undefined }),
-  headers: async () => new Headers({ "sec-fetch-dest": backend.framed ? "iframe" : "document" }),
+  headers: async () =>
+    new Headers({
+      "sec-fetch-dest": backend.framed ? "iframe" : "document",
+      ...(backend.liveSession && { cookie: "better-auth.session_token=session-1.signature" }),
+    }),
 }));
 
 // Next's compiler replaces these calls at build time.
@@ -148,6 +156,7 @@ async function load(served: ReactNode) {
 beforeEach(() => {
   backend.requests = [];
   backend.sockets = [];
+  backend.reachable = true;
 });
 
 afterEach(() => {
@@ -192,5 +201,27 @@ describe("the app shell", () => {
     expect(backend.requests).toContain("server: /api/query");
     expect(backend.requests).toContain("browser: /api/auth/get-session");
     expect(backend.sockets).toEqual([expect.stringMatching(/^wss:\/\/shells-test-123\.convex\.cloud\//)]);
+  });
+
+  it("asks the server for nothing about a visitor with no session", async () => {
+    backend.framed = false;
+    backend.liveSession = false;
+
+    await load(await serve(AppLayout, <p>An app page</p>));
+
+    expect(backend.requests.filter((request) => request.startsWith("server:"))).toEqual([]);
+  });
+
+  it("still serves the page when the server can't reach Convex, leaving the session to the browser", async () => {
+    backend.framed = false;
+    backend.liveSession = true;
+    backend.reachable = false;
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await load(await serve(AppLayout, <p>An app page</p>));
+
+    expect(document.body.textContent).toContain("An app page");
+    expect(backend.requests).toContain("server: /api/auth/convex/token");
+    expect(backend.requests).not.toContain("server: /api/query");
   });
 });
