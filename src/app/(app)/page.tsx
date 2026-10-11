@@ -8,6 +8,10 @@ import {
 } from "@/components/seo/structured-data";
 import { getLatestRelease, formatRelativeTime } from "@/lib/changelog";
 import { SITE_ORIGIN } from "@/lib/site-config";
+import { getPosts, formatDate } from "./blog/posts";
+
+/** The posts the homepage lists: one row of three on a desktop. */
+const LATEST_POST_COUNT = 3;
 
 export const metadata: Metadata = {
   alternates: {
@@ -15,7 +19,7 @@ export const metadata: Metadata = {
   },
 };
 
-export default function HomePage() {
+export default async function HomePage() {
   const latestRelease = getLatestRelease();
   const versionInfo = latestRelease
     ? {
@@ -23,6 +27,18 @@ export default function HomePage() {
         relativeTime: formatRelativeTime(latestRelease.date),
       }
     : null;
+  const latestPosts = (await getPosts())
+    .slice(0, LATEST_POST_COUNT)
+    .map(({ slug, title, spoiler, date, readingTime, thumbnail, thumbnailDark }) => ({
+      slug,
+      title,
+      spoiler,
+      date,
+      displayDate: formatDate(date),
+      readingTime,
+      thumbnail,
+      thumbnailDark,
+    }));
 
   return (
     <>
@@ -30,7 +46,7 @@ export default function HomePage() {
       <WebApplicationSchema />
       <OrganizationSchema />
       <FAQSchema />
-      <HomeContent versionInfo={versionInfo} />
+      <HomeContent versionInfo={versionInfo} latestPosts={latestPosts} />
     </>
   );
 }

@@ -11,6 +11,8 @@ import {
   AppPreview,
   FeaturesSection,
   PricingSection,
+  LatestPosts,
+  type LatestPost,
 } from "@/components/homepage";
 import { Navbar } from "@/components/navbar";
 import { Footer } from "@/components/footer";
@@ -23,9 +25,10 @@ interface VersionInfo {
 
 interface HomeContentProps {
   versionInfo: VersionInfo | null;
+  latestPosts: LatestPost[];
 }
 
-export function HomeContent({ versionInfo }: HomeContentProps) {
+export function HomeContent({ versionInfo, latestPosts }: HomeContentProps) {
   return (
     <div className="bg-white dark:bg-black selection:bg-primary/10 selection:text-primary">
       <a
@@ -122,6 +125,7 @@ export function HomeContent({ versionInfo }: HomeContentProps) {
         <PricingSection />
         <UseCases />
         <FAQ />
+        <LatestPosts posts={latestPosts} />
         <CallToAction />
       </main>
 

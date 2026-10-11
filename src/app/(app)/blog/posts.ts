@@ -4,16 +4,8 @@ import matter from "gray-matter";
 import readingTime from "reading-time";
 import GithubSlugger from "github-slugger";
 
-export interface Post {
-  slug: string;
-  title: string;
-  date: string;
-  modifiedDate?: string;
-  spoiler: string;
-  tags: string[];
+export interface Post extends PostMeta {
   content: string;
-  readingTime: string;
-  wordCount: number;
 }
 
 export interface PostMeta {
@@ -25,6 +17,13 @@ export interface PostMeta {
   tags: string[];
   readingTime: string;
   wordCount: number;
+  /**
+   * The front matter's `thumbnail`: the image the homepage shows for the
+   * post, one of its own under `/images/blog/<slug>/`, 16:9.
+   */
+  thumbnail?: string;
+  /** The front matter's `thumbnailDark`: the thumbnail drawn for the dark theme, if it has one. */
+  thumbnailDark?: string;
 }
 
 export interface TocItem {
@@ -74,6 +73,8 @@ export async function getPosts(): Promise<PostMeta[]> {
         tags: data.tags || [],
         readingTime: stats.text,
         wordCount: stats.words,
+        thumbnail: data.thumbnail ? String(data.thumbnail) : undefined,
+        thumbnailDark: data.thumbnailDark ? String(data.thumbnailDark) : undefined,
       });
     } catch (error) {
       console.error(`Failed to read blog post: ${filePath}`, error);
@@ -118,6 +119,8 @@ export async function getPostBySlug(slug: string): Promise<Post | null> {
       content,
       readingTime: stats.text,
       wordCount: stats.words,
+      thumbnail: data.thumbnail ? String(data.thumbnail) : undefined,
+      thumbnailDark: data.thumbnailDark ? String(data.thumbnailDark) : undefined,
     };
   } catch (error) {
     console.error(`Failed to read blog post: ${filePath}`, error);

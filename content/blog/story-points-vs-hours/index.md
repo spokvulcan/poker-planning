@@ -3,6 +3,8 @@ title: "Story Points vs Hours: Which Should Your Team Use?"
 date: "2025-01-08"
 spoiler: "The inventor of story points now regrets creating them. Research shows hours might actually be more accurate. So why do 61% of agile teams still use points?"
 tags: ["story-points", "estimation", "agile", "sprint-planning"]
+thumbnail: "/images/blog/story-points-vs-hours/thumbnail.svg"
+thumbnailDark: "/images/blog/story-points-vs-hours/thumbnail-dark.svg"
 ---
 
 <Tldr>

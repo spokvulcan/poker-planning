@@ -588,6 +588,22 @@ leading-none`), followed by the message and a `chevron-right`. This pattern
 (announcement pill with bold version chip) is reserved for marketing
 surfaces only. It does not appear in the room.
 
+### Blog Thumbnails
+
+The homepage lists the newest posts, each card led by the post's
+thumbnail: 16:9, named in its front matter as `thumbnail`, with
+`thumbnailDark` for the dark theme. A post with images of its own uses one
+of them. Any other post gets a drawing at
+`public/images/blog/<slug>/thumbnail.svg` and `thumbnail-dark.svg`,
+1200 × 675:
+
+- Paper with a faint grid, ink and gray, in the voting card's colours:
+  white cards with a `gray-300` edge in light, surface cards in dark.
+- One Golden Indigo accent, on what the post is about (the outlier cards,
+  the picked card), under a tenth of the picture. No indigo backgrounds,
+  no second hue.
+- A label or two at most. The card's title names the post.
+
 ## 7. Do's and Don'ts
 
 ### Do:

@@ -3,6 +3,8 @@ title: "Why Planning Poker Uses the Fibonacci Sequence (And Why It Works)"
 date: "2025-01-11"
 spoiler: "The Fibonacci sequence isn't agile tradition or arbitrary convention. It's built on how human perception actually works. Here's the science behind why 1, 2, 3, 5, 8, 13 makes your estimates better."
 tags: ["planning-poker", "fibonacci", "estimation", "agile", "story-points"]
+thumbnail: "/images/blog/fibonacci-planning-poker/thumbnail.svg"
+thumbnailDark: "/images/blog/fibonacci-planning-poker/thumbnail-dark.svg"
 ---
 
 <Tldr>

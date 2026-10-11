@@ -36,6 +36,7 @@ Added `data-testid` attributes to key components:
 - `toolkit-card-poker`, `toolkit-card-retro` - The two cards under the hero
 - `how-it-works-tab-poker`, `how-it-works-tab-retro`, `app-preview-tab-poker`, `app-preview-tab-retro` - Per-ceremony tabs
 - `hero-github-link` - GitHub repository link
+- `latest-posts` - The newest blog posts on the homepage, above the closing call to action
 - `trust-free`, `trust-no-account`, `trust-realtime` - Trust indicators
 - `retro-board`, `retro-node` - The retro's canvas, and its retro node carrying `data-step` (`write`, `vote`, `discuss`, `done`)
 - `retro-pad`, `retro-sticky` - A column's pad and a sticky; a sticky carries `data-hidden` (face-down to this viewer), `data-mine` and `data-focused` (in the spotlight)

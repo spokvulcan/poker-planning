@@ -56,6 +56,18 @@ test.describe("Home Page - Basic Elements", () => {
     await expect(page.locator("text=No sign-up required")).toBeVisible();
   });
 
+  test("should link to the latest blog posts", async () => {
+    await homePage.latestPosts.scrollIntoViewIfNeeded();
+
+    // One row of three at this viewport, each card leading to its post
+    const cards = homePage.latestPosts.getByRole("article");
+    await expect(cards).toHaveCount(3);
+    await expect(cards.first().getByRole("link")).toHaveAttribute("href", /^\/blog\/[a-z0-9-]+$/);
+    await expect(
+      homePage.latestPosts.getByRole("link", { name: "All posts" })
+    ).toHaveAttribute("href", "/blog");
+  });
+
   test("should display all major sections", async () => {
     await homePage.scrollToBottom();
     await waitForNetworkIdle(homePage.page);

@@ -3,6 +3,7 @@ title: "Our New Logo Is a Fibonacci Spiral. Here's Why"
 date: "2026-10-11"
 spoiler: "AgileKit's new logo is drawn with the numbers on a planning poker deck: 2, 3, 5 and 8. Here's the math behind the spiral, and why it's a picture of agile."
 tags: ["fibonacci", "agile", "planning-poker", "design"]
+thumbnail: "/images/blog/fibonacci-spiral-logo/mark-on-grid.svg"
 ---
 
 <Tldr>

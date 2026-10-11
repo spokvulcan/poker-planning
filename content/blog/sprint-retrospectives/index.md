@@ -3,6 +3,7 @@ title: "Sprint Retrospectives Are Here"
 date: "2026-09-24"
 spoiler: "AgileKit now runs retros on the same whiteboard as planning poker. Write face-down, vote on what to talk about, and carry open action items into the next retro."
 tags: ["retrospective", "scrum", "agile", "remote-teams"]
+thumbnail: "/images/blog/sprint-retrospectives/retro-board.webp"
 ---
 
 <Tldr>

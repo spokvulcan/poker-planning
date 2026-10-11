@@ -9,6 +9,7 @@ export class HomePage {
   readonly startRetroButton: Locator;
   readonly githubLink: Locator;
   readonly skipToMainLink: Locator;
+  readonly latestPosts: Locator;
   readonly trustIndicators: {
     freeForever: Locator;
     noAccount: Locator;
@@ -29,6 +30,9 @@ export class HomePage {
     this.skipToMainLink = page.getByRole("link", {
       name: /skip to main content/i,
     });
+
+    // The newest blog posts, above the closing call to action
+    this.latestPosts = page.getByTestId("latest-posts");
 
     // Trust indicators
     this.trustIndicators = {
