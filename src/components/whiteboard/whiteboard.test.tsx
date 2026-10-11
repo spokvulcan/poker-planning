@@ -1,80 +1,19 @@
 /**
  * Whiteboard: what the board's gestures do, whichever ceremony is drawn on
- * it. React Flow itself is stubbed: the tests drive the callbacks it would
- * call, the way a drag, a drop, an arrow key or Delete would.
+ * it. React Flow is the whiteboard's test stand-in (./testing/react-flow):
+ * the tests drive the callbacks React Flow would call, the way a drag, a
+ * drop, an arrow key or Delete would, and read the view's moves it records.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { ConnectionMode, type Node, type NodeChange, type ReactFlowProps } from "@xyflow/react";
+import { ConnectionMode, type Node, type NodeChange } from "@xyflow/react";
 
-const flow = vi.hoisted(() => {
-  const flow = {
-    props: {} as ReactFlowProps<Node>,
-    renders: 0,
-    nodes: [] as Node[],
-    intersecting: [] as Node[],
-    /** Where the view is, and the size of the pane React Flow measured. */
-    viewport: { x: 0, y: 0, zoom: 1 },
-    pane: { width: 1000, height: 800 },
-    fitView: (() => Promise.resolve(true)) as (options?: unknown) => Promise<boolean>,
-    zoomIn: (() => Promise.resolve(true)) as (options?: unknown) => Promise<boolean>,
-    zoomOut: (() => Promise.resolve(true)) as (options?: unknown) => Promise<boolean>,
-    setCenter: (() => Promise.resolve(true)) as (x: number, y: number, options?: unknown) => Promise<boolean>,
-    setViewport: (() => Promise.resolve(true)) as (viewport: unknown, options?: unknown) => Promise<boolean>,
-    // React Flow's store, as the view reads it at the moment it moves.
-    store: {
-      getState: () => ({
-        width: flow.pane.width,
-        height: flow.pane.height,
-        transform: [flow.viewport.x, flow.viewport.y, flow.viewport.zoom],
-      }),
-    },
-  };
-  return flow;
-});
-
-// One instance for the board's life, as React Flow's own is.
-const instance = vi.hoisted(() => ({
-  getNode: (id: string) => flow.nodes.find((n) => n.id === id),
-  getIntersectingNodes: () => flow.intersecting,
-  screenToFlowPosition: ({ x, y }: { x: number; y: number }) => ({ x: x * 2, y: y * 2 }),
-  fitView: (options?: unknown) => flow.fitView(options),
-  zoomIn: (options?: unknown) => flow.zoomIn(options),
-  zoomOut: (options?: unknown) => flow.zoomOut(options),
-  setCenter: (x: number, y: number, options?: unknown) => flow.setCenter(x, y, options),
-  setViewport: (viewport: unknown, options?: unknown) => flow.setViewport(viewport, options),
-  getZoom: () => flow.viewport.zoom,
-}));
-
-vi.mock("@xyflow/react", async () => {
-  const actual = await vi.importActual<typeof import("@xyflow/react")>("@xyflow/react");
-  const { createElement, Fragment } = await vi.importActual<typeof import("react")>("react");
-  return {
-    ...actual,
-    // Draws each node with its node type, as React Flow would.
-    ReactFlow: (props: ReactFlowProps<Node>) => {
-      flow.props = props;
-      flow.nodes = (props.nodes ?? []) as Node[];
-      flow.renders += 1;
-      return createElement(
-        Fragment,
-        null,
-        ...flow.nodes.map((n) => {
-          const type = props.nodeTypes?.[n.type ?? ""];
-          return type ? createElement(type, { key: n.id, id: n.id } as never) : null;
-        })
-      );
-    },
-    ReactFlowProvider: ({ children }: { children: React.ReactNode }) => children,
-    useNodesInitialized: () => true,
-    useReactFlow: () => instance,
-    useStoreApi: () => flow.store,
-  };
-});
-
+vi.mock("@xyflow/react", async (importOriginal) =>
+  (await import("./testing/react-flow")).mockReactFlow(await importOriginal<object>())
+);
 vi.mock("@/components/canvas-dots-background", () => ({ CanvasDotsBackground: () => null }));
-vi.mock("@/hooks/use-mobile", () => ({ useIsMobile: () => false }));
 
+import { flow, resetFlow } from "./testing/react-flow";
 import {
   useIsDropTarget,
   useWhiteboardView,
@@ -113,14 +52,7 @@ function moveView(move: (view: WhiteboardView) => void) {
 
 beforeEach(() => {
   vi.useFakeTimers();
-  flow.intersecting = [];
-  flow.viewport = { x: 0, y: 0, zoom: 1 };
-  flow.pane = { width: 1000, height: 800 };
-  flow.fitView = vi.fn(() => Promise.resolve(true));
-  flow.zoomIn = vi.fn(() => Promise.resolve(true));
-  flow.zoomOut = vi.fn(() => Promise.resolve(true));
-  flow.setCenter = vi.fn(() => Promise.resolve(true));
-  flow.setViewport = vi.fn(() => Promise.resolve(true));
+  resetFlow();
 });
 
 afterEach(() => {
@@ -323,6 +255,7 @@ describe("the view", () => {
   });
 
   it("turns a double-click on empty board into a board position", () => {
+    flow.viewport = { x: 0, y: 0, zoom: 0.5 };
     const onPaneDoubleClick = vi.fn();
     renderBoard({ onPaneDoubleClick });
 

@@ -4,8 +4,9 @@
  * Reducer unit tests cannot catch a subscription leaking through a hook or
  * component, so this guard renders the poker board (`RoomCanvas`, as /demo
  * does) and the demo's other canvas hooks inside the DemoSimulationProvider
- * with a mocked Convex client and asserts that none of the demo/canvas/
- * issues/presence subscriptions are opened: every such `useQuery` is passed
+ * with the whiteboard's Convex stand-in, which records every query asked
+ * for, and asserts that none of the demo/canvas/issues/presence
+ * subscriptions are opened: every such `useQuery` is passed
  * `"skip"`, and `usePresence` is never called at all. (The timer opens no
  * subscription at all anymore — its state arrives with the canvas node data —
  * so it is probed for regressions but lists no query.) Directly protects user
@@ -36,24 +37,17 @@ const spy = vi.hoisted(() => {
   // The demo shell builds its Convex client from it when it loads.
   vi.stubEnv("NEXT_PUBLIC_CONVEX_URL", "https://zero-reads-123.convex.cloud");
   return {
-    queries: [] as { query: unknown; args: unknown }[],
     presenceCalled: false,
     sessionReads: 0,
     accountMenus: 0,
   };
 });
 
+// The whiteboard's Convex stand-in records every query asked for, and holds
+// nothing: demo data comes from context, not from Convex. The real client and
+// provider stay, for the demo shell to mount.
 vi.mock("convex/react", async (importOriginal) => ({
-  // The real client and provider, which the demo shell mounts.
-  ...(await importOriginal<typeof import("convex/react")>()),
-  useQuery: (query: unknown, args: unknown) => {
-    spy.queries.push({ query, args });
-    return undefined; // demo data comes from context, not from Convex
-  },
-  useMutation: () => {
-    const mutate = async () => undefined;
-    return Object.assign(mutate, { withOptimisticUpdate: () => mutate });
-  },
+  ...(await import("@/components/whiteboard/testing/convex")).mockConvexReact(await importOriginal<object>()),
   // A live session, so the AuthProvider probe exercises the authenticated case.
   useConvexAuth: () => ({ isAuthenticated: true, isLoading: false }),
 }));
@@ -94,6 +88,7 @@ vi.mock("@/components/user-menu", () => ({
 import { createElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { getFunctionName } from "convex/server";
+import { convex, resetConvex } from "@/components/whiteboard/testing/convex";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { RoomWithRelatedData } from "@/convex/model/rooms";
@@ -127,22 +122,12 @@ const ROOT_SUBSCRIPTIONS = [getFunctionName(api.users.getViewer)];
 // Names + args of the captured subscription calls (ignoring queries we don't
 // guard here, e.g. the integration queries owned by their own sites).
 function capturedSubscriptions(): { name: string; args: unknown }[] {
-  return spy.queries
-    .map((c) => ({
-      name: getFunctionName(c.query as Parameters<typeof getFunctionName>[0]),
-      args: c.args,
-    }))
-    .filter((c) => SUBSCRIPTIONS.includes(c.name));
+  return convex.reads.filter((c) => SUBSCRIPTIONS.includes(c.name));
 }
 
 // Same, for the root AuthProvider subscription.
 function capturedRootSubscriptions(): { name: string; args: unknown }[] {
-  return spy.queries
-    .map((c) => ({
-      name: getFunctionName(c.query as Parameters<typeof getFunctionName>[0]),
-      args: c.args,
-    }))
-    .filter((c) => ROOT_SUBSCRIPTIONS.includes(c.name));
+  return convex.reads.filter((c) => ROOT_SUBSCRIPTIONS.includes(c.name));
 }
 
 // Renders the poker board, and calls every other always-mounted
@@ -217,7 +202,7 @@ function RealRoomProbe(): ReactNode {
 
 describe("zero-reads guard: the demo signal is sourced from the provider seam", () => {
   beforeEach(() => {
-    spy.queries.length = 0;
+    resetConvex();
     spy.presenceCalled = false;
     spy.accountMenus = 0;
   });
@@ -264,7 +249,7 @@ afterAll(() => {
 
 describe("zero-reads guard: the demo shell mounts no auth", () => {
   beforeEach(() => {
-    spy.queries.length = 0;
+    resetConvex();
     spy.presenceCalled = false;
     spy.sessionReads = 0;
   });
@@ -281,7 +266,7 @@ describe("zero-reads guard: the demo shell mounts no auth", () => {
     // The demo tree rendered inside the shell and reached its subscriptions...
     expect(capturedSubscriptions().length).toBeGreaterThan(0);
     // ...and nothing under the shell subscribed.
-    expect(spy.queries.filter((c) => c.args !== "skip")).toEqual([]);
+    expect(convex.reads.filter((c) => c.args !== "skip")).toEqual([]);
     expect(spy.sessionReads).toBe(0);
   });
 

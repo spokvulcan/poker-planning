@@ -62,7 +62,7 @@ function input({ retro, perms, ...overrides }: InputOverrides = {}): RetroNodesI
     canvasNodes: [],
     members: [{ _id: "me" as Id<"users">, name: "Me" }],
     draft: null,
-    editingId: null,
+    editing: null,
     expandedIds: new Set(),
     actions,
     ...overrides,

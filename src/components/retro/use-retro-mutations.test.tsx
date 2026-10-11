@@ -1,31 +1,20 @@
 /**
  * The retro's writes land on the board before the server answers. Convex is
- * faked as its local query cache, holding this retro's queries and another
- * room's board: each write's optimistic update reads the queries it needs,
- * asks board-view what the write does to them, and writes back only what
- * changed, so it patches the queries it names and nothing else, and nothing
- * at all for an act the step refuses.
+ * the whiteboard's test stand-in for its local query cache, holding this
+ * retro's queries and another room's board: each write's optimistic update
+ * reads the queries it needs, asks board-view what the write does to them,
+ * and writes back only what changed, so it patches the queries it names and
+ * nothing else, and nothing at all for an act the step refuses.
  */
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook } from "@testing-library/react";
-import type { OptimisticLocalStore } from "convex/browser";
-import { getFunctionName, type FunctionReference, type FunctionReturnType } from "convex/server";
+import type { FunctionReference, FunctionReturnType } from "convex/server";
 
-const convex = vi.hoisted(() => ({ store: undefined as unknown as OptimisticLocalStore }));
+vi.mock("convex/react", async (importOriginal) =>
+  (await import("@/components/whiteboard/testing/convex")).mockConvexReact(await importOriginal<object>())
+);
 
-// The client: a write runs its optimistic update on the local cache at once, then goes to the server.
-vi.mock("convex/react", () => ({
-  useMutation: () => {
-    const send = () => Promise.resolve(null);
-    return Object.assign(send, {
-      withOptimisticUpdate: (update: (store: OptimisticLocalStore, args: unknown) => void) => (args: unknown) => {
-        update(convex.store, args);
-        return send();
-      },
-    });
-  },
-}));
-
+import { convex, resetConvex, serve, shown } from "@/components/whiteboard/testing/convex";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { ActionItemView, BoardView, RetroState, StickyView } from "@/convex/model/retro";
@@ -122,23 +111,13 @@ function heldRetro(retro: Partial<RetroState> = {}) {
     ],
     [api.retro.board, { roomId: OTHER_ROOM }, { stickies: [], writers: 0, myVotes: 0 } satisfies BoardView],
   ];
-  const keyOf = (query: Query, args: Record<string, unknown>) => `${getFunctionName(query)} ${JSON.stringify(args)}`;
-  const cache = new Map(seeded.map(([query, args, value]) => [keyOf(query, args), { query, args, value }]));
-  const patched: string[] = [];
-  convex.store = {
-    getQuery: (query: Query, args: Record<string, unknown> = {}) => cache.get(keyOf(query, args))?.value,
-    getAllQueries: (query: Query) =>
-      [...cache.values()]
-        .filter((entry) => getFunctionName(entry.query) === getFunctionName(query))
-        .map(({ args, value }) => ({ args, value })),
-    setQuery: (query: Query, args: Record<string, unknown>, value: unknown) => {
-      cache.set(keyOf(query, args), { query, args, value });
-      patched.push(keyOf(query, args) === keyOf(query, { roomId: ROOM }) ? getFunctionName(query) : keyOf(query, args));
-    },
-  } as unknown as OptimisticLocalStore;
+  for (const [query, args, value] of seeded) serve(query, args, value as never);
   return {
-    patched,
-    read: <Q extends Query>(query: Q) => cache.get(keyOf(query, { roomId: ROOM }))?.value as FunctionReturnType<Q>,
+    /** The queries patched so far: by name when they're this retro's, else with their arguments. */
+    get patched() {
+      return convex.patched.map(({ name, args }) => (args.roomId === ROOM ? name : `${name} ${JSON.stringify(args)}`));
+    },
+    read: <Q extends Query>(query: Q) => shown(query, { roomId: ROOM } as never) as FunctionReturnType<Q>,
   };
 }
 
@@ -148,6 +127,8 @@ function writes() {
 }
 
 type Writes = ReturnType<typeof useRetroMutations>;
+
+beforeEach(resetConvex);
 
 describe("useRetroMutations", () => {
   const named: { write: string; retro?: Partial<RetroState>; send: (m: Writes) => unknown; patches: string[] }[] = [

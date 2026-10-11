@@ -34,8 +34,6 @@ vi.mock("next/image", () => ({
 
 vi.mock("@/hooks/useSignOut", () => ({ useSignOut: () => async () => {} }));
 
-// The sidebar's desktop branch: jsdom has no matchMedia.
-vi.mock("@/hooks/use-mobile", () => ({ useIsMobile: () => false }));
 vi.mock("next/navigation", () => ({ usePathname: () => "/dashboard" }));
 
 // The menu's content, drawn in place whether it is open or not.

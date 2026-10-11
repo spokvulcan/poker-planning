@@ -16,30 +16,21 @@ import { renderHook, act } from "@testing-library/react";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { TimerState } from "@/convex/timerState";
 
-// Hoisted recorder shared with the (hoisted) vi.mock factory below. Every
-// useMutation returns a recording function, so any backend write is observable.
-// `failure` makes every mutation reject with it.
-const writes = vi.hoisted(() => ({
-  calls: [] as { args: unknown }[],
-  failure: null as unknown,
-}));
-
 // What the person is shown when a write fails: every error toast's message.
 const toasts = vi.hoisted(() => [] as string[]);
 
-vi.mock("convex/react", () => ({
-  useMutation: () => (args: unknown) => {
-    writes.calls.push({ args });
-    return writes.failure ? Promise.reject(writes.failure) : Promise.resolve(undefined);
-  },
-  useQuery: () => undefined,
-}));
+// Convex as the whiteboard's test stand-in: every write is recorded, and the
+// server refuses them when a test says so.
+vi.mock("convex/react", async (importOriginal) =>
+  (await import("@/components/whiteboard/testing/convex")).mockConvexReact(await importOriginal<object>())
+);
 
 vi.mock("@/lib/toast", () => ({
   toast: { error: (message: string) => toasts.push(message) },
 }));
 
 import { refusal } from "@/convex/model/refusal";
+import { convex, refuse, resetConvex } from "@/components/whiteboard/testing/convex";
 import { DemoSimulationProvider } from "../demo/DemoSimulationProvider";
 import { useTimerSync } from "./use-timer-sync";
 
@@ -56,8 +47,7 @@ const STOPPED_TIMER_STATE: TimerState = {
 };
 
 beforeEach(() => {
-  writes.calls = [];
-  writes.failure = null;
+  resetConvex();
   toasts.length = 0;
 });
 
@@ -84,7 +74,7 @@ describe("use-timer-sync — demo no-op", () => {
       result.current.onReset();
     });
 
-    expect(writes.calls).toEqual([]);
+    expect(convex.writes).toEqual([]);
     expect(result.current.displayTime).toBe("0:00");
     expect(result.current.isRunning).toBe(false);
   });
@@ -107,8 +97,8 @@ describe("use-timer-sync — real room", () => {
       result.current.onReset();
     });
 
-    expect(writes.calls).toHaveLength(3);
-    for (const call of writes.calls) {
+    expect(convex.writes).toHaveLength(3);
+    for (const call of convex.writes) {
       expect(call.args).toEqual({
         roomId: ROOM_ID,
         nodeId: "timer",
@@ -128,7 +118,7 @@ describe("use-timer-sync — real room", () => {
 
     await act(async () => result.current.onStart());
 
-    expect(writes.calls).toEqual([]);
+    expect(convex.writes).toEqual([]);
   });
 
   it("derives the display from the persisted timer state", () => {
@@ -157,7 +147,7 @@ describe("use-timer-sync — a refused write says why", () => {
     ["reset", "onReset"],
   ] as const)("a refused timer %s shows the refusal's message", async (_, control) => {
     // Someone removed the viewer from the room while the board was open.
-    writes.failure = refusal("forbidden", "Not a member of this room");
+    refuse(refusal("forbidden", "Not a member of this room"));
     const { result } = renderHook(() =>
       useTimerSync({
         roomId: ROOM_ID,

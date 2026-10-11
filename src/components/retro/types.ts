@@ -50,6 +50,15 @@ export interface StickyDraft {
   gif?: Gif;
 }
 
+/**
+ * A sticky open in the editor, and, when an edit of it didn't save, what that
+ * edit said, so the editor opens on it again as it was typed.
+ */
+export interface StickyEdit {
+  stickyId: Id<"retroStickies">;
+  unsaved?: { text: string; gif?: Gif };
+}
+
 /** A person at the board, for owners and counts. */
 export interface RetroMember {
   _id: Id<"users">;
@@ -105,6 +114,8 @@ export type StickyNodeData = {
   /** What the retro's step shows everyone. */
   shows: StepShows;
   editing: boolean;
+  /** What an edit that didn't save said: the editor opens on it. */
+  unsaved?: StickyEdit["unsaved"];
   /** The viewer may change what it says (theirs, or a facilitator's call). */
   canEdit: boolean;
   /** The other stickies in its stack, when this is a stack's top, and whether the viewer may take each off. */

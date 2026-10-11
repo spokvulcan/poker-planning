@@ -32,9 +32,6 @@ vi.mock("@/components/auth/auth-provider", () => ({
   }),
 }));
 
-// The sidebar's desktop branch: jsdom has no matchMedia.
-vi.mock("@/hooks/use-mobile", () => ({ useIsMobile: () => false }));
-
 import { getFunctionName } from "convex/server";
 import type { Dashboard } from "@/convex/analyticsMath";
 import { EMPTY_DASHBOARD } from "@/convex/analyticsMath";
@@ -113,15 +110,6 @@ function subscribedQueries(): string[] {
 beforeEach(() => {
   spy.queries = [];
   spy.result = undefined;
-  // Recharts measures its container; jsdom has no ResizeObserver.
-  vi.stubGlobal(
-    "ResizeObserver",
-    class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    }
-  );
 });
 
 afterEach(() => {

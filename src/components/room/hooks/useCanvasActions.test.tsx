@@ -16,33 +16,21 @@ import { createElement, type ReactNode } from "react";
 import { renderHook, act } from "@testing-library/react";
 import type { Id } from "@/convex/_generated/dataModel";
 
-// Hoisted recorder shared with the (hoisted) vi.mock factory below. Every
-// useMutation returns a recording function, so any backend write is observable.
-// `failure` makes every mutation reject with it (for failure-path tests).
-const writes = vi.hoisted(() => ({
-  calls: [] as { args: unknown }[],
-  failure: null as unknown,
-}));
-
 // What the person is shown when a write fails: every error toast's message.
 const toasts = vi.hoisted(() => [] as string[]);
 
-vi.mock("convex/react", () => ({
-  useMutation: () => {
-    const mutate = (args: unknown) => {
-      writes.calls.push({ args });
-      return writes.failure ? Promise.reject(writes.failure) : Promise.resolve(undefined);
-    };
-    return Object.assign(mutate, { withOptimisticUpdate: () => mutate });
-  },
-  useQuery: () => undefined,
-}));
+// Convex as the whiteboard's test stand-in: every write is recorded, and the
+// server refuses them when a test says so.
+vi.mock("convex/react", async (importOriginal) =>
+  (await import("@/components/whiteboard/testing/convex")).mockConvexReact(await importOriginal<object>())
+);
 
 vi.mock("@/lib/toast", () => ({
   toast: { error: (message: string) => toasts.push(message) },
 }));
 
 import { refusal } from "@/convex/model/refusal";
+import { convex, refuse, resetConvex } from "@/components/whiteboard/testing/convex";
 import { DemoSimulationProvider } from "../demo/DemoSimulationProvider";
 import { DEMO_ROOM_ID } from "../demo/fixtures";
 import { useCanvasActions, type CanvasActions } from "./useCanvasActions";
@@ -67,8 +55,7 @@ function invokeAll(actions: ReturnType<typeof useCanvasActions>) {
 }
 
 beforeEach(() => {
-  writes.calls = [];
-  writes.failure = null;
+  resetConvex();
   toasts.length = 0;
 });
 
@@ -90,7 +77,7 @@ describe("useCanvasActions — demo no-op", () => {
       invokeAll(result.current);
     });
 
-    expect(writes.calls).toEqual([]);
+    expect(convex.writes).toEqual([]);
   });
 });
 
@@ -130,12 +117,12 @@ describe("useCanvasActions — identity stability", () => {
 
     // With no user, selectCard is a guarded no-op.
     await act(async () => result.current.selectCard("8"));
-    expect(writes.calls).toEqual([]);
+    expect(convex.writes).toEqual([]);
 
     // After a user arrives, the same stable method runs the latest closure.
     rerender({ userId: USER_ID });
     await act(async () => result.current.selectCard("8"));
-    expect(writes.calls).toEqual([{ args: { roomId: ROOM_ID, cardLabel: "8" } }]);
+    expect(convex.writes).toEqual([{ name: "votes:pickCard", args: { roomId: ROOM_ID, cardLabel: "8" } }]);
   });
 });
 
@@ -150,8 +137,8 @@ describe("useCanvasActions — selectCard value handling", () => {
 
     await act(async () => result.current.selectCard("0.5"));
 
-    expect(writes.calls).toHaveLength(1);
-    expect(writes.calls[0].args).toEqual({
+    expect(convex.writes).toHaveLength(1);
+    expect(convex.writes[0].args).toEqual({
       roomId: ROOM_ID,
       cardLabel: "0.5",
     });
@@ -184,7 +171,7 @@ describe("useCanvasActions — a refused write says why", () => {
 
   it.each(boardWrites)("a refused %s shows the refusal's message", async (_, write) => {
     // Someone removed the viewer from the room while the board was open.
-    writes.failure = refusal("forbidden", "Not a member of this room");
+    refuse(refusal("forbidden", "Not a member of this room"));
     const actions = renderActions();
 
     await act(async () => {
@@ -195,7 +182,7 @@ describe("useCanvasActions — a refused write says why", () => {
   });
 
   it("a refused note save says why, and tells the note its words didn't land", async () => {
-    writes.failure = refusal("forbidden", "Note content too long (max 10000 characters)");
+    refuse(refusal("forbidden", "Note content too long (max 10000 characters)"));
     const actions = renderActions();
 
     let landed = true;

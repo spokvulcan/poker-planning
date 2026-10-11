@@ -47,15 +47,6 @@ vi.mock("@/components/footer", () => ({ Footer: () => null }));
 
 import { CreateContent } from "./create-content";
 
-// The choice control measures its options; jsdom has no ResizeObserver.
-vi.stubGlobal(
-  "ResizeObserver",
-  class {
-    observe() {}
-    unobserve() {}
-    disconnect() {}
-  }
-);
 
 const startButton = () => screen.getByRole("button", { name: "Start estimating" });
 

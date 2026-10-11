@@ -26,7 +26,7 @@ import {
   STICKY_WIDTH,
 } from "@/convex/retroLayout";
 import { buildTimerNode } from "@/components/room/hooks/buildCanvasNodes";
-import type { DiscussionView, RetroBoardActions, RetroFlowNode, RetroMember, StickyDraft } from "./types";
+import type { DiscussionView, RetroBoardActions, RetroFlowNode, RetroMember, StickyDraft, StickyEdit } from "./types";
 import { isOptimistic } from "@/lib/optimistic-id";
 import { topicOrder } from "./board-view";
 import { plural } from "./retro-summary";
@@ -45,7 +45,7 @@ export interface RetroNodesInput {
   canvasNodes: CanvasNode[] | undefined;
   members: RetroMember[];
   draft: StickyDraft | null;
-  editingId: Id<"retroStickies"> | null;
+  editing: StickyEdit | null;
   expandedIds: ReadonlySet<string>;
   actions: RetroBoardActions;
 }
@@ -170,7 +170,8 @@ export function buildRetroNodes(input: RetroNodesInput): RetroFlowNode[] {
     const pending = isOptimistic(sticky._id);
     // Nobody but the author touches a sticky before the reveal.
     const canEdit = !pending && stickyEditDecision(step, sticky.mine, perms.cardManagement).allowed;
-    const editing = input.editingId === sticky._id;
+    const editing = input.editing?.stickyId === sticky._id;
+    const unsaved = editing ? input.editing?.unsaved : undefined;
     const rank = place.rank(sticky._id);
     const isFocused = shows.spotlight && sticky._id === retro.focusStickyId;
     nodes.push({
@@ -185,6 +186,7 @@ export function buildRetroNodes(input: RetroNodesInput): RetroFlowNode[] {
         color: colorOf.get(sticky.columnId) ?? "yellow",
         shows,
         editing,
+        ...(unsaved ? { unsaved } : {}),
         canEdit,
         members: (membersOf.get(sticky._id) ?? [])
           .sort((a, b) => a.createdAt - b.createdAt)

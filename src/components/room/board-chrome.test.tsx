@@ -25,8 +25,6 @@ vi.mock("@/lib/toast", () => ({
     error: (message: string) => stubs.toasts.push(message),
   },
 }));
-// Desktop branch of SidePanel — jsdom has no matchMedia.
-vi.mock("@/hooks/use-mobile", () => ({ useIsMobile: () => false }));
 
 import { BoardChrome, type BoardChromeHandle, type ChromeBoard, type ChromePanel } from "./board-chrome";
 

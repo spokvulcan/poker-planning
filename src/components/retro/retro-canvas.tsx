@@ -40,6 +40,7 @@ import { buildRetroSummary } from "./retro-summary";
 import { freshHeights, type MeasuredSticky } from "./sticky-heights";
 import { useRetroMutations } from "./use-retro-mutations";
 import { useStickyDraft } from "./use-sticky-draft";
+import { useStickyEdit } from "./use-sticky-edit";
 import type { RetroBoardActions, RetroFlowNode, StickyFlowNode } from "./types";
 
 // Outside the component so React Flow sees a stable object.
@@ -105,11 +106,22 @@ function RetroCanvasInner({ roomData, currentUserId }: RetroCanvasProps): ReactE
   const items = useQuery(api.retro.actionItems, { roomId });
   const canvasNodes = useQuery(api.canvas.getCanvasNodes, { roomId });
   const m = useRetroMutations(roomId, currentUserId);
+  const stickyOf = (id: string) => board?.stickies.find((s) => s._id === id);
 
   const { draft, ...drafting } = useStickyDraft((sticky) =>
     runAct(m.addSticky({ roomId, ...sticky }), "That sticky didn't stick. Try again.")
   );
-  const [editingId, setEditingId] = useState<Id<"retroStickies"> | null>(null);
+  // A refused edit opens the editor again on its words, as a refused draft does.
+  const { editing, ...edits } = useStickyEdit(({ stickyId, text, gif }) => {
+    const sticky = stickyOf(stickyId);
+    const gifChanged = (gif?.url ?? null) !== (sticky?.gif?.url ?? null);
+    // An edit that changes nothing just closes the editor.
+    if (!sticky || (text.trim() === (sticky.text ?? "") && !gifChanged)) return Promise.resolve(true);
+    return runAct(
+      m.updateSticky({ stickyId, text, ...(gifChanged ? { gif } : {}) }),
+      "That edit didn't save. Try again."
+    );
+  });
   const [expandedIds, setExpandedIds] = useState<ReadonlySet<string>>(new Set());
 
   // The tab is titled by the retro (the route's metadata can only say "room").
@@ -117,8 +129,6 @@ function RetroCanvasInner({ roomData, currentUserId }: RetroCanvasProps): ReactE
     const title = `${room.name} | AgileKit`;
     if (document.title !== title) document.title = title;
   });
-
-  const stickyOf = (id: string) => board?.stickies.find((s) => s._id === id);
 
   /** The retro as Markdown, from what this viewer can see right now. */
   const summary = (): { markdown: string; slug: string } | null => {
@@ -158,7 +168,7 @@ function RetroCanvasInner({ roomData, currentUserId }: RetroCanvasProps): ReactE
           .map((n) => ({ position: n.position, height: n.measured?.height ?? STICKY_MIN_HEIGHT }));
         position = nextStickyPosition(pad?.position ?? { x: 0, y: 0 }, boxes);
       }
-      setEditingId(null);
+      edits.close();
       drafting.start(columnId, position);
       // The new sticky, as tall as its open editor, comes into view if it
       // landed outside the board's pane.
@@ -168,20 +178,10 @@ function RetroCanvasInner({ roomData, currentUserId }: RetroCanvasProps): ReactE
     cancelDraft: (clientId) => drafting.cancel(clientId),
     startEdit: (stickyId) => {
       drafting.close();
-      setEditingId(stickyId);
+      edits.start(stickyId);
     },
-    commitEdit: (stickyId, text, gif) => {
-      setEditingId(null);
-      const sticky = stickyOf(stickyId);
-      if (!sticky) return;
-      const gifChanged = (gif?.url ?? null) !== (sticky.gif?.url ?? null);
-      if (text.trim() === (sticky.text ?? "") && !gifChanged) return;
-      void runAct(
-        m.updateSticky({ stickyId, text, ...(gifChanged ? { gif } : {}) }),
-        "That edit didn't save. Try again."
-      );
-    },
-    cancelEdit: () => setEditingId(null),
+    commitEdit: (stickyId, text, gif) => void edits.commit({ stickyId, text, gif }),
+    cancelEdit: () => edits.close(),
     deleteSticky: (stickyId) => void runAct(m.deleteSticky({ stickyId }), "That sticky didn't come off. Try again."),
     toggleVote: (stickyId) => void runAct(m.toggleVote({ stickyId }), "That vote didn't count. Try again."),
     unstack: (stickyId) => {
@@ -296,12 +296,12 @@ function RetroCanvasInner({ roomData, currentUserId }: RetroCanvasProps): ReactE
             canvasNodes,
             members: roomData.users,
             draft,
-            editingId,
+            editing,
             expandedIds,
             actions,
           })
         : [],
-    [roomId, currentUserId, room.name, retro, perms, board, votesCast, items, canvasNodes, roomData.users, draft, editingId, expandedIds, actions]
+    [roomId, currentUserId, room.name, retro, perms, board, votesCast, items, canvasNodes, roomData.users, draft, editing, expandedIds, actions]
   );
   const edges = useMemo(
     () => buildRetroEdges(retro.columns, !!canvasNodes?.some((n) => n.nodeId === "timer")),

@@ -12,9 +12,10 @@
  * so it must never appear as a subscription — and the imperative fetch must
  * not fire on render, only when an export is actually invoked.
  *
- * Mechanism mirrors the demo guard: a mocked convex/react records every
- * useQuery call (and the imperative client query), rendered in jsdom via
- * @testing-library/react because the panels are components, not bare hooks.
+ * Mechanism mirrors the demo guard: Convex is the whiteboard's test
+ * stand-in, which records every useQuery call (and every imperative client
+ * query), rendered in jsdom via @testing-library/react because the panels
+ * are components, not bare hooks.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, cleanup, fireEvent, screen } from "@testing-library/react";
@@ -22,33 +23,13 @@ import { ListTodo, Settings } from "lucide-react";
 import { ReactFlowProvider } from "@xyflow/react";
 import type { ReactNode } from "react";
 
-// Hoisted capture buffers — referenced inside the (hoisted) vi.mock factories.
-const spy = vi.hoisted(() => ({
-  queries: [] as { query: unknown; args: unknown }[],
-  imperativeQueries: [] as unknown[],
-}));
-
-vi.mock("convex/react", () => ({
-  useQuery: (query: unknown, args: unknown) => {
-    spy.queries.push({ query, args });
-    return undefined;
-  },
-  useMutation: () => () => Promise.resolve(undefined),
-  useAction: () => () => Promise.resolve(undefined),
-  useConvex: () => ({
-    query: (query: unknown) => {
-      spy.imperativeQueries.push(query);
-      return Promise.resolve([]);
-    },
-  }),
-}));
+vi.mock("convex/react", async (importOriginal) =>
+  (await import("@/components/whiteboard/testing/convex")).mockConvexReact(await importOriginal<object>())
+);
 
 vi.mock("next/link", () => ({
   default: ({ children }: { children: ReactNode }) => <a>{children}</a>,
 }));
-
-// Desktop branch of SidePanel — jsdom has no matchMedia.
-vi.mock("@/hooks/use-mobile", () => ({ useIsMobile: () => false }));
 
 vi.mock("@/lib/toast", () => ({
   toast: { success: () => {}, error: () => {} },
@@ -86,6 +67,7 @@ vi.mock("@/components/ui/accordion", () => ({
 }));
 
 import { getFunctionName } from "convex/server";
+import { convex, resetConvex } from "@/components/whiteboard/testing/convex";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { RoomWithRelatedData } from "@/convex/model/rooms";
@@ -101,9 +83,7 @@ const ME = "u1" as Id<"users">;
 const EXPORT_QUERY = getFunctionName(api.issues.getForEnhancedExport);
 
 function capturedNames(): string[] {
-  return spy.queries.map((c) =>
-    getFunctionName(c.query as Parameters<typeof getFunctionName>[0]),
-  );
+  return convex.reads.map((read) => read.name);
 }
 
 const roomData = {
@@ -160,8 +140,7 @@ function renderRoomPanels() {
 }
 
 beforeEach(() => {
-  spy.queries.length = 0;
-  spy.imperativeQueries.length = 0;
+  resetConvex();
 });
 
 afterEach(() => {
@@ -174,8 +153,8 @@ describe("closed docked panels subscribe nothing", () => {
 
     expect(screen.queryByText("Backlog")).toBeNull();
     expect(screen.queryByTestId("room-settings-panel")).toBeNull();
-    expect(spy.queries).toEqual([]);
-    expect(spy.imperativeQueries).toEqual([]);
+    expect(convex.reads).toEqual([]);
+    expect(convex.fetched).toEqual([]);
   });
 });
 
@@ -195,7 +174,7 @@ describe("open panels subscribe their own set", () => {
     // The export read is click-time only: never subscribed, and the imperative
     // fetch does not fire on render.
     expect(names).not.toContain(EXPORT_QUERY);
-    expect(spy.imperativeQueries).toEqual([]);
+    expect(convex.fetched).toEqual([]);
   });
 
   it("RoomSettingsPanel open: the integration section mounts and subscribes", () => {
@@ -210,7 +189,7 @@ describe("open panels subscribe their own set", () => {
     const { open } = renderRoomPanels();
     open("Issues");
     open("Issues");
-    spy.queries.length = 0;
+    convex.reads = [];
 
     open("Room settings");
 

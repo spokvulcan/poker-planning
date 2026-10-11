@@ -34,15 +34,7 @@ import { resetBlogPostsForTest } from "./use-blog-posts";
 const POSTS = [{ slug: "sprint-retrospectives", title: "How to run a sprint retro", tags: ["Scrum"] }];
 
 beforeEach(() => {
-  // cmdk measures and scrolls its list; jsdom does neither.
-  vi.stubGlobal(
-    "ResizeObserver",
-    class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    }
-  );
+  // cmdk scrolls its list; jsdom doesn't.
   Element.prototype.scrollIntoView = vi.fn();
   vi.stubGlobal(
     "fetch",
