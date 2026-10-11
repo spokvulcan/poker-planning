@@ -6,6 +6,7 @@ import * as Canvas from "./canvas";
 import * as Votes from "./votes";
 import * as Analytics from "./analytics";
 import * as RoundClock from "./roundClock";
+import * as EstimatePush from "./estimatePush";
 import { getMembership } from "./memberships";
 import { refusal } from "./refusal";
 import { computeVoterAlignment } from "./alignment";
@@ -121,9 +122,10 @@ export async function reset(ctx: MutationCtx, room: Doc<"rooms">): Promise<void>
  * reveal — settle the round: flip to `revealed`, cancel the countdown, and run
  * the reveal effects. For an issue-backed round it snapshots the summary onto
  * the issue (final estimate + stats), records per-voter alignment, closes the
- * timed round, schedules the Jira push when linked with auto-push, and upserts
- * the canvas results node. A round that completes its target issue (consensus
- * reached) also refreshes the room's analytics snapshot in the same mutation.
+ * timed round, hands a consensus to the estimate push (model/estimatePush.ts),
+ * which decides whether it goes to the issue's tracker, and upserts the canvas
+ * results node. A round that completes its target issue (consensus reached)
+ * also refreshes the room's analytics snapshot in the same mutation.
  */
 export async function reveal(ctx: MutationCtx, room: Doc<"rooms">): Promise<void> {
   const roomId = room._id;
@@ -177,14 +179,14 @@ export async function reveal(ctx: MutationCtx, room: Doc<"rooms">): Promise<void
       await Analytics.refreshRoomAnalyticsSnapshot(ctx, roomId);
     }
 
-    // Reveal effect: push the estimate to a linked Jira issue when auto-push is on.
+    // Reveal effect: the settled estimate goes to the issue's tracker, as the
+    // estimate push decides.
     if (summary.consensus) {
-      await scheduleJiraPushIfEnabled(
-        ctx,
-        roomId,
-        room.currentIssueId,
-        summary.consensus
-      );
+      await EstimatePush.estimateSettled(ctx, {
+        room,
+        issueId: room.currentIssueId,
+        estimate: summary.consensus,
+      });
     }
   }
 }
@@ -226,31 +228,6 @@ async function snapshotVoterAlignment(
       })
     )
   );
-}
-
-/** Schedules the Jira estimate push when the issue is Jira-linked and auto-push is enabled. */
-async function scheduleJiraPushIfEnabled(
-  ctx: MutationCtx,
-  roomId: Id<"rooms">,
-  issueId: Id<"issues">,
-  finalEstimate: string
-): Promise<void> {
-  const issueLink = await ctx.db
-    .query("issueLinks")
-    .withIndex("by_issue", (q) => q.eq("issueId", issueId))
-    .first();
-  if (issueLink?.provider !== "jira") return;
-
-  const mapping = await ctx.db
-    .query("integrationMappings")
-    .withIndex("by_room", (q) => q.eq("roomId", roomId))
-    .first();
-  if (!mapping?.autoPushEstimates) return;
-
-  await ctx.scheduler.runAfter(0, internal.integrations.jira.pushEstimateToJira, {
-    issueId,
-    finalEstimate,
-  });
 }
 
 /**
@@ -544,7 +521,7 @@ export async function castVote(ctx: MutationCtx, args: CastVoteArgs): Promise<vo
 
   // Validate the card against the room's deck and read its value from it, never
   // from the client. pickCard is public, so an unchecked label/value would
-  // flow into vote stats, exports, and auto-pushed Jira estimates.
+  // flow into vote stats, exports, and estimates pushed to a tracker.
   if (!rulesOf(room).votingRounds) throw refusal("missing", NOT_THIS_CEREMONY);
   if (!deckOf(room.votingScale).isLegalBallot(args.cardLabel)) {
     throw new Error("Card is not in this room's voting scale");

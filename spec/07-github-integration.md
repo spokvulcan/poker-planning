@@ -269,22 +269,36 @@ export const importIssues = action({
 
 ### 7.5 Backend: Push estimates to GitHub Projects V2
 
-**File:** `convex/integrations/github.ts`
+**Files:** `convex/integrations/githubEstimatePush.ts` (registered in `convex/integrations/registry.ts`), `convex/integrations/github.ts`
+
+The estimate push (`convex/model/estimatePush.ts`, ADR-0006) already decides whether a settled estimate goes anywhere: the room's mapping pushes estimates, names the field they go to, its connection acts where the issue is, and the estimate is a number. It records every outcome on the mapping (`lastPush`), which the room's settings show. GitHub adds only its side of that, as the provider registry's `estimates` member, beside Jira's (`convex/integrations/jiraEstimatePush.ts`):
 
 ```typescript
-export const pushEstimateToGitHub = internalAction({
-  args: {
-    issueId: v.id("issues"),
-    finalEstimate: v.string(),
+export const githubEstimatePush: EstimatePusher = {
+  // Where the estimate goes: the issue the link names, in the repository the
+  // mapping's connection can reach ("otherSite" when the link is another
+  // repository's, "connectionUnusable" when the connection can't act).
+  targetOf(link, connection) { /* ... */ },
+  // Hands the decided push to the action below.
+  async dispatch(ctx, push) {
+    await ctx.scheduler.runAfter(0, internal.integrations.github.pushEstimate, { push });
   },
-  handler: async (ctx, { issueId, finalEstimate }) => {
-    // 1. Get issue link
-    // 2. Get integration mapping for the room
-    // 3. Build GitHubClient with refreshed token
-    // 4. Find the project item matching the issue
-    // 5. Find the "Estimate" or "Story Points" number field
-    // 6. Call updateProjectItemField() with parsed estimate
-    // 7. Optionally add a comment to the issue
+};
+```
+
+```typescript
+export const pushEstimate = internalAction({
+  // Everything the push needs, decided already: nothing is read back.
+  args: { push: EstimatePush.estimatePushValidator },
+  handler: async (ctx, { push }) => {
+    // 1. Act as the push's connection, on its site, through GitHub's own
+    //    access module (as Jira's actions do through jiraAccess.ts)
+    // 2. Find the project item matching the issue
+    // 3. Write push.estimate.value to the push.fieldId number field
+    //    (updateProjectItemField)
+    // 4. Optionally comment on the issue (a failure here is only logged)
+    // 5. Report the outcome back (recordEstimatePush): pushed, refused in
+    //    GitHub's words, or a connection that couldn't act
   },
 });
 ```

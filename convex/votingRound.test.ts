@@ -1063,7 +1063,11 @@ describe("the round refuses what its phase doesn't allow", () => {
     return { roomId, issueId, voters };
   }
 
-  /** Links the issue to Jira in a room that pushes each estimate on reveal. */
+  /**
+   * Links the issue to Jira in a room that pushes each estimate on reveal,
+   * through a connection to the site the issue is on. The push waits under
+   * the fake timers, so only its scheduling is read.
+   */
   async function linkToJira(t: T, roomId: Id<"rooms">, issueId: Id<"issues">) {
     await t.run(async (ctx) => {
       const userId = await ctx.db.insert("users", { authUserId: "auth-jira", name: "J", createdAt: Date.now() });
@@ -1074,6 +1078,8 @@ describe("the round refuses what its phase doesn't allow", () => {
         accessTokenIv: "iv",
         accessTokenAuthTag: "tag",
         expiresAt: Date.now() + 3_600_000,
+        cloudId: "cloud-team",
+        siteUrl: "https://team.atlassian.net",
         scopes: [],
         connectedAt: Date.now(),
         lastRefreshedAt: Date.now(),
@@ -1100,7 +1106,7 @@ describe("the round refuses what its phase doesn't allow", () => {
   }
 
   async function jiraPushes(t: T) {
-    return (await scheduledFns(t)).filter((job) => job.name.endsWith(":pushEstimateToJira"));
+    return (await scheduledFns(t)).filter((job) => job.name.endsWith(":pushEstimate"));
   }
 
   it("a second reveal neither re-stamps the issue nor pushes the estimate to Jira again", async () => {

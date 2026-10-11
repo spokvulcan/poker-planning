@@ -9,8 +9,9 @@
  *
  * What a reason means is each caller's own policy: an action the browser
  * calls refuses with the reason's words, a webhook registration records a
- * failure on the mapping, a webhook's removal retries once when the token
- * was refused, and a disconnect carries on without the webhooks. Nothing
+ * failure on the mapping, an estimate's push records why it wasn't made, a
+ * webhook's removal retries once when the token was refused, and a disconnect
+ * carries on without the webhooks. Nothing
  * else builds a Jira client (convex/jiraActions.test.ts holds every module to
  * that). The OAuth handshake and the token-refresh sweep talk to Atlassian's
  * token endpoints, not to Jira as a connection, and stay in jiraAuth.ts.

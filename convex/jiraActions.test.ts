@@ -420,38 +420,35 @@ describe("disconnecting a connection", () => {
 });
 
 describe("pushing an estimate", () => {
-  it("writes the story points and a comment to the linked issue, as the mapping's connection", async () => {
+  // From the reveal on, through the decision, in jiraEstimatePush.test.ts.
+  it("writes the story points and a comment to the issue, as the push's connection, and reports back", async () => {
     const t = convexTest(schema, modules);
     const team = jira.site("team", { issues: { "PROJ-1": "Login form" } });
     const connectionId = await jira.connect(t, await seedPerson(t, "ann"), team);
     const mappingId = await seedMapping(t, connectionId);
-    const { roomId } = (await mappingRow(t, mappingId))!;
-    const issueId = await t.run(async (ctx) => {
-      const id = await ctx.db.insert("issues", {
-        roomId,
-        sequentialId: 1,
-        title: "PROJ-1 - Login form",
-        status: "completed",
-        createdAt: Date.now(),
-        order: 1,
-      });
-      await ctx.db.insert("issueLinks", {
-        issueId: id,
-        roomId,
-        provider: "jira",
-        externalId: "PROJ-1",
-        externalUrl: "https://team.atlassian.net/browse/PROJ-1",
-        lastSyncedAt: Date.now(),
-      });
-      return id;
+
+    await t.action(internal.integrations.jira.pushEstimate, {
+      push: {
+        mappingId,
+        connectionId,
+        site: team.url,
+        issueKey: "PROJ-1",
+        fieldId: "customfield_10016",
+        estimate: { label: "1", value: 1 },
+        settledAt: 1_000,
+      },
     });
 
-    await t.action(internal.integrations.jira.pushEstimateToJira, { issueId, finalEstimate: "5" });
-
     const issue = team.issues.get("PROJ-1")!;
-    expect(issue.fields).toEqual({ customfield_10016: 5 });
-    expect(issue.comments).toEqual(["Estimated at 5 points via AgileKit"]);
+    expect(issue.fields).toEqual({ customfield_10016: 1 });
+    expect(issue.comments).toEqual(["Estimated at 1 point via AgileKit"]);
     for (const call of jira.restCalls()) expect(call).toMatchObject({ site: team.url, token: jira.tokenOf(connectionId) });
+    expect((await mappingRow(t, mappingId))?.lastPush).toEqual({
+      at: 1_000,
+      issueKey: "PROJ-1",
+      estimate: "1",
+      outcome: "pushed",
+    });
   });
 });
 

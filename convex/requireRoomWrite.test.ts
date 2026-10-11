@@ -317,11 +317,17 @@ const WAY_IN = "users:join";
 
 /**
  * The server's own room writes, which nobody makes, so there is no caller to
- * seat: the auto-reveal the countdown schedules, and each step of a room's
- * ending. Any other write addressed to a room is a person's, internal ones
- * included (the Jira import's, which its action runs as its caller).
+ * seat: the auto-reveal the countdown schedules, each step of a room's
+ * ending, and an estimate push a reveal queued before the estimate push
+ * decided pushes (which records how it went on the room's mapping). Any other
+ * write addressed to a room is a person's, internal ones included (the Jira
+ * import's, which its action runs as its caller).
  */
-const SERVER_WRITES = ["votingRound:autoReveal", "maintenance:deleteRoomAggregateChunk"];
+const SERVER_WRITES = [
+  "votingRound:autoReveal",
+  "maintenance:deleteRoomAggregateChunk",
+  "integrations/jira:decideScheduledPush",
+];
 
 /**
  * The room's public shell, read before the caller is in the room: the room

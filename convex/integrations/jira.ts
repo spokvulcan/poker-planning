@@ -14,9 +14,11 @@
  * freshness/refresh and client construction live in jiraAuth.ts. Every action
  * below acts on Jira through jiraAccess.ts, as the person calling or as one
  * connection, and turns why it can't into its own policy. What happens to a
- * mapping's webhook is decided in jiraWebhookReconcile.ts, which the provider
- * registry (integrations/registry.ts) points at; the webhook actions below
- * carry its decisions out against Jira.
+ * mapping's webhook is decided in jiraWebhookReconcile.ts, and whether and
+ * where a settled estimate goes in the estimate push (model/estimatePush.ts,
+ * with jiraEstimatePush.ts), both of which the provider registry
+ * (integrations/registry.ts) points at; the actions below carry their
+ * decisions out against Jira and report back.
  */
 
 import {
@@ -28,7 +30,7 @@ import {
 } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { v } from "convex/values";
-import { providerValidator } from "../schema";
+import { lastPushValidator, providerValidator } from "../schema";
 import { Id } from "../_generated/dataModel";
 import { ActionCtx } from "../_generated/server";
 import { requireRoomWrite } from "../model/auth";
@@ -41,12 +43,8 @@ import {
   requireJiraAsCaller,
   unavailableToThePerson,
 } from "./jiraAccess";
-import {
-  applyJiraWebhookEvent,
-  jiraIssueLink,
-  jiraIssueTitle,
-  jiraWebhookAddress,
-} from "./jiraWebhook";
+import { applyJiraWebhookEvent, jiraWebhookAddress } from "./jiraWebhook";
+import { jiraIssueLink, jiraIssueTitle } from "./jiraIssueLink";
 import {
   recordRegistration,
   registrationValidator,
@@ -55,9 +53,9 @@ import {
   type Registration,
   type WantedWebhook,
 } from "./jiraWebhookReconcile";
-import { cardNumericValue } from "../scales";
 import * as Issues from "../model/issues";
 import * as Integrations from "../model/integrations";
+import * as EstimatePush from "../model/estimatePush";
 import { refusalOf } from "../model/refusal";
 
 // ---------------------------------------------------------------------------
@@ -159,6 +157,36 @@ export const deleteConnection = internalMutation({
   },
 });
 
+/**
+ * pushEstimate's tail: hands how the push went, and the connection and field
+ * it was made with, back to the estimate push, which records it.
+ */
+export const recordEstimatePush = internalMutation({
+  args: {
+    mappingId: v.id("integrationMappings"),
+    lastPush: lastPushValidator,
+    madeWith: v.object({ connectionId: v.id("integrationConnections"), fieldId: v.string() }),
+  },
+  handler: async (ctx, args) => {
+    await EstimatePush.recordPush(ctx, args.mappingId, args.lastPush, args.madeWith);
+  },
+});
+
+/**
+ * An estimate a reveal handed to Jira before the estimate push decided
+ * pushes, by issue and estimate (pushEstimateToJira): decided now, as a
+ * reveal decides it. The issue's room may be gone by then.
+ */
+export const decideScheduledPush = internalMutation({
+  args: { issueId: v.id("issues"), finalEstimate: v.string() },
+  handler: async (ctx, { issueId, finalEstimate }) => {
+    const issue = await ctx.db.get("issues", issueId);
+    const room = issue && (await ctx.db.get("rooms", issue.roomId));
+    if (!room) return;
+    await EstimatePush.estimateSettled(ctx, { room, issueId, estimate: finalEstimate });
+  },
+});
+
 // ---------------------------------------------------------------------------
 // Internal queries
 // ---------------------------------------------------------------------------
@@ -186,26 +214,6 @@ export const getConnectionForUser = internalQuery({
         q.eq("userId", args.userId).eq("provider", args.provider)
       )
       .first();
-  },
-});
-
-export const getIssueData = internalQuery({
-  args: { issueId: v.id("issues") },
-  handler: async (ctx, args) => {
-    const issue = await ctx.db.get("issues", args.issueId);
-    if (!issue) return null;
-
-    const issueLink = await ctx.db
-      .query("issueLinks")
-      .withIndex("by_issue", (q) => q.eq("issueId", args.issueId))
-      .first();
-
-    const mapping = await ctx.db
-      .query("integrationMappings")
-      .withIndex("by_room", (q) => q.eq("roomId", issue.roomId))
-      .first();
-
-    return { issue, issueLink, mapping };
   },
 });
 
@@ -367,83 +375,72 @@ export async function importIssuesWithClient(
   return result;
 }
 
+/** A tracker's own words for a refusal, as long as a settings line can carry. */
+const REFUSAL_WORDS = 300;
+
 /**
- * The estimate push itself, decoupled from ctx plumbing: an already-built
- * client (tests inject a fake) pushes the settled estimate and its comment.
- * Every skip condition returns false with a log line rather than throwing —
- * the push is a reveal side effect and must never fail the round.
+ * A settled estimate's push, as the estimate push decided it
+ * (model/estimatePush.ts): the story points written to the issue and a
+ * comment saying so, as the mapping's connection and only on the site the
+ * issue is on (the connection may have moved to another since). Then how it
+ * went goes back to the mapping. It never throws: a push is a reveal's side
+ * effect, and whatever goes wrong is recorded instead, where the room's
+ * settings show it.
  */
-export async function pushEstimateWithClient(
-  client: Pick<JiraClient, "updateStoryPoints" | "addComment">,
-  push: {
-    externalId: string;
-    storyPointsFieldId?: string;
-    finalEstimate: string;
-  }
-): Promise<boolean> {
-  if (!push.storyPointsFieldId) {
-    console.log("No story points field configured for mapping, skipping push");
-    return false;
+export const pushEstimate = internalAction({
+  args: { push: EstimatePush.estimatePushValidator },
+  handler: async (ctx, { push }) => {
+    const outcome = await pushToJira(ctx, push);
+    await ctx.runMutation(internal.integrations.jira.recordEstimatePush, {
+      mappingId: push.mappingId,
+      lastPush: { at: push.settledAt, issueKey: push.issueKey, estimate: push.estimate.label, ...outcome },
+      madeWith: { connectionId: push.connectionId, fieldId: push.fieldId },
+    });
+  },
+});
+
+async function pushToJira(
+  ctx: ActionCtx,
+  push: EstimatePush.EstimatePush
+): Promise<Pick<EstimatePush.LastPush, "outcome" | "message">> {
+  const jira = await jiraAsConnection(ctx, push.connectionId, push.site);
+  if (!jira.ok) {
+    console.warn(`Can't push estimate to Jira ${push.issueKey} as connection ${push.connectionId}: ${jira.reason}`);
+    return { outcome: jira.reason === "otherSite" ? "otherSite" : "connectionUnusable" };
   }
 
-  // Convert via the one card→numeric conversion — skip non-numeric estimates
-  // (e.g., "XL", "?")
-  const numericEstimate = cardNumericValue(push.finalEstimate);
-  if (numericEstimate === undefined) {
-    console.log(`Non-numeric estimate "${push.finalEstimate}", skipping Jira push`);
-    return false;
-  }
-
+  const { label, value } = push.estimate;
   try {
-    await client.updateStoryPoints(
-      push.externalId,
-      push.storyPointsFieldId,
-      numericEstimate
-    );
-
-    await client.addComment(
-      push.externalId,
-      `Estimated at ${push.finalEstimate} point${numericEstimate !== 1 ? "s" : ""} via AgileKit`
-    );
-
-    console.log(`Pushed estimate ${push.finalEstimate} to Jira ${push.externalId}`);
-    return true;
+    await jira.client.updateStoryPoints(push.issueKey, push.fieldId, value);
   } catch (error) {
-    console.error(`Failed to push estimate to Jira ${push.externalId}:`, error);
-    return false;
+    console.error(`Jira refused the estimate for ${push.issueKey}:`, error);
+    const words = error instanceof Error ? error.message : String(error);
+    return { outcome: "refused", message: words.slice(0, REFUSAL_WORDS) };
   }
+  console.log(`Pushed estimate ${label} to Jira ${push.issueKey}`);
+  // The estimate is in Jira: the comment saying so is a courtesy, which a
+  // project may not allow (adding comments is a permission of its own), so
+  // its failure is only logged.
+  try {
+    await jira.client.addComment(push.issueKey, `Estimated at ${label} point${value !== 1 ? "s" : ""} via AgileKit`);
+  } catch (error) {
+    console.warn(`Jira took the estimate for ${push.issueKey} but not the comment saying so:`, error);
+  }
+  return { outcome: "pushed" };
 }
 
+/**
+ * The push as reveals scheduled it before the estimate push decided pushes,
+ * by issue and estimate: a job queued just before a deploy still finds its
+ * function, and the estimate is decided now (decideScheduledPush).
+ */
 export const pushEstimateToJira = internalAction({
   args: {
     issueId: v.id("issues"),
     finalEstimate: v.string(),
   },
-  handler: async (ctx, { issueId, finalEstimate }) => {
-    const data = await ctx.runQuery(
-      internal.integrations.jira.getIssueData,
-      { issueId }
-    );
-
-    if (!data?.issueLink || !data?.mapping) {
-      console.log(`No Jira link or mapping for issue ${issueId}, skipping push`);
-      return;
-    }
-
-    const { issueLink, mapping } = data;
-
-    // As the mapping's connection. The push is a reveal's side effect and
-    // never fails the round: a connection that can't act is logged.
-    const jira = await jiraAsConnection(ctx, mapping.connectionId);
-    if (!jira.ok) {
-      console.warn(`Can't push estimate to Jira ${issueLink.externalId} as connection ${mapping.connectionId}: ${jira.reason}`);
-      return;
-    }
-    await pushEstimateWithClient(jira.client, {
-      externalId: issueLink.externalId,
-      storyPointsFieldId: mapping.storyPointsFieldId,
-      finalEstimate,
-    });
+  handler: async (ctx, args) => {
+    await ctx.runMutation(internal.integrations.jira.decideScheduledPush, args);
   },
 });
 

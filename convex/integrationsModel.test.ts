@@ -451,6 +451,7 @@ describe("saveRoomMapping", () => {
         connectionId,
         provider: "jira",
         projectKey: "PROJ",
+        storyPointsFieldId: "customfield_10002",
         autoImport: false,
         autoPushEstimates: true,
       })
@@ -519,6 +520,7 @@ describe("saveRoomMapping", () => {
         connectionId: second,
         provider: "jira",
         projectKey: "PROJ",
+        storyPointsFieldId: "customfield_10016",
         autoImport: false,
         autoPushEstimates: true,
       })
@@ -551,6 +553,7 @@ describe("saveRoomMapping", () => {
         connectionId,
         provider: "jira",
         projectKey: "PROJ",
+        storyPointsFieldId: "customfield_10016",
         autoImport: false,
         autoPushEstimates: true,
       })
