@@ -90,6 +90,29 @@ export class RoomPage {
     await expect(this.resultsSection).not.toBeVisible();
   }
 
+  /**
+   * Clicks the session's one action control as it stands, without waiting for
+   * it to be enabled: the second click of a double-click, landing on whatever
+   * replaced the control the first click pressed. A disabled control ignores
+   * it, as it would a user's.
+   */
+  async clickSessionActionAtOnce(): Promise<void> {
+    await this.page.getByTestId("session-action").click({ force: true });
+  }
+
+  /**
+   * Flips auto-reveal from the session node and waits for the room to show it.
+   * Convex runs one client's mutations one at a time, in the order they were
+   * sent, so once this shows, every write this viewer sent before it has
+   * landed too.
+   */
+  async toggleAutoReveal(): Promise<void> {
+    const toggle = this.page.getByRole("button", { name: /auto-reveal when all vote/i });
+    const wasOn = await toggle.getAttribute("aria-pressed");
+    await toggle.click();
+    await expect(toggle).not.toHaveAttribute("aria-pressed", wasOn ?? "");
+  }
+
   // Counts the votes the server has, plus this viewer's own pick. The round
   // refuses a ballot that lands after the reveal (#378), so wait on the
   // revealer's page until every vote has landed before revealing.

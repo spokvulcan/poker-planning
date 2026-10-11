@@ -17,6 +17,9 @@ import { permissionProps } from "@/hooks/usePermissions";
 
 import type { SessionNodeType } from "../types";
 
+/** How long New Round holds after the round settles. */
+const NEW_ROUND_HOLD_SECONDS = 3;
+
 export const SessionNode = memo(
   ({ data, selected }: NodeProps<SessionNodeType>): ReactElement => {
     // Resolved decisions in, by permission category; `.allowed` drives each
@@ -40,8 +43,17 @@ export const SessionNode = memo(
     const isRevealed = phase === "revealed";
     const isActive = !isRevealed;
 
-    // Cooldown state for reset button
+    // New Round takes the place of the control that settled the round, so it
+    // holds for a few seconds once the round settles under the viewer's eyes:
+    // a second click meant for Reveal (or for Cancel, as the countdown ends)
+    // lands on it, and would wipe the results. A viewer who arrives to a round
+    // already revealed has nothing to mis-click, so it doesn't hold for them.
     const [resetCooldown, setResetCooldown] = useState(0);
+    const [seenPhase, setSeenPhase] = useState(phase);
+    if (phase !== seenPhase) {
+      setSeenPhase(phase);
+      setResetCooldown(phase === "revealed" ? NEW_ROUND_HOLD_SECONDS : 0);
+    }
 
     useEffect(() => {
       if (resetCooldown > 0) {
@@ -90,10 +102,7 @@ export const SessionNode = memo(
     const displayCountdownSeconds = countdownSeconds ?? countdownDurationSeconds;
 
     const handleResetClick = useCallback(() => {
-      if (resetCooldown === 0) {
-        setResetCooldown(3); // 3 second cooldown
-        actions.reset();
-      }
+      if (resetCooldown === 0) actions.reset();
     }, [resetCooldown, actions]);
 
     const nodeClasses = useMemo(
@@ -259,10 +268,11 @@ export const SessionNode = memo(
             {phase === "revealed" ? (
               /* PHASE: revealed → New Round */
               <button
+                data-testid="session-action"
                 onClick={gameFlow.allowed ? handleResetClick : undefined}
                 disabled={resetCooldown > 0 || !gameFlow.allowed}
                 className={cn(
-                  "w-full h-12 flex items-center justify-center gap-2 rounded-lg font-medium transition-all",
+                  "relative overflow-hidden w-full h-12 flex items-center justify-center gap-2 rounded-lg font-medium transition-all",
                   !gameFlow.allowed || resetCooldown > 0
                     ? "bg-gray-100 dark:bg-surface-2 text-gray-400 dark:text-gray-500 cursor-not-allowed"
                     : "bg-emerald-500 hover:bg-emerald-600 active:bg-emerald-700 text-white shadow-sm hover:shadow-md",
@@ -274,10 +284,15 @@ export const SessionNode = memo(
                 }
                 {...permissionProps(gameFlow)}
               >
-                <RotateCcw
-                  className={cn("h-5 w-5", resetCooldown > 0 && "animate-spin")}
-                />
-                <span>
+                {resetCooldown > 0 && (
+                  <span
+                    aria-hidden="true"
+                    className="absolute inset-0 origin-left bg-emerald-500/20 dark:bg-status-success-fg/20 animate-hold-drain motion-reduce:animate-none"
+                    style={{ animationDuration: `${NEW_ROUND_HOLD_SECONDS}s` }}
+                  />
+                )}
+                <RotateCcw className="relative h-5 w-5" />
+                <span className="relative">
                   {resetCooldown > 0
                     ? `Wait ${resetCooldown}s...`
                     : "New Round"}
@@ -286,6 +301,7 @@ export const SessionNode = memo(
             ) : phase === "countingDown" ? (
               /* PHASE: countingDown → Cancel */
               <button
+                data-testid="session-action"
                 onClick={revealCards.allowed ? actions.cancelAutoReveal : undefined}
                 disabled={!revealCards.allowed}
                 className={cn(
@@ -308,6 +324,7 @@ export const SessionNode = memo(
             ) : (
               /* PHASE: voting → Reveal */
               <button
+                data-testid="session-action"
                 onClick={revealCards.allowed ? actions.reveal : undefined}
                 disabled={!hasVotes || !revealCards.allowed}
                 className={cn(

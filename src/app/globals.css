@@ -262,6 +262,20 @@
   animation: sticky-reveal 700ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
+/* New Round's hold: a fill drains while the button waits (duration set inline) */
+@keyframes hold-drain {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+
+.animate-hold-drain {
+  animation: hold-drain 3s linear both;
+}
+
 /* Disable transition during drag operations */
 .react-flow__node-player.dragging,
 .react-flow__node-session.dragging {
