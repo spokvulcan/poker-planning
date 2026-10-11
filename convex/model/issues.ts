@@ -49,6 +49,16 @@ export async function listIssues(
     .collect();
 }
 
+/** One of the room's issues; null once it is gone, or when it is another room's. */
+export async function getIssueOfRoom(
+  ctx: QueryCtx,
+  roomId: Id<"rooms">,
+  issueId: Id<"issues">
+): Promise<Doc<"issues"> | null> {
+  const issue = await ctx.db.get("issues", issueId);
+  return issue?.roomId === roomId ? issue : null;
+}
+
 /**
  * Gets the current issue being voted on
  */
@@ -120,8 +130,8 @@ async function issueHoldingLink(
  * issue at most once per room, the next sequential ID (the room counter
  * advances exactly once), an order after the current last, and the link row.
  * A full room or a link that isn't https is refused in words people see.
- * Takes the room as its write loaded it: the room-scoped step, or the
- * tracker import's own read.
+ * Takes the room as the room-scoped step loaded it, for an issue typed in the
+ * room and for each one a tracker import admits alike.
  */
 export async function admitIssue(
   ctx: MutationCtx,

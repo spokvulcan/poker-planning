@@ -4,7 +4,7 @@ import { describe, it, expect } from "vitest";
 import { ConvexError } from "convex/values";
 import schema from "./schema";
 import { withComponents } from "./components.setup";
-import { api, internal } from "./_generated/api";
+import { api } from "./_generated/api";
 import { DEFAULT_PERMISSIONS, DEFAULT_RETRO_PERMISSIONS } from "./permissions";
 import type { Refusal } from "./model/refusal";
 import type { T } from "./analytics.seeds";
@@ -82,13 +82,13 @@ describe("room attendance", () => {
     expect(await refusalOf(sticky)).toEqual({ code: "forbidden", message: "Not a member of this room" });
   });
 
-  it("refuses the same way for a caller resolved outside ctx.auth, as a Jira import is", async () => {
+  it("refuses the same way for a write an action makes as its caller, as a Jira import does", async () => {
     const t = withComponents(convexTest(schema, modules));
     const { roomId } = await pokerRoomWithAnn(t);
-    const outsiderId = await seedUser(t, "outsider");
+    await seedUser(t, "outsider");
 
     expect(
-      await refusalOf(t.query(internal.integrations.jira.verifyCanManageIssues, { userId: outsiderId, roomId }))
+      await refusalOf(as(t, "outsider").action(api.integrations.jira.importIssues, { roomId, jiraIssueKeys: ["PROJ-1"] }))
     ).toEqual({ code: "forbidden", message: "Not a member of this room" });
   });
 });

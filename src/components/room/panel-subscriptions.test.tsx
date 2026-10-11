@@ -3,9 +3,8 @@
  * zero-reads guard (demo/zero-reads.test.ts). The board's chrome docks the
  * poker room's panels and mounts a panel's content only while it is open, so
  * with both panels closed the room must not subscribe any panel query: the
- * issues list/current issue and integration links (IssuesPanel), and the
- * integration connections/mapping (IntegrationSettingsSection inside
- * RoomSettingsPanel).
+ * issues list and integration links (IssuesPanel), and the integration
+ * connections/mapping (IntegrationSettingsSection inside RoomSettingsPanel).
  *
  * The export read (`issues.getForEnhancedExport`) is probed too: it moved out
  * of the subscribed set into a click-time imperative fetch (useIssuesExport),
@@ -165,12 +164,14 @@ describe("open panels subscribe their own set", () => {
     const names = capturedNames();
     for (const expected of [
       getFunctionName(api.issues.list),
-      getFunctionName(api.issues.getCurrent),
       getFunctionName(api.integrations.getRoomMapping),
       getFunctionName(api.integrations.getIssueLinks),
     ]) {
       expect(names).toContain(expected);
     }
+    // The current issue is the list's, by the id the room's row names: no
+    // query of its own reads the room's row, which every vote patches.
+    expect(names).not.toContain(getFunctionName(api.issues.getCurrent));
     // The export read is click-time only: never subscribed, and the imperative
     // fetch does not fire on render.
     expect(names).not.toContain(EXPORT_QUERY);

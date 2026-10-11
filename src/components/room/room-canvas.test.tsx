@@ -77,6 +77,8 @@ function roomData(overrides: Partial<RoomWithRelatedData> = {}): RoomWithRelated
       createdAt: 0,
       lastActivityAt: 0,
       retained: false,
+      // The room's row names the issue the round is on.
+      ...(currentIssue ? { currentIssueId: currentIssue._id } : {}),
     },
     users: [member(ME, "Me", "facilitator"), member(ADA, "Ada")],
     votes: [] as SanitizedVote[],
@@ -95,7 +97,7 @@ function Room() {
 function renderBoard(data = roomData()) {
   serve(api.rooms.get, { roomId: ROOM_ID }, data);
   serve(api.canvas.getCanvasNodes, { roomId: ROOM_ID }, canvasNodes);
-  serve(api.issues.getCurrent, { roomId: ROOM_ID }, currentIssue as never);
+  if (currentIssue) serve(api.issues.get, { roomId: ROOM_ID, issueId: currentIssue._id }, currentIssue as never);
   const view = render(<Room />);
   return {
     rerender: (next: RoomWithRelatedData) => {

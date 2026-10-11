@@ -110,7 +110,7 @@ import DemoLayout from "@/app/(demo)/layout";
 // time (useIssuesExport), so no component ever subscribes it.
 const SUBSCRIPTIONS = [
   getFunctionName(api.canvas.getCanvasNodes),
-  getFunctionName(api.issues.getCurrent),
+  getFunctionName(api.issues.get),
   getFunctionName(api.issues.list),
 ];
 
@@ -164,7 +164,7 @@ function useProbeHooks(roomId: Id<"rooms">, roomData: RoomWithRelatedData): void
   // The board and the hooks take no `isDemoMode` prop: they read the demo
   // signal from the provider seam, so what differs between the two cases is
   // only whether the provider is mounted around them.
-  useIssues({ roomId });
+  useIssues({ roomId, currentIssueId: roomData.room.currentIssueId });
   useRoomPresence(roomId, DEMO_VIEWER_ID, roomData.users);
   useTimerSync({
     roomId,
@@ -189,8 +189,10 @@ function DemoProbe(): ReactNode {
 // omitted.
 function RealRoomProbe(): ReactNode {
   const roomId = "real-room-id" as Id<"rooms">;
+  // A round on an issue, so the board reads the issue the room names.
+  const currentIssueId = "real-issue-id" as Id<"issues">;
   const roomData = {
-    room: { _id: roomId, name: "Real Room", isGameOver: false },
+    room: { _id: roomId, name: "Real Room", isGameOver: false, currentIssueId },
     users: [],
     votes: [],
     isOwnerAbsent: false,

@@ -19,19 +19,19 @@ What an actor is attempting. Either a **category action** (one of the room type'
 _Avoid_: operation, command, capability
 
 **Permission guard**:
-The backend adapter over the **permission decision**. It does the IO — reads the room, the actor's membership, the target's membership, and whether the owner is absent — assembles the **Action**, calls `evaluate`, and throws a reason-derived message on denial. Two entry points share the one IO assembly: the **room-scoped step** (identity from `ctx.auth`, for a room write that names its **Action**) and `requireCanForUser` (an already-resolved user, for action contexts such as the Jira integration). Identity rules (self-transfer, authoritative `ownerId`) stay with the write, not the guard.
+The backend adapter over the **permission decision**. It does the IO — reads the room, the actor's membership, the target's membership, and whether the owner is absent — assembles the **Action**, calls `evaluate`, and throws a reason-derived message on denial. It has one entry point, the **room-scoped step**, for a room write that names its **Action**, whoever makes it: a browser's mutation, or an action such as the Jira import, which takes the step in the mutations it runs as its caller. Identity rules (self-transfer, authoritative `ownerId`) stay with the write, not the guard.
 _Avoid_: middleware, interceptor, auth wrapper
 
 **Room-scoped step**:
-Where every room write but joining the room works out who is calling, which room it lands in and what it acts on (`requireRoomWrite`). It seats the caller — whoever is signed in, refused without **room attendance** — in the room the write names, or in the room of the one **issue**, **sticky** or **action item** it acts on, runs the **permission guard** when the write names an **Action**, and hands the write the rows it loaded. A user id the browser sends never says who is calling: old browsers' own ids are ignored, and a presence heartbeat, which names its user, is refused unless that user is the seated caller.
+Where every room write but joining the room works out who is calling, which room it lands in and what it acts on (`requireRoomWrite`). It seats the caller — whoever is signed in, refused without **room attendance** — in the room the write names, or in the room of the one **issue**, **sticky** or **action item** it acts on, runs the **permission guard** when the write names an **Action** (a relationship verb names the member it acts on, and the step hands that member over), and hands the write the rows it loaded. An action's room writes take it too, in the mutations the action runs, which run as the action's caller. A user id the browser sends never says who is calling: old browsers' own ids are ignored, and a presence heartbeat, which names its user, is refused unless that user is the seated caller.
 _Avoid_: acting-user guard (retired: it compared the user id a browser sent), write guard, preamble
 
 **Room access**:
-May this person *read* this room's contents — today, exactly when they have **room attendance**. Still its own question with its own guard (`requireRoomReader`), which read-only queries on room contents take and which reads only the caller and their membership, returning neither the room nor a membership (see [ADR-0009](docs/adr/0009-room-access-and-room-attendance-are-separate-guards.md)).
+May this person *read* this room's contents — today, exactly when they have **room attendance**. Still its own question with its own guard (`requireRoomReader`), which reads only the caller and their membership, returning neither the room nor a membership (see [ADR-0009](docs/adr/0009-room-access-and-room-attendance-are-separate-guards.md)). Every public query addressed to a room takes it, but the room's public shell, read before anyone is in the room: the room with its roster, whether the caller has a seat, and who has it open.
 _Avoid_: visibility (that is the property being protected), read permission
 
 **Room attendance**:
-Is this person *in* this room — a `roomMemberships` row, which is what puts them on the roster, in the presence list, and in the non-spectator count a **voting round** reads. Enforced by `requireRoomMember`, with which the **room-scoped step** seats every room write's caller.
+Is this person *in* this room — a `roomMemberships` row, which is what puts them on the roster, in the presence list, and in the non-spectator count a **voting round** reads. Enforced by `requireRoomMember`, private to the **room-scoped step**, which seats every room write's caller with it.
 _Avoid_: presence (that is the live connection signal), participation
 
 **Denial reason**:

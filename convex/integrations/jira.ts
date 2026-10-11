@@ -29,7 +29,7 @@ import { v } from "convex/values";
 import { providerValidator } from "../schema";
 import { Doc, Id } from "../_generated/dataModel";
 import { ActionCtx } from "../_generated/server";
-import { requireCanForUser } from "../model/auth";
+import { requireRoomWrite } from "../model/auth";
 import { requireCaller, requireUser } from "../model/caller";
 import { JiraClient, JiraIssue } from "./jiraClient";
 import {
@@ -140,7 +140,28 @@ export const updateTokens = internalMutation({
   },
 });
 
-/** Hands one Jira issue, as a title and a link, to the issue module's admission. */
+/** What importing issues into a room asks of the permission guard. */
+const ISSUE_MANAGEMENT = { kind: "category", category: "issueManagement" } as const;
+
+/**
+ * The import's room-scoped step, taken before Jira is called (a token refresh
+ * included): the caller, whom the import action runs as, is in the room and
+ * may manage its issues. It writes nothing; it is a mutation because the
+ * step is a write's.
+ */
+export const verifyCanManageIssues = internalMutation({
+  args: { roomId: v.id("rooms") },
+  handler: async (ctx, { roomId }) => {
+    await requireRoomWrite(ctx, roomId, ISSUE_MANAGEMENT);
+  },
+});
+
+/**
+ * Hands one Jira issue, as a title and a link, to the issue module's
+ * admission, on the room-scoped step like any issue typed in the room: the
+ * import action runs this as its caller, so each issue is admitted only while
+ * they may still manage the room's issues.
+ */
 export const admitIssue = internalMutation({
   args: {
     roomId: v.id("rooms"),
@@ -152,8 +173,7 @@ export const admitIssue = internalMutation({
     }),
   },
   handler: async (ctx, { roomId, ...issue }) => {
-    const room = await ctx.db.get("rooms", roomId);
-    if (!room) throw new Error("Room not found");
+    const { room } = await requireRoomWrite(ctx, roomId, ISSUE_MANAGEMENT);
     return await Issues.admitIssue(ctx, { room, ...issue });
   },
 });
@@ -302,15 +322,12 @@ export const importIssues = action({
     jiraIssueKeys: v.array(v.string()),
   },
   handler: async (ctx, { roomId, jiraIssueKeys }): Promise<JiraImportResult> => {
-    const { user, connection } = await requireJiraConnection(ctx);
+    // An import is a room write: it takes the room-scoped step before any
+    // Jira network I/O (a token refresh included), and again for each issue.
+    // The mutations an action runs run as its caller, so the step seats them.
+    await ctx.runMutation(internal.integrations.jira.verifyCanManageIssues, { roomId });
 
-    // Verify the caller is a member of the room with issue management
-    // permission — before any Jira network I/O (a token refresh included).
-    await ctx.runQuery(internal.integrations.jira.verifyCanManageIssues, {
-      userId: user._id,
-      roomId,
-    });
-
+    const { connection } = await requireJiraConnection(ctx);
     const client = await buildJiraClient(ctx, connection);
     return await importIssuesWithClient(
       client,
@@ -733,34 +750,5 @@ export const refreshJiraWebhooks = internalMutation({
         batchSize,
       });
     }
-  },
-});
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Verifies that the user may manage issues in the room. The calling action
- * resolves the user from its own auth identity (actions have no db access)
- * and passes it through; this internal query routes the check through the
- * permission guard's explicit-user entry point, so the decision and the
- * thrown messages are the guard's own.
- */
-export const verifyCanManageIssues = internalQuery({
-  args: {
-    userId: v.id("users"),
-    roomId: v.id("rooms"),
-  },
-  handler: async (ctx, args) => {
-    const user = await ctx.db.get("users", args.userId);
-    if (!user) throw new Error("User not found");
-
-    await requireCanForUser(ctx, user, args.roomId, {
-      kind: "category",
-      category: "issueManagement",
-    });
-
-    return { userId: user._id };
   },
 });

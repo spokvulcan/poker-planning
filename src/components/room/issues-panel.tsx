@@ -40,6 +40,8 @@ import { denialTooltip, permissionProps } from "@/hooks/usePermissions";
 interface IssuesPanelProps {
   roomId: Id<"rooms">;
   roomName: string;
+  /** The issue the round is on, as the room's row names it; none for a Quick Vote. */
+  currentIssueId?: Id<"issues">;
   onClose: () => void;
   canManageIssues?: ResolvedDecision;
   canControlGameFlow?: ResolvedDecision;
@@ -47,14 +49,16 @@ interface IssuesPanelProps {
 
 /**
  * The poker room's issues, docked by the board's chrome, which mounts it only
- * while it is open: every Convex subscription below (issues list, current
- * issue, integration links) attaches on open and detaches on close instead of
- * running for the whole session. The even heavier export read is not a
- * subscription at all — see useIssuesExport.
+ * while it is open: every Convex subscription below (issues list, integration
+ * links) attaches on open and detaches on close instead of running for the
+ * whole session. The current issue is the list's, as the room's row names it.
+ * The even heavier export read is not a subscription at all — see
+ * useIssuesExport.
  */
 export const IssuesPanel: FC<IssuesPanelProps> = ({
   roomId,
   roomName,
+  currentIssueId,
   onClose,
   canManageIssues: canManageIssuesDecision = RESOLVED_ALLOWED,
   canControlGameFlow: canControlGameFlowDecision = RESOLVED_ALLOWED,
@@ -78,7 +82,7 @@ export const IssuesPanel: FC<IssuesPanelProps> = ({
     currentIssue,
     isQuickVoteMode,
     isLoading,
-  } = useIssues({ roomId });
+  } = useIssues({ roomId, currentIssueId });
   // The export read is fetched at click time, not subscribed (see the hook).
   const fetchExportData = useIssuesExport({ roomId });
   // Writes come from the action seam, which no-ops internally in demo mode

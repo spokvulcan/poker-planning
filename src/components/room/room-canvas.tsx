@@ -104,13 +104,19 @@ function RoomCanvasInner({ roomData, currentUserId, isEmbedded = false }: RoomCa
   const demo = useDemoSimulation();
   const isDemoMode = !!demo;
   const canvasNodesQuery = useQuery(api.canvas.getCanvasNodes, demo ? "skip" : { roomId });
-  const currentIssueQuery = useQuery(api.issues.getCurrent, demo ? "skip" : { roomId });
   const canvasNodes = demo ? demo.canvasNodes : canvasNodesQuery;
+
+  // The issue the round is on: the room's row names it, and the board reads
+  // that one issue rather than the room again, so a vote, which patches the
+  // room's row, re-runs no query here. A newly named issue's title follows
+  // its id by a round trip; one that is gone (null) is no issue at all.
+  const namedIssueId = demo ? undefined : roomData.room.currentIssueId;
+  const namedIssue = useQuery(api.issues.get, namedIssueId ? { roomId, issueId: namedIssueId } : "skip");
 
   // Only the issue's id and title reach the nodes, so the board rebuilds when
   // they change and not on every other write to the issue.
-  const currentIssueId = demo ? demo.currentIssue._id : currentIssueQuery?._id;
-  const currentIssueTitle = demo ? demo.currentIssue.title : currentIssueQuery?.title;
+  const currentIssueId = demo ? demo.currentIssue._id : namedIssue === null ? undefined : namedIssueId;
+  const currentIssueTitle = demo ? demo.currentIssue.title : namedIssue?.title;
   const currentIssue = useMemo(
     () => (currentIssueId ? { _id: currentIssueId, title: currentIssueTitle ?? "" } : null),
     [currentIssueId, currentIssueTitle],
@@ -273,6 +279,7 @@ function RoomCanvasInner({ roomData, currentUserId, isEmbedded = false }: RoomCa
         <IssuesPanel
           roomId={roomId}
           roomName={roomName}
+          currentIssueId={currentIssueId}
           onClose={close}
           canManageIssues={permissions.issueManagement}
           canControlGameFlow={permissions.gameFlow}

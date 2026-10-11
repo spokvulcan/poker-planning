@@ -12,8 +12,9 @@ import { withComponents } from "./components.setup";
 // room's contents?" from the caller's membership alone, and returns neither
 // the room nor a membership row. It passes a room member and nobody else,
 // refusing anyone else as the attendance guard does (ADR-0031). The
-// enforcement net: a non-member cannot read canvas nodes, either issue
-// export, or a retro's board and action items.
+// enforcement net: a non-member cannot read canvas nodes, the room's issues,
+// either issue export, or a retro's board and action items. That every such
+// read takes the guard is held over every module in requireRoomWrite.test.ts.
 
 const modules = import.meta.glob("./**/*.*s");
 
@@ -126,6 +127,68 @@ describe("room-owned reads take the reader guard", () => {
       .withIdentity({ subject: "auth-m" })
       .query(api.canvas.getCanvasNodes, { roomId });
     expect(nodes).toHaveLength(1);
+  });
+
+  it("a non-member cannot read the room's issues, the one being voted on, or one by id; a member can", async () => {
+    const t = convexTest(schema, modules);
+    const roomId = await seedRoom(t);
+    await addMember(t, roomId, "auth-m");
+    await addUser(t, "auth-x");
+    const issueId = await t.run(async (ctx) => {
+      const id = await ctx.db.insert("issues", {
+        roomId,
+        sequentialId: 1,
+        title: "Checkout flow",
+        status: "voting",
+        createdAt: Date.now(),
+        order: 1,
+      });
+      await ctx.db.patch("rooms", roomId, { currentIssueId: id });
+      return id;
+    });
+    const asMember = t.withIdentity({ subject: "auth-m" });
+    const asOutsider = t.withIdentity({ subject: "auth-x" });
+
+    await expect(asOutsider.query(api.issues.list, { roomId })).rejects.toThrow(NOT_A_MEMBER);
+    await expect(asOutsider.query(api.issues.getCurrent, { roomId })).rejects.toThrow(NOT_A_MEMBER);
+    await expect(asOutsider.query(api.issues.get, { roomId, issueId })).rejects.toThrow(NOT_A_MEMBER);
+
+    expect((await asMember.query(api.issues.list, { roomId })).map((issue) => issue._id)).toEqual([issueId]);
+    expect(await asMember.query(api.issues.getCurrent, { roomId })).toMatchObject({ _id: issueId });
+    expect(await asMember.query(api.issues.get, { roomId, issueId })).toMatchObject({ title: "Checkout flow" });
+  });
+
+  it("the issue by id reads neither the room's row nor another room's issue", async () => {
+    const t = convexTest(schema, modules);
+    const roomId = await seedRoom(t);
+    const elsewhere = await seedRoom(t);
+    await addMember(t, roomId, "auth-m");
+    const [ours, theirs] = await t.run((ctx) =>
+      Promise.all(
+        [roomId, elsewhere].map((room) =>
+          ctx.db.insert("issues", { roomId: room, sequentialId: 1, title: "I", status: "voting", createdAt: Date.now(), order: 1 })
+        )
+      )
+    );
+    await t.run((ctx) => ctx.db.patch("rooms", roomId, { currentIssueId: ours }));
+    const asMember = t.withIdentity({ subject: "auth-m" });
+
+    // An issue of another room is no issue of this one.
+    expect(await asMember.query(api.issues.get, { roomId, issueId: theirs })).toBeNull();
+
+    // What each registered query reads, run inside a transaction that counts
+    // it: issues.get reads the room-access guard's two rows and the issue, and
+    // no room row, which every vote patches, so a vote re-runs nothing that
+    // subscribes to it; issues.getCurrent reads the room's row as well.
+    const reads = await asMember.run(async (ctx) => {
+      const used = async () => (await ctx.meta.getTransactionMetrics()).documentsRead.used;
+      const start = await used();
+      await ctx.runQuery(api.issues.get, { roomId, issueId: ours });
+      const afterGet = await used();
+      await ctx.runQuery(api.issues.getCurrent, { roomId });
+      return { get: afterGet - start, getCurrent: (await used()) - afterGet };
+    });
+    expect(reads).toEqual({ get: 3, getCurrent: 4 });
   });
 
   it("a non-member cannot read the issue export; a member can", async () => {

@@ -100,13 +100,12 @@ export const remove = mutation({
     roomId: v.id("rooms"),
   },
   handler: async (ctx, args) => {
-    const { room, target } = await requireRoomWrite(
-      ctx,
-      args.roomId,
-      { kind: "relationship", verb: "remove" },
-      args.userId
-    );
-    await Memberships.leave(ctx, room, target!);
+    const { room, target } = await requireRoomWrite(ctx, args.roomId, {
+      kind: "relationship",
+      verb: "remove",
+      target: args.userId,
+    });
+    await Memberships.leave(ctx, room, target);
   },
 });
 
