@@ -269,6 +269,21 @@ describe("a drop", () => {
     expect(nodeOf("client-mine").position).toEqual(FIRST);
   });
 
+  it("only moves my stack, built once revealed, dropped onto my own sticky while writing: Ada's face-down sticky is in it", async () => {
+    renderRetro({
+      stickies: [
+        mine("top", FIRST),
+        { ...adasFaceDown("adas", FIRST), stackId: "top" as Id<"retroStickies"> },
+        mine("other", { x: FIRST.x, y: 400 }),
+      ],
+    });
+
+    await act(async () => dropOnto("client-top", "client-other"));
+
+    expect(convex.writes.map((write) => write.name)).toEqual(["retro:moveStickies"]);
+    expect(stickyNodes()).toEqual(["client-top", "client-other"]);
+  });
+
   it("saves the stickies and the board's other nodes it moved, each in one write, and shows them there", async () => {
     renderRetro({ stickies: [mine("s1", FIRST)] });
 
