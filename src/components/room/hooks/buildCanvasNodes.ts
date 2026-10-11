@@ -25,6 +25,7 @@ import {
   DEMO_VIEWER_ID,
   type CustomNodeType,
   type PokerBoardActions,
+  type TimeNodesShown,
   type TimerNodeType,
 } from "../types";
 
@@ -39,6 +40,8 @@ export interface CanvasRoomView {
    */
   autoRevealCountdownStartedAt: number | null;
   votingScale?: { cards: string[]; isNumeric: boolean };
+  /** The room's last action: the round clock stops counting a while after it. */
+  lastActivityAt: number;
 }
 
 /**
@@ -89,8 +92,9 @@ export function buildCanvasNodes(input: CanvasNodesInput): CustomNodeType[] {
     if (node.type === "player") {
       const playerNode = buildPlayerNode(node, input);
       if (playerNode) allNodes.push(playerNode);
-    } else if (node.type === "timer") {
-      allNodes.push(buildTimerNode(node, input));
+    } else if (node.type === "timer" || node.type === "sessionTime") {
+      // The round clock's nodes (ADR-0032); a room can hide either.
+      if (!node.isHidden) allNodes.push(buildTimeNode(node, input));
     } else if (node.type === "session") {
       allNodes.push(buildSessionNode(node, input));
     } else if (node.type === "results" && input.phase === "revealed") {
@@ -185,6 +189,31 @@ export function buildTimerNode(
   };
 }
 
+/**
+ * Which of the board's time nodes a room shows: a time node it has and hasn't
+ * hidden. The ONE reading, shared by the session node's menu and the edges.
+ */
+export function timeNodesShown(canvasNodes: readonly CanvasNode[]): TimeNodesShown {
+  const shown = (type: "timer" | "sessionTime") => canvasNodes.some((n) => n.type === type && !n.isHidden);
+  return { timer: shown("timer"), sessionTime: shown("sessionTime") };
+}
+
+/** The poker board's timer or session time: both read the round clock, so they carry its room and the controls' decisions. */
+function buildTimeNode(
+  node: CanvasNode & { type: "timer" | "sessionTime" },
+  input: CanvasNodesInput,
+): CustomNodeType {
+  const data = {
+    roomId: input.roomId,
+    lastActivityAt: input.room.lastActivityAt,
+    permissions: { gameFlow: input.permissions.gameFlow, roomSettings: input.permissions.roomSettings },
+    actions: input.actions,
+  };
+  return node.type === "timer"
+    ? { id: node.nodeId, type: "roundTimer", position: node.position, data, draggable: !node.isLocked }
+    : { id: node.nodeId, type: "sessionTime", position: node.position, data, draggable: !node.isLocked };
+}
+
 function buildSessionNode(
   node: CanvasNode & { type: "session" },
   input: CanvasNodesInput,
@@ -213,6 +242,7 @@ function buildSessionNode(
         issueManagement: permissions.issueManagement,
         roomSettings: permissions.roomSettings,
       },
+      timeNodes: timeNodesShown(input.canvasNodes),
       actions: input.actions,
     },
     draggable: !node.isLocked,
@@ -316,22 +346,32 @@ export function buildCanvasEdges(input: CanvasEdgesInput): Edge[] {
     });
   }
 
-  // Timer to Session edge
-  allEdges.push({
-    id: "timer-to-session",
-    source: "timer",
-    sourceHandle: "right",
-    target: "session-current",
-    targetHandle: "left",
-    type: "straight",
-    animated: false,
-    style: {
-      stroke: "#64748b",
-      strokeWidth: 2,
-      strokeDasharray: "5,5",
-      strokeOpacity: 0.6,
-    },
-  });
+  // The time nodes to the session node: solid, since they time its rounds.
+  const shown = timeNodesShown(input.canvasNodes);
+  if (shown.timer) {
+    allEdges.push({
+      id: "timer-to-session",
+      source: "timer",
+      sourceHandle: "right",
+      target: "session-current",
+      targetHandle: "left",
+      type: "straight",
+      animated: false,
+      style: { stroke: "#64748b", strokeWidth: 2, strokeOpacity: 0.6 },
+    });
+  }
+  if (shown.sessionTime) {
+    allEdges.push({
+      id: "session-time-to-session",
+      source: "session-time",
+      sourceHandle: "bottom",
+      target: "session-current",
+      targetHandle: "top",
+      type: "straight",
+      animated: false,
+      style: { stroke: "#64748b", strokeWidth: 2, strokeOpacity: 0.6 },
+    });
+  }
 
   // Session to Note edge (when current issue has a note)
   const noteNode = input.canvasNodes.find((n) =>

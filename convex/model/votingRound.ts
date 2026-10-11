@@ -5,6 +5,7 @@ import * as Rooms from "./rooms";
 import * as Canvas from "./canvas";
 import * as Votes from "./votes";
 import * as Analytics from "./analytics";
+import * as RoundClock from "./roundClock";
 import { getMembership } from "./memberships";
 import { refusal } from "./refusal";
 import { computeVoterAlignment } from "./alignment";
@@ -18,10 +19,12 @@ import type { UserRows } from "./userRows";
 /**
  * VotingRound — the module that owns the round's lifecycle (ADR-0002).
  * Sole writer of the round's state: the rooms round fields, the votes table,
- * and — while a round is running — the target issue's `status` and
- * `votingTimestamps` (the `completed` transition and the one canonical
- * timestamp-close path live here, not in the issues module). Owns the
- * transitions (start, reveal, reset, abandon) and the auto-reveal countdown.
+ * the target issue's `status` while a round runs, and every round's record in
+ * `votingTimestamps` (CONTEXT.md: Round record), a Quick Vote's included: when
+ * it started, ended its voting, was revealed, and ended (ADR-0032). The
+ * `completed` transition lives here, not in the issues module. Owns the
+ * transitions (start, reveal, reset, abandon) and the auto-reveal countdown,
+ * and tells the round clock (model/roundClock.ts) when the round moves on.
  * A start, a reveal and a vote first ask the phase what it allows
  * (`../phase.ts`) and change nothing when it refuses. Each transition and vote
  * is handed the room its write already loaded (through the room-scoped step,
@@ -51,11 +54,15 @@ export async function start(
     if (!startAllowed(issue)) return;
   }
 
-  // Revert a different previous issue target back to pending, closing its round.
+  // The open round ends: a re-vote when it is the same issue, else the room
+  // moved to another target.
+  const now = Date.now();
+  await endRound(ctx, roomId, now, args.issueId && args.issueId === room.currentIssueId ? "nextRound" : "nextTarget");
+
+  // Revert a different previous issue target back to pending.
   if (room.currentIssueId && room.currentIssueId !== args.issueId) {
     const previous = await ctx.db.get("issues", room.currentIssueId);
     if (previous && previous.status === "voting") {
-      await closeOpenTimingRecord(ctx, room.currentIssueId);
       await ctx.db.patch("issues", room.currentIssueId, { status: "pending" });
     }
   }
@@ -77,33 +84,32 @@ export async function start(
 
   await clearRoomVotes(ctx, roomId);
 
-  if (shouldRecordTiming(args.issueId)) {
-    await openTimingRecord(ctx, roomId, args.issueId!);
-  }
+  await openRound(ctx, roomId, now, args.issueId);
+  await RoundClock.roundMoved(ctx, room, now);
 }
 
 /**
  * reset — start a fresh round on the SAME target (revealed -> voting). Clears
- * prior votes and, for an issue-backed (non-demo) round, opens a new timed
- * round (incrementing the round number).
+ * prior votes, ends the round that was open and opens the next on the same
+ * target: an issue's next round number, or a fresh Quick Vote round.
  */
 export async function reset(ctx: MutationCtx, room: Doc<"rooms">): Promise<void> {
   const roomId = room._id;
+  const now = Date.now();
 
+  // A mid-vote reset leaves an open round; it ends before the fresh one opens
+  // so durations don't overlap.
+  await endRound(ctx, roomId, now, "nextRound");
+  let target: Id<"issues"> | undefined;
   if (room.currentIssueId) {
     const issue = await ctx.db.get("issues", room.currentIssueId);
     if (issue && (issue.status === "voting" || issue.status === "completed")) {
-      // A mid-vote reset leaves an open round; close it before opening a fresh
-      // one so durations don't overlap.
-      if (issue.status === "voting" && shouldRecordTiming(room.currentIssueId)) {
-        await closeOpenTimingRecord(ctx, room.currentIssueId);
-      }
       await ctx.db.patch("issues", room.currentIssueId, { status: "voting" });
-      if (shouldRecordTiming(room.currentIssueId)) {
-        await openTimingRecord(ctx, roomId, room.currentIssueId);
-      }
+      target = room.currentIssueId;
     }
   }
+  await openRound(ctx, roomId, now, target);
+  await RoundClock.roundMoved(ctx, room, now);
 
   await cancel(ctx, roomId);
   await ctx.db.patch("rooms", roomId, { isGameOver: false });
@@ -130,6 +136,11 @@ export async function reveal(ctx: MutationCtx, room: Doc<"rooms">): Promise<void
   await ctx.db.patch("rooms", roomId, { isGameOver: true });
   await Rooms.updateRoomActivity(ctx, room);
 
+  // The round's voting ends here, whatever its target.
+  const now = Date.now();
+  await markRevealed(ctx, roomId, now);
+  await RoundClock.roundActed(ctx, room, now);
+
   // Reveal effect: the canvas shows the results.
   await Canvas.roundRevealed(ctx, room);
 
@@ -140,17 +151,14 @@ export async function reveal(ctx: MutationCtx, room: Doc<"rooms">): Promise<void
     const deck = deckOf(room.votingScale);
     const summary = summarize(votes, deck);
 
+    // No consensus to snapshot (all special / no votes) leaves the issue
+    // un-completed; its round's voting ended at the reveal all the same.
     if (summary.consensus) {
       await completeTargetIssue(ctx, {
         issueId: room.currentIssueId,
         finalEstimate: summary.consensus,
         voteStats: summary.stats,
       });
-    } else if (shouldRecordTiming(room.currentIssueId)) {
-      // No consensus to snapshot (all special / no votes), so the issue stays
-      // un-completed — but the round is over. Close its open timing record now
-      // so the duration ends at reveal, not at the next reset/abandon.
-      await closeOpenTimingRecord(ctx, room.currentIssueId);
     }
 
     // Per-voter alignment snapshot for analytics/export.
@@ -254,11 +262,14 @@ async function scheduleJiraPushIfEnabled(
 export async function abandon(ctx: MutationCtx, room: Doc<"rooms">): Promise<void> {
   const roomId = room._id;
 
-  // Revert the issue target (if any) to pending, closing its open round.
+  // The open round ends: its issue dropped, or a Quick Vote begun afresh.
+  const now = Date.now();
+  await endRound(ctx, roomId, now, room.currentIssueId ? "dropped" : "nextRound");
+
+  // Revert the issue target (if any) to pending.
   if (room.currentIssueId) {
     const issue = await ctx.db.get("issues", room.currentIssueId);
     if (issue && issue.status === "voting") {
-      await closeOpenTimingRecord(ctx, room.currentIssueId);
       await ctx.db.patch("issues", room.currentIssueId, { status: "pending" });
     }
   }
@@ -273,8 +284,10 @@ export async function abandon(ctx: MutationCtx, room: Doc<"rooms">): Promise<voi
   });
   await Rooms.updateRoomActivity(ctx, room);
 
-  // Clear prior votes so the Quick Vote starts clean.
+  // Clear prior votes so the Quick Vote starts clean, and time it.
   await clearRoomVotes(ctx, roomId);
+  await openRound(ctx, roomId, now);
+  await RoundClock.roundMoved(ctx, room, now);
 }
 
 /**
@@ -389,66 +402,84 @@ async function clearRoomVotes(ctx: MutationCtx, roomId: Id<"rooms">): Promise<vo
   await Promise.all(votes.map((vote) => ctx.db.delete("votes", vote._id)));
 }
 
-/**
- * Whether this round is timed and recorded. Quick Vote (no issue) rounds are
- * not; an issue-backed round always is. (The former demo-room exemption is gone
- * with the demo, which is now a client-only simulation — ADR-0003.)
- */
-function shouldRecordTiming(issueId?: Id<"issues">): boolean {
-  return !!issueId;
+/** The room's latest round record: the open one, while a round is open. */
+async function latestRound(ctx: MutationCtx, roomId: Id<"rooms">): Promise<Doc<"votingTimestamps"> | null> {
+  return await ctx.db
+    .query("votingTimestamps")
+    .withIndex("by_room", (q) => q.eq("roomId", roomId))
+    .order("desc")
+    .first();
 }
 
-/** Opens a fresh timed round for an issue, numbering it after prior rounds. */
-async function openTimingRecord(
+/**
+ * Opens a round's record from `now`: an issue's numbered after its earlier
+ * rounds, a Quick Vote's (no issue) always round 1.
+ */
+async function openRound(
   ctx: MutationCtx,
   roomId: Id<"rooms">,
-  issueId: Id<"issues">
+  now: number,
+  issueId?: Id<"issues">
 ): Promise<void> {
-  const existing = await ctx.db
-    .query("votingTimestamps")
-    .withIndex("by_issue", (q) => q.eq("issueId", issueId))
-    .collect();
+  const earlier = issueId
+    ? await ctx.db
+        .query("votingTimestamps")
+        .withIndex("by_issue", (q) => q.eq("issueId", issueId))
+        .collect()
+    : [];
   await ctx.db.insert("votingTimestamps", {
     roomId,
-    issueId,
-    votingStartedAt: Date.now(),
-    roundNumber: existing.length + 1,
+    ...(issueId && { issueId }),
+    votingStartedAt: now,
+    roundNumber: earlier.length + 1,
   });
 }
 
+/** The fields that end a round's voting at `at`, unless it already ended. */
+function votingEnd(round: Doc<"votingTimestamps">, at: number) {
+  return round.votingEndedAt !== undefined
+    ? {}
+    : { votingEndedAt: at, durationMs: at - round.votingStartedAt };
+}
+
+/** The open round was revealed at `now`: its voting ends there. */
+async function markRevealed(ctx: MutationCtx, roomId: Id<"rooms">, now: number): Promise<void> {
+  const round = await latestRound(ctx, roomId);
+  if (!round || round.endedAt !== undefined || round.revealedAt !== undefined) return;
+  await ctx.db.patch("votingTimestamps", round._id, { ...votingEnd(round, now), revealedAt: now });
+}
+
 /**
- * Closes the target issue's open timed round, if any — the ONE canonical
- * timestamp-close path. Every transition that ends a round without completing
- * it (start switching targets, reset, abandon, a consensus-less reveal)
- * funnels through here. Returns whether a round was open, plus the issue's
- * timing records (durations current as of the close) so callers that need
- * them don't re-read the index.
+ * The open round ends at `now` because the room moved on — the ONE canonical
+ * close: start, reset and abandon all come through here. A round never
+ * revealed ends its voting here too, so its duration stops at the move.
  */
-async function closeOpenTimingRecord(
+async function endRound(
   ctx: MutationCtx,
-  issueId: Id<"issues">
-): Promise<{ closed: boolean; timestamps: Doc<"votingTimestamps">[] }> {
-  const timestamps = await ctx.db
-    .query("votingTimestamps")
-    .withIndex("by_issue", (q) => q.eq("issueId", issueId))
-    .collect();
+  roomId: Id<"rooms">,
+  now: number,
+  endedBy: NonNullable<Doc<"votingTimestamps">["endedBy"]>
+): Promise<void> {
+  const round = await latestRound(ctx, roomId);
+  if (!round || round.endedAt !== undefined) return;
+  await ctx.db.patch("votingTimestamps", round._id, { ...votingEnd(round, now), endedAt: now, endedBy });
+}
 
-  const latest = timestamps[timestamps.length - 1];
-  if (!latest || latest.votingEndedAt) return { closed: false, timestamps };
-
-  const now = Date.now();
-  const durationMs = now - latest.votingStartedAt;
-  await ctx.db.patch("votingTimestamps", latest._id, { votingEndedAt: now, durationMs });
-  latest.votingEndedAt = now;
-  latest.durationMs = durationMs;
-  return { closed: true, timestamps };
+/**
+ * A vote in a round no record times opens one: a new room's first round, or
+ * a round from before every round was timed.
+ */
+async function ensureOpenRound(ctx: MutationCtx, room: Doc<"rooms">, now: number): Promise<void> {
+  const round = await latestRound(ctx, room._id);
+  if (round && round.endedAt === undefined) return;
+  await openRound(ctx, room._id, now, room.currentIssueId);
 }
 
 /**
  * completeTargetIssue — the `completed` transition of an issue-backed target:
- * sets the final estimate and stats snapshot, closes the open timed round via
- * the canonical path, and records time-to-consensus as the total across the
- * issue's rounds. The round module owns this lifecycle write (ADR-0002); the
+ * sets the final estimate and stats snapshot, and records time-to-consensus
+ * as the total voting time across the issue's rounds (the reveal ended the
+ * last one's). The round module owns this lifecycle write (ADR-0002); the
  * issues module keeps CRUD only.
  */
 async function completeTargetIssue(
@@ -461,21 +492,16 @@ async function completeTargetIssue(
 ): Promise<void> {
   const now = Date.now();
 
-  // Close the open timed round (canonical close), then total the time across
-  // rounds. Always recorded for an issue-backed round (the former demo-room
-  // exemption is gone with the demo — ADR-0003).
-  const { closed: closedOpenRound, timestamps } = await closeOpenTimingRecord(
-    ctx,
-    args.issueId
-  );
-  const totalMs = timestamps.reduce((sum, ts) => sum + (ts.durationMs ?? 0), 0);
-
-  let timeToConsensusMs: number | undefined;
-  if (closedOpenRound || totalMs > 0) {
-    // The just-closed round's duration is in the total; if every round was
-    // already closed (e.g. reset then completed), the sum stands alone.
-    timeToConsensusMs = totalMs;
-  }
+  // Total the voting time across the issue's rounds; an issue none of whose
+  // rounds was timed has no time-to-consensus.
+  const timed = (
+    await ctx.db
+      .query("votingTimestamps")
+      .withIndex("by_issue", (q) => q.eq("issueId", args.issueId))
+      .collect()
+  ).filter((round) => round.durationMs !== undefined);
+  const timeToConsensusMs =
+    timed.length > 0 ? timed.reduce((sum, round) => sum + (round.durationMs ?? 0), 0) : undefined;
 
   await ctx.db.patch("issues", args.issueId, {
     status: "completed",
@@ -530,6 +556,9 @@ export async function castVote(ctx: MutationCtx, args: CastVoteArgs): Promise<vo
   if (!phaseAllows(phaseOf(room), "vote")) return;
 
   await Rooms.updateRoomActivity(ctx, room);
+  const now = Date.now();
+  await ensureOpenRound(ctx, room, now);
+  await RoundClock.roundActed(ctx, room, now);
 
   const existing = await ctx.db
     .query("votes")

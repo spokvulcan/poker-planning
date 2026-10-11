@@ -24,6 +24,8 @@ import {
 import type { Doc, Id } from "@/convex/_generated/dataModel";
 import type { CanvasNode } from "@/convex/model/canvas";
 import type { RoomWithRelatedData, SanitizedVote } from "@/convex/model/rooms";
+import type { RoundClockView } from "@/convex/model/roundClock";
+import { DEFAULT_TIMEBOX_MS, type BreakFact, type RoundFact } from "@/convex/roundTime";
 import { cardNumericValue } from "@/convex/scales";
 import {
   advanceDemo,
@@ -48,6 +50,8 @@ export interface DemoSimulationContextValue {
   canvasNodes: CanvasNode[];
   currentIssue: { _id: Id<"issues">; title: string };
   issues: Doc<"issues">[];
+  /** The round clock, timed in this browser as the bots vote: in the shape `api.roundClock.get` returns. */
+  roundClock: RoundClockView;
 }
 
 const DemoSimulationContext = createContext<DemoSimulationContextValue | null>(
@@ -104,10 +108,32 @@ function buildRoom(state: DemoSimulationState): Doc<"rooms"> {
     currentIssueId: DEMO_CURRENT_ISSUE._id,
     nextIssueNumber: DEMO_ISSUES.length + 1,
     createdAt: 0,
-    lastActivityAt: 0,
+    // The bots are always at it, so the round clock never sees a long quiet.
+    lastActivityAt: Date.now(),
     // votingScale omitted → defaults to numeric Fibonacci, matching the old demo
     // room (which never set a scale) for both the card row and the stats.
   };
+}
+
+/** Most rounds the demo's clock keeps: the bots re-vote one issue for as long as the page is open. */
+const DEMO_MAX_ROUNDS = 50;
+
+/**
+ * The demo's rounds after the phase moved from `from` to `to` at `now`: a
+ * reveal ends the open round's voting, and the next round (revealed back to
+ * voting) ends it and opens another on the same issue.
+ */
+function advanceDemoRounds(rounds: RoundFact[], from: string, to: string, now: number): RoundFact[] {
+  const open = rounds.at(-1);
+  if (!open) return rounds;
+  if (to === "revealed") {
+    return [...rounds.slice(0, -1), { ...open, votingEndedAt: now, revealedAt: now }];
+  }
+  if (from === "revealed") {
+    const ended = { ...open, endedAt: now };
+    return [...rounds.slice(0, -1), ended, { issueId: open.issueId, startedAt: now }].slice(-DEMO_MAX_ROUNDS);
+  }
+  return rounds;
 }
 
 /**
@@ -139,6 +165,19 @@ export function DemoSimulationProvider({
 }): ReactNode {
   const [state, setState] = useState<DemoSimulationState>(initialDemoState);
 
+  // The round clock the bots run, timed here and nowhere else.
+  const [sessionStartedAt] = useState(() => Date.now());
+  const [rounds, setRounds] = useState<RoundFact[]>(() => [
+    { issueId: DEMO_CURRENT_ISSUE._id, startedAt: Date.now() },
+  ]);
+  // The simulation stops while the tab is hidden; so does its clock.
+  const [breaks, setBreaks] = useState<BreakFact[]>([]);
+  const [seenPhase, setSeenPhase] = useState(state.phase);
+  if (state.phase !== seenPhase) {
+    setSeenPhase(state.phase);
+    setRounds((current) => advanceDemoRounds(current, seenPhase, state.phase, Date.now()));
+  }
+
   useEffect(() => {
     let id: ReturnType<typeof setInterval> | null = null;
 
@@ -159,9 +198,19 @@ export function DemoSimulationProvider({
         id = null;
       }
     };
+    let hiddenAt: number | null = null;
     const onVisibilityChange = () => {
-      if (document.visibilityState === "hidden") stop();
-      else start();
+      if (document.visibilityState === "hidden") {
+        stop();
+        hiddenAt = Date.now();
+      } else {
+        start();
+        if (hiddenAt !== null) {
+          const from = hiddenAt;
+          setBreaks((current) => [...current, { from, to: Date.now(), kind: "pause" }]);
+          hiddenAt = null;
+        }
+      }
     };
 
     if (document.visibilityState !== "hidden") start();
@@ -183,8 +232,17 @@ export function DemoSimulationProvider({
       canvasNodes: DEMO_CANVAS_NODES,
       currentIssue: CURRENT_ISSUE,
       issues: DEMO_ISSUES,
+      roundClock: {
+        sessionStartedAt,
+        pausedAt: null,
+        timebox: null,
+        timeboxMs: DEFAULT_TIMEBOX_MS,
+        current: rounds,
+        items: [{ issueId: DEMO_CURRENT_ISSUE._id, title: DEMO_CURRENT_ISSUE.title, rounds }],
+        breaks,
+      },
     }),
-    [state],
+    [state, rounds, breaks, sessionStartedAt],
   );
 
   return (

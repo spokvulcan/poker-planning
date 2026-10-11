@@ -26,7 +26,10 @@ export const CANVAS_CENTER: Position = { x: 0, y: 0 };
 /** Vertical position of the session node row. */
 export const SESSION_Y = -300;
 
-export const TIMER_POSITION: Position = { x: -500, y: -250 };
+/** The timer, close beside the session node's left edge. */
+export const TIMER_POSITION: Position = { x: -380, y: -290 };
+/** Session time, centred above the session node. */
+export const SESSION_TIME_POSITION: Position = { x: -220, y: -420 };
 export const NOTE_POSITION: Position = { x: 400, y: -200 };
 export const RESULTS_POSITION: Position = {
   x: CANVAS_CENTER.x + 400,

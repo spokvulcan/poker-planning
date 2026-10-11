@@ -3,6 +3,7 @@ import { Id, Doc } from "../_generated/dataModel";
 import * as Canvas from "./canvas";
 import * as Memberships from "./memberships";
 import * as Ownership from "./ownership";
+import * as RoundClock from "./roundClock";
 import { DEFAULT_SCALE, VOTING_SCALES, VotingScaleType, validateCustomScale } from "../scales";
 import { ROOM_NAME } from "../constants";
 import { requireValid } from "./refusal";
@@ -13,6 +14,8 @@ export interface CreateRoomArgs {
   name: string;
   roomType?: "canvas"; // Optional, defaults to canvas
   autoCompleteVoting?: boolean;
+  /** Which time nodes the board shows; the room's defaults when absent. */
+  timeNodes?: Canvas.TimeNodesShown;
   votingScale?: {
     type: VotingScaleType | "custom";
     cards?: string[]; // Required only for custom type
@@ -69,7 +72,12 @@ type RoomFields = Omit<
  * whether it's kept), the board it starts with, and its owner seated in it,
  * so the person who made it lands straight on its canvas.
  */
-export async function openRoom(ctx: MutationCtx, owner: Doc<"users">, fields: RoomFields): Promise<Id<"rooms">> {
+export async function openRoom(
+  ctx: MutationCtx,
+  owner: Doc<"users">,
+  fields: RoomFields,
+  timeNodes?: Canvas.TimeNodesShown
+): Promise<Id<"rooms">> {
   const now = Date.now();
   const roomId = await ctx.db.insert("rooms", {
     ...fields,
@@ -79,7 +87,7 @@ export async function openRoom(ctx: MutationCtx, owner: Doc<"users">, fields: Ro
     ...Ownership.initialOwnership(fields, owner),
   });
   const room = (await ctx.db.get("rooms", roomId))!;
-  await Canvas.openBoard(ctx, room);
+  await Canvas.openBoard(ctx, room, timeNodes);
   await Memberships.join(ctx, room, owner);
   return roomId;
 }
@@ -95,7 +103,7 @@ export async function createRoom(
     autoCompleteVoting: args.autoCompleteVoting ?? false,
     isGameOver: false,
     votingScale: resolveVotingScale(args.votingScale),
-  });
+  }, args.timeNodes);
 }
 
 /**
@@ -177,6 +185,8 @@ export async function updateRoomActivity(
   const now = Date.now();
   const granularity = rulesOf(room).activityGranularityMs;
   if (granularity > 0 && now - room.lastActivityAt <= granularity) return;
+  // A long quiet before this write is one the round clock leaves out (ADR-0032).
+  await RoundClock.noteActivity(ctx, room, now);
   await ctx.db.patch("rooms", room._id, { lastActivityAt: now });
 }
 

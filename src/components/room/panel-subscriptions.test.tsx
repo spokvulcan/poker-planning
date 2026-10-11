@@ -137,6 +137,8 @@ function renderSettingsPanel(isOpen: boolean) {
       currentUserId={ME}
       isOpen={isOpen}
       onClose={() => {}}
+      timeNodes={{ timer: true, sessionTime: false }}
+      onSetTimeNodeShown={() => {}}
     />,
   );
 }

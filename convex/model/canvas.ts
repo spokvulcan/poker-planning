@@ -9,6 +9,7 @@ import {
   NOTE_POSITION,
   RESULTS_POSITION,
   SESSION_INITIAL_POSITION,
+  SESSION_TIME_POSITION,
   TIMER_POSITION,
   type Position,
 } from "../canvasLayout";
@@ -39,6 +40,8 @@ import type { UserRows } from "./userRows";
 export type CanvasNodeData =
   | { type: "player"; data: { userId: Id<"users"> } }
   | { type: "timer"; data: TimerState }
+  // A poker room's session time: the round clock is its data (model/roundClock.ts)
+  | { type: "sessionTime"; data: Record<string, never> }
   | {
       type: "note";
       data: {
@@ -63,6 +66,8 @@ export type CanvasNode = {
   nodeId: string;
   position: Position;
   isLocked?: boolean;
+  /** Off the room's board: the time nodes a room chose not to show. */
+  isHidden?: boolean;
   lastUpdatedBy?: Id<"users">;
   lastUpdatedAt: number;
 } & CanvasNodeData;
@@ -76,6 +81,12 @@ export const MAX_MOVES = 200;
 const SESSION_NODE_ID = "session-current";
 const RESULTS_NODE_ID = "results";
 const TIMER_NODE_ID = "timer";
+const SESSION_TIME_NODE_ID = "session-time";
+
+/** The time nodes a room can show or hide, and which a new poker room shows. */
+export type TimeNode = "timer" | "sessionTime";
+export type TimeNodesShown = Record<TimeNode, boolean>;
+export const DEFAULT_TIME_NODES: TimeNodesShown = { timer: true, sessionTime: false };
 
 function playerNodeId(userId: Id<"users">): string {
   return `player-${userId}`;
@@ -104,7 +115,7 @@ async function nodeById(ctx: QueryCtx, roomId: Id<"rooms">, nodeId: string): Pro
 async function insertNode<T extends NodeType>(
   ctx: MutationCtx,
   roomId: Id<"rooms">,
-  node: { nodeId: string; type: T; position: Position; data: DataOf<T> }
+  node: { nodeId: string; type: T; position: Position; data: DataOf<T>; isHidden?: boolean }
 ): Promise<Id<"canvasNodes">> {
   return await ctx.db.insert("canvasNodes", {
     roomId,
@@ -112,6 +123,7 @@ async function insertNode<T extends NodeType>(
     type: node.type,
     position: { ...node.position },
     data: node.data,
+    ...(node.isHidden && { isHidden: true }),
     lastUpdatedAt: Date.now(),
   });
 }
@@ -156,14 +168,32 @@ export async function noteContents(ctx: QueryCtx, roomId: Id<"rooms">): Promise<
 // --- The board a room starts with -----------------------------------------------
 
 /**
- * Lays out a new room's board: a poker room's timer and session node, or a
- * retro's retro node, timer, action items and one pad per column.
+ * Lays out a new room's board: a poker room's timer, session node and session
+ * time, each time node shown as its creator chose, or a retro's retro node,
+ * timer, action items and one pad per column.
  */
-export async function openBoard(ctx: MutationCtx, room: Doc<"rooms">): Promise<void> {
+export async function openBoard(
+  ctx: MutationCtx,
+  room: Doc<"rooms">,
+  timeNodes: TimeNodesShown = DEFAULT_TIME_NODES
+): Promise<void> {
   if (ceremonyOf(room) === "poker") {
     await Promise.all([
-      insertNode(ctx, room._id, { nodeId: TIMER_NODE_ID, type: "timer", position: TIMER_POSITION, data: { ...IDLE_TIMER } }),
+      insertNode(ctx, room._id, {
+        nodeId: TIMER_NODE_ID,
+        type: "timer",
+        position: TIMER_POSITION,
+        data: { ...IDLE_TIMER },
+        isHidden: !timeNodes.timer,
+      }),
       insertNode(ctx, room._id, { nodeId: SESSION_NODE_ID, type: "session", position: SESSION_INITIAL_POSITION, data: {} }),
+      insertNode(ctx, room._id, {
+        nodeId: SESSION_TIME_NODE_ID,
+        type: "sessionTime",
+        position: SESSION_TIME_POSITION,
+        data: {},
+        isHidden: !timeNodes.sessionTime,
+      }),
     ]);
     return;
   }
@@ -362,6 +392,37 @@ export async function updateTimer(
     lastUpdatedBy: userId,
     lastUpdatedAt: Date.now(),
   });
+}
+
+// --- The time nodes -------------------------------------------------------------
+
+/**
+ * Shows or hides one of a poker room's time nodes for everyone (ADR-0032).
+ * Hiding leaves the round clock running; a room from before session time
+ * gets the node the first time it is shown.
+ */
+export async function setTimeNodeShown(
+  ctx: MutationCtx,
+  room: Doc<"rooms">,
+  which: TimeNode,
+  shown: boolean
+): Promise<void> {
+  if (!rulesOf(room).votingRounds) throw refusal("missing", NOT_THIS_CEREMONY);
+  const nodeId = which === "timer" ? TIMER_NODE_ID : SESSION_TIME_NODE_ID;
+  const node = await nodeById(ctx, room._id, nodeId);
+  if (node) {
+    if (!!node.isHidden === !shown) return;
+    await ctx.db.patch("canvasNodes", node._id, { isHidden: !shown, lastUpdatedAt: Date.now() });
+  } else if (shown) {
+    if (which === "timer") {
+      await insertNode(ctx, room._id, { nodeId, type: "timer", position: TIMER_POSITION, data: { ...IDLE_TIMER } });
+    } else {
+      await insertNode(ctx, room._id, { nodeId, type: "sessionTime", position: SESSION_TIME_POSITION, data: {} });
+    }
+  } else {
+    return;
+  }
+  await Rooms.updateRoomActivity(ctx, room);
 }
 
 // --- Accounts -------------------------------------------------------------------

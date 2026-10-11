@@ -6,6 +6,7 @@ import type { MemberRole, PokerPermissionCategory, ResolvedDecision } from "@/co
 import type { Phase } from "@/convex/phase";
 import type { TimerState } from "@/convex/timerState";
 import type { CanvasActions } from "./hooks/useCanvasActions";
+import type { RoundClockActions } from "./hooks/useRoundClockActions";
 
 // Demo mode constants
 export const DEMO_VIEWER_ID = "demo-viewer" as const;
@@ -21,9 +22,13 @@ export const DEMO_VIEWER_ID = "demo-viewer" as const;
 export type PokerBoardActions = Pick<
   CanvasActions,
   "reveal" | "reset" | "toggleAutoComplete" | "cancelAutoReveal" | "selectCard" | "updateNoteContent" | "deleteNote"
-> & {
-  openIssues: () => void;
-};
+> &
+  RoundClockActions & {
+    openIssues: () => void;
+  };
+
+/** Which of the board's time nodes the room shows (ADR-0032). */
+export type TimeNodesShown = { timer: boolean; sessionTime: boolean };
 
 // Node data types
 export type PlayerNodeData = {
@@ -54,6 +59,17 @@ export type SessionNodeData = {
   } | null;
   /** The viewer's decision for each of the room's permission categories. */
   permissions: Record<PokerPermissionCategory, ResolvedDecision>;
+  /** Which time nodes the room shows, for the node's right-click menu. */
+  timeNodes: TimeNodesShown;
+  actions: PokerBoardActions;
+};
+
+/** The poker board's timer and session time: both read the round clock (ADR-0032). */
+export type TimeNodeData = {
+  roomId: Id<"rooms">;
+  /** The room's last action: the clock stops counting IDLE_MS after it. */
+  lastActivityAt: number;
+  permissions: Pick<Record<PokerPermissionCategory, ResolvedDecision>, "gameFlow" | "roomSettings">;
   actions: PokerBoardActions;
 };
 
@@ -95,6 +111,8 @@ export type NoteNodeData = {
 export type PlayerNodeType = Node<PlayerNodeData, "player">;
 export type SessionNodeType = Node<SessionNodeData, "session">;
 export type TimerNodeType = Node<TimerNodeData, "timer">;
+export type RoundTimerNodeType = Node<TimeNodeData, "roundTimer">;
+export type SessionTimeNodeType = Node<TimeNodeData, "sessionTime">;
 export type VotingCardNodeType = Node<VotingCardNodeData, "votingCard">;
 export type ResultsNodeType = Node<ResultsNodeData, "results">;
 export type NoteNodeType = Node<NoteNodeData, "note">;
@@ -104,6 +122,8 @@ export type CustomNodeType =
   | PlayerNodeType
   | SessionNodeType
   | TimerNodeType
+  | RoundTimerNodeType
+  | SessionTimeNodeType
   | VotingCardNodeType
   | ResultsNodeType
   | NoteNodeType;

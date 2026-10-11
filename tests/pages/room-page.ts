@@ -53,7 +53,7 @@ export class RoomPage {
     this.playerList = page.locator(".react-flow__node-player");
 
     // Timer and results (results shown in results node when voting revealed)
-    this.timerButton = page.locator(".react-flow__node-timer");
+    this.timerButton = page.locator(".react-flow__node-roundTimer");
     this.resultsSection = page.locator(".react-flow__node-results");
     this.resultsNode = page.locator(".react-flow__node-results");
 

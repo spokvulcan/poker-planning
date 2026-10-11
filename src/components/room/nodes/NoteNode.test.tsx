@@ -22,6 +22,12 @@ function boardActions(): PokerBoardActions {
     openIssues: vi.fn(),
     updateNoteContent: vi.fn(async () => true),
     deleteNote: vi.fn(),
+    startTimebox: vi.fn(),
+    extendTimebox: vi.fn(),
+    stopTimebox: vi.fn(),
+    pauseClock: vi.fn(),
+    resumeClock: vi.fn(),
+    setTimeNodeShown: vi.fn(),
   };
 }
 

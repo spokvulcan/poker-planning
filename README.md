@@ -38,7 +38,7 @@ Free, no sign-up, open source.
 - Vote in private, reveal together
 - Fibonacci, T-shirt or your own scale
 - Average, median and consensus on reveal
-- Issues, a timer and CSV export
+- Issues, a timer that runs itself, CSV export
 - Two-way Jira Cloud sync
 
 </td>

@@ -276,6 +276,7 @@ export default defineSchema({
       v.literal("player"),
       v.literal("session"),
       v.literal("timer"),
+      v.literal("sessionTime"),
       v.literal("results"),
       v.literal("story"),
       v.literal("note"),
@@ -287,6 +288,7 @@ export default defineSchema({
     position: positionValidator,
     data: v.any(), // Node-specific data
     isLocked: v.optional(v.boolean()), // Prevent accidental moves
+    isHidden: v.optional(v.boolean()), // Hidden from the room's board (the time nodes); still tracked
     lastUpdatedBy: v.optional(v.id("users")),
     lastUpdatedAt: v.number(),
   })
@@ -296,17 +298,53 @@ export default defineSchema({
     .index("by_last_updated", ["lastUpdatedAt"]) // For activity tracking
     .index("by_last_updated_by", ["lastUpdatedBy"]), // For account linking transfers
 
-  // Voting round timestamps for time-to-consensus tracking
+  // One row per voting round (CONTEXT.md: Round record): when it started,
+  // when its voting ended and it was revealed, and when the room moved on.
+  // A Quick Vote's round has no issue. Time-to-consensus sums an issue's
+  // rows; the round clock reads them all (ADR-0032).
   votingTimestamps: defineTable({
     roomId: v.id("rooms"),
-    issueId: v.id("issues"),
+    issueId: v.optional(v.id("issues")), // absent for a Quick Vote's round
     votingStartedAt: v.number(),
-    votingEndedAt: v.optional(v.number()),
-    durationMs: v.optional(v.number()),
-    roundNumber: v.number(),
+    votingEndedAt: v.optional(v.number()), // the reveal, or the end of a round never revealed
+    durationMs: v.optional(v.number()), // votingEndedAt - votingStartedAt
+    revealedAt: v.optional(v.number()),
+    endedAt: v.optional(v.number()), // the room moved on: a new round, another target, the issue dropped
+    endedBy: v.optional(v.union(v.literal("nextRound"), v.literal("nextTarget"), v.literal("dropped"))),
+    roundNumber: v.number(), // 1 = first vote on the issue, 2 = re-vote; always 1 for a Quick Vote
   })
     .index("by_issue", ["issueId"])
     .index("by_room", ["roomId"]),
+
+  // A poker room's round clock (CONTEXT.md: Round clock): the session it is
+  // in, a pause someone called, and the timebox running for everyone. Low
+  // churn: the clock query reads it, so attendance lives apart.
+  roundClocks: defineTable({
+    roomId: v.id("rooms"),
+    sessionStartedAt: v.optional(v.number()),
+    pausedAt: v.optional(v.number()),
+    timebox: v.optional(v.object({ startedAt: v.number(), durationMs: v.number() })),
+    timeboxMs: v.optional(v.number()), // the length a flip starts with: the last one used
+  }).index("by_room", ["roomId"]),
+
+  // When anyone last had a poker room open, from presence's heartbeat, at
+  // most once a minute. High churn, so no query reads it.
+  roomAttendance: defineTable({
+    roomId: v.id("rooms"),
+    lastSeenAt: v.number(),
+  }).index("by_room", ["roomId"]),
+
+  // Stretches the round clock leaves out, as facts the reader interprets
+  // (convex/roundTime.ts): nobody had the room open, someone paused, or
+  // nobody did anything for a long while.
+  roomBreaks: defineTable({
+    roomId: v.id("rooms"),
+    from: v.number(),
+    to: v.number(),
+    kind: v.union(v.literal("away"), v.literal("pause"), v.literal("idle")),
+  })
+    .index("by_room", ["roomId"])
+    .index("by_room_to", ["roomId", "to"]),
 
   // Individual vote snapshots for voter alignment analytics
   individualVotes: defineTable({

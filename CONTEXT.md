@@ -189,7 +189,7 @@ What a round votes on — either an **issue** (issue-backed round) or nothing (a
 _Avoid_: subject, topic
 
 **Quick Vote**:
-A round with no target issue: ephemeral, untimed, and not recorded against any issue.
+A round with no target issue: ephemeral and not recorded against any issue, though timed like any round (its **round record** has no issue).
 _Avoid_: ad-hoc vote, anonymous round
 
 **Phase**:
@@ -200,9 +200,33 @@ _Avoid_: game state, mode, idle; do not conflate with issue **status**, nor with
 A control action that moves the **phase**: **start** (begin a round on a target), **reveal** (settle and compute results), **reset** (begin a fresh round on the same target), **abandon** (drop the issue target, falling back to a target-less **Quick Vote**, still `voting`). Gated by the **game flow** / **reveal cards** permission categories. Casting or retracting a vote is a participant action, not a transition, though it may arm or cancel the countdown. The **phase** says which can happen at all (`convex/phase.ts`), as a retro **step** does: a round reveals once, and its votes close at the reveal. A start reads its target's **status** instead, so the issue already being voted on isn't started again. Reset and abandon are open in every phase. The round refuses quietly, changing nothing, the way a stale scheduled reveal reveals nothing.
 _Avoid_: event, command
 
+**Round record**:
+A round's row in `votingTimestamps`, which every round has, a **Quick Vote**'s included: when it started, when its voting ended (the **reveal**, or the move for a round never revealed), when it was revealed, and when the room moved on (`endedBy`: the next round, another **target**, or the issue dropped). Voting time is start to reveal; discussion time is reveal to the end. Written only by the **voting round**; time-to-consensus totals an issue's records. See [ADR-0032](docs/adr/0032-every-round-is-timed-and-the-clock-keeps-facts.md).
+_Avoid_: timing record, timestamp row
+
+**Round clock**:
+A poker room's time beyond the rounds themselves (`convex/model/roundClock.ts`): attendance, **breaks**, the **session**, the **pause** and the **timebox**. It stores facts and leaves what they mean to one pure reading (`convex/roundTime.ts`) the server and browser share. The poker board's **timer** and **session time** read it; hiding either stops nothing.
+_Avoid_: stopwatch
+
+**Break**:
+A stretch the **round clock** leaves out: nobody had the room open (from presence, counted from ten minutes), someone paused, or nobody did anything for twenty minutes (past the first twenty). Kept as a fact in `roomBreaks`; whether it counts is decided when read, so a threshold changed later re-reads the past.
+_Avoid_: idle time, gap (for a counted one)
+
+**Session** (of a poker room):
+The stretch since the room was last empty for thirty minutes: what **session time** shows. Not the sign-in session. Derived from attendance, never ended by a write; a room reused next week starts a new one.
+_Avoid_: meeting, sitting
+
+**Timebox**:
+The sand timer anyone with **game flow** permission flips for everyone: 1, 2, 3 or 5 minutes, +1 minute, flip again. At zero it turns amber and counts overtime; it never reveals, locks votes or plays a sound. It ends when the round moves on, not at the reveal.
+_Avoid_: countdown (that is the **auto-reveal countdown**), egg timer
+
+**Pause**:
+A **break** someone called from the timer's menu: the clock stops until it is lifted, a vote or reveal comes, or the round moves on.
+_Avoid_: hold
+
 **Auto-reveal countdown**:
 The armed timer that reveals automatically once every non-spectator has voted, when the room's auto-complete setting is on. Its two room fields and the scheduled reveal are one unit — clearing the countdown must cancel the scheduled reveal. The scheduled reveal is *bound to the countdown that armed it* by a token: it reveals only while that token is still the room's live countdown, so a stale job (its countdown since cleared or replaced) is inert even if it fires. It is reconciled on every vote and on **dropping a voter**; a member who appears mid-countdown — joining, or ceasing to be a spectator — does not cancel it, so the scheduled reveal still fires. A member admitted mid-countdown is always a fresh non-voter — spectators are *voteless* (the round refuses their ballots) — so admission can only fail to complete the round, never silently complete it. The auto-complete setting itself is set through the round module (`setAutoComplete`): disabling cancels the countdown in the same step; enabling re-evaluates, arming immediately if every non-spectator has voted.
-_Avoid_: timer (reserve **timer** for the canvas TimerNode), auto-complete (that is the room setting that enables it)
+_Avoid_: timer (reserve **timer** for the board's timer node), auto-complete (that is the room setting that enables it)
 
 **Dropping a voter** (`dropVoter`):
 The **voting round**'s response to a non-spectator ceasing to count toward the current round — they **leave** (including being **removed**/kicked) or switch to **spectator**. The round deletes their votes and re-checks completion in one step. The vote deletion lives here, not in the membership/identity code, because the round is the sole writer of the votes table ([ADR-0002](docs/adr/0002-voting-round-is-an-orchestration-module.md)); the caller flips the spectator flag or deletes the membership first, then hands off. Because the non-spectator roster only *shrinks*, this can complete the round and **arm** the **auto-reveal countdown** (or cancel it if the last voter is gone) — but it is never a **phase** **transition**. The inverse is deliberately not symmetric: a member admitted mid-countdown does not cancel it (see **Auto-reveal countdown** and [ADR-0004](docs/adr/0004-roster-exit-reconciles-the-auto-reveal-countdown.md)).
@@ -223,7 +247,7 @@ _Avoid_: agreement score (that is `voteStats.agreement` on the issue), deviation
 ### Room activity
 
 **Room activity** (`lastActivityAt`):
-The room's liveness clock — the field the **sweep** reads to end rooms silent for five days, unless they are **retained**. Written only through the model-layer chokepoint `Rooms.updateRoomActivity`: every user-initiated model mutation calls it (voting, issues, canvas, timer, roles, integration mappings, every retro write), and endpoint handlers never patch the field directly. Internal effects (relayout, countdown arm/cancel, the steps of a **room ending**) do not bump — their initiating mutation already did. The chokepoint also owns the clock's *precision*: exact for a poker room, whose analytics freshness compares it exactly, and **coarse** — written at most once an hour — for a retro room, whose readers (the sweep and the dashboard's last-activity time) need nothing finer. Reads and presence never are. See [ADR-0005](docs/adr/0005-room-activity-has-one-model-layer-chokepoint.md) and [ADR-0018](docs/adr/0018-the-activity-chokepoint-owns-the-clocks-precision.md).
+The room's liveness clock — the field the **sweep** reads to end rooms silent for five days, unless they are **retained**. Written only through the model-layer chokepoint `Rooms.updateRoomActivity`: every user-initiated model mutation calls it (voting, issues, canvas, timer, the **round clock**, roles, integration mappings, every retro write), and endpoint handlers never patch the field directly. For a poker room the chokepoint also keeps a quiet of twenty minutes or more before the write as a **break** ([ADR-0032](docs/adr/0032-every-round-is-timed-and-the-clock-keeps-facts.md)). Internal effects (relayout, countdown arm/cancel, the steps of a **room ending**) do not bump — their initiating mutation already did. The chokepoint also owns the clock's *precision*: exact for a poker room, whose analytics freshness compares it exactly, and **coarse** — written at most once an hour — for a retro room, whose readers (the sweep and the dashboard's last-activity time) need nothing finer. Reads and presence never are. See [ADR-0005](docs/adr/0005-room-activity-has-one-model-layer-chokepoint.md) and [ADR-0018](docs/adr/0018-the-activity-chokepoint-owns-the-clocks-precision.md).
 _Avoid_: touch point, heartbeat, keep-alive
 
 **Room ending**:

@@ -34,6 +34,8 @@ import { useRoomSettingsActions } from "./hooks/useRoomSettingsActions";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { RoomWithRelatedData } from "@/convex/model/rooms";
 import type { PermissionLevel, PokerPermissionCategory, RoomPermissions } from "@/convex/permissions";
+import type { TimeNode } from "@/convex/model/canvas";
+import type { TimeNodesShown } from "./types";
 import { ROOM_NAME } from "@/convex/constants";
 
 import { ParticipantsSection } from "./participants-section";
@@ -46,7 +48,16 @@ interface RoomSettingsPanelProps {
   currentUserId?: Id<"users">;
   isOpen: boolean;
   onClose: () => void;
+  /** Which time nodes the board shows (ADR-0032). */
+  timeNodes: TimeNodesShown;
+  onSetTimeNodeShown: (node: TimeNode, shown: boolean) => void;
 }
+
+/** The board's time nodes, as the panel's switches name them. */
+const TIME_NODES: { node: TimeNode; label: string; description: string }[] = [
+  { node: "timer", label: "Timer", description: "Time on the current ticket, and the timebox" },
+  { node: "sessionTime", label: "Session time", description: "Where the session's time went, ticket by ticket" },
+];
 
 
 const PERMISSION_CONFIG: Record<PokerPermissionCategory, { label: string; description: string }> = {
@@ -61,6 +72,8 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
   currentUserId,
   isOpen,
   onClose,
+  timeNodes,
+  onSetTimeNodeShown,
 }) => {
   const isDemoMode = useIsDemoMode();
 
@@ -201,6 +214,29 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
                 {...permissionProps(perms.roomSettings)}
               />
             </div>
+
+            {/* The board's time nodes: hidden ones keep timing (ADR-0032) */}
+            {TIME_NODES.map(({ node, label, description }) => (
+              <div key={node} className="flex items-center justify-between pt-2">
+                <div className="space-y-1">
+                  <Label
+                    htmlFor={`show-${node}`}
+                    className="text-sm font-medium text-gray-700 dark:text-gray-300"
+                  >
+                    {label}
+                  </Label>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">{description}</p>
+                </div>
+                <Switch
+                  id={`show-${node}`}
+                  checked={timeNodes[node]}
+                  onCheckedChange={perms.roomSettings.allowed ? (shown) => onSetTimeNodeShown(node, shown) : undefined}
+                  disabled={isDemoMode}
+                  className="data-[state=checked]:bg-primary"
+                  {...permissionProps(perms.roomSettings)}
+                />
+              </div>
+            ))}
 
             <ThemeSection description="Customize the look of the room" />
           </div>

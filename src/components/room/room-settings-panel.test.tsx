@@ -133,6 +133,8 @@ function renderPanel(actorRole: MemberRole) {
       currentUserId={ME}
       isOpen={true}
       onClose={() => {}}
+      timeNodes={{ timer: true, sessionTime: false }}
+      onSetTimeNodeShown={() => {}}
     />
   );
 }
