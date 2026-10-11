@@ -1,11 +1,11 @@
 /**
  * Room-side panel subscription guard — the room counterpart of the demo
- * zero-reads guard (demo/zero-reads.test.ts). The docked side panels keep
- * their animated shell mounted while closed, but the panel CONTENT mounts
- * only while the panel is open, so with both panels closed the room must not
- * subscribe any panel query: the issues list/current issue and integration
- * links (IssuesPanel), and the integration connections/mapping
- * (IntegrationSettingsSection inside RoomSettingsPanel).
+ * zero-reads guard (demo/zero-reads.test.ts). The board's chrome docks the
+ * poker room's panels and mounts a panel's content only while it is open, so
+ * with both panels closed the room must not subscribe any panel query: the
+ * issues list/current issue and integration links (IssuesPanel), and the
+ * integration connections/mapping (IntegrationSettingsSection inside
+ * RoomSettingsPanel).
  *
  * The export read (`issues.getForEnhancedExport`) is probed too: it moved out
  * of the subscribed set into a click-time imperative fetch (useIssuesExport),
@@ -17,7 +17,9 @@
  * @testing-library/react because the panels are components, not bare hooks.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, cleanup } from "@testing-library/react";
+import { render, cleanup, fireEvent, screen } from "@testing-library/react";
+import { ListTodo, Settings } from "lucide-react";
+import { ReactFlowProvider } from "@xyflow/react";
 import type { ReactNode } from "react";
 
 // Hoisted capture buffers — referenced inside the (hoisted) vi.mock factories.
@@ -87,6 +89,7 @@ import { getFunctionName } from "convex/server";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { RoomWithRelatedData } from "@/convex/model/rooms";
+import { BoardChrome, type ChromePanel } from "./board-chrome";
 import { IssuesPanel } from "./issues-panel";
 import { RoomSettingsPanel } from "./room-settings-panel";
 
@@ -119,28 +122,41 @@ const roomData = {
   isOwnerAbsent: false,
 } as unknown as RoomWithRelatedData;
 
-function renderIssuesPanel(isOpen: boolean) {
-  return render(
-    <IssuesPanel
-      roomId={ROOM_ID}
-      roomName="Test Room"
-      isOpen={isOpen}
-      onClose={() => {}}
-    />,
-  );
-}
+// The poker room's two panels, as its board hands them to the chrome.
+const PANELS: ChromePanel[] = [
+  {
+    id: "issues",
+    label: "Issues",
+    icon: ListTodo,
+    render: (close) => <IssuesPanel roomId={ROOM_ID} roomName="Test Room" onClose={close} />,
+  },
+  {
+    id: "settings",
+    label: "Room settings",
+    icon: Settings,
+    testId: "room-settings-panel",
+    render: (close) => (
+      <RoomSettingsPanel
+        roomData={roomData}
+        currentUserId={ME}
+        onClose={close}
+        timeNodes={{ timer: true, sessionTime: false }}
+        onSetTimeNodeShown={() => {}}
+      />
+    ),
+  },
+];
 
-function renderSettingsPanel(isOpen: boolean) {
-  return render(
-    <RoomSettingsPanel
-      roomData={roomData}
-      currentUserId={ME}
-      isOpen={isOpen}
-      onClose={() => {}}
-      timeNodes={{ timer: true, sessionTime: false }}
-      onSetTimeNodeShown={() => {}}
-    />,
+/** The room's chrome with both panels closed; `open` is a click on a panel's toggle. */
+function renderRoomPanels() {
+  render(
+    <ReactFlowProvider>
+      <BoardChrome board={{ name: "Test Room", link: `/room/${ROOM_ID}`, noun: "Room" }} panels={PANELS}>
+        <div />
+      </BoardChrome>
+    </ReactFlowProvider>,
   );
+  return { open: (label: string) => fireEvent.click(screen.getByRole("button", { name: label })) };
 }
 
 beforeEach(() => {
@@ -153,29 +169,19 @@ afterEach(() => {
 });
 
 describe("closed docked panels subscribe nothing", () => {
-  it("IssuesPanel closed: no panel query opens, content is not mounted, shell stays", () => {
-    const { container } = renderIssuesPanel(false);
+  it("with both panels closed, no panel query opens and neither panel's content is mounted", () => {
+    renderRoomPanels();
 
-    // The animated shell stays mounted (dock layout preserved)…
-    expect(container.querySelector("div")).not.toBeNull();
-    // …but the subscribing content does not.
-    expect(screen.queryByText("Issues")).toBeNull();
+    expect(screen.queryByText("Backlog")).toBeNull();
+    expect(screen.queryByTestId("room-settings-panel")).toBeNull();
     expect(spy.queries).toEqual([]);
-    expect(spy.imperativeQueries).toEqual([]);
-  });
-
-  it("RoomSettingsPanel closed: the integration section never mounts, so no query opens", () => {
-    renderSettingsPanel(false);
-
-    expect(screen.getByTestId("room-settings-panel")).not.toBeNull();
-    expect(capturedNames()).toEqual([]);
     expect(spy.imperativeQueries).toEqual([]);
   });
 });
 
 describe("open panels subscribe their own set", () => {
   it("IssuesPanel open: subscribes issues + integration links, never the export read", () => {
-    renderIssuesPanel(true);
+    renderRoomPanels().open("Issues");
 
     const names = capturedNames();
     for (const expected of [
@@ -193,10 +199,21 @@ describe("open panels subscribe their own set", () => {
   });
 
   it("RoomSettingsPanel open: the integration section mounts and subscribes", () => {
-    renderSettingsPanel(true);
+    renderRoomPanels().open("Room settings");
 
     const names = capturedNames();
     expect(names).toContain(getFunctionName(api.integrations.getConnections));
     expect(names).toContain(getFunctionName(api.integrations.getRoomMapping));
+  });
+
+  it("closing a panel lets go of its subscriptions: nothing it holds renders again", () => {
+    const { open } = renderRoomPanels();
+    open("Issues");
+    open("Issues");
+    spy.queries.length = 0;
+
+    open("Room settings");
+
+    expect(capturedNames()).not.toContain(getFunctionName(api.issues.list));
   });
 });

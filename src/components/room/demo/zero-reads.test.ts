@@ -39,6 +39,7 @@ const spy = vi.hoisted(() => {
     queries: [] as { query: unknown; args: unknown }[],
     presenceCalled: false,
     sessionReads: 0,
+    accountMenus: 0,
   };
 });
 
@@ -67,6 +68,8 @@ vi.mock("@convex-dev/presence/react", () => ({
 // AuthProvider's probe runs on the demo's own route, which must not matter.
 vi.mock("next/navigation", () => ({
   usePathname: () => "/demo",
+  useParams: () => ({}),
+  useRouter: () => ({ push: () => {} }),
 }));
 
 vi.mock("@/lib/auth-client", () => ({
@@ -79,8 +82,14 @@ vi.mock("@/lib/auth-client", () => ({
   },
 }));
 
-// The room's chrome; see the audit below.
-vi.mock("../canvas-navigation", () => ({ CanvasNavigation: () => null }));
+// The account menu a room puts in its chrome, counted: it reads the viewer and
+// their membership, which the demo has none of. See the audit below.
+vi.mock("@/components/user-menu", () => ({
+  UserMenu: () => {
+    spy.accountMenus += 1;
+    return null;
+  },
+}));
 
 import { createElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -143,16 +152,17 @@ function capturedRootSubscriptions(): { name: string; args: unknown }[] {
 // when the board's queries moved into RoomCanvas):
 //   - RoomCanvas/PlayerNode read `roomData` (a prop) — api.rooms.get
 //     is never called in demo mode.
-//   - CanvasNavigation (the room's chrome) is stubbed: its only subscribing
-//     part is the account menu (UserMenu), which the demo never draws.
+//   - The board's chrome is drawn for real. Its only subscribing part would
+//     be the account menu (UserMenu), and the demo puts its call to action in
+//     that place instead: the probe counts account menus (none in the demo).
 //   - issues-panel skips its integration queries in demo (derives the signal
 //     from `useIsDemoMode()`); its writes go through useIssueActions, which
 //     no-ops in demo (covered by useIssueActions.test.tsx). Its export flow
 //     fetches imperatively (useIssuesExport) and the control is disabled in
 //     demo, so it opens no subscription either.
 //   - integration-settings (getConnections/getRoomMapping, both un-skipped) only
-//     mounts behind `{!isDemoMode && …}` in room-settings-panel, and only while
-//     the settings panel is open.
+//     mounts behind `{!isDemoMode && …}` in room-settings-panel, which the
+//     chrome mounts only while the settings panel is open.
 // If one of those gates regresses this Probe won't catch it — re-audit on change.
 // A stopped persisted timer, as a freshly created canvas node delivers it.
 // useTimerSync opens no subscription in either mode — it is probed so a
@@ -209,6 +219,7 @@ describe("zero-reads guard: the demo signal is sourced from the provider seam", 
   beforeEach(() => {
     spy.queries.length = 0;
     spy.presenceCalled = false;
+    spy.accountMenus = 0;
   });
 
   it("skips every demo/canvas/issues query and never subscribes to presence inside the provider", () => {
@@ -222,6 +233,15 @@ describe("zero-reads guard: the demo signal is sourced from the provider seam", 
     expect(spy.presenceCalled).toBe(false);
   });
 
+  it("mounts no account menu in the demo's chrome: its call to action stands in that place", () => {
+    const markup = renderToStaticMarkup(
+      createElement(DemoSimulationProvider, null, createElement(DemoProbe)),
+    );
+
+    expect(spy.accountMenus).toBe(0);
+    expect(markup).toContain("Create Your Room");
+  });
+
   it("opens every subscription and subscribes to presence outside the provider (real room)", () => {
     renderToStaticMarkup(createElement(RealRoomProbe));
 
@@ -233,6 +253,8 @@ describe("zero-reads guard: the demo signal is sourced from the provider seam", 
       expect(calls.every((c) => c.args !== "skip")).toBe(true);
     }
     expect(spy.presenceCalled).toBe(true);
+    // A room's chrome holds its viewer's account menu.
+    expect(spy.accountMenus).toBeGreaterThan(0);
   });
 });
 

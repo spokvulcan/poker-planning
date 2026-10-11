@@ -5,16 +5,17 @@ import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { isEqual } from "lodash";
 import { useRouter } from "next/navigation";
 import { useQuery } from "convex/react";
-import { ClipboardCopy, Download } from "lucide-react";
+import { ClipboardCopy, Download, Settings } from "lucide-react";
 import { api } from "@/convex/_generated/api";
+import { rulesOf } from "@/convex/ceremony";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { RoomWithRelatedData } from "@/convex/model/rooms";
 import type { RetroStep } from "@/convex/retroTemplates";
 import { stepShows, topicActAllowed } from "@/convex/retroSteps";
 import { nextStickyPosition, PAD_WIDTH, padNodeId, STICKY_MIN_HEIGHT, STICKY_WIDTH } from "@/convex/retroLayout";
-import { CanvasNavigation } from "@/components/room/canvas-navigation";
+import { BoardChrome, type ChromeBoard, type ChromePanel, type ShareEntry } from "@/components/room/board-chrome";
 import { TimerNode } from "@/components/room/nodes/TimerNode";
-import { usePanelState } from "@/components/room/hooks/usePanelState";
+import { UserMenu } from "@/components/user-menu";
 import {
   Whiteboard,
   WhiteboardProviders,
@@ -110,7 +111,6 @@ function RetroCanvasInner({ roomData, currentUserId }: RetroCanvasProps): ReactE
   );
   const [editingId, setEditingId] = useState<Id<"retroStickies"> | null>(null);
   const [expandedIds, setExpandedIds] = useState<ReadonlySet<string>>(new Set());
-  const { isSettingsOpen, openSettings, closeAll } = usePanelState();
 
   // The tab is titled by the retro (the route's metadata can only say "room").
   useEffect(() => {
@@ -269,7 +269,6 @@ function RetroCanvasInner({ roomData, currentUserId }: RetroCanvasProps): ReactE
       );
       if (nearest.type === "pad") actions.startDraft(nearest.data.column.id, { x: at.x - STICKY_WIDTH / 2, y: at.y - 24 });
     },
-    setSettingsOpen: (open: boolean) => (open ? openSettings() : closeAll()),
     downloadSummary: () => {
       const current = summary();
       if (current) downloadFile(current.markdown, `${current.slug}.md`, "text/markdown");
@@ -313,7 +312,27 @@ function RetroCanvasInner({ roomData, currentUserId }: RetroCanvasProps): ReactE
   const spotlit =
     stepShows(retro.step).spotlight && retro.focusStickyId ? stickyOf(retro.focusStickyId)?.clientId : undefined;
 
-  const shareActions = useMemo(
+  // Around the board, its chrome: the retro's link and settings, and its
+  // summary to share beside the link.
+  const noun = rulesOf(room).noun;
+  const chromeBoard: ChromeBoard = { name: room.name, link: `/room/${roomId}`, noun };
+  const panels: ChromePanel[] = [
+    {
+      id: "settings",
+      label: `${noun} settings`,
+      icon: Settings,
+      testId: "retro-settings-panel",
+      render: (close) => (
+        <RetroSettingsPanel
+          roomData={roomData}
+          currentUserId={currentUserId}
+          onClose={close}
+          onCopySummary={actions.copySummary}
+        />
+      ),
+    },
+  ];
+  const share = useMemo<ShareEntry[]>(
     () => [
       { label: "Copy summary", icon: ClipboardCopy, onSelect: actions.copySummary },
       { label: "Download Markdown", icon: Download, onSelect: gestures.downloadSummary },
@@ -322,47 +341,32 @@ function RetroCanvasInner({ roomData, currentUserId }: RetroCanvasProps): ReactE
   );
 
   return (
-    <Whiteboard
-      nodes={nodes}
-      edges={edges}
-      nodeTypes={nodeTypes}
-      onDrop={gestures.onDrop}
-      canDropOn={gestures.canDropOn}
-      onDeleteNodes={gestures.onDeleteNodes}
-      onPaneDoubleClick={gestures.onPaneDoubleClick}
-      followNodeId={spotlit}
-      className="bg-white dark:bg-surface-1"
-      testId="retro-board"
-      navigation={
-        <CanvasNavigation
-          roomData={roomData}
-          isSettingsOpen={isSettingsOpen}
-          onSettingsPanelChange={gestures.setSettingsOpen}
-          shareActions={shareActions}
-        />
-      }
-      overlay={
-        <>
-          <StickyHeights onHeights={gestures.measureStickies} />
-          {board && board.stickies.length === 0 && !draft && retro.step === "write" && (
-            <div className="pointer-events-none absolute inset-x-0 bottom-6 flex justify-center px-4">
-              <p className="rounded-full bg-white/95 px-4 py-2 text-sm text-gray-600 shadow-lg ring-1 ring-foreground/10 backdrop-blur-sm dark:bg-surface-1/95 dark:text-gray-300">
-                Click a pad to write a sticky (GIFs welcome), or double-click anywhere on the board.
-              </p>
-            </div>
-          )}
-        </>
-      }
-      panels={
-        <RetroSettingsPanel
-          roomData={roomData}
-          currentUserId={currentUserId}
-          isOpen={isSettingsOpen}
-          onClose={closeAll}
-          onCopySummary={actions.copySummary}
-        />
-      }
-    />
+    <BoardChrome board={chromeBoard} panels={panels} share={share} account={<UserMenu />}>
+      <Whiteboard
+        nodes={nodes}
+        edges={edges}
+        nodeTypes={nodeTypes}
+        onDrop={gestures.onDrop}
+        canDropOn={gestures.canDropOn}
+        onDeleteNodes={gestures.onDeleteNodes}
+        onPaneDoubleClick={gestures.onPaneDoubleClick}
+        followNodeId={spotlit}
+        className="bg-white dark:bg-surface-1"
+        testId="retro-board"
+        overlay={
+          <>
+            <StickyHeights onHeights={gestures.measureStickies} />
+            {board && board.stickies.length === 0 && !draft && retro.step === "write" && (
+              <div className="pointer-events-none absolute inset-x-0 bottom-6 flex justify-center px-4">
+                <p className="rounded-full bg-white/95 px-4 py-2 text-sm text-gray-600 shadow-lg ring-1 ring-foreground/10 backdrop-blur-sm dark:bg-surface-1/95 dark:text-gray-300">
+                  Click a pad to write a sticky (GIFs welcome), or double-click anywhere on the board.
+                </p>
+              </div>
+            )}
+          </>
+        }
+      />
+    </BoardChrome>
   );
 }
 

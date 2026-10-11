@@ -3,22 +3,23 @@
 /**
  * RoomPresenceProvider — one presence subscription per viewer.
  *
- * Previously both always-mounted consumers (CanvasNavigation and
- * RoomSettingsPanel) instantiated `usePresence` themselves: every viewer
- * heartbeated twice and held two presence list subscriptions. This module
- * hoists the single `useRoomPresence` call into a provider mounted by
- * `RoomCanvas` above both consumers; they read the merged roster from context.
+ * Previously both consumers (the board's chrome and the settings panel)
+ * instantiated `usePresence` themselves: every viewer heartbeated twice and
+ * held two presence list subscriptions. This module hoists the single
+ * `useRoomPresence` call into a provider that `WhiteboardProviders` mounts
+ * above the board and its chrome; consumers read the merged roster from
+ * context.
  *
- * Re-render isolation (the reason presence was pushed down into the nav in
+ * Re-render isolation (the reason presence was pushed down into the chrome in
  * the first place — ReactFlow re-renders are expensive): the provider wraps
- * `RoomCanvasInner` from OUTSIDE, in the `RoomCanvas` component, which does
- * not itself re-render on presence updates. So when a presence tick
- * re-renders this provider, the `RoomCanvasInner` element it received as
- * `children` is reference-identical and React bails out of the whole canvas
- * subtree; only context consumers (the avatar list, the settings roster) are
- * re-rendered by context propagation. The context value identity is also
- * stabilized (`useMemo` over the memoized roster), so unrelated provider
- * re-renders don't fan out either.
+ * a board's adapter (`RoomCanvasInner`, `RetroCanvasInner`) from OUTSIDE,
+ * in a component that does not itself re-render on presence updates. So when
+ * a presence tick re-renders this provider, the adapter element it received
+ * as `children` is reference-identical and React bails out of the whole
+ * canvas subtree; only context consumers (the chrome's avatars, the settings
+ * roster) are re-rendered by context propagation. The context value identity
+ * is also stabilized (`useMemo` over the memoized roster), so unrelated
+ * provider re-renders don't fan out either.
  *
  * Demo (ADR-0003): the demo branch lives in `useRoomPresence` — under
  * DemoSimulationProvider it derives all-bots-online locally and never calls

@@ -106,12 +106,8 @@ export interface WhiteboardProps<N extends Node> {
   fitKey?: string;
   /** Keeps a node in view: the board pans to it whenever this changes. */
   followNodeId?: string;
-  /** The room's chrome, over the board. */
-  navigation?: ReactNode;
-  /** Anything else over the board: toolbars, hints, dialogs. */
+  /** What the board draws over itself: toolbars, hints, dialogs. The chrome is around it, not on it. */
   overlay?: ReactNode;
-  /** Panels docked beside the board. */
-  panels?: ReactNode;
   className?: string;
   testId?: string;
 }
@@ -340,76 +336,66 @@ export function Whiteboard<N extends Node>(props: WhiteboardProps<N>): ReactElem
     boardView.centerOn(followNodeId);
   }, [followNodeId, boardView]);
 
+  // The pane: React Flow measures it, and the view keeps to it.
   return (
-    <div
-      className={cn("flex h-screen w-full overflow-hidden", props.className)}
-      data-testid={props.testId}
-    >
-      <div className="relative h-full min-w-0 flex-1">
-        {props.navigation}
-        <DropTargetContext.Provider value={dropTarget}>
-          <ReactFlow
-            nodes={buffer}
-            edges={edges}
-            nodeTypes={nodeTypes}
-            onNodesChange={readOnly ? handlers.onMeasure : handlers.onNodesChange}
-            onNodeDragStart={handlers.onNodeDragStart}
-            onNodeDrag={handlers.onNodeDrag}
-            onNodeDragStop={handlers.onNodeDragStop}
-            onPaneClick={handlers.onPaneClick}
-            proOptions={PRO_OPTIONS}
-            minZoom={MIN_ZOOM}
-            maxZoom={MAX_ZOOM}
-            defaultViewport={DEFAULT_VIEWPORT}
-            fitView
-            fitViewOptions={FIT_VIEW_OPTIONS}
-            nodesDraggable={!readOnly}
-            elementsSelectable={!readOnly}
-            nodesConnectable={false}
-            // An edge joins handles by id, whichever way they point: the poker board joins two source handles.
-            connectionMode={ConnectionMode.Loose}
-            edgesFocusable={false}
-            zoomOnDoubleClick={false}
-            snapToGrid
-            snapGrid={SNAP_GRID}
-            panOnScroll
-            selectionOnDrag={!isMobile && !readOnly}
-            panOnDrag={isMobile ? true : PAN_BUTTONS}
-            preventScrolling={false}
-            deleteKeyCode={readOnly ? null : DELETE_KEYS}
-          >
-            <CanvasDotsBackground />
-          </ReactFlow>
-        </DropTargetContext.Provider>
-        {props.overlay}
-      </div>
-      {props.panels}
+    <div className={cn("relative h-full w-full", props.className)} data-testid={props.testId}>
+      <DropTargetContext.Provider value={dropTarget}>
+        <ReactFlow
+          nodes={buffer}
+          edges={edges}
+          nodeTypes={nodeTypes}
+          onNodesChange={readOnly ? handlers.onMeasure : handlers.onNodesChange}
+          onNodeDragStart={handlers.onNodeDragStart}
+          onNodeDrag={handlers.onNodeDrag}
+          onNodeDragStop={handlers.onNodeDragStop}
+          onPaneClick={handlers.onPaneClick}
+          proOptions={PRO_OPTIONS}
+          minZoom={MIN_ZOOM}
+          maxZoom={MAX_ZOOM}
+          defaultViewport={DEFAULT_VIEWPORT}
+          fitView
+          fitViewOptions={FIT_VIEW_OPTIONS}
+          nodesDraggable={!readOnly}
+          elementsSelectable={!readOnly}
+          nodesConnectable={false}
+          // An edge joins handles by id, whichever way they point: the poker board joins two source handles.
+          connectionMode={ConnectionMode.Loose}
+          edgesFocusable={false}
+          zoomOnDoubleClick={false}
+          snapToGrid
+          snapGrid={SNAP_GRID}
+          panOnScroll
+          selectionOnDrag={!isMobile && !readOnly}
+          panOnDrag={isMobile ? true : PAN_BUTTONS}
+          preventScrolling={false}
+          deleteKeyCode={readOnly ? null : DELETE_KEYS}
+        >
+          <CanvasDotsBackground />
+        </ReactFlow>
+      </DropTargetContext.Provider>
+      {props.overlay}
     </div>
   );
 }
 
 /**
- * What a whiteboard needs around it: React Flow's store, and the room's one
- * presence subscription. Presence wraps the board from out here, so a
- * presence tick re-renders only its consumers (the avatars, the roster),
- * never the board.
+ * What a whiteboard and its chrome need around them: React Flow's store, and
+ * the room's one presence subscription (the demo's is local, ADR-0003).
+ * Presence wraps the board from out here, so a presence tick re-renders only
+ * its consumers (the chrome's avatars, the roster), never the board.
  */
 export function WhiteboardProviders({
   presence,
   children,
 }: {
-  presence?: { roomId: Id<"rooms">; userId: Id<"users"> | string; users: RoomUserData[] };
+  presence: { roomId: Id<"rooms">; userId: Id<"users"> | string; users: RoomUserData[] };
   children: ReactNode;
 }): ReactElement {
   return (
     <ReactFlowProvider>
-      {presence ? (
-        <RoomPresenceProvider roomId={presence.roomId} userId={presence.userId} users={presence.users}>
-          {children}
-        </RoomPresenceProvider>
-      ) : (
-        children
-      )}
+      <RoomPresenceProvider roomId={presence.roomId} userId={presence.userId} users={presence.users}>
+        {children}
+      </RoomPresenceProvider>
     </ReactFlowProvider>
   );
 }

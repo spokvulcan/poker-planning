@@ -19,7 +19,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { SidePanel } from "@/components/ui/side-panel";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "@/lib/toast";
 import { runAct } from "@/lib/run-act";
@@ -41,32 +40,19 @@ import { denialTooltip, permissionProps } from "@/hooks/usePermissions";
 interface IssuesPanelProps {
   roomId: Id<"rooms">;
   roomName: string;
-  isOpen: boolean;
   onClose: () => void;
   canManageIssues?: ResolvedDecision;
   canControlGameFlow?: ResolvedDecision;
 }
 
-type IssuesPanelContentProps = Omit<IssuesPanelProps, "isOpen">;
-
 /**
- * The animated panel shell stays mounted for the open/close transition; the
- * panel CONTENT mounts only while the panel is open, so every Convex
- * subscription below (issues list, current issue, integration links) attaches
- * on open and detaches on close instead of running for the whole session.
- * The even heavier export read is not a subscription at all — see
- * useIssuesExport.
+ * The poker room's issues, docked by the board's chrome, which mounts it only
+ * while it is open: every Convex subscription below (issues list, current
+ * issue, integration links) attaches on open and detaches on close instead of
+ * running for the whole session. The even heavier export read is not a
+ * subscription at all — see useIssuesExport.
  */
-export const IssuesPanel: FC<IssuesPanelProps> = (props) => {
-  const { isOpen, onClose } = props;
-  return (
-    <SidePanel isOpen={isOpen} onClose={onClose}>
-      {isOpen ? <IssuesPanelContent {...props} /> : null}
-    </SidePanel>
-  );
-};
-
-const IssuesPanelContent: FC<IssuesPanelContentProps> = ({
+export const IssuesPanel: FC<IssuesPanelProps> = ({
   roomId,
   roomName,
   onClose,

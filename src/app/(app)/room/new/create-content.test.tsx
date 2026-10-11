@@ -39,9 +39,7 @@ vi.mock("@/hooks/useEnsureSession", () => ({
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: (path: string) => mocks.pushed.push(path) }) }));
 vi.mock("@/lib/toast", () => ({ toast: { error: (message: string) => mocks.toasts.push(message) } }));
 vi.mock("@/lib/analytics", () => ({ trackConversion: () => {} }));
-vi.mock("@/hooks/use-copy-room-url-to-clipboard", () => ({
-  useCopyRoomUrlToClipboard: () => ({ copyRoomUrlToClipboard: async () => {} }),
-}));
+vi.mock("@/lib/copy-room-link", () => ({ copyRoomLink: async () => true }));
 
 // The page's chrome, with its own account menu.
 vi.mock("@/components/navbar", () => ({ Navbar: () => null }));

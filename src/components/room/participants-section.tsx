@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ReactElement } from "react";
+import { useState, type ReactElement } from "react";
 import { ArrowRightLeft, ChevronDown, ChevronUp, Crown, Star, UserMinus, Users } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -32,17 +32,16 @@ interface ParticipantsSectionProps {
   currentUserId?: Id<"users">;
   /** The relationship decisions; the same in a poker room and a retro. */
   perms: SharedPermissions;
-  /** The panel's open state: pending confirmations reset when it closes. */
-  isOpen: boolean;
 }
 
 /**
  * The settings panels' roster, shared by both ceremonies: everyone in the
  * room with presence and role, and the relationship actions (promote,
  * demote, transfer ownership, remove) each denied control visible but
- * disabled with its reason.
+ * disabled with its reason. A pending confirmation goes when the panel
+ * closes, since the chrome unmounts a closed panel.
  */
-export function ParticipantsSection({ roomId, currentUserId, perms, isOpen }: ParticipantsSectionProps): ReactElement {
+export function ParticipantsSection({ roomId, currentUserId, perms }: ParticipantsSectionProps): ReactElement {
   const isDemoMode = useIsDemoMode();
   // Roster from the single presence module, ordered current-user-first, then
   // online-first, then by join time.
@@ -52,15 +51,6 @@ export function ParticipantsSection({ roomId, currentUserId, perms, isOpen }: Pa
   const [removingUserId, setRemovingUserId] = useState<string | null>(null);
   const [pendingDeleteUser, setPendingDeleteUser] = useState<{id: Id<"users">, name: string} | null>(null);
   const [pendingTransferUser, setPendingTransferUser] = useState<{id: Id<"users">, name: string} | null>(null);
-
-  // Reset pending state when panel closes
-  useEffect(() => {
-    if (!isOpen) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional state sync with the panel's open prop
-      setPendingDeleteUser(null);
-      setPendingTransferUser(null);
-    }
-  }, [isOpen]);
 
   const handleRemoveUser = (userId: Id<"users">, userName: string) => {
     setPendingDeleteUser({ id: userId, name: userName });

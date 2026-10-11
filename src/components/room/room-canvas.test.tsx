@@ -109,12 +109,14 @@ vi.mock("convex/react", async () => {
           },
       });
     },
+    // The issues panel's export, fetched only when asked for.
+    useConvex: () => ({ query: () => Promise.resolve([]) }),
   };
 });
 
 vi.mock("@convex-dev/presence/react", () => ({ default: () => undefined }));
-// The room's chrome: not what this board means by its gestures.
-vi.mock("./canvas-navigation", () => ({ CanvasNavigation: () => null }));
+// The account menu the board puts in its chrome: the viewer's, not the board's.
+vi.mock("@/components/user-menu", () => ({ UserMenu: () => null }));
 vi.mock("@/components/canvas-dots-background", () => ({ CanvasDotsBackground: () => null }));
 vi.mock("@/hooks/use-mobile", () => ({ useIsMobile: () => false }));
 
@@ -374,6 +376,17 @@ describe("the nodes' controls", () => {
 
     expect(dialog().getByText("Delete note?")).toBeDefined();
     expect(server.writes).toEqual([]);
+  });
+});
+
+describe("the chrome around the board", () => {
+  it("opens the issues beside the board from the session node's button", () => {
+    renderBoard();
+
+    fireEvent.click(screen.getByRole("button", { name: "Quick Vote mode. Click to open issues panel." }));
+
+    expect(screen.getByRole("heading", { name: "Issues" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "Issues" }).getAttribute("aria-expanded")).toBe("true");
   });
 });
 

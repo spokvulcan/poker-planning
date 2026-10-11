@@ -12,7 +12,7 @@ import { toast } from "@/lib/toast";
 import { failureCopy } from "@/lib/refusal";
 import { runAct } from "@/lib/run-act";
 import { trackConversion } from "@/lib/analytics";
-import { useCopyRoomUrlToClipboard } from "@/hooks/use-copy-room-url-to-clipboard";
+import { copyRoomLink } from "@/lib/copy-room-link";
 import { CUSTOM_DECK, checkPick, type VotingScaleType } from "@/convex/scales";
 import { ROOM_NAME } from "@/convex/constants";
 import { CustomDeck, PresetDeck } from "./deck-table";
@@ -52,7 +52,6 @@ export function CreateContent() {
   const router = useRouter();
   const createRoom = useMutation(api.rooms.create);
   const ensureSession = useEnsureSession();
-  const { copyRoomUrlToClipboard } = useCopyRoomUrlToClipboard();
 
   // What the creator picked, and the deck's one reading of it (convex/scales),
   // asked on every change: the cards the table shows and whether the room can
@@ -92,14 +91,9 @@ export function CreateContent() {
       return;
     }
 
-    if (roomId) {
-      try {
-        await copyRoomUrlToClipboard(roomId);
-      } catch (error) {
-        console.error("Failed to copy room URL to clipboard:", error);
-      }
-    }
-  }, [roomName, pick, timeNodes, createRoom, ensureSession, router, copyRoomUrlToClipboard]);
+    // The invite link, copied as the room opens, in the board chrome's words.
+    await copyRoomLink(`/room/${roomId}`, "Room");
+  }, [roomName, pick, timeNodes, createRoom, ensureSession, router]);
 
   const start = () => void handleCreate();
 
