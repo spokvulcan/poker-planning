@@ -1,15 +1,14 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
-import { Monitor, Moon, Sun, type LucideIcon } from "lucide-react";
-import { THEMES, type ThemeId } from "@/components/auth/account";
+import { THEMES, THEME_ICONS } from "@/components/theme-options";
 import { useTheme } from "next-themes";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
-const ICONS: Record<ThemeId, LucideIcon> = { light: Sun, dark: Moon, system: Monitor };
+
 
 // next-themes keeps the choice in localStorage, so `theme` is undefined on the
 // server and set from the browser's first render. Marking the active button
@@ -33,7 +32,7 @@ export function ThemeSection({ description }: { description?: string }) {
         </div>
         <div className="flex gap-1.5 rounded-lg border border-gray-200/50 bg-gray-100/80 p-1 dark:border-border/50 dark:bg-surface-2">
           {THEMES.map(({ id: value, label }) => {
-            const Icon = ICONS[value];
+            const Icon = THEME_ICONS[value];
             return (
               <Tooltip key={value}>
                 <TooltipTrigger

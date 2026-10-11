@@ -43,7 +43,6 @@ export type JiraAccess =
       client: JiraClient;
       /** The site the client acts on, as Atlassian names it: "https://team.atlassian.net". */
       site: string;
-      connectionId: Id<"integrationConnections">;
     }
   | { ok: false; reason: JiraUnavailable };
 
@@ -84,7 +83,7 @@ async function accessThrough(
   if (site !== undefined && site !== connection.siteUrl) return { ok: false, reason: "otherSite" };
   try {
     const client = await buildJiraClient(ctx, connection);
-    return { ok: true, client, site: connection.siteUrl, connectionId: connection._id };
+    return { ok: true, client, site: connection.siteUrl };
   } catch (error) {
     // The vault couldn't read the token (or has no key), the deployment has
     // no Jira credentials to refresh it with, or Atlassian refused the
@@ -93,6 +92,18 @@ async function accessThrough(
     return { ok: false, reason: "tokenRefused" };
   }
 }
+
+/**
+ * The refusal code each reason carries (ADR-0031): no connection or no site is
+ * something that isn't there (`missing`); a connection to another site, or one
+ * Jira no longer accepts, is one this person can't act through (`forbidden`).
+ */
+const REFUSAL_CODE: Record<JiraUnavailable, "missing" | "forbidden"> = {
+  noConnection: "missing",
+  noSite: "missing",
+  otherSite: "forbidden",
+  tokenRefused: "forbidden",
+};
 
 /** Each reason in the words of the person whose own connection it is. */
 const TO_THE_PERSON: Record<JiraUnavailable, string> = {
@@ -116,6 +127,6 @@ export async function requireJiraAsCaller(
   ctx: ActionCtx
 ): Promise<{ client: JiraClient; site: string }> {
   const jira = await jiraAsCaller(ctx);
-  if (!jira.ok) throw refusal("missing", unavailableToThePerson(jira.reason));
+  if (!jira.ok) throw refusal(REFUSAL_CODE[jira.reason], unavailableToThePerson(jira.reason));
   return jira;
 }

@@ -1,5 +1,6 @@
 import { toast } from "@/lib/toast";
 import { copyTextToClipboard } from "@/utils/copy-text-to-clipboard";
+import type { BoardNoun } from "@/components/room/board-chrome";
 
 /**
  * Copies a board's link for the viewer to share, and says so, in the one
@@ -8,7 +9,7 @@ import { copyTextToClipboard } from "@/utils/copy-text-to-clipboard";
  * address ("/room/…", or the demo's); `noun` is what the board is called
  * ("Room", "Retro", "Demo"). Resolves to whether the link was copied.
  */
-export async function copyRoomLink(path: string, noun: string): Promise<boolean> {
+export async function copyRoomLink(path: string, noun: BoardNoun): Promise<boolean> {
   const copied = await copyTextToClipboard(`${window.location.origin}${path}`);
   if (copied) {
     toast.success(`${noun} link copied`, {

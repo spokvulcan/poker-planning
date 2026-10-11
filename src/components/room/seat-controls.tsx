@@ -4,7 +4,7 @@ import { useState, type ReactNode } from "react";
 import { useMutation } from "convex/react";
 import { DoorOpen, Eye } from "lucide-react";
 import { api } from "@/convex/_generated/api";
-import type { Doc, Id } from "@/convex/_generated/dataModel";
+import type { Doc } from "@/convex/_generated/dataModel";
 import type { RoomUserData } from "@/convex/model/memberships";
 import { rulesOf } from "@/convex/ceremony";
 import { runAct } from "@/lib/run-act";
@@ -27,7 +27,7 @@ import {
  * outlives the menu closing (the chrome can draw the menu twice, in its
  * phone sheet and its desktop bar).
  */
-export interface Seat {
+export interface SeatControls {
   items: ReactNode;
   dialog: ReactNode;
 }
@@ -43,19 +43,18 @@ export interface Seat {
  * server's own words (runAct). Nothing while the viewer isn't seated.
  */
 export function useSeatControls({
-  roomId,
   room,
   me,
 }: {
-  roomId: Id<"rooms">;
   room: Doc<"rooms">;
   /** The viewer's place on the room's roster. */
   me: RoomUserData | undefined;
-}): Seat | undefined {
+}): SeatControls | undefined {
   const edit = useMutation(api.users.edit);
   const leave = useMutation(api.users.leave);
   const [leaving, setLeaving] = useState(false);
   if (!me) return undefined;
+  const roomId = room._id;
 
   const { noun, spectators } = rulesOf(room);
   const sitOut = (isSpectator: boolean) =>

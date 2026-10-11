@@ -41,7 +41,7 @@ import {
   stepShows,
   stickyEditDecision,
   topicActAllowed,
-  walk,
+  walked,
   withSpotlight,
   type RetroDecision,
   type StepChange,
@@ -381,12 +381,8 @@ export async function stepDiscussion(
 ): Promise<void> {
   const retro = retroOf(room);
   requireAllowed(stepAllows(retro.step, "walk"));
-  const order = await orderOf(ctx, room._id, retro.columns);
-  const topic = walk(order, retro, direction);
-  // Past either end the walk stays put, keeping any place a detour left.
-  if (topic !== retro.focusStickyId) {
-    await ctx.db.patch("rooms", room._id, { retro: withSpotlight(retro, topic, order) });
-  }
+  const next = walked(retro, await orderOf(ctx, room._id, retro.columns), direction);
+  if (next !== retro) await ctx.db.patch("rooms", room._id, { retro: next });
   await updateRoomActivity(ctx, room);
 }
 

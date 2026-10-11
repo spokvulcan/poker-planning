@@ -88,6 +88,8 @@ export type RetroNodeData = {
   votesCast: number;
   votesPerPerson: number;
   myVotes: number;
+  /** The viewer's votes left: none, never fewer, when the budget is lowered mid-vote. */
+  votesLeft: number;
   /** The discussion's controls, from where the discussion stands. */
   discussion: DiscussionView;
   focusedId?: Id<"retroStickies">;

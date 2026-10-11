@@ -4,6 +4,8 @@ import { useState, useEffect, useCallback } from "react";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { Loader2, Puzzle, ExternalLink, AlertTriangle } from "lucide-react";
 import { api } from "@/convex/_generated/api";
+import { useCallerQuery } from "@/components/auth/use-caller-query";
+import { autoPushProblem } from "@/convex/autoPush";
 import { Doc, Id } from "@/convex/_generated/dataModel";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -62,7 +64,7 @@ const LAST_PUSH_COPY: Record<LastPush["outcome"], (push: LastPush) => string> = 
 export function IntegrationSettingsSection({
   roomId,
 }: IntegrationSettingsSectionProps) {
-  const connections = useQuery(api.integrations.getConnections);
+  const connections = useCallerQuery(api.integrations.getConnections);
   const mapping = useQuery(api.integrations.getRoomMapping, { roomId });
   const saveMapping = useMutation(api.integrations.saveRoomMapping);
   const removeMapping = useMutation(api.integrations.removeRoomMapping);
@@ -195,8 +197,9 @@ export function IntegrationSettingsSection({
   };
 
   // Auto-push writes each estimate to a field: without one it would push
-  // nothing on every reveal, so the server refuses to save it that way.
-  const missingField = autoPush && !storyPointsFieldId.trim();
+  // nothing on every reveal, so the server refuses to save it that way, in
+  // the words shown here (convex/autoPush.ts).
+  const missingField = autoPushProblem({ autoPushEstimates: autoPush, storyPointsFieldId });
 
   const handleSave = async () => {
     if (!jiraConnection || !projectKey || missingField) return;
@@ -366,11 +369,7 @@ export function IntegrationSettingsSection({
           onCheckedChange={setAutoPush}
         />
       </div>
-      {missingField && (
-        <p className="text-xs text-muted-foreground">
-          Choose the story points field to push estimates to.
-        </p>
-      )}
+      {missingField && <p className="text-xs text-muted-foreground">{missingField}</p>}
 
       {mapping?.autoPushEstimates && mapping.lastPush && (
         <LastPushLine lastPush={mapping.lastPush} />
@@ -393,7 +392,7 @@ export function IntegrationSettingsSection({
         <Button
           size="sm"
           onClick={handleSave}
-          disabled={!projectKey || missingField || saving}
+          disabled={!projectKey || !!missingField || saving}
           className="text-xs"
         >
           {saving ? "Saving..." : mapping ? "Update Mapping" : "Save Mapping"}

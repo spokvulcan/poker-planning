@@ -41,7 +41,7 @@ export function computeVoterAlignment(
   // highest, whatever order the deck lays them out in: a creator's own deck
   // can list its numbers in any order, and put `?` among them. Special cards
   // hold no step.
-  const scaleIndexMap = new Map(
+  const stepOf = new Map(
     deck.cards
       .filter((card) => !isSpecialCard(card) && cardNumericValue(card) !== undefined)
       .sort((a, b) => cardNumericValue(a)! - cardNumericValue(b)!)
@@ -49,8 +49,8 @@ export function computeVoterAlignment(
   );
   const numericScale = deck.isNumeric;
 
-  const consensusIndex = consensusLabel
-    ? scaleIndexMap.get(consensusLabel)
+  const consensusStep = consensusLabel
+    ? stepOf.get(consensusLabel)
     : undefined;
   const consensusValue =
     consensusLabel !== null ? cardNumericValue(consensusLabel) : undefined;
@@ -59,10 +59,10 @@ export function computeVoterAlignment(
     .filter((vote) => vote.cardLabel && !isSpecialCard(vote.cardLabel))
     .map((vote) => {
       const label = vote.cardLabel!;
-      const voteIndex = scaleIndexMap.get(label);
+      const voteStep = stepOf.get(label);
       const deltaSteps =
-        numericScale && voteIndex !== undefined && consensusIndex !== undefined
-          ? voteIndex - consensusIndex
+        numericScale && voteStep !== undefined && consensusStep !== undefined
+          ? voteStep - consensusStep
           : undefined;
 
       return {

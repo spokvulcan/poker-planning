@@ -160,7 +160,7 @@ describe("acting on Jira as the person calling", () => {
       data: { code: "missing", message: "Your Jira connection has no site address; reconnect Jira." },
     });
     await expect(projectsAs("revoked")).rejects.toMatchObject({
-      data: { code: "missing", message: "Jira no longer accepts your connection; reconnect Jira." },
+      data: { code: "forbidden", message: "Jira no longer accepts your connection; reconnect Jira." },
     });
     // The revoked connection tried a refresh, and nothing reached Jira itself.
     expect(jira.restCalls()).toEqual([]);

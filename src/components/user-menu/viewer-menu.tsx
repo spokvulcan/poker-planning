@@ -5,22 +5,11 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useTheme } from "next-themes";
 import { useMutation } from "convex/react";
-import {
-  History,
-  LayoutDashboard,
-  LogIn,
-  LogOut,
-  MessagesSquare,
-  Monitor,
-  Moon,
-  Settings,
-  Sun,
-  UserPen,
-  type LucideIcon,
-} from "lucide-react";
+import { LogIn, LogOut, Moon, Sun, UserPen } from "lucide-react";
 import { api } from "@/convex/_generated/api";
 import type { SignedInViewer } from "@/components/auth/viewer";
-import { accountEntries, THEMES, type Place, type ThemeId } from "@/components/auth/account";
+import { accountEntries, PLACE_ICONS } from "@/components/auth/account";
+import { THEMES, THEME_ICONS } from "@/components/theme-options";
 import { useSignOut } from "@/hooks/useSignOut";
 import { toast } from "@/lib/toast";
 import {
@@ -37,15 +26,6 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { UserAvatar } from "./user-avatar";
 import { EditNameDialog } from "./edit-name-dialog";
-
-const PLACE_ICONS: Record<Place["id"], LucideIcon> = {
-  dashboard: LayoutDashboard,
-  sessions: History,
-  retros: MessagesSquare,
-  settings: Settings,
-};
-
-const THEME_ICONS: Record<ThemeId, LucideIcon> = { light: Sun, dark: Moon, system: Monitor };
 
 /** The name a user menu shows: the users row's, or "Guest" until it names them. */
 export function menuName(viewer: SignedInViewer): string {

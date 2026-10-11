@@ -13,6 +13,7 @@ import type * as admin from "../admin.js";
 import type * as analytics from "../analytics.js";
 import type * as analyticsMath from "../analyticsMath.js";
 import type * as auth from "../auth.js";
+import type * as autoPush from "../autoPush.js";
 import type * as canvas from "../canvas.js";
 import type * as canvasLayout from "../canvasLayout.js";
 import type * as ceremony from "../ceremony.js";
@@ -99,6 +100,7 @@ declare const fullApi: ApiFromModules<{
   analytics: typeof analytics;
   analyticsMath: typeof analyticsMath;
   auth: typeof auth;
+  autoPush: typeof autoPush;
   canvas: typeof canvas;
   canvasLayout: typeof canvasLayout;
   ceremony: typeof ceremony;

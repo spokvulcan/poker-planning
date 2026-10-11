@@ -146,7 +146,7 @@ describe("pushing estimates", () => {
   it("won't save auto-push without the field estimates go to, and says so", async () => {
     showMapping({ storyPointsFieldId: undefined, jiraWebhookId: "wh-live" });
 
-    expect(screen.getByText("Choose the story points field to push estimates to.")).not.toBeNull();
+    expect(screen.getByText("Choose the story points field estimates are pushed to, or turn auto-push off.")).not.toBeNull();
     expect(updateButton().disabled).toBe(true);
 
     await act(async () =>

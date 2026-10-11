@@ -69,7 +69,7 @@ const seated = (extra: Partial<RoomUserData> = {}): RoomUserData => ({
 });
 
 function Seat({ room, me }: { room: Doc<"rooms">; me: RoomUserData | undefined }) {
-  const seat = useSeatControls({ roomId: ROOM, room, me });
+  const seat = useSeatControls({ room, me });
   return (
     <>
       <div data-testid="items">{seat?.items}</div>

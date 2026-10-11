@@ -13,6 +13,7 @@ import {
   stickyEditDecision,
   topicActAllowed,
   walk,
+  walked,
   withSpotlight,
   type DiscussionState,
   type StepAct,
@@ -309,6 +310,23 @@ describe("walk", () => {
   it("has nothing to put in the spotlight on an empty walk", () => {
     expect(walk([], on(), "next")).toBeUndefined();
     expect(walk([], on("a"), "previous")).toBeUndefined();
+  });
+});
+
+describe("walked", () => {
+  const order = ["a", "b", "c"];
+  const discussing = { step: "discuss" as RetroStep, focusStickyId: "b" };
+
+  it("moves the spotlight one topic on, the walk with it", () => {
+    expect(walked(discussing, order, "next")).toEqual({ step: "discuss", focusStickyId: "c" });
+  });
+
+  it("leaves the retro as it is when the walk stays put, keeping a detour's place", () => {
+    const atEnd = { step: "discuss" as RetroStep, focusStickyId: "c" };
+    const detourAtEnd = { step: "discuss" as RetroStep, focusStickyId: "unvoted", walkStickyId: "c" };
+
+    expect(walked(atEnd, order, "next")).toBe(atEnd);
+    expect(walked(detourAtEnd, order, "next")).toBe(detourAtEnd);
   });
 });
 

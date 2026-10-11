@@ -9,6 +9,7 @@ import * as EstimatePush from "./estimatePush";
 import { refusal } from "./refusal";
 import { getProviderHandler } from "../integrations/registry";
 import type { UserRows } from "./userRows";
+import { autoPushProblem } from "../autoPush";
 
 /**
  * The integrations model: the one owner of the db-side invariants for
@@ -208,9 +209,8 @@ export async function saveRoomMapping(
   ctx: MutationCtx,
   args: RoomMappingArgs
 ): Promise<Id<"integrationMappings">> {
-  if (args.autoPushEstimates && !args.storyPointsFieldId?.trim()) {
-    throw refusal("forbidden", "Choose the story points field estimates are pushed to, or turn auto-push off.");
-  }
+  const problem = autoPushProblem(args);
+  if (problem) throw refusal("forbidden", problem);
   const fields = {
     connectionId: args.connectionId,
     provider: args.provider,

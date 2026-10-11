@@ -97,6 +97,7 @@ export const RetroNode = memo(({ data, selected }: NodeProps<Node<RetroNodeData,
     votesCast,
     votesPerPerson,
     myVotes,
+    votesLeft,
     discussion,
     focusedId,
     focusedLabel,
@@ -107,7 +108,6 @@ export const RetroNode = memo(({ data, selected }: NodeProps<Node<RetroNodeData,
     actions,
   } = data;
   const done = step === "done";
-  const votesLeft = Math.max(votesPerPerson - myVotes, 0);
 
   return (
     <div className="relative" style={{ width: RETRO_NODE_WIDTH }}>

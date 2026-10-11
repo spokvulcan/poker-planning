@@ -3,7 +3,7 @@
 import { useEffect, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/components/auth/auth-provider";
-import { needsAccount, signInHref } from "@/components/auth/account";
+import { signInHref } from "@/components/auth/account";
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { AppSidebar } from "./app-sidebar";
 import { DateRangeProvider } from "./date-range-context";
@@ -23,7 +23,7 @@ function useAccountPage() {
   const pathname = usePathname();
   const router = useRouter();
   useEffect(() => {
-    if (viewer.status === "visitor" && needsAccount(pathname)) router.replace(signInHref(pathname));
+    if (viewer.status === "visitor") router.replace(signInHref(pathname));
   }, [viewer.status, pathname, router]);
 }
 

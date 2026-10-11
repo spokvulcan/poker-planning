@@ -167,17 +167,30 @@ export interface DiscussionState<S extends string = string> {
   walkStickyId?: S;
 }
 
-/** The retro with its discussion where it is now: optional fields dropped, not set to undefined. */
-function placed<S extends string, R extends DiscussionState<S>>(retro: R, focus: S | undefined, left: S | undefined): R {
-  if (focus === retro.focusStickyId && left === retro.walkStickyId) return retro;
-  const { focusStickyId: _focus, walkStickyId: _left, ...rest } = retro;
-  return { ...rest, ...(focus ? { focusStickyId: focus } : {}), ...(left ? { walkStickyId: left } : {}) } as R;
+/** The retro with its spotlight and the place a detour left as given: optional fields dropped, not set to undefined. */
+function withDiscussion<S extends string, R extends DiscussionState<S>>(
+  retro: R,
+  spotlight: S | undefined,
+  walkStickyId: S | undefined
+): R {
+  if (spotlight === retro.focusStickyId && walkStickyId === retro.walkStickyId) return retro;
+  const { focusStickyId: _spotlight, walkStickyId: _walk, ...rest } = retro;
+  return {
+    ...rest,
+    ...(spotlight ? { focusStickyId: spotlight } : {}),
+    ...(walkStickyId ? { walkStickyId } : {}),
+  } as R;
 }
 
-/** The topic of `order` the walk stands on: the spotlight's, or the one a detour left. */
-function walkPlace<S extends string>(order: readonly S[], at: DiscussionState<S>): S | undefined {
-  if (at.focusStickyId !== undefined && order.includes(at.focusStickyId)) return at.focusStickyId;
-  return at.walkStickyId !== undefined && order.includes(at.walkStickyId) ? at.walkStickyId : undefined;
+/**
+ * Where the walk stands along `order`, by index: `spotlight` is the
+ * spotlight's place on the order (-1 off it, or with none), and `walk` the
+ * place the walk stands on: the spotlight's, else the one a detour left, else -1.
+ */
+function standing<S extends string>(order: readonly S[], at: DiscussionState<S>): { spotlight: number; walk: number } {
+  const spotlight = at.focusStickyId === undefined ? -1 : order.indexOf(at.focusStickyId);
+  const walk = spotlight !== -1 || at.walkStickyId === undefined ? spotlight : order.indexOf(at.walkStickyId);
+  return { spotlight, walk };
 }
 
 /**
@@ -192,7 +205,8 @@ export function withSpotlight<S extends string, R extends DiscussionState<S>>(
   order?: readonly S[]
 ): R {
   const detour = topic !== undefined && order !== undefined && !order.includes(topic);
-  return placed(retro, topic, detour ? walkPlace(order, retro) : undefined);
+  const left = detour ? standing(order, retro).walk : -1;
+  return withDiscussion(retro, topic, left === -1 ? undefined : order![left]);
 }
 
 /**
@@ -201,7 +215,7 @@ export function withSpotlight<S extends string, R extends DiscussionState<S>>(
  * the board.
  */
 export function followDiscussion<S extends string, R extends DiscussionState<S>>(retro: R, change: TopicChange<S>): R {
-  return placed(retro, followSpotlight(retro.focusStickyId, change), followSpotlight(retro.walkStickyId, change));
+  return withDiscussion(retro, followSpotlight(retro.focusStickyId, change), followSpotlight(retro.walkStickyId, change));
 }
 
 /**
@@ -269,12 +283,25 @@ export function walk<S extends string>(
 ): S | undefined {
   if (order.length === 0) return undefined;
   const last = order.length - 1;
-  const spot = at.focusStickyId === undefined ? -1 : order.indexOf(at.focusStickyId);
-  if (spot !== -1) return order[direction === "next" ? Math.min(spot + 1, last) : Math.max(spot - 1, 0)];
-  const left = at.walkStickyId === undefined ? -1 : order.indexOf(at.walkStickyId);
+  const { spotlight, walk: left } = standing(order, at);
+  if (spotlight !== -1) return order[direction === "next" ? Math.min(spotlight + 1, last) : Math.max(spotlight - 1, 0)];
   if (left === -1) return order[0];
   if (direction === "previous") return order[left];
   return left < last ? order[left + 1] : at.focusStickyId;
+}
+
+/**
+ * The retro after the walk moves one topic on or back along `order` (`walk`):
+ * the same retro when it stays put, past either end, keeping any place a
+ * detour left. The server's step and the board's optimistic update both take it.
+ */
+export function walked<S extends string, R extends DiscussionState<S>>(
+  retro: R,
+  order: readonly S[],
+  direction: "next" | "previous"
+): R {
+  const topic = walk(order, retro, direction);
+  return topic === retro.focusStickyId ? retro : withSpotlight(retro, topic, order);
 }
 
 /** Where the discussion stands, as a board draws it: the walk's controls and each topic's mark read this one answer. */
@@ -311,11 +338,10 @@ export function discussionAt<S extends string>(
 ): DiscussionPlace<S> {
   const topics = order ?? [];
   const index = new Map(topics.map((topic, i) => [topic, i] as const));
-  const spot = retro.focusStickyId === undefined ? undefined : index.get(retro.focusStickyId);
-  const left = spot ?? (retro.walkStickyId === undefined ? undefined : index.get(retro.walkStickyId));
-  const at = left === undefined ? 0 : left + 1;
+  const { spotlight, walk: left } = standing(topics, retro);
+  const at = left + 1;
   // A topic in the spotlight is being discussed; the one a detour left was.
-  const passed = retro.step === "done" ? topics.length : spot !== undefined ? spot : at;
+  const passed = retro.step === "done" ? topics.length : spotlight !== -1 ? spotlight : at;
   const moves = (direction: "next" | "previous") => {
     const topic = order === null ? undefined : walk(topics, retro, direction);
     return topic === retro.focusStickyId ? undefined : topic;
@@ -325,7 +351,7 @@ export function discussionAt<S extends string>(
   return {
     known: order !== null,
     count: topics.length,
-    spotlight: retro.focusStickyId === undefined ? "none" : spot !== undefined ? "onOrder" : "detour",
+    spotlight: retro.focusStickyId === undefined ? "none" : spotlight !== -1 ? "onOrder" : "detour",
     at,
     ...(next !== undefined ? { next } : {}),
     ...(previous !== undefined ? { previous } : {}),

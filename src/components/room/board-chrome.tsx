@@ -38,6 +38,7 @@ import { copyRoomLink } from "@/lib/copy-room-link";
 import { cn } from "@/lib/utils";
 import { usePanelState } from "./hooks/usePanelState";
 import { UserPresenceAvatars } from "./user-presence-avatars";
+import type { CeremonyRules } from "@/convex/ceremony";
 
 /**
  * The board's chrome, the same for both ceremonies and the demo (ADR-0026):
@@ -56,13 +57,16 @@ import { UserPresenceAvatars } from "./user-presence-avatars";
  * board's React Flow, and its avatars read that room's presence.
  */
 
+/** A board's name for itself: its ceremony's (`rulesOf(room).noun`), or the demo's. */
+export type BoardNoun = CeremonyRules["noun"] | "Demo";
+
 /** What the chrome shows of the board. */
 export interface ChromeBoard {
   name: string;
   /** The board's address, to copy and share: `/room/…`, or the demo's. */
   link: string;
   /** What the board is called in the chrome's words: "Copy room link", "Retro link copied". */
-  noun: string;
+  noun: BoardNoun;
   /** A word beside the name: the demo says it is one. */
   tag?: string;
 }
@@ -138,7 +142,7 @@ function toggleFullscreen(): void {
 
 const BAR_BUTTON = "h-8 w-8 p-0 hover:bg-gray-100 dark:hover:bg-surface-3 rounded-md transition-colors";
 const BAR =
-  "flex items-center gap-2 px-3 h-12 bg-white/95 dark:bg-surface-1/95 backdrop-blur-sm rounded-xl shadow-2xl border border-gray-200/50 dark:border-border";
+  "flex items-center gap-2 px-3 h-12 bg-white/95 dark:bg-surface-1/95 backdrop-blur-sm rounded-xl shadow-lg border border-gray-200/50 dark:border-border";
 
 function BarSeparator() {
   return <Separator orientation="vertical" className="h-6 mx-1 !self-center" aria-hidden="true" />;

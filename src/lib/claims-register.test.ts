@@ -20,6 +20,7 @@ import * as about from "@/app/(app)/about/copy";
 import * as pricing from "@/app/(app)/pricing/copy";
 import * as commandMenu from "@/components/command-menu/copy";
 import * as account from "@/components/auth/account";
+import * as themes from "@/components/theme-options";
 import { siteConfig } from "@/lib/site-config";
 import {
   DEFAULT_VOTES_PER_PERSON,
@@ -313,7 +314,8 @@ const MODULES: [string, unknown][] = [
   ["about", about],
   ["pricing", pricing],
   ["commandMenu", commandMenu],
-  ["account", { PLACES: account.PLACES, THEMES: account.THEMES }],
+  ["account", { PLACES: account.PLACES }],
+  ["themes", { THEMES: themes.THEMES }],
   ["siteConfig", { blog: siteConfig.blog, description: siteConfig.description }],
 ];
 

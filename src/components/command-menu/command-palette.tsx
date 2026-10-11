@@ -16,24 +16,17 @@ import {
   CornerDownLeft,
   CreditCard,
   FileText,
-  History,
   House,
   Info,
-  LayoutDashboard,
   LogIn,
   MessagesSquare,
-  Monitor,
-  Moon,
   Play,
   Receipt,
   Scale,
   ScrollText,
   Search,
-  Settings,
   Shield,
   Sparkles,
-  StickyNote,
-  Sun,
   Vote,
   type LucideIcon,
 } from "lucide-react";
@@ -48,7 +41,8 @@ import {
 } from "@/components/ui/command";
 import { Kbd } from "@/components/ui/kbd";
 import { useAuth } from "@/components/auth/auth-provider";
-import { accountEntries, THEMES, type Place } from "@/components/auth/account";
+import { accountEntries, PLACE_ICONS, type Place } from "@/components/auth/account";
+import { THEMES, THEME_ICONS } from "@/components/theme-options";
 import { COMMAND_MENU, PAGES, SIGN_IN, START, type MenuLink } from "./copy";
 import { rank } from "./rank";
 import { useBlogPosts } from "./use-blog-posts";
@@ -64,10 +58,7 @@ const ICONS: Record<CommandId, LucideIcon> = {
   estimate: Vote,
   retro: MessagesSquare,
   demo: Play,
-  dashboard: LayoutDashboard,
-  sessions: History,
-  retros: StickyNote,
-  settings: Settings,
+  ...PLACE_ICONS,
   home: House,
   features: Sparkles,
   pricing: CreditCard,
@@ -78,9 +69,7 @@ const ICONS: Record<CommandId, LucideIcon> = {
   terms: Scale,
   refund: Receipt,
   "sign-in": LogIn,
-  light: Sun,
-  dark: Moon,
-  system: Monitor,
+  ...THEME_ICONS,
 };
 
 const noSubscribe = () => () => {};

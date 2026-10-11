@@ -343,7 +343,6 @@ function RetroCanvasInner({ roomData, currentUserId }: RetroCanvasProps): ReactE
 
   // The viewer's seat, from the roster the room already holds, for the account menu.
   const seat = useSeatControls({
-    roomId,
     room: roomData.room,
     me: roomData.users.find((user) => user._id === currentUserId),
   });

@@ -7,6 +7,7 @@
  * the viewer and the page they're on in, the entries out. Its words are under
  * lib/claims-register.test.ts.
  */
+import { History, LayoutDashboard, MessagesSquare, Settings, type LucideIcon } from "lucide-react";
 import type { Viewer } from "./viewer";
 
 /** A place in the app a signed-in person goes to. */
@@ -31,19 +32,18 @@ export const PLACES: readonly Place[] = [
   { id: "settings", label: "Settings", href: "/dashboard/settings", keywords: ["account", "integrations", "jira"] },
 ];
 
+/** Each place's icon, the same wherever it is offered. */
+export const PLACE_ICONS: Record<Place["id"], LucideIcon> = {
+  dashboard: LayoutDashboard,
+  sessions: History,
+  retros: MessagesSquare,
+  settings: Settings,
+};
+
 /** A place by its id. */
 export function place(id: Place["id"]): Place {
   return PLACES.find((p) => p.id === id)!;
 }
-
-/** The themes a person picks between, wherever they pick one. */
-export const THEMES = [
-  { id: "light", label: "Light", keywords: ["theme", "light mode"] },
-  { id: "dark", label: "Dark", keywords: ["theme", "dark mode"] },
-  { id: "system", label: "System", keywords: ["theme", "auto"] },
-] as const;
-
-export type ThemeId = (typeof THEMES)[number]["id"];
 
 const SIGN_IN = "/auth/signin";
 const THIS_SITE = "https://agilekit.invalid";
@@ -73,11 +73,6 @@ export function returnPath(from: string | null | undefined): string {
 export function signInHref(path: string): string {
   const back = returnPath(path);
   return back === "/" || back.startsWith(SIGN_IN) ? SIGN_IN : `${SIGN_IN}?from=${encodeURIComponent(back)}`;
-}
-
-/** Whether the page at `path` is an account's own: a visitor there is sent to sign in. */
-export function needsAccount(path: string): boolean {
-  return path === "/dashboard" || path.startsWith("/dashboard/");
 }
 
 /** What a viewer on a page is offered of their account. */

@@ -96,6 +96,8 @@ export function buildRetroNodes(input: RetroNodesInput): RetroFlowNode[] {
   const defaultPads = padPositions(columns.length);
   const nodes: RetroFlowNode[] = [];
 
+  // A budget lowered mid-vote leaves none, never fewer.
+  const votesLeft = Math.max(retro.votesPerPerson - (board?.myVotes ?? 0), 0);
   // Where the discussion stands, once the totals show: the walk's controls
   // and each topic's rank and tick read the one answer (convex/retroSteps.ts).
   const place = discussionAt(shows.totals ? topicOrder(board, columns) : null, retro);
@@ -115,6 +117,7 @@ export function buildRetroNodes(input: RetroNodesInput): RetroFlowNode[] {
       votesCast: input.votesCast,
       votesPerPerson: retro.votesPerPerson,
       myVotes: board?.myVotes ?? 0,
+      votesLeft,
       discussion: discussionView(place),
       ...(retro.focusStickyId && shows.spotlight ? { focusedId: retro.focusStickyId } : {}),
       ...(shows.spotlight ? { focusedLabel: topicLabel(focused) } : {}),
@@ -160,8 +163,6 @@ export function buildRetroNodes(input: RetroNodesInput): RetroFlowNode[] {
   for (const s of stickies) {
     if (s.stackId) membersOf.set(s.stackId, [...(membersOf.get(s.stackId) ?? []), s]);
   }
-  // A budget lowered mid-vote leaves none, never fewer.
-  const votesLeft = Math.max(retro.votesPerPerson - (board?.myVotes ?? 0), 0);
   // What the step lets anyone do right now; who may do it is the permissions'.
   const canVote = stepAllows(step, "vote").allowed;
   const canSpotlight = stepAllows(step, "spotlight").allowed && perms.stageFlow.allowed;

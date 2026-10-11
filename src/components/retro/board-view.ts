@@ -19,7 +19,7 @@ import type { ActionItemView, BoardView, RetroState, StickyView } from "@/convex
 import { edited, ownedBy } from "@/convex/retroFields";
 import { ACTION_ITEM_TEXT, STICKY_TEXT, type RetroColumn, type RetroStep } from "@/convex/retroTemplates";
 import * as Topics from "@/convex/retroTopics";
-import { discussionOrder, stepShows, walk, withSpotlight } from "@/convex/retroSteps";
+import { discussionOrder, stepShows, walked } from "@/convex/retroSteps";
 import { stickyView, type RetroViewer, type StickyRow } from "@/convex/retroStickyView";
 import { optimisticId } from "@/lib/optimistic-id";
 import type { RetroMember } from "./types";
@@ -161,8 +161,7 @@ export function applyVoteToggle(seen: VotesView, stickyId: StickyId, budget: num
 /** The discussion one topic on or back, on the state a browser sees; left to the server while the order isn't known. */
 export function applyWalk(retro: RetroState, board: BoardView, direction: "next" | "previous"): RetroState {
   const order = topicOrder(board, retro.columns);
-  const topic = order ? walk(order, retro, direction) : retro.focusStickyId;
-  return order && topic !== retro.focusStickyId ? withSpotlight(retro, topic, order) : retro;
+  return order ? walked(retro, order, direction) : retro;
 }
 
 /** An action item as its add sends it, when, and a key the client made for it. */

@@ -2,15 +2,15 @@
 
 import { useEffect } from "react";
 import { useSearchParams } from "next/navigation";
-import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import { useCallerQuery } from "@/components/auth/use-caller-query";
 import { JiraConnectionCard } from "./jira-connection-card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/lib/toast";
 import type { JiraConnectError } from "@/app/api/integrations/jira/refusal";
 
 export function IntegrationsSettings() {
-  const connections = useQuery(api.integrations.getConnections);
+  const connections = useCallerQuery(api.integrations.getConnections);
   const searchParams = useSearchParams();
 
   const jiraConnection = connections?.find((c) => c.provider === "jira");

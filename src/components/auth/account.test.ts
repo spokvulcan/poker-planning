@@ -5,7 +5,7 @@
  * dashboard's sidebar offer them.
  */
 import { describe, it, expect } from "vitest";
-import { accountEntries, needsAccount, PLACES, returnPath, signInHref } from "./account";
+import { accountEntries, PLACES, returnPath, signInHref } from "./account";
 import type { Viewer } from "./viewer";
 
 const signedIn = (isPermanent: boolean): Viewer => ({
@@ -55,13 +55,6 @@ describe("signInHref", () => {
     expect(signInHref("/")).toBe("/auth/signin");
     expect(signInHref("/auth/signin")).toBe("/auth/signin");
     expect(signInHref("//evil.example")).toBe("/auth/signin");
-  });
-});
-
-describe("needsAccount", () => {
-  it("is the dashboard and its pages only", () => {
-    expect(["/dashboard", "/dashboard/retros", "/dashboard/settings"].every(needsAccount)).toBe(true);
-    expect(["/", "/dashboards", "/room/room-1", "/retro/new"].some(needsAccount)).toBe(false);
   });
 });
 
