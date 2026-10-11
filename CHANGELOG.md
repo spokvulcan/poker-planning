@@ -1,5 +1,18 @@
 # Changelog
 
+## [2.12.0](https://github.com/spokvulcan/poker-planning/compare/agilekit-v2.11.0...agilekit-v2.12.0) (2026-10-11)
+
+
+### Features
+
+* a golden spiral logo, and a blog post on its math ([#419](https://github.com/spokvulcan/poker-planning/issues/419)) ([e2d8181](https://github.com/spokvulcan/poker-planning/commit/e2d8181b2b8b46eb2ab35d8f3b059adbb683a4c5))
+* show the latest blog posts on the homepage ([#422](https://github.com/spokvulcan/poker-planning/issues/422)) ([eb5c48d](https://github.com/spokvulcan/poker-planning/commit/eb5c48d3595ace25f0157c109b2510641b187852))
+
+
+### Blog
+
+* describe AgileKit's decks correctly in the Fibonacci post ([#420](https://github.com/spokvulcan/poker-planning/issues/420)) ([189912b](https://github.com/spokvulcan/poker-planning/commit/189912bd511bbcf1913ed52a722981d010e9a384))
+
 ## [2.11.0](https://github.com/spokvulcan/poker-planning/compare/agilekit-v2.10.4...agilekit-v2.11.0) (2026-10-11)
 
 
