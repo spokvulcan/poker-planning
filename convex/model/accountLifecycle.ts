@@ -68,8 +68,10 @@ const SIGN_IN_BATCH = 100;
  * deployment (convex/auth.ts), taking what BetterAuth's own user deletion
  * takes: every session, so no device stays signed in, every account, with
  * the tokens a provider gave, then the user, with its email, name and image.
+ * Besides deleting an account, only the cleanup of the sign-ins deleted
+ * accounts left behind calls it (migrations.deleteLeftoverSignIns).
  */
-async function deleteSignIn(ctx: MutationCtx, authUserId: string): Promise<void> {
+export async function deleteSignIn(ctx: MutationCtx, authUserId: string): Promise<void> {
   for (const model of ["session", "account"] as const) {
     // Each call deletes what it reads, so the next starts from the front.
     for (;;) {

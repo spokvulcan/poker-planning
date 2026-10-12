@@ -243,7 +243,7 @@ databaseHooks.user.update.after:
   - Syncs avatar URL changes to existing Convex user (syncAvatarFromAuth)
 ```
 
-This makes a new account's `users` record exist right after its first sign-in, before it joins any room. The hook runs only when BetterAuth creates its user. Delete account deletes BetterAuth's user too (ADR-0033), so signing back in with the same email makes a new account, whose row the hook makes. An account deleted before that kept its BetterAuth user: when it signs back in, its row is made again on its first room write, permanent from its token.
+This makes a new account's `users` record exist right after its first sign-in, before it joins any room. The hook runs only when BetterAuth creates its user. Delete account deletes BetterAuth's user too (ADR-0033), so signing back in with the same email makes a new account, whose row the hook makes. An account deleted before that kept its BetterAuth user: when it signs back in, its row is made again on its first room write, permanent from its token, until `migrations:deleteLeftoverSignIns` deletes the leftover sign-in.
 
 ## Server-Side Auth (Next.js)
 

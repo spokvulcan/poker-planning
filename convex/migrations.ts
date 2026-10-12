@@ -4,9 +4,11 @@
  * re-run once any jobs it scheduled have finished.
  */
 
-import { internalMutation } from "./_generated/server";
+import { internalMutation, type MutationCtx } from "./_generated/server";
 import { v } from "convex/values";
-import { internal } from "./_generated/api";
+import { components, internal } from "./_generated/api";
+import * as AccountLifecycle from "./model/accountLifecycle";
+import { findUser } from "./model/caller";
 import * as Integrations from "./model/integrations";
 
 /**
@@ -196,3 +198,119 @@ export const clearTimerRunners = internalMutation({
     return { ...totals, done: isDone };
   },
 });
+
+/**
+ * How many BetterAuth users one step of `deleteLeftoverSignIns` checks. Each
+ * leftover costs up to four calls into BetterAuth's component.
+ */
+const LEFTOVER_SIGN_IN_BATCH = 25;
+
+/**
+ * How long a new sign-in is spared: BetterAuth makes its user before the
+ * user's session, and the create hook makes the users row after both.
+ */
+const LEFTOVER_SIGN_IN_GRACE_MS = 24 * 60 * 60 * 1000;
+
+/** A user as BetterAuth's table holds it: its id is a users row's `authUserId`. */
+interface BetterAuthUser {
+  _id: string;
+  isAnonymous?: boolean | null;
+  createdAt: number;
+}
+
+/**
+ * Deletes the BetterAuth sign-ins that accounts' endings left behind before
+ * a deleted account took its sign-in with it (ADR-0033): a BetterAuth user
+ * with no users row, either permanent, which Delete account left with its
+ * email, name, image, accounts and every session, or a guest's with no live
+ * session, which a guest's sign-out left once BetterAuth ended the session.
+ * Each goes the way Delete account takes one now
+ * (model/accountLifecycle.ts `deleteSignIn`).
+ *
+ * Spared: a sign-in made since `createdBefore` (a day before the run starts
+ * by default), whose users row may still be on its way, and a guest's with a
+ * live session, who continued as a guest and has yet to make a room write. A
+ * permanent account that came back after deleting itself and hasn't made a
+ * room write since is signed out: AgileKit holds nothing of it, and signing
+ * in again makes a new account.
+ *
+ * Pages through BetterAuth's users, rescheduling itself until done, so no
+ * step outgrows a transaction. Each step returns the running totals, and the
+ * last one also logs them. `dryRun` only counts.
+ */
+export const deleteLeftoverSignIns = internalMutation({
+  args: {
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+    dryRun: v.optional(v.boolean()),
+    createdBefore: v.optional(v.number()),
+    signInsChecked: v.optional(v.number()),
+    permanentLeftovers: v.optional(v.number()),
+    guestLeftovers: v.optional(v.number()),
+  },
+  handler: async (
+    ctx,
+    args
+  ): Promise<{ signInsChecked: number; permanentLeftovers: number; guestLeftovers: number; done: boolean }> => {
+    const batchSize = args.batchSize ?? LEFTOVER_SIGN_IN_BATCH;
+    const createdBefore = args.createdBefore ?? Date.now() - LEFTOVER_SIGN_IN_GRACE_MS;
+    const { page, isDone, continueCursor }: { page: BetterAuthUser[]; isDone: boolean; continueCursor: string } =
+      await ctx.runQuery(components.betterAuth.adapter.findMany, {
+        model: "user",
+        paginationOpts: { numItems: batchSize, cursor: args.cursor ?? null },
+      });
+
+    let permanent = 0;
+    let guests = 0;
+    for (const signIn of page) {
+      const leftover = await leftoverKind(ctx, signIn, createdBefore);
+      if (!leftover) continue;
+      if (leftover === "permanent") permanent++;
+      else guests++;
+      if (!args.dryRun) await AccountLifecycle.deleteSignIn(ctx, signIn._id);
+    }
+
+    const totals = {
+      signInsChecked: (args.signInsChecked ?? 0) + page.length,
+      permanentLeftovers: (args.permanentLeftovers ?? 0) + permanent,
+      guestLeftovers: (args.guestLeftovers ?? 0) + guests,
+    };
+    if (isDone) {
+      console.log(`Leftover sign-in cleanup complete${args.dryRun ? " (dry run)" : ""}:`, totals);
+    } else {
+      await ctx.scheduler.runAfter(0, internal.migrations.deleteLeftoverSignIns, {
+        cursor: continueCursor,
+        batchSize,
+        dryRun: args.dryRun,
+        createdBefore,
+        ...totals,
+      });
+    }
+    return { ...totals, done: isDone };
+  },
+});
+
+/** Sessions read to tell whether a guest's sign-in is still live; a guest has one per browser. */
+const GUEST_SESSIONS_READ = 20;
+
+/** What kind of sign-in left behind `signIn` is, or null when it isn't one. */
+async function leftoverKind(
+  ctx: MutationCtx,
+  signIn: BetterAuthUser,
+  createdBefore: number
+): Promise<"permanent" | "guest" | null> {
+  if (signIn.createdAt >= createdBefore) return null;
+  if (await findUser(ctx, signIn._id)) return null;
+  if (signIn.isAnonymous !== true) return "permanent";
+  const sessions: { page: { expiresAt: number }[]; isDone: boolean } = await ctx.runQuery(
+    components.betterAuth.adapter.findMany,
+    {
+      model: "session",
+      where: [{ field: "userId", value: signIn._id }],
+      paginationOpts: { numItems: GUEST_SESSIONS_READ, cursor: null },
+    }
+  );
+  // More sessions than a guest has is no leftover to guess about.
+  const live = !sessions.isDone || sessions.page.some((session) => session.expiresAt > Date.now());
+  return live ? null : "guest";
+}

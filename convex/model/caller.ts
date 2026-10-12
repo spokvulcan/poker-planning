@@ -95,7 +95,8 @@ export async function sessionEnded(ctx: AnyCtx, caller: Caller): Promise<boolean
 
 /**
  * The users row of the person signed in as `authUserId`, or null: for code
- * that is told who the person is rather than asking (BetterAuth's hooks).
+ * that is told who the person is rather than asking (BetterAuth's hooks, the
+ * cleanup of leftover sign-ins).
  */
 export async function findUser(
   ctx: QueryCtx,
