@@ -469,10 +469,20 @@ export const processJiraWebhook = internalMutation({
   },
 });
 
+/**
+ * One batch of the daily deletion of week-old webhook dedup rows (cron
+ * cleanup-webhook-events), which schedules the next batch itself until done
+ * (model/integrations.ts). The rows are every provider's, but the function
+ * keeps its name and place: the cron, and any batch scheduled before a
+ * deploy, find it by them.
+ */
 export const cleanupOldWebhookEvents = internalMutation({
-  args: {},
-  handler: async (ctx) => {
-    await Integrations.cleanupOldWebhookEvents(ctx);
+  args: {
+    cutoff: v.optional(v.number()),
+    batchSize: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    return await Integrations.cleanupOldWebhookEvents(ctx, args);
   },
 });
 
