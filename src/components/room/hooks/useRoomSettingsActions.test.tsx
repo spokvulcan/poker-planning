@@ -35,7 +35,6 @@ const EVERYONE_PERMISSIONS: RoomPermissions = {
 /** Invokes every action method, with throwaway args where required. */
 function invokeAll(actions: ReturnType<typeof useRoomSettingsActions>) {
   actions.rename("New name");
-  actions.toggleAutoComplete();
   actions.removeUser(USER_ID);
   actions.promoteFacilitator(USER_ID);
   actions.demoteFacilitator(USER_ID);

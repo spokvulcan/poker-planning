@@ -151,7 +151,7 @@ function RoomCanvasInner({ roomData, currentUserId, isEmbedded = false }: RoomCa
   const [actions] = useState<PokerBoardActions>(() => ({
     reveal: writes.reveal,
     reset: writes.reset,
-    toggleAutoComplete: writes.toggleAutoComplete,
+    setAutoComplete: writes.setAutoComplete,
     cancelAutoReveal: writes.cancelAutoReveal,
     selectCard: writes.selectCard,
     updateNoteContent: writes.updateNoteContent,
@@ -295,6 +295,7 @@ function RoomCanvasInner({ roomData, currentUserId, isEmbedded = false }: RoomCa
           roomData={roomData}
           currentUserId={currentUserId}
           onClose={close}
+          onSetAutoComplete={actions.setAutoComplete}
           timeNodes={timeNodesShown(canvasNodes ?? [])}
           onSetTimeNodeShown={actions.setTimeNodeShown}
         />

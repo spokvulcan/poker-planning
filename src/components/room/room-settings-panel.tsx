@@ -46,6 +46,8 @@ interface RoomSettingsPanelProps {
   roomData: RoomWithRelatedData;
   currentUserId?: Id<"users">;
   onClose: () => void;
+  /** The board's write of the auto-complete setting, which its session node shares. */
+  onSetAutoComplete: (enabled: boolean) => void;
   /** Which time nodes the board shows (ADR-0032). */
   timeNodes: TimeNodesShown;
   onSetTimeNodeShown: (node: TimeNode, shown: boolean) => void;
@@ -74,14 +76,16 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
   roomData,
   currentUserId,
   onClose,
+  onSetAutoComplete,
   timeNodes,
   onSetTimeNodeShown,
 }) => {
   const isDemoMode = useIsDemoMode();
 
-  // Writes come from the action seam, which no-ops internally in demo mode
-  // (ADR-0003) — the remaining `isDemoMode` branches below are presentation only
-  // (hide/disable/read-only controls), never write guards.
+  // Writes come from the action seams, the panel's own and the board's for the
+  // switches, which no-op internally in demo mode (ADR-0003) — the remaining
+  // `isDemoMode` branches below are presentation only (hide/disable/read-only
+  // controls), never write guards.
   const settingsActions = useRoomSettingsActions({ roomId: roomData.room._id });
 
   const perms = usePokerPermissions(roomData, currentUserId);
@@ -100,10 +104,6 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
         description: `Room is now called "${roomName.value.trim()}"`,
       });
     }
-  };
-
-  const handleToggleAutoReveal = async () => {
-    await runAct(settingsActions.toggleAutoComplete(), "Failed to update setting");
   };
 
   const handlePermissionChange = async (category: PokerPermissionCategory, value: PermissionLevel) => {
@@ -209,7 +209,7 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
               <Switch
                 id="auto-reveal"
                 checked={roomData.room.autoCompleteVoting}
-                onCheckedChange={perms.roomSettings.allowed ? handleToggleAutoReveal : undefined}
+                onCheckedChange={perms.roomSettings.allowed ? (checked) => onSetAutoComplete(checked) : undefined}
                 disabled={isDemoMode}
                 className="data-[state=checked]:bg-primary"
                 {...permissionProps(perms.roomSettings)}

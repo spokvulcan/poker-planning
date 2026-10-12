@@ -32,7 +32,7 @@ function boardActions(): PokerBoardActions {
   return {
     reveal: vi.fn(),
     reset: vi.fn(),
-    toggleAutoComplete: vi.fn(),
+    setAutoComplete: vi.fn(),
     cancelAutoReveal: vi.fn(),
     selectCard: vi.fn(),
     openIssues: vi.fn(),

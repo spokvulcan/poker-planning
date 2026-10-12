@@ -21,7 +21,7 @@ export const DEMO_VIEWER_ID = "demo-viewer" as const;
  */
 export type PokerBoardActions = Pick<
   CanvasActions,
-  "reveal" | "reset" | "toggleAutoComplete" | "cancelAutoReveal" | "selectCard" | "updateNoteContent" | "deleteNote"
+  "reveal" | "reset" | "setAutoComplete" | "cancelAutoReveal" | "selectCard" | "updateNoteContent" | "deleteNote"
 > &
   RoundClockActions & {
     openIssues: () => void;

@@ -44,7 +44,7 @@ const OTHER_USER_ID = "user-2" as Id<"users">;
 function invokeAll(actions: ReturnType<typeof useCanvasActions>) {
   actions.reveal();
   actions.reset();
-  actions.toggleAutoComplete();
+  actions.setAutoComplete(true);
   actions.cancelAutoReveal();
   actions.selectCard("8");
   actions.updateNoteContent("note-1", "hello");
@@ -145,12 +145,22 @@ describe("useCanvasActions — selectCard value handling", () => {
   });
 });
 
+describe("useCanvasActions — the auto-complete setting", () => {
+  it.each([true, false])("asks the server to set it to %s, never to flip it", async (enabled) => {
+    const { result } = renderHook(() => useCanvasActions({ roomId: ROOM_ID, currentUserId: USER_ID }));
+
+    await act(async () => result.current.setAutoComplete(enabled));
+
+    expect(convex.writes).toEqual([{ name: "rooms:toggleAutoComplete", args: { roomId: ROOM_ID, enabled } }]);
+  });
+});
+
 describe("useCanvasActions — a refused write says why", () => {
   /** Every write the board makes, as the person makes it. */
   const boardWrites: [string, (actions: CanvasActions) => unknown][] = [
     ["reveal", (actions) => actions.reveal()],
     ["reset", (actions) => actions.reset()],
-    ["auto-reveal switch", (actions) => actions.toggleAutoComplete()],
+    ["auto-reveal switch", (actions) => actions.setAutoComplete(true)],
     ["auto-reveal cancel", (actions) => actions.cancelAutoReveal()],
     ["card pick", (actions) => actions.selectCard("8")],
     ["move", (actions) => actions.moveNodes([{ nodeId: "note-1", position: { x: 1, y: 2 } }])],

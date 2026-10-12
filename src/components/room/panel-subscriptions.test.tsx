@@ -47,7 +47,6 @@ vi.mock("./room-presence", () => ({
 vi.mock("./hooks/useRoomSettingsActions", () => ({
   useRoomSettingsActions: () => ({
     rename: () => Promise.resolve(undefined),
-    toggleAutoComplete: () => Promise.resolve(undefined),
     removeUser: () => Promise.resolve(undefined),
     promoteFacilitator: () => Promise.resolve(undefined),
     demoteFacilitator: () => Promise.resolve(undefined),
@@ -119,6 +118,7 @@ const PANELS: ChromePanel[] = [
         roomData={roomData}
         currentUserId={ME}
         onClose={close}
+        onSetAutoComplete={() => {}}
         timeNodes={{ timer: true, sessionTime: false }}
         onSetTimeNodeShown={() => {}}
       />
