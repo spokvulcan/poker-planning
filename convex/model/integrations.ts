@@ -1,5 +1,6 @@
 import { MutationCtx } from "../_generated/server";
 import { Doc, Id } from "../_generated/dataModel";
+import { internal } from "../_generated/api";
 import {
   EncryptedTokenFields,
   assertEncryptedTokenFields,
@@ -388,18 +389,40 @@ export async function recordWebhookEvent(
   return true;
 }
 
-/** Sweeps processed webhook dedup rows older than 7 days. */
+/** How long a delivery's dedup row is kept. */
+const WEBHOOK_EVENT_DAYS = 7;
+
+/** Dedup rows one batch deletes: well within a transaction's limits. */
+const WEBHOOK_EVENT_BATCH = 500;
+
+/**
+ * Deletes the dedup rows of deliveries older than a week (cron
+ * cleanup-webhook-events) a batch at a time, oldest first, each batch its own
+ * transaction: every delivery writes a row, and a day's rows can outgrow one
+ * transaction. A batch that comes back full schedules the next
+ * (internal.integrations.jira.cleanupOldWebhookEvents) with the cutoff the
+ * run started with, so the run ends once the rows older than that are gone.
+ *
+ * Returns how many rows this batch deleted, and whether the run is done.
+ */
 export async function cleanupOldWebhookEvents(
-  ctx: MutationCtx
-): Promise<void> {
-  const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  ctx: MutationCtx,
+  progress: { cutoff?: number; batchSize?: number } = {}
+): Promise<{ deleted: number; done: boolean }> {
+  const cutoff = progress.cutoff ?? Date.now() - WEBHOOK_EVENT_DAYS * 24 * 60 * 60 * 1000;
+  const batchSize = progress.batchSize ?? WEBHOOK_EVENT_BATCH;
   const oldEvents = await ctx.db
     .query("webhookEvents")
-    .withIndex("by_processed", (q) => q.lt("processedAt", sevenDaysAgo))
-    .collect();
+    .withIndex("by_processed", (q) => q.lt("processedAt", cutoff))
+    .take(batchSize);
 
   await Promise.all(oldEvents.map((e) => ctx.db.delete("webhookEvents", e._id)));
   if (oldEvents.length > 0) {
     console.log(`Cleaned up ${oldEvents.length} old webhook events`);
   }
+  const done = oldEvents.length < batchSize;
+  if (!done) {
+    await ctx.scheduler.runAfter(0, internal.integrations.jira.cleanupOldWebhookEvents, { cutoff, batchSize });
+  }
+  return { deleted: oldEvents.length, done };
 }

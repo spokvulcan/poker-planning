@@ -227,6 +227,53 @@ describe("applyJiraWebhookEvent (via processJiraWebhook)", () => {
   });
 });
 
+describe("cleanupOldWebhookEvents (cron cleanup-webhook-events)", () => {
+  const DAY = 24 * 60 * 60 * 1000;
+
+  /** The dedup rows of `count` deliveries processed `age` ago, written in one transaction. */
+  async function seedWebhookEvents(t: T, count: number, age: number): Promise<void> {
+    const processedAt = Date.now() - age;
+    await t.run(async (ctx) => {
+      for (let i = 0; i < count; i++) {
+        await ctx.db.insert("webhookEvents", { eventKey: `jira:${crypto.randomUUID()}`, provider: "jira", processedAt });
+      }
+    });
+  }
+
+  it("deletes the deliveries older than a week a batch at a time, scheduling the next until none is left", async () => {
+    const t = convexTest(schema, modules);
+    await seedWebhookEvents(t, 5, 8 * DAY);
+    await seedWebhookEvents(t, 2, 6 * DAY);
+
+    // A batch of two: the first deletes two of the five and schedules the next.
+    expect(await t.mutation(internal.integrations.jira.cleanupOldWebhookEvents, { batchSize: 2 })).toEqual({
+      deleted: 2,
+      done: false,
+    });
+    expect(await countRows(t, "webhookEvents")).toBe(5);
+    const [next] = await scheduledByName(t, ":cleanupOldWebhookEvents");
+    expect(next.args[0]).toEqual({ cutoff: expect.any(Number), batchSize: 2 });
+
+    // Two more batches, two and then the last one, and the week's two stay.
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    expect(await countRows(t, "webhookEvents")).toBe(2);
+    const runs = await scheduledByName(t, ":cleanupOldWebhookEvents");
+    expect(runs.map((run) => run.state.kind)).toEqual(["success", "success"]);
+  });
+
+  it("gets through more deliveries than one transaction may write", async () => {
+    const t = convexTest({ schema, modules, transactionLimits: { documentsWritten: 600 } });
+    for (let i = 0; i < 3; i++) await seedWebhookEvents(t, 400, 8 * DAY);
+    await seedWebhookEvents(t, 3, DAY);
+
+    // The cron's own call: each batch fits in a transaction, and the rest follow.
+    await t.mutation(internal.integrations.jira.cleanupOldWebhookEvents, {});
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+    expect(await countRows(t, "webhookEvents")).toBe(3);
+  });
+});
+
 describe("disconnect", () => {
   it("cascades the connection's mappings and hands live webhooks to one finalizeDisconnect tail", async () => {
     const t = convexTest(schema, modules);

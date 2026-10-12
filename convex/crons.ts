@@ -20,7 +20,8 @@ crons.interval(
 // after 30 days), through each mapping's webhook reconcile
 crons.cron("refresh-jira-webhooks", "23 2 * * 0", internal.integrations.jira.refreshJiraWebhooks, {});
 
-// Daily at 4:41 AM UTC, clean up old webhook dedup events (>7 days)
+// Daily at 4:41 AM UTC, delete webhook dedup events older than 7 days, a batch
+// at a time (model/integrations.ts)
 crons.cron("cleanup-webhook-events", "41 4 * * *", internal.integrations.jira.cleanupOldWebhookEvents, {});
 
 export default crons;
