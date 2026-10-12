@@ -1,5 +1,15 @@
 # Changelog
 
+## [2.13.1](https://github.com/spokvulcan/poker-planning/compare/agilekit-v2.13.0...agilekit-v2.13.1) (2026-10-12)
+
+
+### Bug Fixes
+
+* **account:** deleting an account deletes its sign-in on every device ([#431](https://github.com/spokvulcan/poker-planning/issues/431)) ([7b1bb17](https://github.com/spokvulcan/poker-planning/commit/7b1bb17e22146715621827b6f88e274c29139019))
+* delete week-old webhook events a batch at a time, so no backlog outgrows a transaction ([#428](https://github.com/spokvulcan/poker-planning/issues/428)) ([57e5a72](https://github.com/spokvulcan/poker-planning/commit/57e5a729e60fcd67b503774c1907c245ea8f9964))
+* **room:** the auto-reveal switch sets what it showed instead of flipping the stored value ([f64aa65](https://github.com/spokvulcan/poker-planning/commit/f64aa658527ebd7bb719bdbeb7ce96cdfb5e786c))
+* **room:** the auto-reveal switch sets what it showed instead of flipping the stored value ([feae714](https://github.com/spokvulcan/poker-planning/commit/feae714ec956d96853202145eb0d84c6af152f3f))
+
 ## [2.13.0](https://github.com/spokvulcan/poker-planning/compare/agilekit-v2.12.0...agilekit-v2.13.0) (2026-10-12)
 
 
