@@ -47,7 +47,6 @@ export function NavUser() {
           side={isMobile ? "bottom" : "right"}
           align="end"
           sideOffset={4}
-          signInHref="/auth/signin?from=/dashboard"
           trigger={
             <DropdownMenuTrigger
               render={

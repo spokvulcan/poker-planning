@@ -14,7 +14,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/components/auth/auth-provider", () => ({
   useAuth: () => ({
-    viewer: { status: "signedIn", name: "Ada", avatarUrl: null, email: null, isPermanent: mocks.isPermanent },
+    viewer: { status: "signedIn", name: "Ada", avatarUrl: null, email: null, isPermanent: mocks.isPermanent, confirmed: true },
   }),
 }));
 vi.mock("@/hooks/useDeleteAccount", () => ({ useDeleteAccount: () => mocks.deleteAccount }));

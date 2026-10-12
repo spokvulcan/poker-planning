@@ -10,7 +10,7 @@ AgileKit is an open-source online planning poker tool for Scrum teams. The proje
 
 - **Frontend**: Next.js 16 (App Router), React 19, TypeScript
 - **Backend**: Convex (serverless TypeScript functions with real-time reactivity)
-- **Auth**: BetterAuth with anonymous sessions (see [docs/authentication.md](docs/authentication.md))
+- **Auth**: BetterAuth with anonymous sessions (see [docs/authentication.md](docs/authentication.md)). In the browser a page asks the viewer (`useAuth().viewer`) who is looking, reads as them through `useCallerQuery`, and takes what they are offered of their account (places, Sign in, the way back) from `src/components/auth/account.ts`
 - **Styling**: read [docs/design-tokens.md](docs/design-tokens.md) before styling UI. shadcn/ui, Tailwind CSS 4, semantic colour tokens
 - **UI Primitives**: Base UI (`@base-ui/react`). A component takes another element through its `render` prop (e.g., `<DropdownMenuItem render={<Link href="..." />}>`); the lint (`eslint.config.mjs`) fails Radix imports, `asChild` and `--radix-*` variables.
 - **Canvas**: @xyflow/react for the whiteboard interface
@@ -47,12 +47,14 @@ convex/
 
 ### Canvas Node System
 
-Both ceremonies are drawn on one whiteboard (`src/components/whiteboard/whiteboard.tsx`). It owns React Flow's node buffer, saving drops (one `canvas.moveNodes` write per drop, with an optimistic update), keyboard nudges, Delete, dropping one node onto another, fitting and following a node. Each ceremony is an adapter that derives its nodes from the server and says what the gestures mean:
+Both ceremonies are drawn on one whiteboard (`src/components/whiteboard/whiteboard.tsx`). It owns React Flow's node buffer, saving drops (one `canvas.moveNodes` write per drop, with an optimistic update), keyboard nudges, Delete, dropping one node onto another, and the view: its first fit and refits, following a node, and the fit, zoom, centring and bringing into view that the chrome and the boards ask for through `useWhiteboardView`, all under one rule for padding, zoom limits and duration, measured against the board's own pane. Nothing else moves React Flow's viewport. Each ceremony is an adapter that derives its nodes from the server and says what the gestures mean:
 
 - **Planning poker**: `src/components/room/room-canvas.tsx`. Node types in `src/components/room/nodes/` (PlayerNode, SessionNode, TimerNode, VotingCardNode, ResultsNode, NoteNode), built in `hooks/buildCanvasNodes.ts`; nodes take their writes from one frozen `PokerBoardActions` object, as the retro's do. The TimerNode, on both boards, writes through `hooks/useTimerActions.ts`. The `CustomNodeType` union is in `src/components/room/types.ts`
 - **Retro**: `src/components/retro/retro-canvas.tsx`. Nodes built in `build-retro-nodes.ts`; writes in `use-retro-mutations.ts` are optimistic updates that apply the server's own pure rules (`convex/retroTopics.ts`, `convex/retroSteps.ts`, `convex/retroStickyView.ts`), most of them through `board-view.ts`; `use-sticky-draft.ts` holds a sticky being written until its add lands
+- **Chrome**: `src/components/room/board-chrome.tsx`, around both boards and the demo. A board hands it what it shows of the board (name, link, noun), its panels, its share entries and what goes in the account's place (the account menu, or the demo's call to action); the chrome owns which panel is open (`hooks/usePanelState.ts`: one at a time, Escape closes), draws every control from one list in the phone's menu sheet and the desktop's bars, and docks the open panel, mounting its content only while it is open. A node opens a panel through the handle the chrome gives its board (`ref`, as the session node's issue button does)
 - **Node state** synced via Convex (`canvasNodes` table), written only by `convex/model/canvas.ts`
 - **Text over shared data** (notes, names, stickies) goes through `useLiveText` (`src/hooks/use-live-text.ts`), which never overwrites what someone is typing
+- **Tests at the boards' seams** use the whiteboard's test stand-ins (`src/components/whiteboard/testing/`), in place of `@xyflow/react` and `convex/react`: React Flow drawing the nodes and driving the gestures (`drop`, `dropOnto`, `pressDelete`, `doubleClickPane`), and Convex's local cache keyed by function and arguments, which applies optimistic updates, rolls back a refused write and records writes, refusals and reads. Prove what the board then shows, not only the write. The jsdom project's setup file (`vitest.jsdom-setup.ts`) gives every component test `matchMedia` and `ResizeObserver`
 
 ### E2E Testing Pattern
 

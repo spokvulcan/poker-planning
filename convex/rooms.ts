@@ -62,12 +62,14 @@ export const resetGame = mutation({
   },
 });
 
-// Toggle auto-complete voting
+// Set auto-complete voting to what the person chose, so a click on a stale
+// view can't do the opposite of what it showed. A tab from before `enabled`
+// sends none, and the setting flips as it always did.
 export const toggleAutoComplete = mutation({
-  args: { roomId: v.id("rooms") },
+  args: { roomId: v.id("rooms"), enabled: v.optional(v.boolean()) },
   handler: async (ctx, args) => {
     const { room } = await requireRoomWrite(ctx, args.roomId, { kind: "category", category: "roomSettings" });
-    await VotingRound.setAutoComplete(ctx, room, !room.autoCompleteVoting);
+    await VotingRound.setAutoComplete(ctx, room, args.enabled ?? !room.autoCompleteVoting);
   },
 });
 

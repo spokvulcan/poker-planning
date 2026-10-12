@@ -13,7 +13,7 @@ import type { Doc } from "./_generated/dataModel";
 export type Ceremony = "poker" | "retro";
 
 export interface CeremonyRules {
-  /** What the room's own copy calls it, as in a title ("Copy Room Link", "Retro Settings"). */
+  /** What the room's own copy calls it ("Copy room link", "Retro settings"). */
   noun: "Room" | "Retro";
   /** Whether a member may sit out as a spectator. A retro has none: everyone at the board writes. */
   spectators: boolean;

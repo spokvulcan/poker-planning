@@ -37,6 +37,8 @@ const mocks = vi.hoisted(() => ({
   promoteFacilitator: vi.fn(() => Promise.resolve(undefined)),
   demoteFacilitator: vi.fn(() => Promise.resolve(undefined)),
   transferOwnership: vi.fn(() => Promise.resolve(undefined)),
+  // The board's auto-reveal write, which the panel's switch shares with the session node.
+  setAutoComplete: vi.fn(),
   // Every error toast's message: what the person is shown when a write fails.
   errors: [] as string[],
 }));
@@ -50,9 +52,6 @@ vi.mock("convex/react", () => ({
 vi.mock("next/link", () => ({
   default: ({ children }: { children: ReactNode }) => <a>{children}</a>,
 }));
-
-// Desktop branch of SidePanel — jsdom has no matchMedia.
-vi.mock("@/hooks/use-mobile", () => ({ useIsMobile: () => false }));
 
 vi.mock("@/lib/toast", () => ({
   toast: { success: () => {}, error: (message: string) => mocks.errors.push(message) },
@@ -72,7 +71,6 @@ vi.mock("./room-presence", () => ({
 vi.mock("./hooks/useRoomSettingsActions", () => ({
   useRoomSettingsActions: () => ({
     rename: mocks.rename,
-    toggleAutoComplete: () => Promise.resolve(undefined),
     removeUser: mocks.removeUser,
     promoteFacilitator: mocks.promoteFacilitator,
     demoteFacilitator: mocks.demoteFacilitator,
@@ -96,12 +94,12 @@ const BOB = "u2" as Id<"users">;
 const CAROL = "u3" as Id<"users">;
 
 /** Minimal RoomWithRelatedData fixture — only the fields the mapping reads. */
-function roomDataFor(actorRole: MemberRole): RoomWithRelatedData {
+function roomDataFor(actorRole: MemberRole, autoCompleteVoting = false): RoomWithRelatedData {
   return {
     room: {
       _id: "room-1",
       name: "Test Room",
-      autoCompleteVoting: false,
+      autoCompleteVoting,
       permissions: allEveryone,
     },
     users: [{ _id: ME, role: actorRole }],
@@ -126,13 +124,13 @@ function rosterUser(
   } as unknown as UserWithPresence;
 }
 
-function renderPanel(actorRole: MemberRole) {
+function renderPanel(actorRole: MemberRole, { autoCompleteVoting = false } = {}) {
   return render(
     <RoomSettingsPanel
-      roomData={roomDataFor(actorRole)}
+      roomData={roomDataFor(actorRole, autoCompleteVoting)}
       currentUserId={ME}
-      isOpen={true}
       onClose={() => {}}
+      onSetAutoComplete={mocks.setAutoComplete}
       timeNodes={{ timer: true, sessionTime: false }}
       onSetTimeNodeShown={() => {}}
     />
@@ -174,6 +172,7 @@ afterEach(() => {
   mocks.promoteFacilitator.mockClear();
   mocks.demoteFacilitator.mockClear();
   mocks.transferOwnership.mockClear();
+  mocks.setAutoComplete.mockClear();
   mocks.errors.length = 0;
 });
 
@@ -314,6 +313,22 @@ describe("RoomSettingsPanel — the room name", () => {
     renderPanel("owner");
 
     expect((screen.getByLabelText("Room Name") as HTMLInputElement).maxLength).toBe(100);
+  });
+});
+
+describe("RoomSettingsPanel — the auto-reveal switch", () => {
+  it.each([
+    [false, true],
+    [true, false],
+  ])("showing %s, a click asks the board for %s, whatever the server holds by now", (shown, chosen) => {
+    // The panel last heard `shown`; someone may have flipped it since, and the
+    // click still means what the person saw it would do.
+    renderPanel("participant", { autoCompleteVoting: shown });
+
+    fireEvent.click(screen.getByRole("switch", { name: "Auto-reveal cards" }));
+
+    expect(mocks.setAutoComplete).toHaveBeenCalledTimes(1);
+    expect(mocks.setAutoComplete).toHaveBeenCalledWith(chosen);
   });
 });
 

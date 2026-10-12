@@ -1,10 +1,12 @@
 "use client";
 
-import { ReactElement, useMemo, useState } from "react";
+import { ReactElement, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useQuery } from "convex/react";
 import type { NodeTypes } from "@xyflow/react";
+import { ListTodo, Settings } from "lucide-react";
 
-import { CanvasNavigation } from "./canvas-navigation";
+import { BoardChrome, type BoardChromeHandle, type ChromeBoard, type ChromePanel } from "./board-chrome";
 import { RoomSettingsPanel } from "./room-settings-panel";
 import { IssuesPanel } from "./issues-panel";
 import { DemoExplainer } from "./demo-explainer";
@@ -13,8 +15,11 @@ import { buildCanvasEdges, buildCanvasNodes, isNoteForIssue, timeNodesShown } fr
 import { useCanvasActions } from "./hooks/useCanvasActions";
 import { useRoundClockActions } from "./hooks/useRoundClockActions";
 import { toast } from "@/lib/toast";
-import { usePanelState } from "./hooks/usePanelState";
 import { NodePickerToolbar } from "./node-picker-toolbar";
+import { UserMenu } from "@/components/user-menu";
+import { useSeatControls } from "./seat-controls";
+import { ShinyButton } from "@/components/ui/shiny-button";
+import { rulesOf } from "@/convex/ceremony";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import {
@@ -71,13 +76,23 @@ const NO_PLAYERS: PendingPlayer[] = [];
 // "Ada, Bob, and Cy", for a dialog that names everyone it will remove.
 const playerNames = new Intl.ListFormat("en", { type: "conjunction" });
 
+/** The panel the session node's issue button opens. */
+const ISSUES_PANEL = "issues";
+
+/** What the demo shows where the account menu goes: the way into a room of one's own. */
+function CreateRoomButton(): ReactElement {
+  const router = useRouter();
+  return <ShinyButton onClick={() => router.push("/room/new")}>Create Your Room</ShinyButton>;
+}
+
 /**
  * The poker room's adapter onto the whiteboard, shaped like the retro's: room
  * data and the viewer in, the board's nodes and what its gestures mean out.
  * The nodes read one frozen actions object and the viewer's permissions. A
  * drop is a move; Delete, like a note's ✕, asks first before a note with words
  * in it goes, and asks once about every player it would remove. Around the
- * board: its chrome, toolbar and panels.
+ * board: its chrome, with the issues and the settings docked, and over it the
+ * toolbar.
  */
 function RoomCanvasInner({ roomData, currentUserId, isEmbedded = false }: RoomCanvasProps): ReactElement {
   const roomId = roomData.room._id;
@@ -89,13 +104,19 @@ function RoomCanvasInner({ roomData, currentUserId, isEmbedded = false }: RoomCa
   const demo = useDemoSimulation();
   const isDemoMode = !!demo;
   const canvasNodesQuery = useQuery(api.canvas.getCanvasNodes, demo ? "skip" : { roomId });
-  const currentIssueQuery = useQuery(api.issues.getCurrent, demo ? "skip" : { roomId });
   const canvasNodes = demo ? demo.canvasNodes : canvasNodesQuery;
+
+  // The issue the round is on: the room's row names it, and the board reads
+  // that one issue rather than the room again, so a vote, which patches the
+  // room's row, re-runs no query here. A newly named issue's title follows
+  // its id by a round trip; one that is gone (null) is no issue at all.
+  const namedIssueId = demo ? undefined : roomData.room.currentIssueId;
+  const namedIssue = useQuery(api.issues.get, namedIssueId ? { roomId, issueId: namedIssueId } : "skip");
 
   // Only the issue's id and title reach the nodes, so the board rebuilds when
   // they change and not on every other write to the issue.
-  const currentIssueId = demo ? demo.currentIssue._id : currentIssueQuery?._id;
-  const currentIssueTitle = demo ? demo.currentIssue.title : currentIssueQuery?.title;
+  const currentIssueId = demo ? demo.currentIssue._id : namedIssue === null ? undefined : namedIssueId;
+  const currentIssueTitle = demo ? demo.currentIssue.title : namedIssue?.title;
   const currentIssue = useMemo(
     () => (currentIssueId ? { _id: currentIssueId, title: currentIssueTitle ?? "" } : null),
     [currentIssueId, currentIssueTitle],
@@ -108,9 +129,8 @@ function RoomCanvasInner({ roomData, currentUserId, isEmbedded = false }: RoomCa
   const writes = useCanvasActions({ roomId, currentUserId });
   const clockWrites = useRoundClockActions({ roomId, currentUserId });
 
-  // Docked-panel state: mutual exclusion + Escape-to-close.
-  const { isIssuesPanelOpen, isSettingsOpen, openIssues, openSettings, closeAll } =
-    usePanelState();
+  // The chrome, for a node to open a panel through.
+  const chrome = useRef<BoardChromeHandle>(null);
 
   // What Delete is waiting on the viewer to confirm.
   const [pendingNote, setPendingNote] = useState<string | null>(null);
@@ -131,12 +151,12 @@ function RoomCanvasInner({ roomData, currentUserId, isEmbedded = false }: RoomCa
   const [actions] = useState<PokerBoardActions>(() => ({
     reveal: writes.reveal,
     reset: writes.reset,
-    toggleAutoComplete: writes.toggleAutoComplete,
+    setAutoComplete: writes.setAutoComplete,
     cancelAutoReveal: writes.cancelAutoReveal,
     selectCard: writes.selectCard,
     updateNoteContent: writes.updateNoteContent,
     ...clockWrites,
-    openIssues,
+    openIssues: () => chrome.current?.openPanel(ISSUES_PANEL),
     deleteNote,
   }));
 
@@ -233,127 +253,145 @@ function RoomCanvasInner({ roomData, currentUserId, isEmbedded = false }: RoomCa
     [roomData.users],
   );
 
-  if (!roomData || (!currentUserId && !isDemoMode)) {
-    return (
-      <div className="flex items-center justify-center h-screen">
-        Loading...
-      </div>
-    );
-  }
+  // What the chrome shows of the board. The demo is the one board that isn't
+  // a room: its link is the demo's own, it says so beside its name, and where
+  // the account menu goes it offers a room of one's own.
+  const roomName = roomData.room.name;
+  const noun = rulesOf(roomData.room).noun;
+  const board: ChromeBoard = isDemoMode
+    ? { name: roomName, link: "/demo", noun: "Demo", tag: "Demo" }
+    : { name: roomName, link: `/room/${roomId}`, noun };
+  // The viewer's seat, from the roster the room already holds, for the account menu.
+  const seat = useSeatControls({
+    room: roomData.room,
+    me: roomData.users.find((user) => user._id === currentUserId),
+  });
+  const account = isDemoMode ? <CreateRoomButton /> : <UserMenu seat={seat?.items} />;
+
+  // The panels docked beside the board, drawn from the room as it is now.
+  const panels: ChromePanel[] = [
+    {
+      id: ISSUES_PANEL,
+      label: "Issues",
+      icon: ListTodo,
+      render: (close) => (
+        <IssuesPanel
+          roomId={roomId}
+          roomName={roomName}
+          currentIssueId={currentIssueId}
+          onClose={close}
+          canManageIssues={permissions.issueManagement}
+          canControlGameFlow={permissions.gameFlow}
+        />
+      ),
+    },
+    {
+      id: "settings",
+      label: `${noun} settings`,
+      icon: Settings,
+      testId: "room-settings-panel",
+      render: (close) => (
+        <RoomSettingsPanel
+          roomData={roomData}
+          currentUserId={currentUserId}
+          onClose={close}
+          onSetAutoComplete={actions.setAutoComplete}
+          timeNodes={timeNodesShown(canvasNodes ?? [])}
+          onSetTimeNodeShown={actions.setTimeNodeShown}
+        />
+      ),
+    },
+  ];
 
   return (
-    <Whiteboard
-      nodes={nodes}
-      edges={edges}
-      nodeTypes={nodeTypes}
-      readOnly={isDemoMode}
-      onDrop={gestures.onDrop}
-      onDeleteNodes={gestures.onDeleteNodes}
-      fitKey={fitKey}
-      className="bg-transparent"
-      navigation={
-        (isDemoMode || currentUserId) && !(isDemoMode && isEmbedded) ? (
-          <CanvasNavigation
-            roomData={roomData}
-            isIssuesPanelOpen={isIssuesPanelOpen}
-            onIssuesPanelChange={(open) => (open ? openIssues() : closeAll())}
-            isSettingsOpen={isSettingsOpen}
-            onSettingsPanelChange={(open) => (open ? openSettings() : closeAll())}
-          />
-        ) : null
-      }
-      overlay={
-        <>
-          <NodePickerToolbar
-            currentIssueId={currentIssue?._id ?? null}
-            hasNoteForCurrentIssue={hasNoteForCurrentIssue}
-            onCreateNote={() => currentIssue && writes.createNote(currentIssue._id)}
-          />
+    <BoardChrome ref={chrome} board={board} panels={panels} account={account} bars={!isEmbedded}>
+      <Whiteboard
+        nodes={nodes}
+        edges={edges}
+        nodeTypes={nodeTypes}
+        readOnly={isDemoMode}
+        onDrop={gestures.onDrop}
+        onDeleteNodes={gestures.onDeleteNodes}
+        fitKey={fitKey}
+        className="bg-transparent"
+        overlay={
+          <>
+            <NodePickerToolbar
+              currentIssueId={currentIssue?._id ?? null}
+              hasNoteForCurrentIssue={hasNoteForCurrentIssue}
+              onCreateNote={() => currentIssue && writes.createNote(currentIssue._id)}
+            />
 
-          {/* Demo explainer - only shown in demo mode, not when embedded */}
-          {isDemoMode && !isEmbedded && <DemoExplainer />}
+            {/* Demo explainer - only shown in demo mode, not when embedded */}
+            {isDemoMode && !isEmbedded && <DemoExplainer />}
 
-          {/* Delete note confirmation dialog */}
-          <AlertDialog open={!!pendingNote} onOpenChange={(open) => !open && gestures.dismissNote()}>
-            <AlertDialogContent size="sm">
-              <AlertDialogHeader>
-                <AlertDialogTitle>Delete note?</AlertDialogTitle>
-                <AlertDialogDescription>
-                  This note has content. Are you sure you want to delete it?
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction variant="destructive" onClick={gestures.confirmNote}>
-                  Delete
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
+            {/* Leaving the room, confirmed outside the account menu */}
+            {seat?.dialog}
 
-          {/* Remove users confirmation dialog */}
-          <AlertDialog open={pendingPlayers.length > 0} onOpenChange={(open) => !open && gestures.dismissPlayers()}>
-            <AlertDialogContent size="sm">
-              <AlertDialogHeader>
-                <AlertDialogTitle>
-                  {pendingPlayers.length === 1
-                    ? `Remove ${pendingPlayers[0].name}?`
-                    : `Remove ${pendingPlayers.length} players?`}
-                </AlertDialogTitle>
-                <AlertDialogDescription>
-                  {pendingPlayers.length === 1
-                    ? "This will remove the user from the room. They can rejoin using the room link."
-                    : `This will remove ${playerNames.format(pendingPlayers.map((player) => player.name))} from the room. They can rejoin using the room link.`}
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction variant="destructive" onClick={gestures.confirmPlayers}>
-                  Remove
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-        </>
-      }
-      panels={
-        <>
-          <RoomSettingsPanel
-            roomData={roomData}
-            currentUserId={isDemoMode ? undefined : (currentUserId as Id<"users">)}
-            isOpen={isSettingsOpen}
-            onClose={closeAll}
-            timeNodes={timeNodesShown(canvasNodes ?? [])}
-            onSetTimeNodeShown={actions.setTimeNodeShown}
-          />
-          <IssuesPanel
-            roomId={roomId}
-            roomName={roomData.room.name}
-            isOpen={isIssuesPanelOpen}
-            onClose={closeAll}
-            canManageIssues={permissions.issueManagement}
-            canControlGameFlow={permissions.gameFlow}
-          />
-        </>
-      }
-    />
+            {/* Delete note confirmation dialog */}
+            <AlertDialog open={!!pendingNote} onOpenChange={(open) => !open && gestures.dismissNote()}>
+              <AlertDialogContent size="sm">
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Delete note?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This note has content. Are you sure you want to delete it?
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction variant="destructive" onClick={gestures.confirmNote}>
+                    Delete
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+
+            {/* Remove users confirmation dialog */}
+            <AlertDialog open={pendingPlayers.length > 0} onOpenChange={(open) => !open && gestures.dismissPlayers()}>
+              <AlertDialogContent size="sm">
+                <AlertDialogHeader>
+                  <AlertDialogTitle>
+                    {pendingPlayers.length === 1
+                      ? `Remove ${pendingPlayers[0].name}?`
+                      : `Remove ${pendingPlayers.length} players?`}
+                  </AlertDialogTitle>
+                  <AlertDialogDescription>
+                    {pendingPlayers.length === 1
+                      ? "This will remove the user from the room. They can rejoin using the room link."
+                      : `This will remove ${playerNames.format(pendingPlayers.map((player) => player.name))} from the room. They can rejoin using the room link.`}
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction variant="destructive" onClick={gestures.confirmPlayers}>
+                    Remove
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          </>
+        }
+      />
+    </BoardChrome>
   );
 }
 
+/**
+ * The poker board, for a member of the room or for the demo's viewer: one
+ * presence subscription per viewer (the demo's is local), around the board
+ * and its chrome.
+ */
 export function RoomCanvas(props: RoomCanvasProps): ReactElement {
   const isDemoMode = useIsDemoMode();
   const { roomData, currentUserId } = props;
-  // One presence subscription per viewer, mounted only when a consumer can
-  // exist: in real rooms that needs a resolved currentUserId (matching
-  // RoomCanvasInner's loading gate); in demo it subscribes to nothing anyway.
-  const withPresence = roomData && (isDemoMode || currentUserId);
+  // The room page mounts the board once the viewer has joined; until someone
+  // sits at it there is nothing to draw, and no presence to hold.
+  if (!currentUserId && !isDemoMode) {
+    return <div className="flex items-center justify-center h-screen">Loading...</div>;
+  }
   return (
     <WhiteboardProviders
-      presence={
-        withPresence
-          ? { roomId: roomData.room._id, userId: currentUserId ?? DEMO_VIEWER_ID, users: roomData.users }
-          : undefined
-      }
+      presence={{ roomId: roomData.room._id, userId: currentUserId ?? DEMO_VIEWER_ID, users: roomData.users }}
     >
       <RoomCanvasInner {...props} />
     </WhiteboardProviders>

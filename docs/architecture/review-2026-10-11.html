@@ -1,0 +1,934 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Architecture review for AgileKit</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script type="module">
+  import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+  mermaid.initialize({
+    startOnLoad: false,
+    theme: "neutral",
+    securityLevel: "loose",
+    fontFamily: "ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif",
+    flowchart: { htmlLabels: true, curve: "basis", nodeSpacing: 24, rankSpacing: 34, padding: 8 },
+    sequence: { mirrorActors: false, actorMargin: 26, width: 108, height: 34, boxMargin: 6, noteMargin: 6, messageMargin: 24, messageFontSize: 12, noteFontSize: 11, actorFontSize: 12 },
+  });
+  await mermaid.run({ querySelector: ".mermaid" });
+</script>
+<style type="text/tailwindcss">
+  @layer components {
+    .card { @apply rounded-2xl border border-stone-200 bg-white p-6 md:p-8 shadow-sm space-y-6 scroll-mt-8; }
+    .num { @apply font-mono text-xs text-stone-400; }
+    .badge { @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ring-1 ring-inset; }
+    .b-strong { @apply bg-emerald-100 text-emerald-800 ring-emerald-200; }
+    .b-worth { @apply bg-amber-100 text-amber-800 ring-amber-200; }
+    .b-spec { @apply bg-slate-100 text-slate-700 ring-slate-200; }
+    .b-dep { @apply bg-white font-mono font-normal text-[11px] text-slate-600 ring-slate-300; }
+    .b-flight { @apply bg-indigo-50 font-medium text-[11px] text-indigo-700 ring-indigo-200; }
+    .area { @apply text-[11px] uppercase tracking-wider text-slate-400; }
+    .title { @apply font-serif text-2xl md:text-[1.65rem] leading-snug tracking-tight text-slate-900; }
+    .files { @apply font-mono text-[12px] leading-6 text-slate-600 break-words; }
+    .fig { @apply relative rounded-xl border border-stone-200 bg-stone-50 p-4 min-h-[320px]; }
+    .dlabel { @apply text-[10px] font-semibold uppercase tracking-wider text-slate-500; }
+    .k { @apply text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1; }
+    .prose-s { @apply text-[15px] leading-relaxed text-slate-700; }
+    .wins { @apply flex flex-wrap gap-2; }
+    .wins li { @apply rounded-md bg-emerald-50 px-2.5 py-1 text-sm text-emerald-900 ring-1 ring-inset ring-emerald-100; }
+    .adr { @apply rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-relaxed text-amber-900; }
+    .note { @apply rounded-lg border border-indigo-100 bg-indigo-50 px-4 py-3 text-sm leading-relaxed text-indigo-900; }
+    .mod { @apply rounded-md border border-slate-300 bg-white px-2 py-1 text-[11px] leading-snug text-slate-700; }
+    .deepbox { @apply rounded-md bg-gradient-to-br from-slate-900 to-slate-800 px-3 py-2 text-[11px] leading-snug text-slate-100 ring-2 ring-slate-900; }
+    .chip { @apply inline-flex items-center rounded px-1.5 py-0.5 text-[10.5px] leading-tight ring-1 ring-inset; }
+    .va { @apply bg-slate-100 text-slate-700 ring-slate-200; }
+    .vb { @apply bg-amber-100 text-amber-900 ring-amber-200; }
+    .vc { @apply bg-rose-100 text-rose-900 ring-rose-200; }
+    .vd { @apply bg-sky-100 text-sky-900 ring-sky-200; }
+    .ve { @apply bg-violet-100 text-violet-900 ring-violet-200; }
+    .leaktext { @apply text-red-700; }
+    .seamline { @apply relative my-1 border-t-2 border-dashed border-slate-400; }
+    .seamline > span { @apply absolute -top-2 right-1 bg-stone-50 px-1 text-[9.5px] font-semibold uppercase tracking-wider text-slate-500; }
+    .bug { @apply space-y-0.5; }
+    .bug b { @apply font-semibold text-slate-900; }
+    .bug code { @apply block font-mono text-[11.5px] text-slate-500; }
+  }
+</style>
+<style>
+  .mermaid { display: flex; justify-content: center; align-items: center; min-height: 270px; }
+  .mermaid svg { max-width: 100% !important; max-height: 290px; height: auto; }
+  .seam { stroke-dasharray: 4 4; }
+  .leak { stroke: #dc2626; }
+  .deep { background: linear-gradient(135deg, #0f172a, #1e293b); }
+</style>
+</head>
+<body class="bg-stone-50 font-sans text-slate-900 antialiased">
+<main class="mx-auto max-w-5xl space-y-12 px-6 py-12">
+
+  <!-- ============================== HEADER ============================== -->
+  <header class="space-y-8">
+    <div class="space-y-2">
+      <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Architecture review</p>
+      <h1 class="font-serif text-5xl tracking-tight">AgileKit</h1>
+      <p class="font-mono text-xs text-slate-500">spokvulcan/poker-planning · main 17c9c29 + working tree · 11 Oct 2026 · after #406 carried out the 4 Oct review</p>
+    </div>
+
+    <div class="flex flex-wrap items-center gap-x-6 gap-y-3 text-xs text-slate-600">
+      <span class="inline-flex items-center gap-2"><span class="inline-block h-4 w-7 rounded-sm border border-slate-400 bg-white"></span>module</span>
+      <span class="inline-flex items-center gap-2"><svg width="30" height="8" aria-hidden="true"><line x1="0" y1="4" x2="30" y2="4" stroke="#64748b" stroke-width="2" class="seam"/></svg>seam</span>
+      <span class="inline-flex items-center gap-2"><svg width="32" height="10" aria-hidden="true"><defs><marker id="lg-arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#dc2626"/></marker></defs><line x1="0" y1="5" x2="28" y2="5" stroke="#dc2626" stroke-width="2" marker-end="url(#lg-arr)"/></svg>leakage</span>
+      <span class="inline-flex items-center gap-2"><span class="deep inline-block h-4 w-7 rounded-sm ring-2 ring-slate-900"></span>deep module</span>
+      <span class="inline-flex items-center gap-2"><span class="badge b-flight">in-flight</span>touches uncommitted work</span>
+    </div>
+
+    <nav aria-label="Candidates" class="rounded-2xl border border-stone-200 bg-white px-5 py-3">
+      <ol class="divide-y divide-stone-100 text-sm">
+        <li class="flex flex-wrap items-center gap-x-3 gap-y-1 py-2"><span class="num w-6">01</span><a href="#c01" class="min-w-[14rem] flex-1 hover:text-emerald-700">One viewer: pages ask it, never Convex's auth booleans</a><span class="badge b-flight">in-flight</span><span class="badge b-strong">Strong</span></li>
+        <li class="flex flex-wrap items-center gap-x-3 gap-y-1 py-2"><span class="num w-6">02</span><a href="#c02" class="min-w-[14rem] flex-1 hover:text-emerald-700">Let the step rule judge a stack by every sticky it groups</a><span class="badge b-strong">Strong</span></li>
+        <li class="flex flex-wrap items-center gap-x-3 gap-y-1 py-2"><span class="num w-6">03</span><a href="#c03" class="min-w-[14rem] flex-1 hover:text-emerald-700">Give every account surface one list, and let the room fill the seat</a><span class="text-[11px] text-slate-400">with 01</span><span class="badge b-flight">in-flight</span><span class="badge b-worth">Worth exploring</span></li>
+        <li class="flex flex-wrap items-center gap-x-3 gap-y-1 py-2"><span class="num w-6">04</span><a href="#c04" class="min-w-[14rem] flex-1 hover:text-emerald-700">Let the whiteboard own the view</a><span class="badge b-flight">in-flight</span><span class="badge b-worth">Worth exploring</span></li>
+        <li class="flex flex-wrap items-center gap-x-3 gap-y-1 py-2"><span class="num w-6">05</span><a href="#c05" class="min-w-[14rem] flex-1 hover:text-emerald-700">Ship the whiteboard's test stand-ins with it, and test the retro board at its seam</a><span class="badge b-worth">Worth exploring</span></li>
+        <li class="flex flex-wrap items-center gap-x-3 gap-y-1 py-2"><span class="num w-6">06</span><a href="#c06" class="min-w-[14rem] flex-1 hover:text-emerald-700">Let the board chrome own its controls and docked panels</a><span class="text-[11px] text-slate-400">after 04</span><span class="badge b-worth">Worth exploring</span></li>
+        <li class="flex flex-wrap items-center gap-x-3 gap-y-1 py-2"><span class="num w-6">07</span><a href="#c07" class="min-w-[14rem] flex-1 hover:text-emerald-700">Give a settled estimate one path to its tracker</a><span class="badge b-worth">Worth exploring</span></li>
+        <li class="flex flex-wrap items-center gap-x-3 gap-y-1 py-2"><span class="num w-6">08</span><a href="#c08" class="min-w-[14rem] flex-1 hover:text-emerald-700">Let the deck say what a creator's pick deals and stores</a><span class="badge b-flight">in-flight</span><span class="badge b-worth">Worth exploring</span></li>
+        <li class="flex flex-wrap items-center gap-x-3 gap-y-1 py-2"><span class="num w-6">09</span><a href="#c09" class="min-w-[14rem] flex-1 hover:text-emerald-700">Close the permission guard's second door, and hold room reads to the scan</a><span class="badge b-worth">Worth exploring</span></li>
+        <li class="flex flex-wrap items-center gap-x-3 gap-y-1 py-2"><span class="num w-6">10</span><a href="#c10" class="min-w-[14rem] flex-1 hover:text-emerald-700">Give the Jira adapter one way to act as a connection, with an in-memory Jira behind it</a><span class="text-[11px] text-slate-400">after 07</span><span class="badge b-worth">Worth exploring</span></li>
+        <li class="flex flex-wrap items-center gap-x-3 gap-y-1 py-2"><span class="num w-6">11</span><a href="#c11" class="min-w-[14rem] flex-1 hover:text-emerald-700">Let the walk say where the discussion stands</a><span class="badge b-worth">Worth exploring</span></li>
+        <li class="flex flex-wrap items-center gap-x-3 gap-y-1 py-2"><span class="num w-6">12</span><a href="#c12" class="min-w-[14rem] flex-1 hover:text-emerald-700">One shell per dashboard panel</a><span class="badge b-spec">Speculative</span></li>
+      </ol>
+    </nav>
+  </header>
+
+  <!-- ============================== CANDIDATES ============================== -->
+  <section id="candidates" class="space-y-10">
+
+    <!-- ---------- 01 ---------- -->
+    <article id="c01" class="card">
+      <div class="flex flex-wrap items-center gap-2">
+        <span class="num">01</span>
+        <span class="badge b-strong">Strong</span>
+        <span class="badge b-dep">mock · BetterAuth, Convex client</span>
+        <span class="badge b-flight">in-flight</span>
+        <span class="area">identity · browser</span>
+      </div>
+      <h2 class="title">One viewer: pages ask it, never Convex's auth booleans</h2>
+      <ul class="files">
+        <li>src/components/auth/auth-provider.tsx:28-44, 69-96 <span class="text-indigo-600">· in-flight seed</span></li>
+        <li>src/components/auth/{viewer.ts:30-56, server-viewer.ts:13-22} <span class="text-indigo-600">· in-flight</span></li>
+        <li>src/app/(app)/room/[roomId]/room-content.tsx:32-40, 121-135</li>
+        <li>src/app/(app)/dashboard/{dashboard-content.tsx:39-55, sessions/sessions-content.tsx:10-16, retros/retros-content.tsx:28-29}</li>
+        <li>src/components/{user-menu/user-menu.tsx:25-37, command-menu/command-menu.tsx:36, 63}</li>
+        <li>convex/model/caller.ts:55-75 · convex/users.ts:9-15 (getGlobalUser)</li>
+      </ul>
+      <div class="grid gap-4 md:grid-cols-2">
+        <figure class="fig">
+          <figcaption class="dlabel">Before · two answers on first paint</figcaption>
+          <div class="mt-4 space-y-3">
+            <div class="grid grid-cols-[92px_1fr] gap-2 text-[9.5px] uppercase tracking-wider text-slate-400">
+              <span></span><div class="flex justify-between"><span>first paint</span><span>Convex confirms →</span></div>
+            </div>
+            <div class="grid grid-cols-[92px_1fr] items-center gap-2">
+              <span class="font-mono text-[11px] text-slate-600">viewer</span>
+              <div class="flex h-7 overflow-hidden rounded border border-slate-300 text-[11px]">
+                <div class="flex w-1/2 items-center justify-center bg-emerald-50 text-emerald-800">signedIn · seed</div>
+                <div class="flex w-1/2 items-center justify-center border-l border-slate-300 bg-emerald-100 text-emerald-900">signedIn</div>
+              </div>
+            </div>
+            <div class="grid grid-cols-[92px_1fr] items-center gap-2">
+              <span class="font-mono text-[11px] text-slate-600">isAuthenticated</span>
+              <div class="flex h-7 overflow-hidden rounded border border-red-300 text-[11px]">
+                <div class="flex w-1/2 items-center justify-center bg-red-50 font-medium text-red-700">false · loading</div>
+                <div class="flex w-1/2 items-center justify-center border-l border-slate-300 bg-emerald-100 text-emerald-900">true</div>
+              </div>
+            </div>
+            <div class="grid grid-cols-2 gap-2 pt-1">
+              <div class="mod"><p class="dlabel">read the viewer</p><p class="mt-1">navbar · menus · nav-user · sign-in · settings · create</p></div>
+              <div class="mod border-red-300"><p class="dlabel text-red-600">read the raw pair · 7 decisions</p><p class="mt-1">room gate · dashboard ×3 · user menu · ⌘K</p></div>
+            </div>
+            <p class="text-[11px] leaktext">⌘K offers neither Dashboard nor Sign in while the navbar already draws the menu</p>
+            <p class="text-[10.5px] text-slate-500">viewer derived from a raw users row twice · “guest” answered 4 ways on 3 inputs · test fakes in 4 shapes</p>
+          </div>
+        </figure>
+        <figure class="fig">
+          <figcaption class="dlabel">After · one viewer, one answer</figcaption>
+          <div class="mt-4 space-y-3">
+            <div class="grid grid-cols-[92px_1fr] gap-2 text-[9.5px] uppercase tracking-wider text-slate-400">
+              <span></span><div class="flex justify-between"><span>first paint</span><span>Convex confirms →</span></div>
+            </div>
+            <div class="grid grid-cols-[92px_1fr] items-center gap-2">
+              <span class="font-mono text-[11px] text-slate-600">viewer</span>
+              <div class="flex h-7 overflow-hidden rounded border border-slate-300 text-[11px]">
+                <div class="flex w-1/2 items-center justify-center bg-emerald-50 text-emerald-800">signedIn · reads wait</div>
+                <div class="flex w-1/2 items-center justify-center border-l border-slate-300 bg-emerald-100 text-emerald-900">signedIn · reads open</div>
+              </div>
+            </div>
+            <div class="flex items-center gap-2">
+              <div class="mod w-28 text-center">13 useAuth call sites</div>
+              <span class="text-slate-400">→</span>
+              <div class="deepbox flex-1"><p class="text-[12px] font-semibold">Viewer module</p><p class="text-slate-300">who the page shows · when caller-scoped reads open</p></div>
+            </div>
+            <div class="seamline"><span>seam</span></div>
+            <div class="mod">answered by one Convex query: the caller as <span class="font-mono">caller.ts</span> sees them, kind from the token</div>
+            <div class="grid grid-cols-2 gap-2 text-center">
+              <div class="mod">(app) layout · server read</div>
+              <div class="mod">browser · subscription</div>
+            </div>
+            <p class="text-[10.5px] text-slate-500">raw reads outside 7 → 0 · context fields 4 → 2 · one fake shape, seeded state included</p>
+          </div>
+        </figure>
+      </div>
+      <div class="grid gap-6 md:grid-cols-2">
+        <div><p class="k">Problem</p><p class="prose-s">The in-flight seed makes the context's two answers disagree by design (the viewer is the server's signedIn while Convex's isAuthenticated is still false), yet 7 decisions in 6 modules read the raw pair, and 4 of 8 test fakes derive one from the other, so no test can show the gap.</p></div>
+        <div><p class="k">Solution</p><p class="prose-s">The viewer module owns both meanings, who the page shows and when caller-scoped reads may open, and pages open those reads through it; then one Convex query answers the viewer as caller.ts sees the caller, so the layout's read and the browser's subscription become two adapters that derive nothing.</p></div>
+      </div>
+      <div><p class="k">Wins</p><ul class="wins"><li>Interface shrinks: 4 fields → 2</li><li>Locality: 7 raw-pair decisions → 0</li><li>Tests fake one shape, seed included</li><li>“Guest” answered where the server decides</li></ul></div>
+      <aside class="adr"><b>Reopens a documented rule, not an ADR.</b> The second step drops the row-only viewer (docs/authentication.md:386, held by auth-provider.test.tsx:213), which exists because the browser's isAnonymous reads false while loading; the token claim the server reads has no such window. Weigh the seed's own cost too: a Convex round-trip on every signed-in (app) render, blog included.</aside>
+    </article>
+
+    <!-- ---------- 02 ---------- -->
+    <article id="c02" class="card">
+      <div class="flex flex-wrap items-center gap-2">
+        <span class="num">02</span>
+        <span class="badge b-strong">Strong</span>
+        <span class="badge b-dep">in-process</span>
+        <span class="area">retro · both tiers</span>
+      </div>
+      <h2 class="title">Let the step rule judge a stack by every sticky it groups</h2>
+      <ul class="files">
+        <li>convex/retroSteps.ts:90-112 (stickyActAllowed, stickyEditDecision)</li>
+        <li>convex/model/retro.ts:736-771 (the check at :747 runs before the neighbourhood read at :748)</li>
+        <li>convex/retroTopics.ts:80-107 (a root brings its whole stack, :102-105)</li>
+        <li>src/components/retro/{use-retro-mutations.ts:99-116, retro-canvas.tsx:226-233, build-retro-nodes.ts:144, 163}</li>
+      </ul>
+      <div class="grid gap-4 md:grid-cols-2">
+        <figure class="fig">
+          <figcaption class="dlabel">Before · step: write</figcaption>
+          <svg viewBox="0 0 440 292" class="mt-2 h-auto w-full" role="img" aria-label="The rule sees A and C; Bob's face-down B moves unchecked">
+            <defs>
+              <pattern id="h02a" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="7" height="7" fill="#e2e8f0"/><line x1="0" y1="0" x2="0" y2="7" stroke="#94a3b8" stroke-width="2.5"/></pattern>
+              <marker id="m02a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#334155"/></marker>
+              <marker id="m02ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#dc2626"/></marker>
+            </defs>
+            <text x="24" y="28" font-size="10" fill="#64748b" letter-spacing="1">ANN'S STACK, BUILT IN VOTE</text>
+            <path d="M18,44 H12 V150 H18" fill="none" stroke="#94a3b8"/>
+            <rect x="24" y="40" width="112" height="54" rx="4" fill="#fde68a" stroke="#d97706"/>
+            <text x="36" y="62" font-size="12" font-weight="600" fill="#78350f">A · Ann</text>
+            <text x="36" y="80" font-size="10" fill="#92400e">root</text>
+            <rect x="24" y="100" width="112" height="54" rx="4" fill="url(#h02a)" stroke="#94a3b8"/>
+            <rect x="30" y="112" width="100" height="32" rx="3" fill="#f8fafc" opacity="0.92"/>
+            <text x="36" y="126" font-size="12" font-weight="600" fill="#334155">B · Bob</text>
+            <text x="36" y="140" font-size="10" fill="#475569">face-down to Ann</text>
+            <rect x="304" y="70" width="112" height="54" rx="4" fill="#fde68a" stroke="#d97706"/>
+            <text x="316" y="92" font-size="12" font-weight="600" fill="#78350f">C · Ann</text>
+            <text x="316" y="110" font-size="10" fill="#92400e">drop target</text>
+            <path d="M140,62 C200,50 250,62 300,86" fill="none" stroke="#334155" stroke-width="1.5" marker-end="url(#m02a)"/>
+            <text x="176" y="46" font-size="10" fill="#334155">Ann drops A on C</text>
+            <path d="M140,128 C200,142 250,130 300,108" fill="none" stroke="#dc2626" stroke-width="2" marker-end="url(#m02ar)"/>
+            <text x="170" y="156" font-size="10" font-weight="600" fill="#dc2626">B moves too · never asked</text>
+            <path d="M172,196 L140,72" stroke="#64748b" stroke-dasharray="2 3"/>
+            <path d="M300,196 L346,126" stroke="#64748b" stroke-dasharray="2 3"/>
+            <rect x="96" y="196" width="248" height="56" rx="6" fill="#ffffff" stroke="#94a3b8"/>
+            <text x="110" y="218" font-size="11" font-family="ui-monospace, monospace" fill="#0f172a">stickyActAllowed(step, act, mine)</text>
+            <text x="110" y="238" font-size="10" fill="#475569">mine = A.mine &amp;&amp; C.mine →</text>
+            <text x="258" y="238" font-size="10" font-weight="700" fill="#dc2626">allowed</text>
+            <text x="24" y="282" font-size="10" fill="#64748b">8 call sites in 4 modules work out mine by hand</text>
+          </svg>
+        </figure>
+        <figure class="fig">
+          <figcaption class="dlabel">After · step: write</figcaption>
+          <svg viewBox="0 0 440 292" class="mt-2 h-auto w-full" role="img" aria-label="The rule sees A, B and C and refuses the drop">
+            <defs>
+              <pattern id="h02b" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="7" height="7" fill="#e2e8f0"/><line x1="0" y1="0" x2="0" y2="7" stroke="#94a3b8" stroke-width="2.5"/></pattern>
+              <marker id="m02b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#94a3b8"/></marker>
+            </defs>
+            <text x="24" y="28" font-size="10" fill="#64748b" letter-spacing="1">ANN'S STACK, BUILT IN VOTE</text>
+            <path d="M18,44 H12 V150 H18" fill="none" stroke="#94a3b8"/>
+            <rect x="24" y="40" width="112" height="54" rx="4" fill="#fde68a" stroke="#d97706"/>
+            <text x="36" y="62" font-size="12" font-weight="600" fill="#78350f">A · Ann</text>
+            <text x="36" y="80" font-size="10" fill="#92400e">root</text>
+            <rect x="24" y="100" width="112" height="54" rx="4" fill="url(#h02b)" stroke="#94a3b8"/>
+            <rect x="30" y="112" width="100" height="32" rx="3" fill="#f8fafc" opacity="0.92"/>
+            <text x="36" y="126" font-size="12" font-weight="600" fill="#334155">B · Bob</text>
+            <text x="36" y="140" font-size="10" fill="#475569">face-down to Ann</text>
+            <rect x="304" y="70" width="112" height="54" rx="4" fill="#fde68a" stroke="#d97706"/>
+            <text x="316" y="92" font-size="12" font-weight="600" fill="#78350f">C · Ann</text>
+            <text x="316" y="110" font-size="10" fill="#92400e">drop target</text>
+            <path d="M140,62 C200,50 250,62 300,86" fill="none" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#m02b)"/>
+            <text x="176" y="46" font-size="10" fill="#64748b">Ann drops A on C</text>
+            <circle cx="222" cy="64" r="9" fill="#ecfdf5" stroke="#059669"/>
+            <text x="217.5" y="68" font-size="11" font-weight="700" fill="#047857">✕</text>
+            <path d="M190,196 L140,72" stroke="#334155" stroke-dasharray="2 3"/>
+            <path d="M200,196 L140,132" stroke="#334155" stroke-dasharray="2 3"/>
+            <path d="M300,196 L346,126" stroke="#334155" stroke-dasharray="2 3"/>
+            <rect x="96" y="196" width="248" height="56" rx="6" fill="#0f172a" stroke="#0f172a" stroke-width="3"/>
+            <text x="110" y="219" font-size="12" font-weight="700" fill="#f8fafc">step rule</text>
+            <text x="110" y="238" font-size="10" fill="#cbd5e1">given every sticky the drop groups, and the actor</text>
+            <text x="24" y="282" font-size="10" font-weight="600" fill="#047857">B is Bob's and face-down → refused, on both tiers</text>
+          </svg>
+        </figure>
+      </div>
+      <div class="grid gap-6 md:grid-cols-2">
+        <div><p class="k">Problem</p><p class="prose-s">The step rule takes <code>mine</code> already worked out, so 8 call sites in 4 modules decide which stickies count, and the 3 stack checks look at 2 stickies while <code>Topics.stack</code> moves a root's whole stack: in Write, the stack's author can regroup a colleague's face-down sticky.</p></div>
+        <div><p class="k">Solution</p><p class="prose-s">The rule takes the stickies an act touches and who is acting, and decides itself which must be the actor's: the server asks after the neighbourhood read it already makes, the board over the stickies it holds.</p></div>
+      </div>
+      <div><p class="k">Wins</p><ul class="wins"><li>Locality: who counts, one rule</li><li>Leverage: 8 call sites stop deriving mine</li><li>Face-down regrouping closes, both tiers</li><li>Tests: mixed stacks at one interface</li></ul></div>
+      <aside class="adr"><b>Overlaps C06, killed on 4 Oct</b> as private to model/retro.ts. New evidence: the bug that review logged in passing survived #406, and 4 of the 6 stack and unstack callers are in the browser. Enforces ADR-0026; ADR-0013 and ADR-0028 stand.</aside>
+    </article>
+
+    <!-- ---------- 03 ---------- -->
+    <article id="c03" class="card">
+      <div class="flex flex-wrap items-center gap-2">
+        <span class="num">03</span>
+        <span class="badge b-worth">Worth exploring</span>
+        <span class="badge b-dep">in-process</span>
+        <span class="badge b-flight">in-flight</span>
+        <span class="area">identity · browser</span>
+      </div>
+      <h2 class="title">Give every account surface one list, and let the room fill the seat</h2>
+      <ul class="files">
+        <li>src/components/user-menu/{viewer-menu.tsx:39-151, user-menu.tsx:25-131} <span class="text-indigo-600">· in-flight</span></li>
+        <li>src/components/command-menu/{command-palette.tsx:162-216, copy.ts:47-80} <span class="text-indigo-600">· in-flight</span></li>
+        <li>src/components/dashboard/{nav-user.tsx:44-74, app-sidebar.tsx:32-66} · navbar-actions.tsx:9-28</li>
+        <li>src/components/{room/theme-section.tsx:11-15, mode-toggle.tsx:28-36}</li>
+        <li>src/components/room/canvas-navigation.tsx:332, 616 · convex/users.ts:58-81 (setSpectator, leave)</li>
+      </ul>
+      <div class="grid gap-4 md:grid-cols-2">
+        <figure class="fig">
+          <figcaption class="dlabel">Before · five rules, restated per surface</figcaption>
+          <div class="mt-4 space-y-2.5 text-[11px]">
+            <div><p class="mb-1 text-slate-600">Who is offered Sign in · 3 rules</p><div class="flex flex-wrap gap-1"><span class="chip va">viewer menu</span><span class="chip va">retro/new</span><span class="chip vb">navbar</span><span class="chip vc">⌘K</span></div></div>
+            <div><p class="mb-1 text-slate-600">Where Sign in returns · 7 constructions</p><div class="flex flex-wrap gap-1"><span class="chip va">user menu</span><span class="chip vb">nav-user</span><span class="chip vc">navbar</span><span class="chip vc">⌘K</span><span class="chip vb">create</span><span class="chip vb">dash layout</span><span class="chip vb">overview</span></div></div>
+            <div><p class="mb-1 text-slate-600">The dashboard's places · 3 label sets</p><div class="flex flex-wrap gap-1"><span class="chip va">⌘K copy</span><span class="chip vb">sidebar</span><span class="chip vc">user menu</span></div></div>
+            <div><p class="mb-1 text-slate-600">Theme options · 4 lists</p><div class="flex flex-wrap gap-1"><span class="chip va">⌘K copy</span><span class="chip va">viewer menu</span><span class="chip va">theme section</span><span class="chip va">mode toggle</span></div></div>
+            <div><p class="mb-1 text-slate-600">The room seat</p><div class="flex flex-wrap gap-1"><span class="chip vc">menu → useParams + 2 queries</span><span class="chip vc">Leave: no control</span></div></div>
+            <p class="pt-1 text-[10.5px] text-slate-500">chip colour = which variant of the rule · 5 rules over 14 modules</p>
+          </div>
+        </figure>
+        <figure class="fig">
+          <figcaption class="dlabel">After · one list, two adapters, a seat slot</figcaption>
+          <div class="mt-4 space-y-3 text-[11px]">
+            <div class="deepbox"><p class="text-[12px] font-semibold">Account entries · per viewer, per path</p><p class="mt-0.5 text-slate-300">which entries and places · their labels · where Sign in returns · where Sign out lands</p></div>
+            <div class="seamline"><span>seam</span></div>
+            <div class="grid grid-cols-2 gap-2 text-center">
+              <div class="mod">ViewerMenu <span class="text-slate-400">· adapter</span></div>
+              <div class="mod">⌘K palette <span class="text-slate-400">· adapter</span></div>
+              <div class="mod">navbar <span class="text-slate-400">· reads</span></div>
+              <div class="mod">sidebar <span class="text-slate-400">· reads</span></div>
+            </div>
+            <div class="flex items-center gap-2">
+              <div class="mod">room · its membership and ceremony rules</div>
+              <span class="text-slate-400">→</span>
+              <div class="mod flex-1 border-dashed">menu's seat slot: sit out · come back · leave</div>
+            </div>
+            <p class="text-[10.5px] text-slate-500">5 rules → 1 module · the menu reads no room · Leave gets a control</p>
+          </div>
+        </figure>
+      </div>
+      <div class="grid gap-6 md:grid-cols-2">
+        <div><p class="k">Problem</p><p class="prose-s">Five account rules are restated across 14 modules and already disagree (⌘K never offers a guest Sign in, Sign in returns by 3 rules, the dashboard has 3 label sets), while the global account menu reaches into the room for the seat through useParams and 2 subscriptions, and Leave has no control at all.</p></div>
+        <div><p class="k">Solution</p><p class="prose-s">One module says, for a viewer on a path, which entries and places exist, their labels, where Sign in returns and where Sign out lands; ViewerMenu and ⌘K are its two adapters, and the room fills the menu's seat slot from the membership it already holds.</p></div>
+      </div>
+      <div><p class="k">Wins</p><ul class="wins"><li>Locality: 5 rules in 1 module</li><li>Two adapters make the seam real</li><li>Menu stops reading the room</li><li>Tests: one table, viewer × path</li></ul></div>
+      <aside class="note"><b>Cheapest before ⌘K ships.</b> The in-flight <code>settings</code> slot in viewer-menu.tsx is the seat's seam. Sitting out stays a voting-round act (ADR-0004); it gains the server's refusal words on the way.</aside>
+    </article>
+
+    <!-- ---------- 04 ---------- -->
+    <article id="c04" class="card">
+      <div class="flex flex-wrap items-center gap-2">
+        <span class="num">04</span>
+        <span class="badge b-worth">Worth exploring</span>
+        <span class="badge b-dep">mock · React Flow</span>
+        <span class="badge b-flight">in-flight</span>
+        <span class="area">whiteboard · browser</span>
+      </div>
+      <h2 class="title">Let the whiteboard own the view: fit, zoom, centre, bring into view</h2>
+      <ul class="files">
+        <li>src/components/whiteboard/whiteboard.tsx:40-59, 140-149, 242-304 <span class="text-indigo-600">· in-flight FIT_VIEW_OPTIONS</span></li>
+        <li>src/components/room/canvas-navigation.tsx:89, 122-132</li>
+        <li>src/components/retro/retro-canvas.tsx:93, 145-167, 206-209</li>
+        <li>src/components/ui/side-panel.tsx:42-52</li>
+      </ul>
+      <div class="grid gap-4 md:grid-cols-2">
+        <figure class="fig">
+          <figcaption class="dlabel">Before · three modules drive the viewport</figcaption>
+          <pre class="mermaid">
+flowchart TB
+  N["chrome · Fit button<br/>padding 0.2 · cap 2.5"]
+  W["whiteboard<br/>first fit · refits · follow<br/>padding 0.12 · cap 1"]
+  R["retro adapter<br/>bring into view<br/>measured against the window"]
+  V[("React Flow viewport")]
+  W --> V
+  N -->|"fitView · zoom"| V
+  R -->|"setViewport · centerOn"| V
+  classDef leak stroke:#dc2626,stroke-width:2px,color:#991b1b
+  class N,R leak
+  linkStyle 1,2 stroke:#dc2626,stroke-width:2px
+          </pre>
+        </figure>
+        <figure class="fig">
+          <figcaption class="dlabel">After · one module, one rule</figcaption>
+          <pre class="mermaid">
+flowchart TB
+  N["chrome"] -->|"fit · zoom"| W
+  R["retro adapter"] -->|"bring into view · centre"| W
+  W["whiteboard view<br/>one rule: padding · limits · duration<br/>measured against its own pane"]
+  W --> V[("React Flow viewport")]
+  classDef deep fill:#0f172a,stroke:#0f172a,color:#f8fafc,stroke-width:3px
+  class W deep
+          </pre>
+        </figure>
+      </div>
+      <div class="grid gap-6 md:grid-cols-2">
+        <div><p class="k">Problem</p><p class="prose-s">The whiteboard says it owns fitting and following, yet the chrome's Fit button and the retro's bring-into-view drive React Flow's viewport themselves: two fit rules (the button zooms past the board's 100% cap), and a new sticky measured against the window, not the pane a docked panel narrows.</p></div>
+        <div><p class="k">Solution</p><p class="prose-s">The whiteboard hands its adapters and the chrome the view actions it half owns (fit, zoom, centre on a node, bring a box into view) under one rule for padding, limits and duration, measured against its own pane; React Flow's viewport calls stay inside it.</p></div>
+      </div>
+      <div><p class="k">Wins</p><ul class="wins"><li>One fit rule, one zoom cap</li><li>Docked panels stop hiding new stickies</li><li>Chrome renders without React Flow</li><li>Tests: the view, once, at the whiteboard</li></ul></div>
+      <aside class="note"><b>Half-built in the working tree:</b> FIT_VIEW_OPTIONS, the fitView prop and three “the view” tests are this seam. The whiteboard was judged deep on 4 Oct; this adds actions its callers already need and keeps its shape.</aside>
+    </article>
+
+    <!-- ---------- 05 ---------- -->
+    <article id="c05" class="card">
+      <div class="flex flex-wrap items-center gap-2">
+        <span class="num">05</span>
+        <span class="badge b-worth">Worth exploring</span>
+        <span class="badge b-dep">mock · React Flow, Convex client</span>
+        <span class="area">tests · both boards</span>
+      </div>
+      <h2 class="title">Ship the whiteboard's test stand-ins with it, and test the retro board at its seam</h2>
+      <ul class="files">
+        <li>src/components/whiteboard/whiteboard.test.tsx:10-48 · room/room-canvas.test.tsx:13-119</li>
+        <li>src/components/retro/use-retro-mutations.test.tsx:14-27, 122-138</li>
+        <li>src/components/room/{hooks/useCanvasActions.test.tsx:30-39, demo/zero-reads.test.ts:45-58}</li>
+        <li>src/components/retro/{retro-canvas.tsx, retro-settings-panel.tsx} (no tests) · vitest.config.mts (no setupFiles)</li>
+      </ul>
+      <div class="grid gap-4 md:grid-cols-2">
+        <figure class="fig">
+          <figcaption class="dlabel">Before · stand-ins by hand, one adapter tested</figcaption>
+          <div class="mt-4 grid grid-cols-2 gap-3 text-[11px]">
+            <div class="space-y-1.5">
+              <p class="dlabel">stand-ins</p>
+              <div class="mod border-red-300">React Flow stub <b>×2</b><br/><span class="text-slate-500">31 lines each</span></div>
+              <div class="mod border-red-300">Convex cache <b>×2</b><br/><span class="text-slate-500">by name · by name + args</span></div>
+              <div class="mod">optimistic update dropped <b>×2</b></div>
+              <div class="mod">convex/react mocked in <b>22</b> files</div>
+              <div class="mod">use-mobile mocked in <b>7</b></div>
+            </div>
+            <div class="space-y-1.5">
+              <p class="dlabel">board adapters</p>
+              <div class="mod">poker · 16 tests<br/><span class="text-amber-700">a drop checked only as a write</span></div>
+              <div class="mod border-red-300">retro · 27 behaviours<br/><b class="leaktext">0 tests · 2 live bugs</b></div>
+              <div class="mod">retro settings · 7 writes<br/><span class="leaktext">0 tests</span></div>
+            </div>
+          </div>
+        </figure>
+        <figure class="fig">
+          <figcaption class="dlabel">After · one stand-in, both adapters</figcaption>
+          <div class="mt-4 space-y-3 text-[11px]">
+            <div class="deepbox"><p class="text-[12px] font-semibold">Board test stand-ins</p><p class="mt-0.5 text-slate-300">draws nodes as React Flow would · drives drop, drop onto, Delete, double-click · Convex cache by function + args · applies optimistic updates · records writes and refusals</p></div>
+            <div class="text-center text-slate-400">↓ ↓ ↓</div>
+            <div class="grid grid-cols-3 gap-2 text-center">
+              <div class="mod">poker adapter ✓</div>
+              <div class="mod">retro adapter ✓</div>
+              <div class="mod">mutations ✓</div>
+            </div>
+            <div class="mod">jsdom setup file: matchMedia · ResizeObserver <span class="text-slate-500">→ 7 use-mobile mocks go</span></div>
+            <p class="text-[10.5px] text-slate-500">2 stubs + 2 caches → 1 each · 1 of 2 adapters tested → 2 of 2</p>
+          </div>
+        </figure>
+      </div>
+      <div class="grid gap-6 md:grid-cols-2">
+        <div><p class="k">Problem</p><p class="prose-s">React Flow is stubbed twice and Convex's local cache faked twice with different rules, two more fakes drop optimistic updates, so the poker test checks a drop only as a write, and the retro adapter (27 behaviours, 2 live bugs) has no test because it would need a third copy.</p></div>
+        <div><p class="k">Solution</p><p class="prose-s">One test-only module beside the whiteboard draws nodes as React Flow would, drives the whiteboard's gestures and holds Convex's local cache keyed by function and arguments, applying optimistic updates and recording writes and refusals; both board adapters are tested through it.</p></div>
+      </div>
+      <div><p class="k">Wins</p><ul class="wins"><li>Both adapters tested at one seam</li><li>Stand-ins: 2 copies → 1</li><li>A drop checked as what shows</li><li>Leverage: 22 hand-rolled mocks shrink</li></ul></div>
+      <aside class="note"><b>Not C29 and not C30.</b> No seeding module, and no production port for board data (ADR-0003): it stays at the seams that already exist, @xyflow/react and convex/react. Fits ADR-0025's cheapest layer.</aside>
+    </article>
+
+    <!-- ---------- 06 ---------- -->
+    <article id="c06" class="card">
+      <div class="flex flex-wrap items-center gap-2">
+        <span class="num">06</span>
+        <span class="badge b-worth">Worth exploring</span>
+        <span class="badge b-dep">in-process</span>
+        <span class="area">chrome · both boards</span>
+      </div>
+      <h2 class="title">Let the board chrome own its controls and docked panels</h2>
+      <ul class="files">
+        <li>src/components/room/canvas-navigation.tsx:62-622 (no test)</li>
+        <li>src/components/room/hooks/usePanelState.ts:1-70</li>
+        <li>src/components/room/room-canvas.tsx:241-251 · retro/retro-canvas.tsx:269, 334-339</li>
+        <li>src/components/room/{issues-panel.tsx:60-67, room-settings-panel.tsx:225-249, participants-section.tsx:35-61}</li>
+        <li>src/components/retro/retro-settings-panel.tsx:188, 364 · ui/side-panel.tsx:41-68</li>
+      </ul>
+      <div class="grid gap-4 md:grid-cols-2">
+        <figure class="fig">
+          <figcaption class="dlabel">Before · interface nearly as tall as the implementation</figcaption>
+          <div class="mt-3 flex h-[262px] items-end gap-3 text-[11px]">
+            <div class="flex w-1/2 flex-col">
+              <p class="dlabel mb-1">interface</p>
+              <div class="h-[210px] space-y-1.5 rounded-md border-2 border-slate-400 bg-white p-2 text-slate-700">
+                <p>8 props · <span class="leaktext">2 never passed</span></p>
+                <p>5 providers it never names</p>
+                <p>a whole room shell for 3 fields</p>
+                <p>panel booleans each board translates</p>
+                <p>inline lambdas defeat its memo (poker)</p>
+              </div>
+            </div>
+            <div class="flex w-1/2 flex-col">
+              <p class="dlabel mb-1">implementation</p>
+              <div class="h-[236px] space-y-1.5 rounded-md border border-slate-300 bg-stone-100 p-2 text-slate-700">
+                <p>12 controls drawn at <b>25</b> sites</p>
+                <p>mobile sheet + desktop bars</p>
+                <p class="leaktext">“Fit to view” · “Fit view”</p>
+                <p class="leaktext">Issues opens · Issues toggles</p>
+                <p>3 ways to gate a closed panel</p>
+              </div>
+            </div>
+          </div>
+        </figure>
+        <figure class="fig">
+          <figcaption class="dlabel">After · small interface, deep chrome</figcaption>
+          <div class="mt-3 flex h-[262px] items-end gap-3 text-[11px]">
+            <div class="flex w-1/2 flex-col">
+              <p class="dlabel mb-1">interface</p>
+              <div class="h-[56px] rounded-md border-2 border-slate-900 bg-white p-2 text-slate-800">a board's panels + share entries</div>
+            </div>
+            <div class="flex w-1/2 flex-col">
+              <p class="dlabel mb-1">implementation</p>
+              <div class="deep h-[236px] space-y-1.5 rounded-md p-2 text-slate-100 ring-2 ring-slate-900">
+                <p class="font-semibold">one control list → both layouts</p>
+                <p class="text-slate-300">owns the open panel (usePanelState inside)</p>
+                <p class="text-slate-300">docks it, mounts its content only while open</p>
+                <p class="text-slate-300">zoom and fit → the whiteboard's view (04)</p>
+                <p class="text-slate-300">demo: one entry, not four checks</p>
+              </div>
+            </div>
+          </div>
+        </figure>
+      </div>
+      <div class="grid gap-6 md:grid-cols-2">
+        <div><p class="k">Problem</p><p class="prose-s">The chrome's interface is nearly as wide as what it does (8 props with 2 never passed, 5 providers it never names, a whole room shell for 3 fields, panel booleans each board translates), and its 12 controls are drawn at 25 sites that already drift between the mobile sheet and the desktop bars.</p></div>
+        <div><p class="k">Solution</p><p class="prose-s">A board hands the chrome its panels and share entries; the chrome owns which panel is open, draws every control from one list in both layouts, docks the open panel and mounts its content only while open.</p></div>
+      </div>
+      <div><p class="k">Wins</p><ul class="wins"><li>Interface: 8 props → 2 inputs</li><li>25 render sites → 12 entries</li><li>Closed panels stop re-rendering per vote</li><li>First tests for 622 lines</li></ul></div>
+      <aside class="note"><b>After 04.</b> ADR-0026 (one chrome for both boards) supports it. usePanelState stays deep; the friction sits around it, not in it.</aside>
+    </article>
+
+    <!-- ---------- 07 ---------- -->
+    <article id="c07" class="card">
+      <div class="flex flex-wrap items-center gap-2">
+        <span class="num">07</span>
+        <span class="badge b-worth">Worth exploring</span>
+        <span class="badge b-dep">local-substitutable + mock · Jira</span>
+        <span class="area">integrations · server</span>
+      </div>
+      <h2 class="title">Give a settled estimate one path to its tracker</h2>
+      <ul class="files">
+        <li>convex/model/votingRound.ts:172-178, 223-246 (scheduleJiraPushIfEnabled)</li>
+        <li>convex/integrations/jira.ts:209-228, 387-433, 435-470</li>
+        <li>convex/integrations/registry.ts:66-83 · convex/integrations.ts:98-133</li>
+        <li>src/components/room/integration-settings.tsx:175-197</li>
+        <li>convex/{jiraEstimatePush.test.ts, votingRound.test.ts:1063-1110}</li>
+      </ul>
+      <div class="grid gap-4 md:grid-cols-2">
+        <figure class="fig">
+          <figcaption class="dlabel">Before · 3 places, 2 transactions, 9 outcomes</figcaption>
+          <pre class="mermaid">
+sequenceDiagram
+  participant R as Round
+  participant A as Push action
+  participant P as Pure core
+  participant J as Jira
+  Note over R: reads link + mapping<br/>names jira twice
+  R-)A: schedule
+  Note over A: re-reads link, mapping,<br/>connection · client may throw
+  A->>P: key, field, estimate
+  Note over P: field set? a number?
+  rect rgba(220, 38, 38, 0.10)
+  P->>J: points + comment, site unchecked
+  end
+  P-->>A: true or false, dropped
+          </pre>
+        </figure>
+        <figure class="fig">
+          <figcaption class="dlabel">After · one module decides, the adapter calls</figcaption>
+          <pre class="mermaid">
+sequenceDiagram
+  participant R as Round
+  participant E as Estimate push
+  participant J as Jira adapter
+  R->>E: issue settled at 5
+  Note over E: link · mapping · auto-push<br/>field · deck number · same site
+  E-)J: push story points
+  J-->>E: outcome
+  Note over E: records the last push
+          </pre>
+        </figure>
+      </div>
+      <div class="grid gap-6 md:grid-cols-2">
+        <div><p class="k">Problem</p><p class="prose-s">Whether, where and how an estimate reaches Jira is decided in 3 places over 2 transactions (9 outcomes, nothing recorded), and both live defects sit in the callers no test runs: a push onto another site's same-key issue, and auto-push saved without a points field that silently does nothing.</p></div>
+        <div><p class="k">Solution</p><p class="prose-s">One integrations module owns an estimate settled on an issue: the round hands it the issue and estimate, and it alone reads link and mapping, decides through the registry (auto-push, field, a number the deck reads, the link's site), schedules the provider's push and records how it went.</p></div>
+      </div>
+      <div><p class="k">Wins</p><ul class="wins"><li>The round stops naming Jira</li><li>Locality: 9 outcomes in 1 module</li><li>Tests: reveal → outcome in convex-test</li><li>GitHub's push becomes an adapter</li></ul></div>
+      <aside class="adr"><b>Within ADR-0006,</b> which names this trigger: the round's call “becomes a registry dispatch” once GitHub has an equivalent effect, and spec 07 §7.5 is that effect. Only the dispatch waits for GitHub; the one-module part doesn't. Ship the site comparison on its own first. ADR-0002 holds: the reveal stays the trigger.</aside>
+    </article>
+
+    <!-- ---------- 08 ---------- -->
+    <article id="c08" class="card">
+      <div class="flex flex-wrap items-center gap-2">
+        <span class="num">08</span>
+        <span class="badge b-worth">Worth exploring</span>
+        <span class="badge b-dep">in-process</span>
+        <span class="badge b-flight">in-flight</span>
+        <span class="area">poker · both tiers</span>
+      </div>
+      <h2 class="title">Let the deck say what a creator's pick deals and stores</h2>
+      <ul class="files">
+        <li>convex/scales.ts:71-131 (validateCustomScale, deckOf)</li>
+        <li>convex/model/rooms.ts:33-59 (resolveVotingScale) · convex/rooms.ts:15-24</li>
+        <li>src/app/(app)/room/new/create-content.tsx:44-51, 81-109, 147-156, 334-338</li>
+        <li>src/app/(app)/room/new/prototype-variants.tsx:62-68, 561 <span class="text-indigo-600">· in-flight prototype</span></li>
+      </ul>
+      <div class="grid gap-4 md:grid-cols-2">
+        <figure class="fig">
+          <figcaption class="dlabel">Before · a pick becomes a deck in 3 modules</figcaption>
+          <div class="mt-4 space-y-2 text-[11px]">
+            <div class="mod">
+              <p class="font-semibold">create page</p>
+              <div class="mt-1.5 flex flex-wrap gap-1"><span class="chip va">parse 1</span><span class="chip va">parse 2</span><span class="chip va">parse 3</span><span class="chip vb">parse 4 · untrimmed</span><span class="chip vb">parse 5 · untrimmed</span><span class="chip va border border-dashed border-indigo-300">prototype +2</span></div>
+              <p class="mt-1.5 text-slate-500">try/catch around a throwing validator → a message</p>
+            </div>
+            <div class="text-center text-slate-400">↓ rooms.create</div>
+            <div class="mod"><p class="font-semibold">resolveVotingScale <span class="font-normal text-slate-500">· model/rooms.ts</span></p><p class="mt-1">custom ⇒ stored as sent, <span class="leaktext">isNumeric: false</span></p></div>
+            <div class="text-center text-slate-400">↓ deckOf</div>
+            <div class="mod border-red-300 leaktext">custom “1, 2, 3, 5, 8”: no average, median or steps, while the Jira push and analytics read its estimates as numbers</div>
+          </div>
+        </figure>
+        <figure class="fig">
+          <figcaption class="dlabel">After · one pure answer for a pick</figcaption>
+          <div class="mt-4 space-y-3 text-[11px]">
+            <div class="grid grid-cols-2 gap-2 text-center">
+              <div class="mod">create page · asks on every change</div>
+              <div class="mod">createRoom · stores the answer</div>
+            </div>
+            <div class="text-center text-slate-400">↓ ↓</div>
+            <div class="deepbox">
+              <p class="text-[12px] font-semibold">scales.ts · a pick</p>
+              <p class="mt-0.5 text-slate-300">the cards it deals · legal or not, in the rule's words · what the room stores</p>
+              <div class="mt-2 flex flex-wrap gap-1 opacity-70"><span class="chip bg-slate-800 text-slate-300 ring-slate-700">parse once</span><span class="chip bg-slate-800 text-slate-300 ring-slate-700">trim</span><span class="chip bg-slate-800 text-slate-300 ring-slate-700">numeric?</span><span class="chip bg-slate-800 text-slate-300 ring-slate-700">validate</span></div>
+            </div>
+            <div class="mod">deckOf · reads what was stored, as today</div>
+            <p class="text-[10.5px] text-slate-500">5 parses (+2 in flight) → 1 · one call per side</p>
+          </div>
+        </figure>
+      </div>
+      <div class="grid gap-6 md:grid-cols-2">
+        <div><p class="k">Problem</p><p class="prose-s">#381 made the deck say what a stored scale means, but what a creator's pick becomes is still split: the page parses the typed deck 5 times (2 untrimmed) around a throwing validator, and room creation stores custom cards untrimmed and always non-numeric, so a custom 1, 2, 3, 5, 8 deck shows no average while the Jira push and analytics read it as numbers.</p></div>
+        <div><p class="k">Solution</p><p class="prose-s">scales.ts answers, for a pick, which cards it deals, whether it is legal (in the rule's words) and what the room stores; the create page asks it on every change and createRoom stores its answer.</p></div>
+      </div>
+      <div><p class="k">Wins</p><ul class="wins"><li>Locality: deck rules beside deckOf</li><li>5 parses (+2 in flight) → 1</li><li>Product call made explicit in tests</li><li>Interface: one pure function</li></ul></div>
+      <aside class="note"><b>Cheapest before a prototype variant ships:</b> they parse twice more. Whether a numeric custom deck averages is a product call the tests would then state.</aside>
+    </article>
+
+    <!-- ---------- 09 ---------- -->
+    <article id="c09" class="card">
+      <div class="flex flex-wrap items-center gap-2">
+        <span class="num">09</span>
+        <span class="badge b-worth">Worth exploring</span>
+        <span class="badge b-dep">local-substitutable · convex-test</span>
+        <span class="area">guards · server</span>
+      </div>
+      <h2 class="title">Close the permission guard's second door, and hold room reads to the scan</h2>
+      <ul class="files">
+        <li>convex/model/auth.ts:28-45, 118-135 (requireRoomMember, requireCanForUser)</li>
+        <li>convex/integrations/jira.ts:77-83, 144-158, 299-314, 745-766</li>
+        <li>convex/issues.ts:10-25 (list, getCurrent: no guard)</li>
+        <li>convex/{requireRoomWrite.test.ts:197-261, requireCan.test.ts:230-315}</li>
+        <li>convex/users.ts:95 · convex/roles.ts:20, 36, 52 (target!)</li>
+      </ul>
+      <div class="grid gap-4 md:grid-cols-2">
+        <figure class="fig">
+          <figcaption class="dlabel">Before · two doors, reads held by lists</figcaption>
+          <pre class="mermaid">
+flowchart LR
+  W["54 room writes"] --> S["room-scoped step"]
+  S --> G(("permission<br/>guard"))
+  J["Jira import"] -->|"userId as an argument"| D["requireCanForUser"]
+  D --> G
+  J -.->|"admitIssue per issue, no step"| I[("issues")]
+  Q["13 room queries"] -->|"8"| R["reader guard"]
+  Q -.->|"3 take nothing"| X[("room rows")]
+  classDef leak stroke:#dc2626,stroke-width:2px,color:#991b1b
+  class D leak
+  linkStyle 2,4,6 stroke:#dc2626,stroke-width:2px
+          </pre>
+        </figure>
+        <figure class="fig">
+          <figcaption class="dlabel">After · one door, reads by construction</figcaption>
+          <pre class="mermaid">
+flowchart LR
+  W["54 room writes"] --> S["room-scoped step"]
+  J["Jira import"] --> S
+  S --> G(("permission<br/>guard"))
+  Q["room queries"] --> R["reader guard"]
+  Q --> P["declared room shell<br/>rooms.get · presence"]
+  T["scan · every module<br/>writes and reads"] -.-> S
+  T -.-> R
+  classDef deep fill:#0f172a,stroke:#0f172a,color:#f8fafc,stroke-width:3px
+  class S,R deep
+          </pre>
+        </figure>
+      </div>
+      <div class="grid gap-6 md:grid-cols-2">
+        <div><p class="k">Problem</p><p class="prose-s">Since #406 every permission check enters through the room-scoped step but one: the Jira import re-reads a userId through requireCanForUser, then admits each issue with no step; and the scan that holds writes to the step lists 9 files by hand while reads are held only by per-query lists, so issues.list and issues.getCurrent still take no guard.</p></div>
+        <div><p class="k">Solution</p><p class="prose-s">The Jira import takes the room-scoped step under its own identity, retiring the second door, and the scan's rule covers every module and reads too: a room-addressed query takes the reader guard or is declared part of the room's public shell.</p></div>
+      </div>
+      <div><p class="k">Wins</p><ul class="wins"><li>Doors into the guard: 2 → 1</li><li>Reads guarded by construction</li><li>Unguarded issue reads close</li><li>Tests cross the one step</li></ul></div>
+      <aside class="adr"><b>The 4 Oct review judged requireCan / requireCanForUser deep.</b> The shared assembly stays as judged; only its second door goes. ADR-0009 is unchanged, and CONTEXT.md's “two entry points” becomes one. Confirm that an action's runQuery carries its caller's identity before leaning on it.</aside>
+    </article>
+
+    <!-- ---------- 10 ---------- -->
+    <article id="c10" class="card">
+      <div class="flex flex-wrap items-center gap-2">
+        <span class="num">10</span>
+        <span class="badge b-worth">Worth exploring</span>
+        <span class="badge b-dep">mock · Jira</span>
+        <span class="area">integrations · server</span>
+      </div>
+      <h2 class="title">Give the Jira adapter one way to act as a connection, with an in-memory Jira behind it</h2>
+      <ul class="files">
+        <li>convex/integrations/jira.ts:59-99, 299-322, 435-470, 505-560, 579-624, 637-702</li>
+        <li>convex/integrations/jiraAuth.ts:379-390 (buildJiraClient stays the core)</li>
+        <li>convex/{integrationsModel.test.ts:258-437, jiraEstimatePush.test.ts, tokenRefresh.test.ts}</li>
+      </ul>
+      <div class="grid gap-4 md:grid-cols-2">
+        <figure class="fig">
+          <figcaption class="dlabel">Before · 10 actions, 3 ways in, 5 ways to fail</figcaption>
+          <div class="mt-3 space-y-1.5 text-[11px]">
+            <div class="grid grid-cols-1 gap-1">
+              <div class="mod flex items-center justify-between gap-2"><span class="font-mono">getJiraProjects · Boards · Sprints · Issues</span><span class="flex gap-1"><span class="chip va">A</span><span class="chip va">throw</span></span></div>
+              <div class="mod flex items-center justify-between gap-2"><span class="font-mono">detectStoryPointsField</span><span class="flex gap-1"><span class="chip va">A</span><span class="chip va">throw</span></span></div>
+              <div class="mod flex items-center justify-between gap-2"><span class="font-mono">importIssues</span><span class="flex gap-1"><span class="chip va">B</span><span class="chip va">throw</span></span></div>
+              <div class="mod flex items-center justify-between gap-2 border-red-300"><span class="font-mono">pushEstimateToJira</span><span class="flex gap-1"><span class="chip vc">C</span><span class="chip vb">log · build may throw</span></span></div>
+              <div class="mod flex items-center justify-between gap-2 border-red-300"><span class="font-mono">deregisterWebhook</span><span class="flex gap-1"><span class="chip vc">C</span><span class="chip vc">warn · retry once</span></span></div>
+              <div class="mod flex items-center justify-between gap-2 border-red-300"><span class="font-mono">finalizeDisconnect</span><span class="flex gap-1"><span class="chip vc">C</span><span class="chip vd">warn · carry on</span></span></div>
+              <div class="mod flex items-center justify-between gap-2 border-red-300"><span class="font-mono">registerWebhook</span><span class="flex gap-1"><span class="chip vc">C</span><span class="chip ve">record failure</span></span></div>
+            </div>
+            <p class="text-[10.5px] text-slate-500">A requireJiraClient · B two-step · C by connection id</p>
+            <p class="text-[10.5px] leaktext">red: success path never runs in a test · 6 seed tokens that never decrypt</p>
+          </div>
+        </figure>
+        <figure class="fig">
+          <figcaption class="dlabel">After · one way to act, two adapters</figcaption>
+          <div class="mt-3 space-y-3 text-[11px]">
+            <div class="grid grid-cols-5 gap-1 text-center text-[10px] text-slate-500">
+              <div class="mod px-1">projects</div><div class="mod px-1">boards</div><div class="mod px-1">sprints</div><div class="mod px-1">issues</div><div class="mod px-1">detect</div>
+              <div class="mod px-1">import</div><div class="mod px-1">push</div><div class="mod px-1">deregister</div><div class="mod px-1">disconnect</div><div class="mod px-1">register</div>
+            </div>
+            <div class="text-center text-slate-400">↓ all ten</div>
+            <div class="deepbox"><p class="text-[12px] font-semibold">Act on Jira as a person, or as a connection</p><p class="mt-0.5 text-slate-300">finds the connection · insists on its site · fresh token · a site-bound client, or a reason in one vocabulary</p></div>
+            <div class="seamline"><span>seam</span></div>
+            <div class="grid grid-cols-2 gap-2 text-center">
+              <div class="mod">Jira REST · jiraClient</div>
+              <div class="mod">in-memory Jira · convex-test</div>
+            </div>
+            <p class="text-[10.5px] text-slate-500">3 ways → 1 · 5 policies → 1 vocabulary · untested success paths 5 → 0</p>
+          </div>
+        </figure>
+      </div>
+      <div class="grid gap-6 md:grid-cols-2">
+        <div><p class="k">Problem</p><p class="prose-s">Ten registered actions get a client 3 ways and answer “connection gone, no site, token refused” 5 ways; four now hold about 190 lines of load-bearing ordering ADR-0006 expected to stay thin, and 5 of them reach Jira in tests only by failing.</p></div>
+        <div><p class="k">Solution</p><p class="prose-s">One module answers “act on Jira as this person, or as this connection”: it finds the connection, insists on its site, refreshes the token and returns a site-bound client or a reason in one vocabulary, and convex-test can put an in-memory Jira behind it.</p></div>
+      </div>
+      <div><p class="k">Wins</p><ul class="wins"><li>Client acquisition: 3 ways → 1</li><li>Failure policies: 5 → 1 vocabulary</li><li>Success paths run in tests</li><li>Two adapters: REST and in-memory</li></ul></div>
+      <aside class="adr"><b>Reopens ADR-0006's first consequence</b> (“the registered wrappers stay thin”): #384 and #406 put the delete-then-register, deregister-then-drop and retry-once orderings in them. One seam at the adapter, not a global fake. Lands after 07.</aside>
+    </article>
+
+    <!-- ---------- 11 ---------- -->
+    <article id="c11" class="card">
+      <div class="flex flex-wrap items-center gap-2">
+        <span class="num">11</span>
+        <span class="badge b-worth">Worth exploring</span>
+        <span class="badge b-dep">in-process</span>
+        <span class="area">retro · browser</span>
+      </div>
+      <h2 class="title">Let the walk say where the discussion stands</h2>
+      <ul class="files">
+        <li>convex/retroSteps.ts:171-209 (discussionOrder, walk)</li>
+        <li>src/components/retro/build-retro-nodes.ts:68-74, 90-93, 146-147, 166-171</li>
+        <li>src/components/retro/nodes/retro-node.tsx:111, 189-222, 271-288 (no test)</li>
+        <li>src/components/retro/{board-view.ts:29-34, retro-summary.ts:59-69}</li>
+      </ul>
+      <div class="grid gap-4 md:grid-cols-2">
+        <figure class="fig">
+          <figcaption class="dlabel">Before · position derived twice</figcaption>
+          <div class="mt-4 space-y-3 text-[11px]">
+            <div class="rounded-lg border border-slate-300 bg-white p-2.5">
+              <div class="flex items-center gap-1.5">
+                <span class="text-slate-400">‹</span>
+                <div class="flex-1 rounded bg-slate-50 px-2 py-1"><p class="font-mono text-[10px] text-blue-700 ring-1 ring-red-300 inline-block px-0.5">Topic 1 of 5</p><p class="text-slate-700">“Standups run long”</p></div>
+                <span class="text-slate-400">›</span>
+              </div>
+              <div class="mt-2 h-1.5 rounded bg-slate-100"></div>
+              <p class="mt-1 inline-block px-0.5 font-mono text-[10px] text-slate-500 ring-1 ring-red-300">0/5 topics</p>
+            </div>
+            <p class="leaktext">spotlight off the list: the label says 1, the bar says 0</p>
+            <div class="grid grid-cols-2 gap-2">
+              <div class="mod"><p class="dlabel">build-retro-nodes</p>order · focusIndex · rank · discussed</div>
+              <div class="mod"><p class="dlabel">retro-node</p>label · progress · last topic · Previous / Next</div>
+            </div>
+            <p class="text-[10.5px] text-slate-500">~12 derived values, each module its own edge cases · a detour sends Next back to the first topic</p>
+          </div>
+        </figure>
+        <figure class="fig">
+          <figcaption class="dlabel">After · one answer, two readers</figcaption>
+          <div class="mt-4 space-y-3 text-[11px]">
+            <div class="deepbox"><p class="text-[12px] font-semibold">Where the discussion stands</p><p class="mt-0.5 text-slate-300">the order, or that it isn't known yet · the spotlight in it or outside it · what's passed · what Next and Previous do</p></div>
+            <div class="grid grid-cols-2 gap-2 text-center">
+              <div class="mod">build-retro-nodes reads</div>
+              <div class="mod">retro-node reads</div>
+            </div>
+            <div class="rounded-lg border border-slate-300 bg-white p-2.5">
+              <div class="flex items-center gap-1.5">
+                <span class="text-slate-400">‹</span>
+                <div class="flex-1 rounded bg-slate-50 px-2 py-1"><p class="font-mono text-[10px] text-blue-700">Off the list · 0 of 5 discussed</p><p class="text-slate-700">“Standups run long”</p></div>
+                <span class="text-slate-400">›</span>
+              </div>
+              <div class="mt-2 h-1.5 rounded bg-slate-100"></div>
+              <p class="mt-1 font-mono text-[10px] text-slate-500">0/5 topics</p>
+            </div>
+            <p class="text-[10.5px] text-slate-500">beside walk in retroSteps.ts · one derivation, 2 readers</p>
+          </div>
+        </figure>
+      </div>
+      <div class="grid gap-6 md:grid-cols-2">
+        <div><p class="k">Problem</p><p class="prose-s">Both tiers share how the spotlight moves, but where the walk stands is derived again in the builder and in the retro node, each with its own edge cases: an off-list spotlight reads “Topic 1 of N” beside 0/N, a detour sends Next back to the first topic and clears every tick, and an optimistic move into Discuss ranks every topic.</p></div>
+        <div><p class="k">Solution</p><p class="prose-s">Beside walk, one pure answer to “where is the discussion now” (the order or that it isn't known yet, the spotlight's place in it or outside it, what has been passed, what Next and Previous will do), read by the builder and the retro node.</p></div>
+      </div>
+      <div><p class="k">Wins</p><ul class="wins"><li>~12 derived values, one derivation</li><li>Three visible glitches close together</li><li>Tests: off-list, unknown order, both ends</li><li>Retro node gains a test surface</li></ul></div>
+      <aside class="note"><b>Low churn.</b> The “Topic 1 of N” glitch was logged on 4 Oct and is still there. Whether a detour keeps the walk's place is a product call.</aside>
+    </article>
+
+    <!-- ---------- 12 ---------- -->
+    <article id="c12" class="card">
+      <div class="flex flex-wrap items-center gap-2">
+        <span class="num">12</span>
+        <span class="badge b-spec">Speculative</span>
+        <span class="badge b-dep">in-process</span>
+        <span class="area">dashboard · browser</span>
+      </div>
+      <h2 class="title">One shell per dashboard panel</h2>
+      <ul class="files">
+        <li>src/components/dashboard/{AgreementChart, ConsensusOutliers, ConsensusTrend, IndividualVotingStats, VelocityTrend, VoteDistribution, VoterAlignmentChart}.tsx</li>
+        <li>src/app/(app)/dashboard/dashboard-content.tsx:73-149</li>
+      </ul>
+      <div class="grid gap-4 md:grid-cols-2">
+        <figure class="fig">
+          <figcaption class="dlabel">Before · 7 charts × 3 states, each with its header</figcaption>
+          <div class="mt-4 text-[10px]">
+            <div class="grid grid-cols-[1fr_repeat(3,56px)] gap-1 text-center">
+              <span></span><span class="dlabel">loading</span><span class="dlabel">empty</span><span class="dlabel">loaded</span>
+              <span class="text-left text-slate-600">Agreement</span><span class="chip vc justify-center">title·help</span><span class="chip vc justify-center">title·help</span><span class="chip vc justify-center">title·help</span>
+              <span class="text-left text-slate-600">Outliers</span><span class="chip va justify-center">title·help</span><span class="chip va justify-center">title·help</span><span class="chip va justify-center">title·help</span>
+              <span class="text-left text-slate-600">Consensus trend</span><span class="chip va justify-center">title·help</span><span class="chip va justify-center">title·help</span><span class="chip va justify-center">title·help</span>
+              <span class="text-left text-slate-600">Voting stats</span><span class="chip va justify-center">title·help</span><span class="chip va justify-center">title·help</span><span class="chip va justify-center">title·help</span>
+              <span class="text-left text-slate-600">Velocity</span><span class="chip va justify-center">title·help</span><span class="chip va justify-center">title·help</span><span class="chip va justify-center">title·help</span>
+              <span class="text-left text-slate-600">Distribution</span><span class="chip va justify-center">title·help</span><span class="chip va justify-center">title·help</span><span class="chip va justify-center">title·help</span>
+              <span class="text-left text-slate-600">Alignment</span><span class="chip va justify-center">title·help</span><span class="chip va justify-center">title·help</span><span class="chip va justify-center">title·help</span>
+            </div>
+            <p class="mt-3 text-[10.5px] text-slate-500">21 header copies · <span class="leaktext">Agreement's help is wrong in all 3</span></p>
+          </div>
+        </figure>
+        <figure class="fig">
+          <figcaption class="dlabel">After · one shell, seven bodies</figcaption>
+          <div class="mt-4 space-y-3 text-[11px]">
+            <div class="deepbox"><p class="text-[12px] font-semibold">Dashboard panel</p><p class="mt-0.5 text-slate-300">card · header · help · loading, empty and loaded states</p></div>
+            <div class="grid grid-cols-4 gap-1 text-center text-[10px]">
+              <div class="mod px-1">agreement</div><div class="mod px-1">outliers</div><div class="mod px-1">trend</div><div class="mod px-1">stats</div>
+              <div class="mod px-1">velocity</div><div class="mod px-1">distribution</div><div class="mod px-1">alignment</div><div></div>
+            </div>
+            <p class="text-[10.5px] text-slate-500">each chart: its copy once, its body only · ~350 lines leave the charts</p>
+          </div>
+        </figure>
+      </div>
+      <div class="grid gap-6 md:grid-cols-2">
+        <div><p class="k">Problem</p><p class="prose-s">The dashboard is one read now and the charts no longer re-derive, but 7 chart modules write their title, help and description once per state (21 copies), so a copy fix takes 3 edits, and AgreementChart's help is wrong in all three.</p></div>
+        <div><p class="k">Solution</p><p class="prose-s">One panel module owns the card, the header, the help and the loading, empty and loaded states; each chart gives its copy once and draws only its body.</p></div>
+      </div>
+      <div><p class="k">Wins</p><ul class="wins"><li>21 header copies → 7</li><li>One jsdom test, three states</li><li>~350 lines leave the charts</li></ul></div>
+    </article>
+  </section>
+
+  <!-- ============================== FOUND IN PASSING ============================== -->
+  <section id="found-in-passing" class="space-y-6">
+    <div>
+      <h2 class="font-serif text-3xl tracking-tight">Found in passing</h2>
+      <p class="mt-1 text-sm text-slate-500">Traced in code by the explorers; none run. ✓ = re-checked for this report.</p>
+    </div>
+    <div class="grid gap-8 md:grid-cols-2">
+      <div class="space-y-3">
+        <h3 class="k">Security and integrity</h3>
+        <ul class="space-y-3 text-sm text-slate-700">
+          <li class="bug"><b class="text-red-700">✓ Open redirect through “Continue as guest”.</b> <span>from=/\evil.com passes the “starts with / but not //” check, and router.push resolves it to https://evil.com/.</span><code>src/components/auth/signin-form.tsx:36-38, 109</code></li>
+          <li class="bug"><b>✓ An estimate can land on another Jira site's issue.</b> <span>The push never compares the link's site with the mapping connection's; incoming webhooks guard exactly this.</span><code>convex/integrations/jira.ts:435-470 · jiraWebhook.ts:103-110</code></li>
+          <li class="bug"><b>Delete account leaves the BetterAuth user.</b> <span>Email, name, image and other sessions stay in AgileKit's own deployment; for a magic-link account AgileKit is the provider the copy says “keeps its own record”.</span><code>convex/auth.ts:30, 44 · convex/accountCopy.ts:12-13</code></li>
+        </ul>
+        <h3 class="k pt-2">People can hit these</h3>
+        <ul class="space-y-3 text-sm text-slate-700">
+          <li class="bug"><b>✓ A refused sticky edit loses its words.</b> <span>The editor closes before the write; drafts keep theirs.</span><code>src/components/retro/retro-canvas.tsx:175-185</code></li>
+          <li class="bug"><b>✓ The auto-reveal switch flips the stored value</b> <span>instead of setting what it showed, so a click on a stale view does the opposite.</span><code>convex/rooms.ts:65-70 · room-settings-panel.tsx:91, 197-198</code></li>
+          <li class="bug"><b>✓ Signing out on a dashboard sub-page strands it on skeletons.</b> <span>useSignOut navigates nowhere and nav-user draws a visitor as loading.</span><code>src/hooks/useSignOut.ts:18-31 · dashboard/nav-user.tsx:23-37</code></li>
+          <li class="bug"><b>✓ Carried-over action items keep an owner who may not be in the next retro,</b> <span>an owner add and update refuse.</span><code>convex/model/retro.ts:144-156, 817-821</code></li>
+          <li class="bug"><b>Auto-push saves with no points field, or on a non-numeric deck,</b> <span>then pushes nothing on every reveal, silently.</span><code>integration-settings.tsx:175-197 · jira.ts:402-413</code></li>
+          <li class="bug"><b>✓ Leave has no browser control,</b> <span>so lockdown and both owner-left banners can't be reached in use.</span><code>convex/users.ts:71-81</code></li>
+          <li class="bug"><b>⌘K offers a guest Dashboard but never Sign in,</b> <span>and on first paint offers neither (in-flight).</span><code>command-menu/command-palette.tsx:168, 196</code></li>
+        </ul>
+      </div>
+      <div class="space-y-3">
+        <h3 class="k">Cost and latent</h3>
+        <ul class="space-y-3 text-sm text-slate-700">
+          <li class="bug"><b>✓ issues.getCurrent reads the room row,</b> <span>so every vote re-runs it for every member (the class C10 fixed), and it and issues.list take no guard.</span><code>convex/model/issues.ts:55-62 · convex/issues.ts:10-25</code></li>
+          <li class="bug"><b>cleanupOldWebhookEvents deletes a week in one transaction,</b> <span>the one daily job #406 didn't page.</span><code>convex/model/integrations.ts:383-396</code></li>
+          <li class="bug"><b>Rule refusals still thrown as plain Errors,</b> <span>redacted in production: spectator and off-deck ballots, the timer's start-while-running.</span><code>votingRound.ts:516, 524 · timerState.ts:84-91</code></li>
+          <li class="bug"><b>Reconnecting Jira overwrites cloudId and siteUrl;</b> <span>the weekly renewal then deletes the old site's webhook id on the new site.</span><code>model/integrations.ts:65-81 · jiraWebhookReconcile.ts:105-110</code></li>
+          <li class="bug"><b>The Sessions page loads every room's vote history to list rooms.</b><code>convex/model/analytics.ts:324-331, 373-386</code></li>
+        </ul>
+        <h3 class="k pt-2">Dead code</h3>
+        <ul class="space-y-3 text-sm text-slate-700">
+          <li class="bug"><b>updateSticky's columnId has no caller,</b> <span>yet removeColumn's refusal tells people to “Move” stickies, which no control can do.</span><code>convex/retro.ts:191 · model/retro.ts:467</code></li>
+          <li class="bug"><b>Issue reorder is dead end to end,</b> <span>while the permissions copy still promises it.</span><code>convex/issues.ts:135-148 · room-settings-panel.tsx:55</code></li>
+          <li class="bug"><b>✓ The chrome's isFullscreen and onToggleFullscreen are never passed;</b> <span>settingsButtonRef is never read.</span><code>canvas-navigation.tsx:64-65, 100</code></li>
+          <li class="bug"><b>Playwright leftovers:</b> <span>tests/pages/canvas-page.ts is imported by no spec; fixtures/test-fixtures.ts and test-data.ts by nothing.</span><code>tests/README.md still advertises them</code></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================== LEFT OUT ============================== -->
+  <section id="left-out" class="space-y-4">
+    <h2 class="font-serif text-3xl tracking-tight">Considered, left out</h2>
+    <ul class="grid gap-x-8 gap-y-2 text-sm text-slate-700 md:grid-cols-2">
+      <li><b class="font-medium text-slate-900">Split model/retro.ts or jira.ts by section:</b> moves code; jira's registered paths are persisted references.</li>
+      <li><b class="font-medium text-slate-900">A retro-vote ledger module:</b> the rules already live in retroTopics; only IO would move.</li>
+      <li><b class="font-medium text-slate-900">One poker write seam over the four *Actions hooks:</b> C30's ground; each already decides demo once.</li>
+      <li><b class="font-medium text-slate-900">A board-data port so panels stop calling Convex:</b> reopens C30 and ADR-0003 for test convenience.</li>
+      <li><b class="font-medium text-slate-900">One Convex seeding module:</b> C29's verdict stands; chains are still 3–5 lines.</li>
+      <li><b class="font-medium text-slate-900">Collapse getCaller / requireCaller / requireUser:</b> three nullability contracts with real callers.</li>
+      <li><b class="font-medium text-slate-900">Collapse the integration registry:</b> against ADR-0006 with GitHub on the roadmap; 07 gives it a real member.</li>
+      <li><b class="font-medium text-slate-900">A paged-job helper:</b> its interface would be as big as the 8 lines it hides.</li>
+      <li><b class="font-medium text-slate-900">Room ending vs account ending:</b> the same shape where it matters (inventory, completeness test); different on purpose.</li>
+      <li><b class="font-medium text-slate-900">analyticsMath (711 lines):</b> one pure module behind dashboard(); deep, leave it.</li>
+    </ul>
+  </section>
+
+  <!-- ============================== TOP RECOMMENDATION ============================== -->
+  <section id="top-recommendation" class="deep space-y-4 rounded-2xl p-8 text-slate-100 md:p-10">
+    <p class="text-[11px] uppercase tracking-[0.2em] text-emerald-300">Top recommendation</p>
+    <h2 class="font-serif text-3xl leading-tight"><a href="#c01" class="underline decoration-emerald-400/60 underline-offset-4 hover:decoration-emerald-300">01 · One viewer: pages ask it, never Convex's auth booleans</a></h2>
+    <p class="max-w-3xl text-[15px] leading-relaxed text-slate-300">Strong, and in the code you're changing right now: the server seed changes an invariant that 13 call sites and 8 test fakes lean on, so settling the viewer's interface before the seed lands costs least, and 03 then builds on it.</p>
+    <p class="text-sm text-slate-400">Alongside it, ship <a href="#c02" class="text-emerald-300 underline underline-offset-2">02</a> as its own small PR: a pure rule with two adapters, fixing a bug the 4 Oct review logged and #406 left in place.</p>
+  </section>
+
+</main>
+</body>
+</html>

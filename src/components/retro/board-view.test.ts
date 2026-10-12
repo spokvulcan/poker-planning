@@ -282,4 +282,21 @@ describe("the discussion", () => {
     expect(topicOrder(shown, retro.columns)).toEqual(["high", "low"]);
     expect(applyWalk(discussing, shown, "next").focusStickyId).toBe("low");
   });
+
+  it("carries on from where a detour left the walk", () => {
+    const shown = board([sticky("low", 1, { votes: 1 }), sticky("high", 2, { votes: 5 }), sticky("none", 3, { votes: 0 })]);
+    const detour = { ...retro, step: "discuss" as const, focusStickyId: id("none"), walkStickyId: id("high") };
+
+    expect(applyWalk(detour, shown, "next")).toEqual({ ...retro, step: "discuss", focusStickyId: "low" });
+    expect(applyWalk(detour, shown, "previous")).toEqual({ ...retro, step: "discuss", focusStickyId: "high" });
+  });
+
+  it("leaves the walk to the server while the board carries no totals", () => {
+    // A board read in Vote, the step having just moved on to Discuss.
+    const unshown = board([sticky("low", 1), sticky("high", 2)]);
+    const discussing = { ...retro, step: "discuss" as const, focusStickyId: id("high") };
+
+    expect(topicOrder(unshown, retro.columns)).toBeNull();
+    expect(applyWalk(discussing, unshown, "next")).toBe(discussing);
+  });
 });

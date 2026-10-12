@@ -31,7 +31,7 @@ export class RoomPage {
 
     // Room information
     this.roomTitle = page.locator('.font-semibold').filter({ hasText: "Planning Session" });
-    this.copyUrlButton = page.getByRole("button", { name: "Copy room URL" });
+    this.copyUrlButton = page.getByRole("button", { name: "Copy room link" });
 
     // Room name in navigation header (left nav bar)
     this.roomNameInHeader = page.locator('[data-testid="canvas-navigation"] .font-semibold');

@@ -11,6 +11,7 @@
 import { MutationCtx } from "../_generated/server";
 import * as Integrations from "../model/integrations";
 import * as Issues from "../model/issues";
+import { jiraIssueLink, jiraIssueTitle } from "./jiraIssueLink";
 
 export interface ParsedJiraWebhookEvent {
   eventKey: string;
@@ -19,20 +20,6 @@ export interface ParsedJiraWebhookEvent {
   site: string;
   issueKey: string;
   issueSummary?: string;
-}
-
-/** An imported Jira issue's title: its key and its summary. */
-export function jiraIssueTitle(key: string, summary: string): string {
-  return `${key} - ${summary}`;
-}
-
-/**
- * An imported Jira issue's link: its key, and its page on the site it was
- * imported from. The page says which site the issue is on, so the same key
- * on two sites is two links.
- */
-export function jiraIssueLink(site: string, key: string): Issues.IssueLink {
-  return { provider: "jira", externalId: key, externalUrl: `${site}/browse/${key}` };
 }
 
 /**

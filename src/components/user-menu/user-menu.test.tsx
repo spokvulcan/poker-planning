@@ -14,19 +14,20 @@ const mocks = vi.hoisted(() => ({ viewer: { status: "loading" } as Viewer }));
 
 vi.mock("@/components/auth/auth-provider", () => ({
   useAuth: () => ({
-    isLoading: mocks.viewer.status === "loading",
-    isAuthenticated: mocks.viewer.status === "signedIn",
     viewer: mocks.viewer,
   }),
 }));
 
-// Outside a room, and no read answers: what the menu shows of the viewer is AuthProvider's.
+// The menu reads nothing itself: what it shows of the viewer is AuthProvider's,
+// and on a board the room hands it the seat (room/seat-controls.tsx).
 vi.mock("convex/react", () => ({
-  useQuery: () => undefined,
+  useQuery: () => {
+    throw new Error("The account menu reads nothing of its own");
+  },
   useMutation: () => async () => {},
 }));
 
-vi.mock("next/navigation", () => ({ useParams: () => ({}) }));
+vi.mock("next/navigation", () => ({ usePathname: () => "/blog" }));
 
 vi.mock("next/link", () => ({
   default: ({ children, href }: { children?: ReactNode; href: string }) => <a href={href}>{children}</a>,
@@ -70,11 +71,11 @@ afterEach(cleanup);
 
 describe("UserMenu", () => {
   it("is there for a guest signed in with no users row yet, as Guest, with Sign in", () => {
-    mocks.viewer = { status: "signedIn", name: null, avatarUrl: null, email: null, isPermanent: false };
+    mocks.viewer = { status: "signedIn", name: null, avatarUrl: null, email: null, isPermanent: false, confirmed: true };
     render(<UserMenu />);
 
     expect(within(screen.getByTestId("user-menu-trigger")).getByText("Guest")).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Sign in" }).getAttribute("href")).toBe("/auth/signin");
+    expect(screen.getByRole("link", { name: "Sign in" }).getAttribute("href")).toBe("/auth/signin?from=%2Fblog");
   });
 
   it("shows a permanent account's name, avatar and email, and no Sign in", () => {
@@ -84,6 +85,7 @@ describe("UserMenu", () => {
       avatarUrl: "https://lh3.googleusercontent.com/a/ada",
       email: "ada@example.com",
       isPermanent: true,
+      confirmed: true,
     };
     render(<UserMenu />);
 
@@ -97,7 +99,7 @@ describe("UserMenu", () => {
   });
 
   it("offers Sign in to a guest whose row has a name", () => {
-    mocks.viewer = { status: "signedIn", name: "Bob", avatarUrl: null, email: null, isPermanent: false };
+    mocks.viewer = { status: "signedIn", name: "Bob", avatarUrl: null, email: null, isPermanent: false, confirmed: true };
     render(<UserMenu />);
 
     expect(within(screen.getByTestId("user-menu-trigger")).getByText("Bob")).toBeTruthy();
@@ -110,6 +112,13 @@ describe("UserMenu", () => {
     expect(screen.getByTestId("user-menu-skeleton")).toBeTruthy();
     expect(screen.queryByTestId("user-menu-trigger")).toBeNull();
     expect(screen.queryByRole("link", { name: "Sign in" })).toBeNull();
+  });
+
+  it("draws the seat the room hands it, after Edit name", () => {
+    mocks.viewer = { status: "signedIn", name: "Bob", avatarUrl: null, email: null, isPermanent: false, confirmed: true };
+    render(<UserMenu seat={<button>Leave room</button>} />);
+
+    expect(screen.getByRole("button", { name: "Leave room" })).toBeTruthy();
   });
 
   it("draws nothing for a visitor", () => {

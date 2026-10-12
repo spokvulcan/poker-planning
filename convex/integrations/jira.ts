@@ -11,10 +11,14 @@
  * (model/issues.ts): the adapter only turns it into a title and a link. The
  * token-field contract (key validation, encrypt-on-write, decrypt-on-read,
  * expiry rule) lives in model/tokenVault.ts. The OAuth handshake, token
- * freshness/refresh and client construction live in jiraAuth.ts. What happens
- * to a mapping's webhook is decided in jiraWebhookReconcile.ts, which the
- * provider registry (integrations/registry.ts) points at; the webhook actions
- * below carry its decisions out against Jira.
+ * freshness/refresh and client construction live in jiraAuth.ts. Every action
+ * below acts on Jira through jiraAccess.ts, as the person calling or as one
+ * connection, and turns why it can't into its own policy. What happens to a
+ * mapping's webhook is decided in jiraWebhookReconcile.ts, and whether and
+ * where a settled estimate goes in the estimate push (model/estimatePush.ts,
+ * with jiraEstimatePush.ts), both of which the provider registry
+ * (integrations/registry.ts) points at; the actions below carry their
+ * decisions out against Jira and report back.
  */
 
 import {
@@ -26,23 +30,21 @@ import {
 } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { v } from "convex/values";
-import { providerValidator } from "../schema";
-import { Doc, Id } from "../_generated/dataModel";
+import { lastPushValidator, providerValidator } from "../schema";
+import { Id } from "../_generated/dataModel";
 import { ActionCtx } from "../_generated/server";
-import { requireCanForUser } from "../model/auth";
+import { requireRoomWrite } from "../model/auth";
 import { requireCaller, requireUser } from "../model/caller";
 import { JiraClient, JiraIssue } from "./jiraClient";
+import { buildJiraAuthorizeUrl, connectJiraWithCode } from "./jiraAuth";
 import {
-  buildJiraAuthorizeUrl,
-  buildJiraClient,
-  connectJiraWithCode,
-} from "./jiraAuth";
-import {
-  applyJiraWebhookEvent,
-  jiraIssueLink,
-  jiraIssueTitle,
-  jiraWebhookAddress,
-} from "./jiraWebhook";
+  jiraAsCaller,
+  jiraAsConnection,
+  requireJiraAsCaller,
+  unavailableToThePerson,
+} from "./jiraAccess";
+import { applyJiraWebhookEvent, jiraWebhookAddress } from "./jiraWebhook";
+import { jiraIssueLink, jiraIssueTitle } from "./jiraIssueLink";
 import {
   recordRegistration,
   registrationValidator,
@@ -51,52 +53,10 @@ import {
   type Registration,
   type WantedWebhook,
 } from "./jiraWebhookReconcile";
-import { cardNumericValue } from "../scales";
 import * as Issues from "../model/issues";
 import * as Integrations from "../model/integrations";
+import * as EstimatePush from "../model/estimatePush";
 import { refusalOf } from "../model/refusal";
-
-// ---------------------------------------------------------------------------
-// Action preamble — the one chain from auth identity to a ready Jira client
-// ---------------------------------------------------------------------------
-
-async function getConnectionForUserId(
-  ctx: ActionCtx,
-  userId: Id<"users">
-): Promise<Doc<"integrationConnections">> {
-  const connection: Doc<"integrationConnections"> | null = await ctx.runQuery(
-    internal.integrations.jira.getConnectionForUser,
-    { userId, provider: "jira" }
-  );
-  if (!connection) throw new Error("No Jira connection found. Please connect Jira first.");
-
-  return connection;
-}
-
-/** Authenticated app user → their Jira connection. */
-async function requireJiraConnection(
-  ctx: ActionCtx
-): Promise<{ user: Doc<"users">; connection: Doc<"integrationConnections"> }> {
-  const { user } = await requireUser(ctx);
-  const connection = await getConnectionForUserId(ctx, user._id);
-  return { user, connection };
-}
-
-/**
- * The one action preamble: authenticated app user → their Jira connection →
- * a client on a valid token. Handlers that must run a permission check before
- * any network I/O take the two-step form (requireJiraConnection, check, then
- * buildJiraClient) instead.
- */
-async function requireJiraClient(ctx: ActionCtx): Promise<{
-  user: Doc<"users">;
-  connection: Doc<"integrationConnections">;
-  client: JiraClient;
-}> {
-  const { user, connection } = await requireJiraConnection(ctx);
-  const client = await buildJiraClient(ctx, connection);
-  return { user, connection, client };
-}
 
 // ---------------------------------------------------------------------------
 // Internal mutations — DB operations
@@ -140,7 +100,28 @@ export const updateTokens = internalMutation({
   },
 });
 
-/** Hands one Jira issue, as a title and a link, to the issue module's admission. */
+/** What importing issues into a room asks of the permission guard. */
+const ISSUE_MANAGEMENT = { kind: "category", category: "issueManagement" } as const;
+
+/**
+ * The import's room-scoped step, taken before Jira is called (a token refresh
+ * included): the caller, whom the import action runs as, is in the room and
+ * may manage its issues. It writes nothing; it is a mutation because the
+ * step is a write's.
+ */
+export const verifyCanManageIssues = internalMutation({
+  args: { roomId: v.id("rooms") },
+  handler: async (ctx, { roomId }) => {
+    await requireRoomWrite(ctx, roomId, ISSUE_MANAGEMENT);
+  },
+});
+
+/**
+ * Hands one Jira issue, as a title and a link, to the issue module's
+ * admission, on the room-scoped step like any issue typed in the room: the
+ * import action runs this as its caller, so each issue is admitted only while
+ * they may still manage the room's issues.
+ */
 export const admitIssue = internalMutation({
   args: {
     roomId: v.id("rooms"),
@@ -152,8 +133,7 @@ export const admitIssue = internalMutation({
     }),
   },
   handler: async (ctx, { roomId, ...issue }) => {
-    const room = await ctx.db.get("rooms", roomId);
-    if (!room) throw new Error("Room not found");
+    const { room } = await requireRoomWrite(ctx, roomId, ISSUE_MANAGEMENT);
     return await Issues.admitIssue(ctx, { room, ...issue });
   },
 });
@@ -174,6 +154,36 @@ export const deleteConnection = internalMutation({
   args: { connectionId: v.id("integrationConnections") },
   handler: async (ctx, args) => {
     await Integrations.deleteConnection(ctx, args.connectionId);
+  },
+});
+
+/**
+ * pushEstimate's tail: hands how the push went, and the connection and field
+ * it was made with, back to the estimate push, which records it.
+ */
+export const recordEstimatePush = internalMutation({
+  args: {
+    mappingId: v.id("integrationMappings"),
+    lastPush: lastPushValidator,
+    madeWith: v.object({ connectionId: v.id("integrationConnections"), fieldId: v.string() }),
+  },
+  handler: async (ctx, args) => {
+    await EstimatePush.recordPush(ctx, args.mappingId, args.lastPush, args.madeWith);
+  },
+});
+
+/**
+ * An estimate a reveal handed to Jira before the estimate push decided
+ * pushes, by issue and estimate (pushEstimateToJira): decided now, as a
+ * reveal decides it. The issue's room may be gone by then.
+ */
+export const decideScheduledPush = internalMutation({
+  args: { issueId: v.id("issues"), finalEstimate: v.string() },
+  handler: async (ctx, { issueId, finalEstimate }) => {
+    const issue = await ctx.db.get("issues", issueId);
+    const room = issue && (await ctx.db.get("rooms", issue.roomId));
+    if (!room) return;
+    await EstimatePush.estimateSettled(ctx, { room, issueId, estimate: finalEstimate });
   },
 });
 
@@ -207,26 +217,6 @@ export const getConnectionForUser = internalQuery({
   },
 });
 
-export const getIssueData = internalQuery({
-  args: { issueId: v.id("issues") },
-  handler: async (ctx, args) => {
-    const issue = await ctx.db.get("issues", args.issueId);
-    if (!issue) return null;
-
-    const issueLink = await ctx.db
-      .query("issueLinks")
-      .withIndex("by_issue", (q) => q.eq("issueId", args.issueId))
-      .first();
-
-    const mapping = await ctx.db
-      .query("integrationMappings")
-      .withIndex("by_room", (q) => q.eq("roomId", issue.roomId))
-      .first();
-
-    return { issue, issueLink, mapping };
-  },
-});
-
 // ---------------------------------------------------------------------------
 // Public actions — called from frontend
 // ---------------------------------------------------------------------------
@@ -257,10 +247,13 @@ export const connectJira = action({
   },
 });
 
+// The browser's own Jira reads act as the person calling; when Jira can't be
+// reached as them, they are refused in their words.
+
 export const getJiraProjects = action({
   args: {},
   handler: async (ctx) => {
-    const { client } = await requireJiraClient(ctx);
+    const { client } = await requireJiraAsCaller(ctx);
     return await client.getProjects();
   },
 });
@@ -268,7 +261,7 @@ export const getJiraProjects = action({
 export const getJiraBoards = action({
   args: { projectKey: v.string() },
   handler: async (ctx, { projectKey }) => {
-    const { client } = await requireJiraClient(ctx);
+    const { client } = await requireJiraAsCaller(ctx);
     return await client.getBoards(projectKey);
   },
 });
@@ -276,7 +269,7 @@ export const getJiraBoards = action({
 export const getJiraSprints = action({
   args: { boardId: v.number() },
   handler: async (ctx, { boardId }) => {
-    const { client } = await requireJiraClient(ctx);
+    const { client } = await requireJiraAsCaller(ctx);
     return await client.getSprints(boardId);
   },
 });
@@ -287,7 +280,7 @@ export const getJiraIssues = action({
     sprintId: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const { client } = await requireJiraClient(ctx);
+    const { client } = await requireJiraAsCaller(ctx);
 
     if (args.sprintId) {
       return await client.getSprintIssues(args.sprintId);
@@ -302,21 +295,23 @@ export const importIssues = action({
     jiraIssueKeys: v.array(v.string()),
   },
   handler: async (ctx, { roomId, jiraIssueKeys }): Promise<JiraImportResult> => {
-    const { user, connection } = await requireJiraConnection(ctx);
+    // An import is a room write: it takes the room-scoped step before any
+    // Jira network I/O (a token refresh included), and again for each issue.
+    // The mutations an action runs run as its caller, so the step seats them.
+    await ctx.runMutation(internal.integrations.jira.verifyCanManageIssues, { roomId });
 
-    // Verify the caller is a member of the room with issue management
-    // permission — before any Jira network I/O (a token refresh included).
-    await ctx.runQuery(internal.integrations.jira.verifyCanManageIssues, {
-      userId: user._id,
-      roomId,
-    });
-
-    const client = await buildJiraClient(ctx, connection);
+    // Jira as the importer, on their connection's site, which every link
+    // names. When it can't be reached, every key is refused saying why.
+    const jira = await jiraAsCaller(ctx);
+    if (!jira.ok) {
+      const reason = unavailableToThePerson(jira.reason);
+      return { imported: 0, skipped: 0, refused: jiraIssueKeys.map((key) => ({ key, reason })) };
+    }
     return await importIssuesWithClient(
-      client,
+      jira.client,
       (candidate): Promise<Issues.Admission> =>
         ctx.runMutation(internal.integrations.jira.admitIssue, { roomId, ...candidate }),
-      { keys: jiraIssueKeys, siteUrl: connection.siteUrl }
+      { keys: jiraIssueKeys, site: jira.site }
     );
   },
 });
@@ -342,21 +337,16 @@ function refusalReason(error: unknown): string {
 /**
  * The import itself, decoupled from ctx plumbing: each key is read from Jira,
  * so the title and URL come from Jira rather than the client, and handed to
- * the issue module's admission as a title and a link. A key that can't be
- * linked, read or admitted is refused with why; the others still import.
+ * the issue module's admission as a title and a link, a page on the site the
+ * client acts on. A key that can't be read or admitted is refused with why;
+ * the others still import.
  */
 export async function importIssuesWithClient(
   client: Pick<JiraClient, "getIssue">,
   admit: (candidate: { title: string; link: Issues.IssueLink }) => Promise<Issues.Admission>,
-  args: { keys: string[]; siteUrl: string | undefined }
+  args: { keys: string[]; site: string }
 ): Promise<JiraImportResult> {
-  const { siteUrl } = args;
-  // Every link is a page on the connection's site: without one, none can be.
-  if (!siteUrl) {
-    const reason = "Your Jira connection has no site address; reconnect Jira";
-    return { imported: 0, skipped: 0, refused: args.keys.map((key) => ({ key, reason })) };
-  }
-
+  const { site } = args;
   const result: JiraImportResult = { imported: 0, skipped: 0, refused: [] };
   for (const key of args.keys) {
     let issue: JiraIssue;
@@ -374,7 +364,7 @@ export async function importIssuesWithClient(
     try {
       const admission = await admit({
         title: jiraIssueTitle(issue.key, issue.fields.summary),
-        link: jiraIssueLink(siteUrl, issue.key),
+        link: jiraIssueLink(site, issue.key),
       });
       if (admission.kind === "admitted") result.imported++;
       else result.skipped++;
@@ -385,94 +375,79 @@ export async function importIssuesWithClient(
   return result;
 }
 
+/** A tracker's own words for a refusal, as long as a settings line can carry. */
+const REFUSAL_WORDS = 300;
+
 /**
- * The estimate push itself, decoupled from ctx plumbing: an already-built
- * client (tests inject a fake) pushes the settled estimate and its comment.
- * Every skip condition returns false with a log line rather than throwing —
- * the push is a reveal side effect and must never fail the round.
+ * A settled estimate's push, as the estimate push decided it
+ * (model/estimatePush.ts): the story points written to the issue and a
+ * comment saying so, as the mapping's connection and only on the site the
+ * issue is on (the connection may have moved to another since). Then how it
+ * went goes back to the mapping. It never throws: a push is a reveal's side
+ * effect, and whatever goes wrong is recorded instead, where the room's
+ * settings show it.
  */
-export async function pushEstimateWithClient(
-  client: Pick<JiraClient, "updateStoryPoints" | "addComment">,
-  push: {
-    externalId: string;
-    storyPointsFieldId?: string;
-    finalEstimate: string;
-  }
-): Promise<boolean> {
-  if (!push.storyPointsFieldId) {
-    console.log("No story points field configured for mapping, skipping push");
-    return false;
+export const pushEstimate = internalAction({
+  args: { push: EstimatePush.estimatePushValidator },
+  handler: async (ctx, { push }) => {
+    const outcome = await pushToJira(ctx, push);
+    await ctx.runMutation(internal.integrations.jira.recordEstimatePush, {
+      mappingId: push.mappingId,
+      lastPush: { at: push.settledAt, issueKey: push.issueKey, estimate: push.estimate.label, ...outcome },
+      madeWith: { connectionId: push.connectionId, fieldId: push.fieldId },
+    });
+  },
+});
+
+async function pushToJira(
+  ctx: ActionCtx,
+  push: EstimatePush.EstimatePush
+): Promise<Pick<EstimatePush.LastPush, "outcome" | "message">> {
+  const jira = await jiraAsConnection(ctx, push.connectionId, push.site);
+  if (!jira.ok) {
+    console.warn(`Can't push estimate to Jira ${push.issueKey} as connection ${push.connectionId}: ${jira.reason}`);
+    return { outcome: jira.reason === "otherSite" ? "otherSite" : "connectionUnusable" };
   }
 
-  // Convert via the one card→numeric conversion — skip non-numeric estimates
-  // (e.g., "XL", "?")
-  const numericEstimate = cardNumericValue(push.finalEstimate);
-  if (numericEstimate === undefined) {
-    console.log(`Non-numeric estimate "${push.finalEstimate}", skipping Jira push`);
-    return false;
-  }
-
+  const { label, value } = push.estimate;
   try {
-    await client.updateStoryPoints(
-      push.externalId,
-      push.storyPointsFieldId,
-      numericEstimate
-    );
-
-    await client.addComment(
-      push.externalId,
-      `Estimated at ${push.finalEstimate} point${numericEstimate !== 1 ? "s" : ""} via AgileKit`
-    );
-
-    console.log(`Pushed estimate ${push.finalEstimate} to Jira ${push.externalId}`);
-    return true;
+    await jira.client.updateStoryPoints(push.issueKey, push.fieldId, value);
   } catch (error) {
-    console.error(`Failed to push estimate to Jira ${push.externalId}:`, error);
-    return false;
+    console.error(`Jira refused the estimate for ${push.issueKey}:`, error);
+    const words = error instanceof Error ? error.message : String(error);
+    return { outcome: "refused", message: words.slice(0, REFUSAL_WORDS) };
   }
+  console.log(`Pushed estimate ${label} to Jira ${push.issueKey}`);
+  // The estimate is in Jira: the comment saying so is a courtesy, which a
+  // project may not allow (adding comments is a permission of its own), so
+  // its failure is only logged.
+  try {
+    await jira.client.addComment(push.issueKey, `Estimated at ${label} point${value !== 1 ? "s" : ""} via AgileKit`);
+  } catch (error) {
+    console.warn(`Jira took the estimate for ${push.issueKey} but not the comment saying so:`, error);
+  }
+  return { outcome: "pushed" };
 }
 
+/**
+ * The push as reveals scheduled it before the estimate push decided pushes,
+ * by issue and estimate: a job queued just before a deploy still finds its
+ * function, and the estimate is decided now (decideScheduledPush).
+ */
 export const pushEstimateToJira = internalAction({
   args: {
     issueId: v.id("issues"),
     finalEstimate: v.string(),
   },
-  handler: async (ctx, { issueId, finalEstimate }) => {
-    const data = await ctx.runQuery(
-      internal.integrations.jira.getIssueData,
-      { issueId }
-    );
-
-    if (!data?.issueLink || !data?.mapping) {
-      console.log(`No Jira link or mapping for issue ${issueId}, skipping push`);
-      return;
-    }
-
-    const { issueLink, mapping } = data;
-
-    const connection = await ctx.runQuery(
-      internal.integrations.jira.getConnectionById,
-      { connectionId: mapping.connectionId }
-    );
-
-    if (!connection) {
-      console.error(`Connection ${mapping.connectionId} not found`);
-      return;
-    }
-
-    const client = await buildJiraClient(ctx, connection);
-    await pushEstimateWithClient(client, {
-      externalId: issueLink.externalId,
-      storyPointsFieldId: mapping.storyPointsFieldId,
-      finalEstimate,
-    });
+  handler: async (ctx, args) => {
+    await ctx.runMutation(internal.integrations.jira.decideScheduledPush, args);
   },
 });
 
 export const detectStoryPointsField = action({
   args: {},
   handler: async (ctx) => {
-    const { client } = await requireJiraClient(ctx);
+    const { client } = await requireJiraAsCaller(ctx);
     return await client.findStoryPointsField();
   },
 });
@@ -494,62 +469,68 @@ export const processJiraWebhook = internalMutation({
   },
 });
 
+/**
+ * One batch of the daily deletion of week-old webhook dedup rows (cron
+ * cleanup-webhook-events), which schedules the next batch itself until done
+ * (model/integrations.ts). The rows are every provider's, but the function
+ * keeps its name and place: the cron, and any batch scheduled before a
+ * deploy, find it by them.
+ */
 export const cleanupOldWebhookEvents = internalMutation({
-  args: {},
-  handler: async (ctx) => {
-    await Integrations.cleanupOldWebhookEvents(ctx);
+  args: {
+    cutoff: v.optional(v.number()),
+    batchSize: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    return await Integrations.cleanupOldWebhookEvents(ctx, args);
   },
 });
 
 /**
- * Best-effort remote deletion of one Jira webhook, with the connection that
- * made it. A failure is retried once after a delay (the connection row still
- * exists at that point, so the retry can authenticate); a webhook that
- * survives the retry, or whose connection is already gone, is left to its
- * 30-day expiry — logged here so the leak is tracked rather than silent.
+ * Best-effort remote deletion of one Jira webhook, as the connection that
+ * made it. A failure, the connection's token refused among them, is retried
+ * once after a delay (the connection row still exists at that point, so the
+ * retry can authenticate); a webhook that survives the retry, or whose
+ * connection is gone or names no site, is left to its 30-day expiry, which
+ * no retry could change. Logged here, so the leak is tracked rather than
+ * silent.
  */
 async function deleteWebhook(
   ctx: ActionCtx,
   webhook: { connectionId: Id<"integrationConnections">; webhookId: string },
   attemptsLeft: number
 ): Promise<void> {
-  const connection = await ctx.runQuery(
-    internal.integrations.jira.getConnectionById,
-    { connectionId: webhook.connectionId }
-  );
-  if (!connection) {
+  const jira = await jiraAsConnection(ctx, webhook.connectionId);
+  if (!jira.ok && jira.reason !== "tokenRefused") {
     console.warn(
-      `Jira connection ${webhook.connectionId} already removed; webhook ${webhook.webhookId} left to expire remotely`
+      `Jira connection ${webhook.connectionId} can't act (${jira.reason}); webhook ${webhook.webhookId} left to expire remotely`
     );
     return;
   }
 
-  try {
-    const client = await buildJiraClient(ctx, connection);
-    await client.deleteWebhooks([webhook.webhookId]);
-    console.log(`Deregistered Jira webhook ${webhook.webhookId}`);
-  } catch (error) {
-    if (attemptsLeft > 0) {
-      console.warn(
-        `Failed to deregister Jira webhook ${webhook.webhookId}; retrying in 5 minutes:`,
-        error
-      );
-      await ctx.scheduler.runAfter(
-        5 * 60 * 1000,
-        internal.integrations.jira.deregisterWebhook,
-        {
-          connectionId: webhook.connectionId,
-          webhookId: webhook.webhookId,
-          attemptsLeft: attemptsLeft - 1,
-        }
-      );
+  let failure: unknown = "the connection's token was refused";
+  if (jira.ok) {
+    try {
+      await jira.client.deleteWebhooks([webhook.webhookId]);
+      console.log(`Deregistered Jira webhook ${webhook.webhookId}`);
       return;
+    } catch (error) {
+      failure = error;
     }
-    console.warn(
-      `Failed to deregister Jira webhook ${webhook.webhookId} (no retries left); left to expire remotely:`,
-      error
-    );
   }
+  if (attemptsLeft > 0) {
+    console.warn(`Failed to deregister Jira webhook ${webhook.webhookId}; retrying in 5 minutes:`, failure);
+    await ctx.scheduler.runAfter(5 * 60 * 1000, internal.integrations.jira.deregisterWebhook, {
+      connectionId: webhook.connectionId,
+      webhookId: webhook.webhookId,
+      attemptsLeft: attemptsLeft - 1,
+    });
+    return;
+  }
+  console.warn(
+    `Failed to deregister Jira webhook ${webhook.webhookId} (no retries left); left to expire remotely:`,
+    failure
+  );
 }
 
 /**
@@ -582,36 +563,23 @@ export const finalizeDisconnect = internalAction({
     webhookIds: v.array(v.string()),
   },
   handler: async (ctx, args) => {
-    const connection = await ctx.runQuery(
-      internal.integrations.jira.getConnectionById,
-      { connectionId: args.connectionId }
-    );
-
-    if (!connection) {
+    // As the connection that is going, while its row still holds the token;
+    // whatever keeps it from acting, the disconnect carries on without them.
+    const jira = await jiraAsConnection(ctx, args.connectionId);
+    if (!jira.ok) {
       console.warn(
-        `Jira connection ${args.connectionId} already removed; ${args.webhookIds.length} webhook(s) left to expire remotely`
+        `Jira connection ${args.connectionId} can't act (${jira.reason}); ${args.webhookIds.length} webhook(s) left to expire remotely`
       );
     } else {
-      let client: JiraClient | null = null;
-      try {
-        client = await buildJiraClient(ctx, connection);
-      } catch (error) {
-        console.warn(
-          `Could not build a Jira client for connection ${args.connectionId}; ${args.webhookIds.length} webhook(s) left to expire remotely:`,
-          error
-        );
-      }
-      if (client) {
-        for (const webhookId of args.webhookIds) {
-          try {
-            await client.deleteWebhooks([webhookId]);
-            console.log(`Deregistered Jira webhook ${webhookId}`);
-          } catch (error) {
-            console.warn(
-              `Failed to deregister Jira webhook ${webhookId} during disconnect; left to expire remotely:`,
-              error
-            );
-          }
+      for (const webhookId of args.webhookIds) {
+        try {
+          await jira.client.deleteWebhooks([webhookId]);
+          console.log(`Deregistered Jira webhook ${webhookId}`);
+        } catch (error) {
+          console.warn(
+            `Failed to deregister Jira webhook ${webhookId} during disconnect; left to expire remotely:`,
+            error
+          );
         }
       }
     }
@@ -676,22 +644,22 @@ async function attemptRegistration(
     return { kind: "failed", failure: "missingSecret", ...wanted };
   }
 
-  try {
-    const connection = await ctx.runQuery(
-      internal.integrations.jira.getConnectionById,
-      { connectionId: wanted.connectionId }
-    );
-    if (!connection) throw new Error("Connection not found");
-    // The address names the site the webhook watches; without it, no
-    // delivery could say which site's issues it is about.
-    if (!connection.siteUrl) throw new Error("Connection has no site address");
+  // As the mapping's own connection, on its site: the address names that
+  // site, since a delivery says which site's issues it is about only by the
+  // address it was sent to. A connection that can't act is a failed
+  // registration, like Jira refusing it.
+  const jira = await jiraAsConnection(ctx, wanted.connectionId);
+  if (!jira.ok) {
+    console.error(`Can't register a Jira webhook as connection ${wanted.connectionId}: ${jira.reason}`);
+    return { kind: "failed", failure: "jiraError", ...wanted };
+  }
 
+  try {
     const webhookUrl = jiraWebhookAddress(process.env.CONVEX_SITE_URL, {
       secret: webhookSecret,
-      site: connection.siteUrl,
+      site: jira.site,
     });
-    const client = await buildJiraClient(ctx, connection);
-    const webhookId = await client.registerWebhook(`project = ${wanted.projectKey}`, webhookUrl);
+    const webhookId = await jira.client.registerWebhook(`project = ${wanted.projectKey}`, webhookUrl);
     if (!webhookId) throw new Error("Jira registered no webhook");
     console.log(`Registered Jira webhook ${webhookId}`);
     return { kind: "registered", webhookId, ...wanted };
@@ -733,34 +701,5 @@ export const refreshJiraWebhooks = internalMutation({
         batchSize,
       });
     }
-  },
-});
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Verifies that the user may manage issues in the room. The calling action
- * resolves the user from its own auth identity (actions have no db access)
- * and passes it through; this internal query routes the check through the
- * permission guard's explicit-user entry point, so the decision and the
- * thrown messages are the guard's own.
- */
-export const verifyCanManageIssues = internalQuery({
-  args: {
-    userId: v.id("users"),
-    roomId: v.id("rooms"),
-  },
-  handler: async (ctx, args) => {
-    const user = await ctx.db.get("users", args.userId);
-    if (!user) throw new Error("User not found");
-
-    await requireCanForUser(ctx, user, args.roomId, {
-      kind: "category",
-      category: "issueManagement",
-    });
-
-    return { userId: user._id };
   },
 });

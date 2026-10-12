@@ -382,6 +382,39 @@ describe("stacks", () => {
     expect((await stickyRow(t, ann2)).stackId).toBe(ann1);
   });
 
+  it("while writing, a drop may group only your own stickies, the stack it brings and the topic it joins included", async () => {
+    const t = withComponents(convexTest(schema, modules));
+    const { roomId } = await seedRetro(t);
+    const annTop = await stick(t, "ann", roomId);
+    const annLoose = await stick(t, "ann", roomId);
+    const annUnder = await stick(t, "ann", roomId);
+    const bobUnder = await stick(t, "bob", roomId);
+    const bobTop = await stick(t, "bob", roomId);
+    // Once revealed, Ann stacks Bob's sticky under hers and hers under Bob's.
+    await setStep(t, roomId, "vote");
+    await stack(t, "ann", bobUnder, annTop);
+    await stack(t, "ann", annUnder, bobTop);
+    await setStep(t, roomId, "write");
+
+    // Back in Write, each of these would group a sticky of Bob's that Ann can't read.
+    for (const [stickyId, ontoId] of [
+      [annTop, annLoose], // her stack brings his sticky along
+      [annLoose, annUnder], // her sticky joins his stack
+      [annLoose, annTop], // her stack holds his sticky
+    ]) {
+      expect(await refusalWith(stack(t, "ann", stickyId, ontoId))).toEqual({
+        code: "stage",
+        message: "Stickies can be stacked once they're revealed.",
+      });
+    }
+    expect((await stickyRow(t, annLoose)).stackId).toBeUndefined();
+    expect((await stickyRow(t, annTop)).stackId).toBeUndefined();
+
+    await setStep(t, roomId, "vote");
+    await stack(t, "ann", annTop, annLoose);
+    expect((await stickyRow(t, bobUnder)).stackId).toBe(annLoose);
+  });
+
   it("once revealed, a sticky dropped on another joins that sticky's stack, and a stack's top brings its stack", async () => {
     const t = withComponents(convexTest(schema, modules));
     const { roomId } = await seedRetro(t);
@@ -687,6 +720,32 @@ describe("the discussion", () => {
     await stack(t, "ann", some, most);
     await focus(t, roomId, some);
     expect((await retroState(t, roomId)).focusStickyId).toBe(most);
+  });
+
+  it("a detour to a topic nobody voted for keeps the walk's place: Next carries on, Previous goes back", async () => {
+    const t = withComponents(convexTest(schema, modules));
+    const { roomId, most, some, none } = await seedVoted(t);
+    await setStep(t, roomId, "discuss");
+    const walk = async (direction: "next" | "previous") => {
+      await as(t, "owner").mutation(api.retro.stepDiscussion, { roomId, direction });
+      return retroState(t, roomId);
+    };
+
+    await focus(t, roomId, none);
+    expect(await retroState(t, roomId)).toMatchObject({ focusStickyId: none, walkStickyId: most });
+    expect(await walk("next")).toMatchObject({ focusStickyId: some });
+    expect(await retroState(t, roomId)).not.toHaveProperty("walkStickyId");
+
+    await focus(t, roomId, none);
+    expect(await walk("previous")).toMatchObject({ focusStickyId: some });
+
+    // The detour's topic leaves the board; the walk keeps its place, and Next at the end changes nothing.
+    await focus(t, roomId, none);
+    await as(t, "ann").mutation(api.retro.deleteSticky, { stickyId: none });
+    expect(await retroState(t, roomId)).toEqual(expect.objectContaining({ walkStickyId: some }));
+    expect(await retroState(t, roomId)).not.toHaveProperty("focusStickyId");
+    expect(await walk("next")).toMatchObject({ walkStickyId: some });
+    expect(await walk("previous")).toMatchObject({ focusStickyId: some });
   });
 
   it("going back from Done to Discuss resumes the walk where it was, and nothing takes the spotlight while done", async () => {

@@ -1,10 +1,10 @@
 /**
  * `/retro/new` says a new retro is kept on your account only for a
- * permanent account: one whose users row says so. Anyone else, a guest whose
- * row has no kind or who has no row yet included, is told guest retros are
- * removed after five quiet days. The page runs under the real auth provider;
- * its sources are faked at their edges: Convex's auth state, the caller's
- * users row and BetterAuth's session.
+ * permanent account, as Convex answers from the session's token
+ * (users.getViewer). Anyone else, a guest who has no users row yet included,
+ * is told guest retros are removed after five quiet days. The page runs
+ * under the real auth provider; its sources are faked at their edges:
+ * Convex's auth state, its answer and BetterAuth's session.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
@@ -13,8 +13,8 @@ import type { ReactNode } from "react";
 const sources = vi.hoisted(() => ({
   // Convex's auth state
   isAuthenticated: true,
-  // The caller's users row: null while they have none
-  row: null as Record<string, unknown> | null,
+  // Convex's answer about who is signed in
+  answer: null as Record<string, unknown> | null,
   // BetterAuth's session
   session: null as { user: Record<string, unknown> } | null,
 }));
@@ -24,7 +24,7 @@ vi.mock("convex/react", async () => {
   return {
     useConvexAuth: () => ({ isLoading: false, isAuthenticated: sources.isAuthenticated }),
     useQuery: (query: Parameters<typeof getFunctionName>[0], args: unknown) =>
-      args !== "skip" && getFunctionName(query) === "users:getGlobalUser" ? sources.row : undefined,
+      args !== "skip" && getFunctionName(query) === "users:getViewer" ? sources.answer : undefined,
     useMutation: () => async () => {},
   };
 });
@@ -46,15 +46,6 @@ vi.mock("@/components/footer", () => ({ Footer: () => null }));
 import { AuthProvider } from "@/components/auth/auth-provider";
 import { CreateRetroContent } from "./create-content";
 
-// The choice control measures its options; jsdom has no ResizeObserver.
-vi.stubGlobal(
-  "ResizeObserver",
-  class {
-    observe() {}
-    unobserve() {}
-    disconnect() {}
-  }
-);
 
 const KEPT = "Kept on your account until you delete it.";
 const REMOVED = "Guest retros are removed after 5 quiet days.";
@@ -70,7 +61,7 @@ function retentionNote() {
 
 beforeEach(() => {
   sources.isAuthenticated = true;
-  sources.row = null;
+  sources.answer = null;
   sources.session = null;
 });
 
@@ -78,27 +69,17 @@ afterEach(cleanup);
 
 describe("CreateRetroContent's retention note", () => {
   it("tells a permanent account the retro is kept on it", () => {
-    sources.row = { _id: "user-ada", authUserId: "auth-ada", name: "Ada", email: "ada@example.com", accountType: "permanent", createdAt: 0 };
-    sources.session = { user: { id: "auth-ada", isAnonymous: false, email: "ada@example.com" } };
+    sources.answer = { name: "Ada", avatarUrl: null, email: "ada@example.com", isPermanent: true };
 
     expect(retentionNote()).toBe(KEPT);
   });
 
   it.each([
-    [
-      "a guest",
-      { _id: "user-guest", authUserId: "auth-guest", name: "Guest 4829", accountType: "anonymous", createdAt: 0 },
-      { user: { id: "auth-guest", isAnonymous: true } },
-    ],
-    [
-      "a guest whose row has no kind, whatever BetterAuth's session says",
-      { _id: "user-bob", authUserId: "auth-bob", name: "Bob", createdAt: 0 },
-      { user: { id: "auth-bob", isAnonymous: false, email: "bob@example.com" } },
-    ],
-    ["someone signed in with no users row yet", null, { user: { id: "auth-new", isAnonymous: true } }],
-  ])("says guest retros are removed to %s", (_, row, session) => {
-    sources.row = row;
-    sources.session = session;
+    ["a guest", { name: "Guest 4829", avatarUrl: null, email: null, isPermanent: false }],
+    ["someone signed in with no users row yet", { name: null, avatarUrl: null, email: null, isPermanent: false }],
+  ])("says guest retros are removed to %s, whatever BetterAuth's session says", (_, answer) => {
+    sources.answer = answer;
+    sources.session = { user: { id: "auth-bob", isAnonymous: false, email: "bob@example.com" } };
 
     expect(retentionNote()).toContain(REMOVED);
   });

@@ -1063,7 +1063,11 @@ describe("the round refuses what its phase doesn't allow", () => {
     return { roomId, issueId, voters };
   }
 
-  /** Links the issue to Jira in a room that pushes each estimate on reveal. */
+  /**
+   * Links the issue to Jira in a room that pushes each estimate on reveal,
+   * through a connection to the site the issue is on. The push waits under
+   * the fake timers, so only its scheduling is read.
+   */
   async function linkToJira(t: T, roomId: Id<"rooms">, issueId: Id<"issues">) {
     await t.run(async (ctx) => {
       const userId = await ctx.db.insert("users", { authUserId: "auth-jira", name: "J", createdAt: Date.now() });
@@ -1074,6 +1078,8 @@ describe("the round refuses what its phase doesn't allow", () => {
         accessTokenIv: "iv",
         accessTokenAuthTag: "tag",
         expiresAt: Date.now() + 3_600_000,
+        cloudId: "cloud-team",
+        siteUrl: "https://team.atlassian.net",
         scopes: [],
         connectedAt: Date.now(),
         lastRefreshedAt: Date.now(),
@@ -1100,7 +1106,7 @@ describe("the round refuses what its phase doesn't allow", () => {
   }
 
   async function jiraPushes(t: T) {
-    return (await scheduledFns(t)).filter((job) => job.name.endsWith(":pushEstimateToJira"));
+    return (await scheduledFns(t)).filter((job) => job.name.endsWith(":pushEstimate"));
   }
 
   it("a second reveal neither re-stamps the issue nor pushes the estimate to Jira again", async () => {
@@ -1413,6 +1419,65 @@ describe("VotingRound.setAutoComplete", () => {
       asParticipant.mutation(api.rooms.toggleAutoComplete, { roomId })
     ).rejects.toThrow("Only the owner can do this.");
     // The denial ran no part of the toggle.
+    expect((await readRoom(t, roomId))?.autoCompleteVoting).toBe(true);
+  });
+});
+
+// The switch writes what the person chose, not a flip of what the server
+// holds, so a click on a view that someone else's change hasn't reached yet
+// can't do the opposite of what it showed. A tab from before `enabled` sends
+// none, and the setting flips for it as it always did.
+describe("rooms.toggleAutoComplete", () => {
+  /** Someone in the room, signed in, as the switch writes for them. */
+  async function signedInMember(t: T, roomId: Id<"rooms">) {
+    const userId = await addMember(t, roomId);
+    const user = await t.run((ctx) => ctx.db.get("users", userId));
+    return { userId, as: t.withIdentity({ subject: user!.authUserId }) };
+  }
+
+  it.each([
+    [true, true],
+    [false, false],
+    [false, true],
+    [true, false],
+  ])("stored %s, chosen %s: the room keeps what was chosen", async (stored, enabled) => {
+    const t = withComponents(convexTest(schema, modules));
+    const roomId = await seedRoom(t, { autoCompleteVoting: stored });
+    const { as } = await signedInMember(t, roomId);
+
+    await as.mutation(api.rooms.toggleAutoComplete, { roomId, enabled });
+
+    expect((await readRoom(t, roomId))?.autoCompleteVoting).toBe(enabled);
+  });
+
+  it("turning on a room already counting down leaves its countdown alone", async () => {
+    const t = withComponents(convexTest(schema, modules));
+    const roomId = await seedRoom(t, { autoCompleteVoting: true });
+    const { userId, as } = await signedInMember(t, roomId);
+    await castVote(t, roomId, userId); // all in -> armed
+    const armed = (await readRoom(t, roomId))!;
+
+    // The panel still showed it off when the person clicked.
+    await as.mutation(api.rooms.toggleAutoComplete, { roomId, enabled: true });
+
+    const room = (await readRoom(t, roomId))!;
+    expect(room.autoCompleteVoting).toBe(true);
+    expect(room.autoRevealCountdownStartedAt).toBe(armed.autoRevealCountdownStartedAt);
+    expect(room.autoRevealScheduledId).toBe(armed.autoRevealScheduledId);
+    const scheduled = await scheduledFns(t);
+    expect(scheduled).toHaveLength(1);
+    expect(scheduled[0].state.kind).toBe("pending");
+  });
+
+  it("an old tab that sends no value flips the setting, as before", async () => {
+    const t = withComponents(convexTest(schema, modules));
+    const roomId = await seedRoom(t, { autoCompleteVoting: true });
+    const { as } = await signedInMember(t, roomId);
+
+    await as.mutation(api.rooms.toggleAutoComplete, { roomId });
+    expect((await readRoom(t, roomId))?.autoCompleteVoting).toBe(false);
+
+    await as.mutation(api.rooms.toggleAutoComplete, { roomId });
     expect((await readRoom(t, roomId))?.autoCompleteVoting).toBe(true);
   });
 });

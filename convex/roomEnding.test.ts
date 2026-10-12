@@ -11,20 +11,31 @@ import { ROOM_TABLES } from "./model/roomEnding";
 import * as Timer from "./model/timer";
 import * as Canvas from "./model/canvas";
 import { presence } from "./model/presence";
+import { inMemoryJira, type FakeSite, type InMemoryJira } from "./integrations/jira.setup";
 
 const modules = import.meta.glob("./**/*.*s");
 
 type T = TestConvex<typeof schema>;
+
+/** The Jira a mapping's webhook is removed from, as the connection that made it. */
+let jira: InMemoryJira;
+let team: FakeSite;
 
 // convex-test fires runAfter(0) on a real setTimeout; faking it keeps each
 // step of an ending, and each page of the sweep, waiting until the test runs
 // it.
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ["setTimeout"] });
+  jira = inMemoryJira();
+  team = jira.site("team");
+  vi.spyOn(console, "log").mockImplementation(() => {});
 });
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
+  vi.restoreAllMocks();
 });
 
 type CountedTable =
@@ -100,33 +111,19 @@ async function seedPerson(t: T): Promise<Id<"users">> {
   );
 }
 
-async function seedConnection(
-  t: T,
-  userId: Id<"users">
-): Promise<Id<"integrationConnections">> {
-  return t.run((ctx) =>
-    ctx.db.insert("integrationConnections", {
-      userId,
-      provider: "jira",
-      encryptedAccessToken: "enc-access",
-      accessTokenIv: "iv",
-      accessTokenAuthTag: "tag",
-      expiresAt: Date.now() + 3_600_000,
-      cloudId: "cloud-1",
-      siteUrl: "https://team.atlassian.net",
-      scopes: ["read:jira-work"],
-      connectedAt: Date.now(),
-      lastRefreshedAt: Date.now(),
-    })
-  );
+/** A person's connection to the team's Jira site. */
+async function seedConnection(t: T, userId: Id<"users">): Promise<Id<"integrationConnections">> {
+  return await jira.connect(t, userId, team);
 }
 
+/** The room mapped through the connection, with its webhook live in Jira. */
 async function seedMappingWithWebhook(
   t: T,
   roomId: Id<"rooms">,
   connectionId: Id<"integrationConnections">,
   jiraWebhookId: string
 ): Promise<Id<"integrationMappings">> {
+  team.webhooks.set(jiraWebhookId, { url: "x", jqlFilter: "project = PROJ", events: [] });
   return t.run((ctx) =>
     ctx.db.insert("integrationMappings", {
       roomId,
@@ -591,6 +588,7 @@ describe("the sweep", () => {
       connectionId,
       webhookId: "wh-orphan",
     });
+    expect(team.webhooks.has("wh-orphan")).toBe(false);
     expect(await t.run((ctx) => presence.listRoom(ctx, roomId))).toEqual([]);
   });
 
@@ -675,8 +673,13 @@ describe("the admin wipe", () => {
     // …and the webhook is removed with the connection that made it, before
     // that connection goes.
     expect(await webhookRemovals(t)).toEqual(["wh-wiped"]);
+    const token = jira.tokenOf(connectionId);
     await finishScheduled(t);
 
+    expect(team.webhooks.has("wh-wiped")).toBe(false);
+    expect(jira.restCalls()).toEqual([
+      expect.objectContaining({ method: "DELETE", path: "/rest/api/3/webhook?webhookIds=wh-wiped", token }),
+    ]);
     for (const table of [...ROOM_TABLES, "rooms", "users", "integrationConnections", "webhookEvents", "gifSearchUsage"] as const) {
       expect(await countRows(t, table), table).toBe(0);
     }

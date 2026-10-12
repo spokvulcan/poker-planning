@@ -2,9 +2,9 @@
  * IssuesPanel — the Quick Vote switch consumes the game-flow decision it is
  * handed: denied renders the switch disabled with the decision's denial copy
  * (and no onClick that would let the backend throw); allowed keeps it live.
- * A refused write shows the refusal's message. Convex reads/writes, toast,
- * and the mobile branch are mocked at the seams; the decision itself comes
- * from the real computePermissions.
+ * A refused write shows the refusal's message. Convex reads/writes and toast
+ * are mocked at the seams; the decision itself comes from the real
+ * computePermissions.
  */
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, fireEvent, cleanup, act } from "@testing-library/react";
@@ -37,9 +37,6 @@ vi.mock("convex/react", () => ({
 vi.mock("next/link", () => ({
   default: ({ children }: { children: ReactNode }) => <a>{children}</a>,
 }));
-
-// Desktop branch of SidePanel — jsdom has no matchMedia.
-vi.mock("@/hooks/use-mobile", () => ({ useIsMobile: () => false }));
 
 vi.mock("@/lib/toast", () => ({
   toast: { success: () => {}, error: (message: string) => mocks.errors.push(message) },
@@ -94,7 +91,6 @@ function renderPanel(canControlGameFlow: ResolvedDecision) {
     <IssuesPanel
       roomId={"room-1" as Id<"rooms">}
       roomName="Test Room"
-      isOpen={true}
       onClose={() => {}}
       canManageIssues={RESOLVED_ALLOWED}
       canControlGameFlow={canControlGameFlow}

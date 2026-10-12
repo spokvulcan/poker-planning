@@ -25,7 +25,10 @@ async function openRoom(t: T, name: string): Promise<Id<"rooms">> {
 /** The Jira site the rooms' issues come from, unless a test names another. */
 const SITE = "https://team.atlassian.net";
 
-/** Brings a Jira issue into the room the way an import hands it over: a title and a link. */
+/**
+ * Brings a Jira issue into the room the way an import hands it over: a title
+ * and a link, admitted as "ann", whom the import runs as.
+ */
 const importJiraIssue = (
   t: T,
   roomId: Id<"rooms">,
@@ -33,7 +36,7 @@ const importJiraIssue = (
   summary = "Old summary",
   site = SITE
 ) =>
-  t.mutation(internal.integrations.jira.admitIssue, {
+  as(t, "ann").mutation(internal.integrations.jira.admitIssue, {
     roomId,
     title: `${key} - ${summary}`,
     link: { provider: "jira", externalId: key, externalUrl: `${site}/browse/${key}` },
@@ -64,9 +67,9 @@ function jiraEvent(
 const deliver = (t: T, event: ReturnType<typeof jiraEvent>) =>
   t.mutation(internal.integrations.jira.processJiraWebhook, event);
 
-/** The room's issue titles, as its issue list shows them. */
+/** The room's issue titles, as its issue list shows "ann", who is in every room here. */
 const titles = async (t: T, roomId: Id<"rooms">) =>
-  (await t.query(api.issues.list, { roomId })).map((issue) => issue.title);
+  (await as(t, "ann").query(api.issues.list, { roomId })).map((issue) => issue.title);
 
 /** The Jira keys the room's issues link to, as the room shows them. */
 const linkedKeys = async (t: T, roomId: Id<"rooms">) =>

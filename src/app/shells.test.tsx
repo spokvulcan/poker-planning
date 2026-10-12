@@ -75,24 +75,6 @@ const backend = vi.hoisted(() => {
     },
   );
 
-  // What jsdom lacks and the canvas and the theme need.
-  vi.stubGlobal(
-    "ResizeObserver",
-    class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    },
-  );
-  vi.stubGlobal("matchMedia", (media: string) => ({
-    matches: false,
-    media,
-    addEventListener() {},
-    removeEventListener() {},
-    addListener() {},
-    removeListener() {},
-  }));
-
   return backend;
 });
 

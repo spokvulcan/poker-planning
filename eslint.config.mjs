@@ -82,6 +82,12 @@ const BACKEND_STANDARDS = [
       "One writer per concern (CLAUDE.md): BetterAuth writes its own tables, and only model/accountLifecycle.ts deletes a sign-in, with its account (ADR-0033).",
   },
   {
+    selector: `${writeTo("integrationMappings", "insert|patch|replace")} Property[key.name='lastPush']`,
+    except: ["convex/model/estimatePush.ts"],
+    message:
+      "One writer per concern (CLAUDE.md): only model/estimatePush.ts records how a mapping's last estimate push went.",
+  },
+  {
     // The standards above see a write by the table it names.
     selector:
       "CallExpression[callee.object.property.name='db'][callee.property.name=/^(insert|patch|replace|delete)$/]:not([arguments.0.type='Literal'])",

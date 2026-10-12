@@ -26,42 +26,30 @@ interface AuthIdentity {
 }
 
 /**
- * Room attendance: requires authentication and verifies room membership.
- * Returns the identity, user and membership records, and the room it
- * checked, so a write never reads the room again. A read-only query takes
- * `requireRoomReader` instead, which reads no room.
+ * Room attendance: the caller is signed in, has a users row and a seat in the
+ * room. Hands back their row, their membership and the room it checked, so a
+ * write never reads the room again. The room-scoped step is its one caller,
+ * which is why it isn't exported: every room write takes attendance through
+ * the step, and a read-only query takes `requireRoomReader` instead, which
+ * reads no room.
  */
-export async function requireRoomMember(
-  ctx: QueryCtx | MutationCtx,
+async function requireRoomMember(
+  ctx: MutationCtx,
   roomId: Id<"rooms">
-): Promise<{
-  identity: AuthIdentity;
-  user: Doc<"users">;
-  membership: Doc<"roomMemberships">;
-  room: Doc<"rooms">;
-}> {
-  const { identity, user } = await requireUser(ctx);
-  return { identity, user, ...(await seatIn(ctx, roomId, user)) };
-}
-
-/** How every guard refuses a caller who isn't in the room (ADR-0031). */
-function notAMember() {
-  return refusal("forbidden", "Not a member of this room");
-}
-
-/** The user's seat in a room, and the room: refused without a membership. */
-async function seatIn(
-  ctx: QueryCtx | MutationCtx,
-  roomId: Id<"rooms">,
-  user: Doc<"users">
-): Promise<{ membership: Doc<"roomMemberships">; room: Doc<"rooms"> }> {
+): Promise<{ user: Doc<"users">; membership: Doc<"roomMemberships">; room: Doc<"rooms"> }> {
+  const { user } = await requireUser(ctx);
   const membership = await getMembership(ctx, roomId, user._id);
   if (!membership) throw notAMember();
   const room = await ctx.db.get("rooms", roomId);
   if (!room) {
     throw new Error("Room not found");
   }
-  return { membership, room };
+  return { user, membership, room };
+}
+
+/** How every guard refuses a caller who isn't in the room (ADR-0031). */
+function notAMember() {
+  return refusal("forbidden", "Not a member of this room");
 }
 
 /**
@@ -70,9 +58,10 @@ async function seatIn(
  * membership alone, and returns the identity and user. It reads no room: a
  * guard's reads join the read set of every query that takes it, so a room
  * patch would re-run them all. A query that needs the room reads it itself.
- * Anyone else is refused as attendance refuses them (ADR-0031). Every
- * read-only query on room-owned data takes this guard; every room write
- * takes `requireRoomMember` (attendance) through the room-scoped step.
+ * Anyone else is refused as attendance refuses them (ADR-0031). Every public
+ * query addressed to a room takes this guard, but for the few that are the
+ * room's public shell (listed in convex/requireRoomWrite.test.ts); every room
+ * write takes attendance through the room-scoped step.
  */
 export async function requireRoomReader(
   ctx: QueryCtx | MutationCtx,
@@ -87,52 +76,27 @@ export async function requireRoomReader(
 }
 
 /**
- * What an authorization guard is being asked to permit. The caller names the
- * category or relationship verb; it cannot know the target's role, so the
- * guard fills targetRole itself for target-constrained verbs.
+ * What an authorization guard is being asked to permit: a category, or a
+ * relationship verb. A verb that acts on another member names them
+ * (`target`): the guard loads their membership, and fills in their role for
+ * the verbs the decision weighs it for (remove, promote, demote), which the
+ * caller can't know. `changePerms` and `delete` act on the room alone.
  */
 export type RequireCanSpec =
   | { kind: "category"; category: PermissionCategory }
-  | {
-      kind: "relationship";
-      verb:
-        | "remove"
-        | "promote"
-        | "demote"
-        | "transfer"
-        | "changePerms"
-        | "delete";
-    };
+  | { kind: "relationship"; verb: "remove" | "promote" | "demote" | "transfer"; target: Id<"users"> }
+  | { kind: "relationship"; verb: "changePerms" | "delete" };
 
 /**
  * The loaded bundle the permission guard returns: everything its IO assembly
  * fetched while assembling the Action.
  */
-export type GuardBundle = {
+type GuardBundle = {
   user: Doc<"users">;
   membership: Doc<"roomMemberships">;
   room: Doc<"rooms">;
   target?: Doc<"roomMemberships">;
 };
-
-/**
- * The explicit-user entry point to the permission guard, for callers that
- * resolved the user outside ctx.auth (e.g. an action that authenticated via
- * an explicit authUserId and called in through an internal query). Resolves
- * the actor's membership and the room, then funnels into the same shared
- * assembly as the room-scoped step's `spec` — same Action, same decision,
- * same thrown messages.
- */
-export async function requireCanForUser(
-  ctx: QueryCtx | MutationCtx,
-  user: Doc<"users">,
-  roomId: Id<"rooms">,
-  spec: RequireCanSpec,
-  targetUserId?: Id<"users">
-): Promise<GuardBundle> {
-  const { membership, room } = await seatIn(ctx, roomId, user);
-  return guardRoomAction(ctx, user, membership, room, spec, targetUserId);
-}
 
 /**
  * What a room write is addressed by: its room, or the one issue, sticky or
@@ -148,11 +112,15 @@ export type RoomAddress =
 
 /**
  * What the room-scoped step hands a write's handler: the caller's users row
- * and membership, the room, the target of a relationship verb, and the
- * entity an address named, under the address's key (`issue` for
- * `{ issue: issueId }`).
+ * and membership, the room, the member a relationship verb acts on (`target`,
+ * there whenever the spec names one), and the entity an address named, under
+ * the address's key (`issue` for `{ issue: issueId }`).
  */
-export type RoomWrite<A extends RoomAddress = Id<"rooms">> = GuardBundle &
+export type RoomWrite<
+  A extends RoomAddress = Id<"rooms">,
+  S extends RequireCanSpec | undefined = undefined,
+> = Omit<GuardBundle, "target"> &
+  (S extends { target: Id<"users"> } ? { target: Doc<"roomMemberships"> } : unknown) &
   (A extends Id<"rooms">
     ? unknown
     : { [K in keyof A]: A[K] extends Id<infer T extends TableNames> ? Doc<T> : never });
@@ -164,26 +132,26 @@ export type RoomWrite<A extends RoomAddress = Id<"rooms">> = GuardBundle &
  * missing once it is gone), seats the caller in its room or the room
  * addressed (who is signed in, through model/caller.ts, and their membership:
  * room attendance), runs the permission guard when `spec` names an action,
- * and hands over every row it loaded.
+ * and hands over every row it loaded. It is the permission guard's one way
+ * in.
  *
  * Who is calling comes from the session alone: a write that still takes the
  * caller's own user id, for old browsers, ignores it. Only presence's
  * heartbeat compares the user id it is sent, against the caller seated here,
- * because its component lists whoever a heartbeat names. The room's activity
- * clock stays in the model, which server-originated writes share (ADR-0005).
+ * because its component lists whoever a heartbeat names. An action takes the
+ * step in the mutations it runs, which run as the action's own caller: the
+ * Jira import does, before it calls Jira and for each issue it admits. The
+ * room's activity clock stays in the model, which server-originated writes
+ * share (ADR-0005).
  */
-export async function requireRoomWrite<A extends RoomAddress>(
-  ctx: MutationCtx,
-  address: A,
-  spec?: RequireCanSpec,
-  targetUserId?: Id<"users">
-): Promise<RoomWrite<A>> {
+export async function requireRoomWrite<
+  A extends RoomAddress,
+  S extends RequireCanSpec | undefined = undefined,
+>(ctx: MutationCtx, address: A, spec?: S): Promise<RoomWrite<A, S>> {
   const { roomId, ...entity } = await addressed(ctx, address);
   const { user, membership, room } = await requireRoomMember(ctx, roomId);
-  const bundle = spec
-    ? await guardRoomAction(ctx, user, membership, room, spec, targetUserId)
-    : { user, membership, room };
-  return { ...bundle, ...entity } as RoomWrite<A>;
+  const bundle = spec ? await guardRoomAction(ctx, user, membership, room, spec) : { user, membership, room };
+  return { ...bundle, ...entity } as RoomWrite<A, S>;
 }
 
 /** The room an address lands a write in, and the entity it names, loaded. */
@@ -206,10 +174,10 @@ async function addressed(ctx: MutationCtx, address: RoomAddress) {
 
 /**
  * The permission guard's shared IO assembly, given the actor's user,
- * membership and room from either authentication mode: the room-scoped step
- * or `requireCanForUser`. Resolves the action through `resolveRoomAction` and
- * refuses with the resolved decision's message on denial, a coded refusal
- * the browser can show (ADR-0031). Returns the loaded bundle.
+ * membership and room as the room-scoped step seated them. Resolves the
+ * action through `resolveRoomAction` and refuses with the resolved decision's
+ * message on denial, a coded refusal the browser can show (ADR-0031).
+ * Returns the loaded bundle.
  *
  * Identity rules (self-transfer, authoritative ownerId) are NOT enforced here;
  * they stay with the write, after the guard.
@@ -219,16 +187,9 @@ async function guardRoomAction(
   user: Doc<"users">,
   membership: Doc<"roomMemberships">,
   room: Doc<"rooms">,
-  spec: RequireCanSpec,
-  targetUserId?: Id<"users">
+  spec: RequireCanSpec
 ): Promise<GuardBundle> {
-  const { decision, target } = await resolveRoomAction(
-    ctx,
-    membership,
-    room,
-    spec,
-    targetUserId
-  );
+  const { decision, target } = await resolveRoomAction(ctx, membership, room, spec);
   if (!decision.allowed) {
     throw refusal("forbidden", decision.message);
   }
@@ -237,8 +198,8 @@ async function guardRoomAction(
 
 /**
  * The decision for an action in a loaded room, returned rather than thrown:
- * the same IO assembly the guard uses — the precise Action, the target for
- * target-constrained verbs, owner absence only when an owner-level outcome
+ * the same IO assembly the guard uses — the precise Action, the target a
+ * relationship verb names, owner absence only when an owner-level outcome
  * could depend on it — for a caller whose denial depends on the target (a
  * retro sticky someone else wrote). Throws only when the category has no
  * level in this room's ceremony (ADR-0013) or a target is not a member,
@@ -248,10 +209,8 @@ export async function resolveRoomAction(
   ctx: QueryCtx | MutationCtx,
   membership: Doc<"roomMemberships">,
   room: Doc<"rooms">,
-  spec: RequireCanSpec,
-  targetUserId?: Id<"users">
+  spec: RequireCanSpec
 ): Promise<{ decision: ResolvedDecision; target?: Doc<"roomMemberships"> }> {
-  const roomId = room._id;
   const effective = getEffectivePermissions(room);
   const actorRole = getEffectiveRole(membership);
 
@@ -265,32 +224,20 @@ export async function resolveRoomAction(
       throw refusal("missing", NOT_THIS_CEREMONY);
     }
     action = { kind: "category", category: spec.category, level };
+  } else if ("target" in spec) {
+    // A verb that acts on a member: load their membership; the verbs that
+    // constrain the target's role carry it.
+    const seat = await getMembership(ctx, room._id, spec.target);
+    if (!seat) {
+      throw new Error("Target user is not a member of this room");
+    }
+    target = seat;
+    action =
+      spec.verb === "transfer"
+        ? { kind: "relationship", verb: spec.verb }
+        : { kind: "relationship", verb: spec.verb, targetRole: getEffectiveRole(seat) };
   } else {
-    // Relationship verb. Fetch the target membership whenever a target is
-    // supplied; fill targetRole only for the target-constrained verbs.
-    if (targetUserId !== undefined) {
-      target = (await getMembership(ctx, roomId, targetUserId)) ?? undefined;
-      if (!target) {
-        throw new Error("Target user is not a member of this room");
-      }
-    }
-
-    if (
-      spec.verb === "remove" ||
-      spec.verb === "promote" ||
-      spec.verb === "demote"
-    ) {
-      if (!target) {
-        throw new Error("Target user is not a member of this room");
-      }
-      action = {
-        kind: "relationship",
-        verb: spec.verb,
-        targetRole: getEffectiveRole(target),
-      };
-    } else {
-      action = { kind: "relationship", verb: spec.verb };
-    }
+    action = { kind: "relationship", verb: spec.verb };
   }
 
   // Owner absence refines an owner-level denial (see evaluate); for any

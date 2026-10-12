@@ -1,5 +1,51 @@
 # Changelog
 
+## [2.13.0](https://github.com/spokvulcan/poker-planning/compare/agilekit-v2.12.0...agilekit-v2.13.0) (2026-10-12)
+
+
+### Features
+
+* a custom deck of numbers averages, and the deck reads a creator's pick once ([f27c2fa](https://github.com/spokvulcan/poker-planning/commit/f27c2fa8d6eec5254eb6b0ace431daa828d8ca8b))
+* a timer that runs itself, with a shared sand timer and session time ([#426](https://github.com/spokvulcan/poker-planning/issues/426)) ([736d0e4](https://github.com/spokvulcan/poker-planning/commit/736d0e47696f954453c3a5bdc03639d5e02f894a))
+* **room:** the room hands the account menu its seat, and Leave gets a control ([a2a3271](https://github.com/spokvulcan/poker-planning/commit/a2a3271ee7be198228f14b2514604f7235e01eeb))
+
+
+### Bug Fixes
+
+* **account:** keep a sign-in return path only if it still names a page here once read ([76dd6ce](https://github.com/spokvulcan/poker-planning/commit/76dd6ceec3b102597f6c9ac3eaa6dc94f204465b))
+* **account:** one list of what a viewer is offered, and a safe way back from sign-in ([3381b98](https://github.com/spokvulcan/poker-planning/commit/3381b9854a45b26c749e21a8e3d3be9ffea64a2c))
+* **deck:** a card reads as a number only when it is one, and alignment steps go by number ([1eb501d](https://github.com/spokvulcan/poker-planning/commit/1eb501d24e20208b5661207f92442e74697cf993))
+* **deck:** two cards of the same number are the same card ([1ddb5c1](https://github.com/spokvulcan/poker-planning/commit/1ddb5c12166f9ac1326f22be5edd4952f7310f8e))
+* give a settled estimate one path to its tracker ([5576b91](https://github.com/spokvulcan/poker-planning/commit/5576b911165b6a2eab2b5a77db5719edda622c90))
+* hold New Round after the reveal so a double-click can't wipe the results ([#423](https://github.com/spokvulcan/poker-planning/issues/423)) ([7198385](https://github.com/spokvulcan/poker-planning/commit/7198385648b8c97016c78707a613749aed473c12))
+* keep a refused sticky edit's words, and test the boards at their seams with shared stand-ins ([da22793](https://github.com/spokvulcan/poker-planning/commit/da227932062e3b565de72968720148823aff89ca))
+* pages render when Convex is slow or unreachable ([#425](https://github.com/spokvulcan/poker-planning/issues/425)) ([012b9df](https://github.com/spokvulcan/poker-planning/commit/012b9dfee0fed3b47783f76b19a3314ca34ae260))
+* **retro:** judge a stack by every sticky it groups ([0d9ebc8](https://github.com/spokvulcan/poker-planning/commit/0d9ebc83b61a7917732698311eef8401573efce3))
+* **retro:** let the walk say where the discussion stands, and keep its place through a detour ([b26538c](https://github.com/spokvulcan/poker-planning/commit/b26538c7a4d7f585a132f834c2057ec66bd431de))
+* say what the agreement chart plots, with one shell for every dashboard panel ([52a5664](https://github.com/spokvulcan/poker-planning/commit/52a5664269a86e2686a8924bc2aca882b2731342))
+
+
+### Documentation
+
+* keep the 11 October architecture review, and point CLAUDE.md at the viewer ([fe351a7](https://github.com/spokvulcan/poker-planning/commit/fe351a735ab856ef0e60338a081d765448a58a61))
+
+
+### Code Refactoring
+
+* **auth:** one viewer that pages ask, and read as through useCallerQuery ([55f12e1](https://github.com/spokvulcan/poker-planning/commit/55f12e1b77607cac97afb8fcceb7fda7c0352d52))
+* carry out the 11 October architecture review ([719cbdf](https://github.com/spokvulcan/poker-planning/commit/719cbdfa066f5c276eacab038ac1510d450fd130))
+* carry out the branch review's standards findings ([b79473a](https://github.com/spokvulcan/poker-planning/commit/b79473ace915cd9a9ba1d2242e68ad3eb2522cee))
+* close the permission guard's second door, and hold room reads to room access ([f51ec2e](https://github.com/spokvulcan/poker-planning/commit/f51ec2e5aad78139999e13a28a45ff23efc58e28))
+* give the Jira adapter one way to act as a connection, with an in-memory Jira behind it ([7287fb4](https://github.com/spokvulcan/poker-planning/commit/7287fb4c7fa7987fc6ab5e11d6c1dce299fb1d55))
+* let the board chrome own its controls and docked panels ([1b9311d](https://github.com/spokvulcan/poker-planning/commit/1b9311d3f808a952c0cc48b2e0a1aaff6f7db2f1))
+* let the whiteboard own the view: fit, zoom, centre, bring into view ([0e8d857](https://github.com/spokvulcan/poker-planning/commit/0e8d857764d49dda74b1653843426b5b39e74a95))
+
+
+### Tests
+
+* **e2e:** find the auto-reveal switch by its label ([695f120](https://github.com/spokvulcan/poker-planning/commit/695f120cf9f8e991f1054f8a19bf66845a6a44e5))
+* **retro:** the board offers no stack for a drop that would group a face-down sticky ([25d3078](https://github.com/spokvulcan/poker-planning/commit/25d307806b867c8b0df9a5077084de8ec59e6f4a))
+
 ## [2.12.0](https://github.com/spokvulcan/poker-planning/compare/agilekit-v2.11.0...agilekit-v2.12.0) (2026-10-11)
 
 

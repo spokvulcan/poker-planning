@@ -7,12 +7,14 @@ import {
   useNodesInitialized,
   useNodesState,
   useReactFlow,
+  useStoreApi,
   type Edge,
   type Node,
   type NodeChange,
   type NodeTypes,
   type OnNodeDrag,
   type ReactFlowInstance,
+  type Viewport,
   type XYPosition,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
@@ -20,6 +22,7 @@ import {
   createContext,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
   useSyncExternalStore,
@@ -43,22 +46,40 @@ import { mergeNodes } from "./merge-nodes";
  * the server and says what its gestures mean; the whiteboard owns everything
  * else: React Flow's buffer (a server tick never yanks a dragged node or drops
  * a selection), one write per drop for every node the drop moved, keyboard
- * nudges, Delete on a selection, dropping one node onto another, the first
- * fit and later refits, following a node, and one React Flow configuration.
+ * nudges, Delete on a selection, dropping one node onto another, the view
+ * (the first fit and later refits, following a node, and the fit, zoom,
+ * centring and bringing into view that the chrome and the boards ask for
+ * through `useWhiteboardView`), and one React Flow configuration. React
+ * Flow's viewport is moved nowhere else.
  */
 
 // Outside the component so React Flow sees stable objects: it re-applies any
 // prop whose identity changes, on every render.
 const PRO_OPTIONS = { hideAttribution: true };
 const DEFAULT_VIEWPORT = { x: 0, y: 0, zoom: 0.8 };
-const FIT_VIEW_OPTIONS = { padding: 0.12, maxZoom: 1 };
 const SNAP_GRID: [number, number] = [10, 10];
 const DELETE_KEYS = ["Backspace", "Delete"];
 const PAN_BUTTONS = [1, 2];
-const MIN_ZOOM = 0.1;
-const MAX_ZOOM = 2.5;
 /** How long after the last arrow-key nudge the nudged nodes are saved. */
 const NUDGE_SETTLE_MS = 300;
+
+// The view's one rule, whoever moves it. A fit frames the whole board with
+// a margin and never zooms past 100%, so a small board is never blown up, on
+// first load or from the chrome's button. Zoom stays between MIN_ZOOM and
+// MAX_ZOOM; a node the view centres on is shown at READABLE_ZOOM at least;
+// a box brought into view keeps VIEW_MARGIN clear of the pane's edges,
+// where the chrome's bars sit. A move the viewer asks for takes
+// VIEWER_MOVE_MS; one the board makes by itself (a refit for a new layout,
+// following a node) glides for BOARD_MOVE_MS, so nobody watching loses their
+// place. All of it is measured against the board's own pane, which a docked
+// panel narrows, never the window.
+const FIT_VIEW_OPTIONS = { padding: 0.12, maxZoom: 1 };
+const MIN_ZOOM = 0.1;
+const MAX_ZOOM = 2.5;
+const READABLE_ZOOM = 0.7;
+const VIEW_MARGIN = 96;
+const VIEWER_MOVE_MS = 300;
+const BOARD_MOVE_MS = 600;
 
 /** Nodes a drop moved, where they were dropped, and the node a lone one was dropped onto. */
 export interface WhiteboardDrop<N extends Node> {
@@ -85,12 +106,8 @@ export interface WhiteboardProps<N extends Node> {
   fitKey?: string;
   /** Keeps a node in view: the board pans to it whenever this changes. */
   followNodeId?: string;
-  /** The room's chrome, over the board. */
-  navigation?: ReactNode;
-  /** Anything else over the board: toolbars, hints, dialogs. */
+  /** What the board draws over itself: toolbars, hints, dialogs. The chrome is around it, not on it. */
   overlay?: ReactNode;
-  /** Panels docked beside the board. */
-  panels?: ReactNode;
   className?: string;
   testId?: string;
 }
@@ -137,20 +154,81 @@ function boxOf(node: Node): Box {
   };
 }
 
-/** Pans so a node sits in the middle of the view, keeping the zoom unless it's too far out to read. */
-export function centerOn<N extends Node>(flow: ReactFlowInstance<N>, nodeId: string): void {
-  const node = flow.getNode(nodeId);
-  if (!node) return;
-  const box = boxOf(node);
-  void flow.setCenter(box.x + box.width / 2, box.y + box.height / 2, {
-    zoom: Math.max(flow.getZoom(), 0.7),
-    duration: 500,
-  });
+/**
+ * What the whiteboard does with the view, for the chrome and the boards drawn
+ * on it. Every move keeps the view's one rule (above), so a fit from the
+ * chrome frames the board exactly as the board frames itself.
+ */
+export interface WhiteboardView {
+  /** Frames the whole board, never zooming past 100%. */
+  fit: () => void;
+  zoomIn: () => void;
+  zoomOut: () => void;
+  /** Pans a node to the middle of the pane, zooming in to a readable size if the view is further out. */
+  centerOn: (nodeId: string) => void;
+  /** The smallest pan that shows a box (in board coordinates) whole in the pane, at the zoom the viewer chose. */
+  bringIntoView: (box: Box) => void;
+}
+
+/** How far to pan for a box to show whole in a pane `width` by `height`, VIEW_MARGIN clear of its edges. */
+function panToShow(box: Box, { x, y, zoom }: Viewport, width: number, height: number): { dx: number; dy: number } {
+  const left = box.x * zoom + x;
+  const top = box.y * zoom + y;
+  const right = left + box.width * zoom;
+  const bottom = top + box.height * zoom;
+  const shift = (start: number, end: number, size: number) =>
+    start < VIEW_MARGIN ? VIEW_MARGIN - start : end > size - VIEW_MARGIN ? size - VIEW_MARGIN - end : 0;
+  return { dx: shift(left, right, width), dy: shift(top, bottom, height) };
+}
+
+/** The view over one board's React Flow, its moves taking `duration`. */
+function viewOf<N extends Node>(
+  flow: ReactFlowInstance<N>,
+  store: ReturnType<typeof useStoreApi>,
+  duration: number
+): WhiteboardView {
+  return {
+    fit: () => void flow.fitView({ ...FIT_VIEW_OPTIONS, duration }),
+    zoomIn: () => void flow.zoomIn({ duration }),
+    zoomOut: () => void flow.zoomOut({ duration }),
+    centerOn: (nodeId) => {
+      const node = flow.getNode(nodeId);
+      if (!node) return;
+      const box = boxOf(node);
+      void flow.setCenter(box.x + box.width / 2, box.y + box.height / 2, {
+        zoom: Math.max(flow.getZoom(), READABLE_ZOOM),
+        duration,
+      });
+    },
+    // The pane's size is React Flow's own measure of the board, which a
+    // docked panel narrows: the window would put a box under the panel "in view".
+    bringIntoView: (box) => {
+      const { width, height, transform } = store.getState();
+      const [x, y, zoom] = transform;
+      const { dx, dy } = panToShow(box, { x, y, zoom }, width, height);
+      if (dx !== 0 || dy !== 0) void flow.setViewport({ x: x + dx, y: y + dy, zoom }, { duration });
+    },
+  };
+}
+
+/**
+ * The whiteboard's view, for anything drawn inside `WhiteboardProviders`: the
+ * chrome's zoom and fit, a board bringing a new sticky into view. Its
+ * identity follows React Flow's instance, which changes once, when the
+ * viewport is ready.
+ */
+export function useWhiteboardView(): WhiteboardView {
+  const flow = useReactFlow();
+  const store = useStoreApi();
+  return useMemo(() => viewOf(flow, store, VIEWER_MOVE_MS), [flow, store]);
 }
 
 export function Whiteboard<N extends Node>(props: WhiteboardProps<N>): ReactElement {
   const { nodes, edges, nodeTypes, readOnly = false, fitKey = "", followNodeId } = props;
   const flow = useReactFlow<N>();
+  const store = useStoreApi();
+  // The moves the board makes by itself: refits and following a node.
+  const boardView = useMemo(() => viewOf(flow, store, BOARD_MOVE_MS), [flow, store]);
   const isMobile = useIsMobile();
   const [buffer, setBuffer, applyChanges] = useNodesState<N>([]);
   const [dropTarget] = useState(() => new DropTarget());
@@ -249,85 +327,75 @@ export function Whiteboard<N extends Node>(props: WhiteboardProps<N>): ReactElem
     if (!initialized || nodes.length === 0 || fittedKey.current === fitKey) return;
     const first = fittedKey.current === null;
     fittedKey.current = fitKey;
-    if (!first) void flow.fitView({ ...FIT_VIEW_OPTIONS, duration: 600 });
-  }, [initialized, fitKey, nodes.length, flow]);
+    if (!first) boardView.fit();
+  }, [initialized, fitKey, nodes.length, boardView]);
 
   // Keep the followed node in view, once the board has had its first fit.
   useEffect(() => {
     if (!followNodeId || fittedKey.current === null) return;
-    centerOn(flow, followNodeId);
-  }, [followNodeId, flow]);
+    boardView.centerOn(followNodeId);
+  }, [followNodeId, boardView]);
 
+  // The pane: React Flow measures it, and the view keeps to it.
   return (
-    <div
-      className={cn("flex h-screen w-full overflow-hidden", props.className)}
-      data-testid={props.testId}
-    >
-      <div className="relative h-full min-w-0 flex-1">
-        {props.navigation}
-        <DropTargetContext.Provider value={dropTarget}>
-          <ReactFlow
-            nodes={buffer}
-            edges={edges}
-            nodeTypes={nodeTypes}
-            onNodesChange={readOnly ? handlers.onMeasure : handlers.onNodesChange}
-            onNodeDragStart={handlers.onNodeDragStart}
-            onNodeDrag={handlers.onNodeDrag}
-            onNodeDragStop={handlers.onNodeDragStop}
-            onPaneClick={handlers.onPaneClick}
-            proOptions={PRO_OPTIONS}
-            minZoom={MIN_ZOOM}
-            maxZoom={MAX_ZOOM}
-            defaultViewport={DEFAULT_VIEWPORT}
-            fitView
-            fitViewOptions={FIT_VIEW_OPTIONS}
-            nodesDraggable={!readOnly}
-            elementsSelectable={!readOnly}
-            nodesConnectable={false}
-            // An edge joins handles by id, whichever way they point: the poker board joins two source handles.
-            connectionMode={ConnectionMode.Loose}
-            edgesFocusable={false}
-            zoomOnDoubleClick={false}
-            snapToGrid
-            snapGrid={SNAP_GRID}
-            panOnScroll
-            selectionOnDrag={!isMobile && !readOnly}
-            panOnDrag={isMobile ? true : PAN_BUTTONS}
-            preventScrolling={false}
-            deleteKeyCode={readOnly ? null : DELETE_KEYS}
-          >
-            <CanvasDotsBackground />
-          </ReactFlow>
-        </DropTargetContext.Provider>
-        {props.overlay}
-      </div>
-      {props.panels}
+    <div className={cn("relative h-full w-full", props.className)} data-testid={props.testId}>
+      <DropTargetContext.Provider value={dropTarget}>
+        <ReactFlow
+          nodes={buffer}
+          edges={edges}
+          nodeTypes={nodeTypes}
+          onNodesChange={readOnly ? handlers.onMeasure : handlers.onNodesChange}
+          onNodeDragStart={handlers.onNodeDragStart}
+          onNodeDrag={handlers.onNodeDrag}
+          onNodeDragStop={handlers.onNodeDragStop}
+          onPaneClick={handlers.onPaneClick}
+          proOptions={PRO_OPTIONS}
+          minZoom={MIN_ZOOM}
+          maxZoom={MAX_ZOOM}
+          defaultViewport={DEFAULT_VIEWPORT}
+          fitView
+          fitViewOptions={FIT_VIEW_OPTIONS}
+          nodesDraggable={!readOnly}
+          elementsSelectable={!readOnly}
+          nodesConnectable={false}
+          // An edge joins handles by id, whichever way they point: the poker board joins two source handles.
+          connectionMode={ConnectionMode.Loose}
+          edgesFocusable={false}
+          zoomOnDoubleClick={false}
+          snapToGrid
+          snapGrid={SNAP_GRID}
+          panOnScroll
+          selectionOnDrag={!isMobile && !readOnly}
+          panOnDrag={isMobile ? true : PAN_BUTTONS}
+          preventScrolling={false}
+          deleteKeyCode={readOnly ? null : DELETE_KEYS}
+        >
+          <CanvasDotsBackground />
+        </ReactFlow>
+      </DropTargetContext.Provider>
+      {props.overlay}
     </div>
   );
 }
 
 /**
- * What a whiteboard needs around it: React Flow's store, and the room's one
- * presence subscription. Presence wraps the board from out here, so a
- * presence tick re-renders only its consumers (the avatars, the roster),
- * never the board.
+ * What a whiteboard and its chrome need around them: React Flow's store, and
+ * the room's one presence subscription (the demo's is local, ADR-0003).
+ * Presence wraps the board from out here, so a presence tick re-renders only
+ * its consumers (the chrome's avatars, the roster), never the board.
  */
 export function WhiteboardProviders({
   presence,
   children,
 }: {
-  presence?: { roomId: Id<"rooms">; userId: Id<"users"> | string; users: RoomUserData[] };
+  presence: { roomId: Id<"rooms">; userId: Id<"users"> | string; users: RoomUserData[] };
   children: ReactNode;
 }): ReactElement {
   return (
     <ReactFlowProvider>
-      {presence ? (
-        <RoomPresenceProvider roomId={presence.roomId} userId={presence.userId} users={presence.users}>
-          {children}
-        </RoomPresenceProvider>
-      ) : (
-        children
-      )}
+      <RoomPresenceProvider roomId={presence.roomId} userId={presence.userId} users={presence.users}>
+        {children}
+      </RoomPresenceProvider>
     </ReactFlowProvider>
   );
 }

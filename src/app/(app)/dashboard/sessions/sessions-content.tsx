@@ -1,25 +1,21 @@
 "use client";
 
-import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { useAuth } from "@/components/auth/auth-provider";
+import { useCallerQuery } from "@/components/auth/use-caller-query";
+import { place } from "@/components/auth/account";
 import { DashboardHeader, SessionHistory } from "@/components/dashboard";
 import { useDateRange } from "@/components/dashboard/date-range-context";
 
 export function SessionsContent() {
-  const { isAuthenticated } = useAuth();
   const { dateRange } = useDateRange();
 
-  const sessions = useQuery(
-    api.analytics.getSessions,
-    isAuthenticated ? { dateRange } : "skip"
-  );
+  const sessions = useCallerQuery(api.analytics.getSessions, { dateRange });
 
   const isLoading = sessions === undefined;
 
   return (
     <>
-      <DashboardHeader title="Sessions" />
+      <DashboardHeader title={place("sessions").label} />
       <div className="flex-1 p-6">
         <SessionHistory sessions={sessions ?? []} isLoading={isLoading} />
       </div>

@@ -6,13 +6,14 @@ import { useRouter } from "next/navigation";
 import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useAuth } from "@/components/auth/auth-provider";
+import { signInHref } from "@/components/auth/account";
 import { accountKind } from "@/components/auth/viewer";
 import { CreatePage } from "@/components/create/create-page";
 import { ChoiceSection, type Choice } from "@/components/create/choice-section";
 import { toast } from "@/lib/toast";
 import { trackConversion } from "@/lib/analytics";
 import { useEnsureSession } from "@/hooks/useEnsureSession";
-import { useCopyRoomUrlToClipboard } from "@/hooks/use-copy-room-url-to-clipboard";
+import { copyRoomLink } from "@/lib/copy-room-link";
 import { ROOM_NAME } from "@/convex/constants";
 import { DEFAULT_TEMPLATE_ID, RETRO_TEMPLATES, templateById } from "@/convex/retroTemplates";
 import { TemplateBoard } from "./template-board";
@@ -48,7 +49,6 @@ export function CreateRetroContent() {
   const isRetained = accountKind(viewer) === "permanent";
   const ensureSession = useEnsureSession();
   const createRetro = useMutation(api.retro.create);
-  const { copyRoomUrlToClipboard } = useCopyRoomUrlToClipboard();
   const [name, setName] = useState("");
   const [templateId, setTemplateId] = useState(DEFAULT_TEMPLATE_ID);
   const [isCreating, setIsCreating] = useState(false);
@@ -61,11 +61,8 @@ export function CreateRetroContent() {
       const roomId = await createRetro({ name: name.trim() || defaultRetroName(), templateId });
       trackConversion("create_retro");
       router.push(`/room/${roomId}`);
-      try {
-        await copyRoomUrlToClipboard(roomId);
-      } catch {
-        // The link is one click away on the board anyway.
-      }
+      // The invite link, copied as the retro opens, in the board chrome's words.
+      await copyRoomLink(`/room/${roomId}`, "Retro");
     } catch (error) {
       console.error("Failed to create retro:", error);
       toast.error("Failed to create the retro. Please try again.");
@@ -97,7 +94,7 @@ export function CreateRetroContent() {
           ) : (
             <>
               Guest retros are removed after 5 quiet days.{" "}
-              <Link href="/auth/signin?from=/retro/new" className="underline underline-offset-4 hover:text-foreground">
+              <Link href={signInHref("/retro/new")} className="underline underline-offset-4 hover:text-foreground">
                 Sign in
               </Link>{" "}
               to keep yours.
