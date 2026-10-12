@@ -1,17 +1,20 @@
 /**
- * The room's Jira settings show a failed webhook registration. The reconcile
- * records why the registration failed on the mapping, and the section reads
- * it from the mapping it already subscribes to, so the person who saved the
- * mapping sees it moments after the save: the save's toast waits for the
- * registration, and says when it failed.
+ * The room's Jira settings show a failed webhook registration and how the
+ * last estimate's push went. The reconcile records why a registration failed
+ * on the mapping, and the estimate push how the last push went; the section
+ * reads both from the mapping it already subscribes to, so the person who
+ * saved the mapping sees a failed registration moments after the save: the
+ * save's toast waits for the registration, and says when it failed. A mapping
+ * that pushes estimates can't be saved without the field they go to.
  */
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, cleanup, fireEvent, act } from "@testing-library/react";
+import { ConvexError } from "convex/values";
 
 // Stable fakes: the section's effects depend on these references.
 const convex = vi.hoisted(() => ({
   results: new Map<string, unknown>(),
-  mutate: () => Promise.resolve(undefined),
+  saved: vi.fn(() => Promise.resolve(undefined as unknown)),
   act: () => Promise.resolve([]),
 }));
 
@@ -22,7 +25,7 @@ vi.mock("convex/react", async () => {
   return {
     useQuery: (query: Parameters<typeof getFunctionName>[0]) =>
       convex.results.get(getFunctionName(query)),
-    useMutation: () => convex.mutate,
+    useMutation: () => convex.saved,
     useAction: () => convex.act,
   };
 });
@@ -46,6 +49,7 @@ function mappingIs(fields: Partial<Doc<"integrationMappings">>) {
     connectionId: CONNECTION_ID,
     provider: "jira",
     jiraProjectKey: "PROJ",
+    storyPointsFieldId: "customfield_10016",
     autoImport: false,
     autoPushEstimates: true,
     createdAt: 0,
@@ -72,6 +76,8 @@ function showMapping(fields: Partial<Doc<"integrationMappings">>) {
 afterEach(() => {
   cleanup();
   convex.results.clear();
+  convex.saved.mockReset();
+  convex.saved.mockImplementation(() => Promise.resolve(undefined));
   toasts.success.mockClear();
   toasts.error.mockClear();
 });
@@ -131,5 +137,88 @@ describe("a failed webhook registration", () => {
     showMapping({ jiraWebhookId: "wh-live" });
 
     expect(screen.queryByRole("alert")).toBeNull();
+  });
+});
+
+describe("pushing estimates", () => {
+  const updateButton = () => screen.getByRole("button", { name: "Update Mapping" }) as HTMLButtonElement;
+
+  it("won't save auto-push without the field estimates go to, and says so", async () => {
+    showMapping({ storyPointsFieldId: undefined, jiraWebhookId: "wh-live" });
+
+    expect(screen.getByText("Choose the story points field estimates are pushed to, or turn auto-push off.")).not.toBeNull();
+    expect(updateButton().disabled).toBe(true);
+
+    await act(async () =>
+      fireEvent.change(screen.getByPlaceholderText("e.g., customfield_10016"), {
+        target: { value: "customfield_10016" },
+      })
+    );
+    expect(updateButton().disabled).toBe(false);
+  });
+
+  it("keeps what is being typed when an estimate is pushed meanwhile", async () => {
+    const section = showMapping({ storyPointsFieldId: undefined, jiraWebhookId: "wh-live" });
+    const field = screen.getByPlaceholderText("e.g., customfield_10016") as HTMLInputElement;
+    await act(async () => fireEvent.change(field, { target: { value: "customfield_100" } }));
+
+    // A reveal records how its push went on the mapping, while the field is half typed.
+    section.serverHas({
+      storyPointsFieldId: undefined,
+      jiraWebhookId: "wh-live",
+      lastPush: { at: 1, issueKey: "PROJ-1", estimate: "5", outcome: "noField" },
+    });
+
+    expect(field.value).toBe("customfield_100");
+  });
+
+  it("shows the server's words when it refuses a save", async () => {
+    convex.saved.mockImplementation(() =>
+      Promise.reject(new ConvexError({ code: "forbidden", message: "Only facilitators and the owner can do this." }))
+    );
+    const section = showMapping({});
+
+    await section.save();
+
+    expect(toasts.error).toHaveBeenCalledWith("Only facilitators and the owner can do this.");
+  });
+
+  it("says the last estimate went, and to which issue", () => {
+    showMapping({ lastPush: { at: 0, issueKey: "PROJ-1", estimate: "5", outcome: "pushed" } });
+
+    expect(screen.getByRole("status").textContent).toBe("Last estimate pushed: 5 to PROJ-1.");
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("says why the last estimate didn't go, with Jira's own words when Jira refused it", () => {
+    showMapping({
+      lastPush: {
+        at: 0,
+        issueKey: "PROJ-1",
+        estimate: "5",
+        outcome: "refused",
+        message: "Field 'customfield_10016' cannot be set.",
+      },
+    });
+
+    const alert = screen.getByRole("alert").textContent;
+    expect(alert).toContain("PROJ-1's estimate wasn't pushed: Jira refused it.");
+    expect(alert).toContain("Field 'customfield_10016' cannot be set.");
+  });
+
+  it("says an issue from another site wasn't pushed to the same key on this one", () => {
+    showMapping({ lastPush: { at: 0, issueKey: "PROJ-1", estimate: "5", outcome: "otherSite" } });
+
+    expect(screen.getByRole("alert").textContent).toContain("imported from another Jira site");
+  });
+
+  it("says nothing of the last push while the mapping doesn't push estimates", () => {
+    showMapping({
+      autoPushEstimates: false,
+      lastPush: { at: 0, issueKey: "PROJ-1", estimate: "XL", outcome: "notANumber" },
+    });
+
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByRole("status")).toBeNull();
   });
 });

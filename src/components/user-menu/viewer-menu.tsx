@@ -2,11 +2,14 @@
 
 import { useState, type ComponentProps, type ReactElement, type ReactNode } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useTheme } from "next-themes";
 import { useMutation } from "convex/react";
-import { LogIn, LogOut, Monitor, Moon, Sun, UserPen } from "lucide-react";
+import { LogIn, LogOut, Moon, Sun, UserPen } from "lucide-react";
 import { api } from "@/convex/_generated/api";
 import type { SignedInViewer } from "@/components/auth/viewer";
+import { accountEntries, PLACE_ICONS } from "@/components/auth/account";
+import { THEMES, THEME_ICONS } from "@/components/theme-options";
 import { useSignOut } from "@/hooks/useSignOut";
 import { toast } from "@/lib/toast";
 import {
@@ -32,24 +35,24 @@ export function menuName(viewer: SignedInViewer): string {
 /**
  * The account menu both user menus open (UserMenu in the app's header,
  * NavUser in the dashboard's sidebar): the viewer's avatar, name and email,
- * Sign in for anyone without a permanent account, Edit name, Appearance and
- * Sign out. Each brings its own trigger and placement, and what only it has:
- * pages to go to, and settings of its own.
+ * what they're offered of their account on this page (their places, and Sign
+ * in for anyone without a permanent account, both from components/auth/
+ * account.ts), Edit name, Appearance and Sign out. Each brings its own
+ * trigger and placement, whether it lists the places (the sidebar shows them
+ * itself), and what only it has: the room's seat controls.
  */
 export function ViewerMenu({
   viewer,
   trigger,
-  signInHref,
-  links,
+  withPlaces = false,
   settings,
   ...placement
 }: {
   viewer: SignedInViewer;
   /** The menu's DropdownMenuTrigger. */
   trigger: ReactElement;
-  signInHref: string;
-  /** Pages to go to, after the profile. */
-  links?: ReactNode;
+  /** Whether the menu lists the viewer's places, after the profile. */
+  withPlaces?: boolean;
   /** Settings only this menu has, after Edit name. */
   settings?: ReactNode;
 } & Pick<ComponentProps<typeof DropdownMenuContent>, "align" | "side" | "sideOffset" | "className">) {
@@ -59,6 +62,8 @@ export function ViewerMenu({
   // The one sign-out policy (anonymous-account deletion included)
   const handleSignOut = useSignOut();
   const name = menuName(viewer);
+  const entries = accountEntries(viewer, usePathname());
+  const places = withPlaces ? entries.places : [];
 
   const handleEditName = async (newName: string) => {
     try {
@@ -83,16 +88,24 @@ export function ViewerMenu({
 
           <DropdownMenuSeparator />
 
-          {links && (
+          {places.length > 0 && (
             <>
-              {links}
+              {places.map((place) => {
+                const Icon = PLACE_ICONS[place.id];
+                return (
+                  <DropdownMenuItem key={place.id} render={<Link href={place.href} />}>
+                    <Icon className="mr-2 size-4" />
+                    {place.label}
+                  </DropdownMenuItem>
+                );
+              })}
               <DropdownMenuSeparator />
             </>
           )}
 
-          {!viewer.isPermanent && (
+          {entries.signIn && (
             <>
-              <DropdownMenuItem render={<Link href={signInHref} />}>
+              <DropdownMenuItem render={<Link href={entries.signIn} />}>
                 <LogIn className="mr-2 size-4" />
                 Sign in
               </DropdownMenuItem>
@@ -118,18 +131,15 @@ export function ViewerMenu({
             <DropdownMenuSubContent>
               <DropdownMenuGroup>
                 <DropdownMenuRadioGroup value={theme} onValueChange={(value) => setTheme(value)}>
-                  <DropdownMenuRadioItem value="light">
-                    <Sun className="mr-2 size-4" />
-                    Light
-                  </DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="dark">
-                    <Moon className="mr-2 size-4" />
-                    Dark
-                  </DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="system">
-                    <Monitor className="mr-2 size-4" />
-                    System
-                  </DropdownMenuRadioItem>
+                  {THEMES.map(({ id, label }) => {
+                    const Icon = THEME_ICONS[id];
+                    return (
+                      <DropdownMenuRadioItem key={id} value={id}>
+                        <Icon className="mr-2 size-4" />
+                        {label}
+                      </DropdownMenuRadioItem>
+                    );
+                  })}
                 </DropdownMenuRadioGroup>
               </DropdownMenuGroup>
             </DropdownMenuSubContent>

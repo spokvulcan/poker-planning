@@ -4,23 +4,10 @@ import {
   ArrowDown,
   ArrowUp,
   Equal,
-  HelpCircle,
   Minus,
 } from "lucide-react";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { DashboardPanel } from "./dashboard-panel";
 
 interface VoterUser {
   userId: string;
@@ -87,114 +74,56 @@ export function IndividualVotingStats({
   data,
   isLoading,
 }: IndividualVotingStatsProps) {
-  if (isLoading) {
-    return (
-      <Card className="flex flex-col">
-        <CardHeader>
-          <CardTitle className="text-base font-semibold flex items-center gap-1.5">
-            Individual Voting Stats
-            <TooltipProvider delay={200}>
-              <Tooltip>
-                <TooltipTrigger render={<HelpCircle className="h-3.5 w-3.5 text-muted-foreground/50 hover:text-muted-foreground cursor-help shrink-0" />} />
-                <TooltipContent className="max-w-[220px] text-center font-normal">
-                  <p>Per-voter agreement rate and estimation tendency. Intended for coaching, not performance evaluation.</p>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          </CardTitle>
-          <CardDescription>Per-voter alignment with consensus</CardDescription>
-        </CardHeader>
-        <CardContent className="flex-1">
-          <div className="h-[250px] animate-pulse rounded bg-muted" />
-        </CardContent>
-      </Card>
-    );
-  }
-
-  if (data.length === 0) {
-    return (
-      <Card className="flex flex-col">
-        <CardHeader>
-          <CardTitle className="text-base font-semibold flex items-center gap-1.5">
-            Individual Voting Stats
-            <TooltipProvider delay={200}>
-              <Tooltip>
-                <TooltipTrigger render={<HelpCircle className="h-3.5 w-3.5 text-muted-foreground/50 hover:text-muted-foreground cursor-help shrink-0" />} />
-                <TooltipContent className="max-w-[220px] text-center font-normal">
-                  <p>Per-voter agreement rate and estimation tendency. Intended for coaching, not performance evaluation.</p>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          </CardTitle>
-          <CardDescription>Per-voter alignment with consensus</CardDescription>
-        </CardHeader>
-        <CardContent className="flex-1">
-          <div className="flex h-[250px] items-center justify-center text-muted-foreground">
-            No individual vote data yet
-          </div>
-        </CardContent>
-      </Card>
-    );
-  }
-
   return (
-    <Card className="flex flex-col">
-      <CardHeader>
-        <CardTitle className="text-base font-semibold flex items-center gap-1.5">
-            Individual Voting Stats
-            <TooltipProvider delay={200}>
-              <Tooltip>
-                <TooltipTrigger render={<HelpCircle className="h-3.5 w-3.5 text-muted-foreground/50 hover:text-muted-foreground cursor-help shrink-0" />} />
-                <TooltipContent className="max-w-[220px] text-center font-normal">
-                  <p>Per-voter agreement rate and estimation tendency. Intended for coaching, not performance evaluation.</p>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          </CardTitle>
-        <CardDescription>Per-voter alignment with consensus</CardDescription>
-      </CardHeader>
-      <CardContent className="flex-1">
-        <div className="max-h-[280px] overflow-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b text-left text-muted-foreground">
-                <th className="pb-2 font-medium">Name</th>
-                <th className="pb-2 text-center font-medium">Votes</th>
-                <th className="pb-2 text-center font-medium">Agreement</th>
-                <th className="pb-2 text-center font-medium">Avg Delta</th>
-                <th className="pb-2 text-center font-medium">Tendency</th>
+    <DashboardPanel
+      title="Individual Voting Stats"
+      help="Per-voter agreement rate and estimation tendency. Intended for coaching, not performance evaluation."
+      description="Per-voter alignment with consensus"
+      layout="table"
+      isLoading={isLoading}
+      isEmpty={data.length === 0}
+      emptyText="No individual vote data yet"
+    >
+      <div className="max-h-[280px] overflow-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b text-left text-muted-foreground">
+              <th className="pb-2 font-medium">Name</th>
+              <th className="pb-2 text-center font-medium">Votes</th>
+              <th className="pb-2 text-center font-medium">Agreement</th>
+              <th className="pb-2 text-center font-medium">Avg Delta</th>
+              <th className="pb-2 text-center font-medium">Tendency</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.map((user) => (
+              <tr key={user.userId} className="border-b last:border-0">
+                <td className="py-2 font-medium">{user.userName}</td>
+                <td className="py-2 text-center">{user.totalVotes}</td>
+                <td className="py-2 text-center">
+                  {getAgreementBadge(user.agreementRate)}
+                </td>
+                <td className="py-2 text-center">
+                  {user.averageDelta !== null
+                    ? `${user.averageDelta > 0 ? "+" : ""}${user.averageDelta.toFixed(1)}`
+                    : "—"}
+                </td>
+                <td className="py-2">
+                  <div className="flex items-center justify-center gap-1">
+                    {getTendencyIcon(user.tendency)}
+                    <span className="text-xs text-muted-foreground">
+                      {getTendencyLabel(user.tendency)}
+                    </span>
+                  </div>
+                </td>
               </tr>
-            </thead>
-            <tbody>
-              {data.map((user) => (
-                <tr key={user.userId} className="border-b last:border-0">
-                  <td className="py-2 font-medium">{user.userName}</td>
-                  <td className="py-2 text-center">{user.totalVotes}</td>
-                  <td className="py-2 text-center">
-                    {getAgreementBadge(user.agreementRate)}
-                  </td>
-                  <td className="py-2 text-center">
-                    {user.averageDelta !== null
-                      ? `${user.averageDelta > 0 ? "+" : ""}${user.averageDelta.toFixed(1)}`
-                      : "—"}
-                  </td>
-                  <td className="py-2">
-                    <div className="flex items-center justify-center gap-1">
-                      {getTendencyIcon(user.tendency)}
-                      <span className="text-xs text-muted-foreground">
-                        {getTendencyLabel(user.tendency)}
-                      </span>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <p className="mt-2 text-center text-xs text-muted-foreground">
-          Based on anonymized team voting patterns
-        </p>
-      </CardContent>
-    </Card>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="mt-2 text-center text-xs text-muted-foreground">
+        Based on anonymized team voting patterns
+      </p>
+    </DashboardPanel>
   );
 }

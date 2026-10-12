@@ -7,12 +7,12 @@ import type { Id } from "@/convex/_generated/dataModel";
 import type { ActionItemView, BoardView, RetroState } from "@/convex/model/retro";
 import * as Topics from "@/convex/retroTopics";
 import {
+  followDiscussion,
   spotlightStepChange,
   stepAllows,
   stepChange,
   stepped,
-  stickyActAllowed,
-  withSpotlight,
+  topicActAllowed,
 } from "@/convex/retroSteps";
 import { useMoveCanvasNodes } from "@/components/whiteboard/use-move-canvas-nodes";
 import {
@@ -23,6 +23,7 @@ import {
   applyTopicChange,
   applyVoteToggle,
   applyWalk,
+  topicOrder,
 } from "./board-view";
 
 /**
@@ -69,7 +70,7 @@ export function useRetroMutations(roomId: Id<"rooms">, viewerId: Id<"users">) {
     const step = retroOf(store)?.step;
     if (!change || !step) return;
     patchBoard(store, (board) => applyTopicChange(board, change, step));
-    patchRetro(store, (retro) => withSpotlight(retro, Topics.followSpotlight(retro.focusStickyId, change)));
+    patchRetro(store, (retro) => followDiscussion(retro, change));
   };
 
   const addSticky = useMutation(api.retro.addSticky).withOptimisticUpdate((store, args) => {
@@ -102,7 +103,8 @@ export function useRetroMutations(roomId: Id<"rooms">, viewerId: Id<"users">) {
     const sticky = board?.stickies.find((s) => s._id === args.stickyId);
     const onto = board?.stickies.find((s) => s._id === args.ontoId);
     if (!board || !retro || !sticky || !onto) return;
-    if (!stickyActAllowed(retro.step, "stack", sticky.mine && onto.mine).allowed) return;
+    const act = { kind: "stack", stickyId: sticky._id, ontoId: onto._id } as const;
+    if (!topicActAllowed(retro.step, act, board.stickies, (s) => s.mine).allowed) return;
     changeTopics(store, Topics.stack(board.stickies, args.stickyId, args.ontoId));
   });
 
@@ -111,7 +113,7 @@ export function useRetroMutations(roomId: Id<"rooms">, viewerId: Id<"users">) {
     const retro = retroOf(store);
     const sticky = board?.stickies.find((s) => s._id === args.stickyId);
     if (!board || !retro || !sticky) return;
-    if (!stickyActAllowed(retro.step, "unstack", sticky.mine).allowed) return;
+    if (!topicActAllowed(retro.step, { kind: "unstack", stickyId: sticky._id }, [sticky], (s) => s.mine).allowed) return;
     changeTopics(store, Topics.unstack(board.stickies, args.stickyId, args.position));
   });
 
@@ -139,11 +141,17 @@ export function useRetroMutations(roomId: Id<"rooms">, viewerId: Id<"users">) {
   });
 
   const focusTopic = useMutation(api.retro.focusTopic).withOptimisticUpdate((store, args) => {
-    const sticky = boardOf(store)?.stickies.find((s) => s._id === args.stickyId);
-    if (!sticky) return;
+    const board = boardOf(store);
+    const sticky = board?.stickies.find((s) => s._id === args.stickyId);
+    if (!board || !sticky) return;
     patchRetro(store, (retro) =>
       stepAllows(retro.step, "spotlight").allowed
-        ? stepped(retro, spotlightStepChange(retro.step), Topics.rootOf(sticky))
+        ? stepped(
+            retro,
+            spotlightStepChange(retro.step),
+            Topics.rootOf(sticky),
+            topicOrder(board, retro.columns) ?? undefined
+          )
         : retro
     );
   });

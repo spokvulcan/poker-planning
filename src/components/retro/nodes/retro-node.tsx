@@ -97,8 +97,8 @@ export const RetroNode = memo(({ data, selected }: NodeProps<Node<RetroNodeData,
     votesCast,
     votesPerPerson,
     myVotes,
-    topicIndex,
-    topicCount,
+    votesLeft,
+    discussion,
     focusedId,
     focusedLabel,
     nextRoomId,
@@ -108,7 +108,6 @@ export const RetroNode = memo(({ data, selected }: NodeProps<Node<RetroNodeData,
     actions,
   } = data;
   const done = step === "done";
-  const lastTopic = topicCount > 0 && topicIndex >= topicCount - 1;
 
   return (
     <div className="relative" style={{ width: RETRO_NODE_WIDTH }}>
@@ -191,7 +190,7 @@ export const RetroNode = memo(({ data, selected }: NodeProps<Node<RetroNodeData,
             <button
               type="button"
               onClick={canFlow.allowed ? () => actions.stepDiscussion("previous") : undefined}
-              disabled={!canFlow.allowed || topicIndex <= 0}
+              disabled={!canFlow.allowed || !discussion.previous}
               className="flex size-8 shrink-0 items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-white/70 disabled:opacity-30 dark:hover:bg-surface-3/60"
               aria-label="Previous topic"
             >
@@ -203,7 +202,7 @@ export const RetroNode = memo(({ data, selected }: NodeProps<Node<RetroNodeData,
               className="min-w-0 flex-1 rounded-md bg-white/70 px-3 py-1.5 text-left transition-colors hover:bg-white dark:bg-surface-2/60 dark:hover:bg-surface-2"
             >
               <span className="block font-mono text-[11px] font-medium text-blue-700 tabular-nums dark:text-status-info-fg">
-                {topicCount === 0 ? "No topics" : `Topic ${Math.max(topicIndex + 1, 1)} of ${topicCount}`}
+                {discussion.label}
               </span>
               <span className="block truncate text-sm font-medium text-gray-800 dark:text-gray-200">
                 {focusedLabel ?? "Pick a sticky to discuss"}
@@ -212,7 +211,7 @@ export const RetroNode = memo(({ data, selected }: NodeProps<Node<RetroNodeData,
             <button
               type="button"
               onClick={canFlow.allowed ? () => actions.stepDiscussion("next") : undefined}
-              disabled={!canFlow.allowed || lastTopic}
+              disabled={!canFlow.allowed || !discussion.next}
               className="flex size-8 shrink-0 items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-white/70 disabled:opacity-30 dark:hover:bg-surface-3/60"
               aria-label="Next topic"
             >
@@ -250,7 +249,7 @@ export const RetroNode = memo(({ data, selected }: NodeProps<Node<RetroNodeData,
               />
               <div className="mb-3 flex items-center justify-between text-xs text-gray-600 dark:text-gray-400">
                 <span>Your votes</span>
-                <span className="flex items-center gap-1" aria-label={`${votesPerPerson - myVotes} of ${votesPerPerson} votes left`}>
+                <span className="flex items-center gap-1" aria-label={`${votesLeft} of ${votesPerPerson} votes left`}>
                   {Array.from({ length: votesPerPerson }, (_, i) => (
                     <span
                       key={i}
@@ -270,12 +269,14 @@ export const RetroNode = memo(({ data, selected }: NodeProps<Node<RetroNodeData,
 
           {step === "discuss" && (
             <>
-              <Progress
-                value={Math.max(topicIndex + 1, 0)}
-                max={topicCount}
-                label={`${Math.max(topicIndex + 1, 0)}/${topicCount} topics`}
-              />
-              {lastTopic || topicCount === 0 ? (
+              {discussion.progress && (
+                <Progress
+                  value={discussion.progress.value}
+                  max={discussion.progress.max}
+                  label={`${discussion.progress.value}/${discussion.progress.max} topics`}
+                />
+              )}
+              {discussion.atEnd ? (
                 <Cta onClick={() => actions.setStep("done")} tone="green" icon={<Check className="size-5" />} decision={canFlow}>
                   Finish retro
                 </Cta>

@@ -7,6 +7,7 @@ import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { presence } from "./model/presence";
 import { type T, seedUser as seedNamedUser, seedRoom } from "./analytics.seeds";
+import { inMemoryJira, type FakeSite, type InMemoryJira } from "./integrations/jira.setup";
 
 // Account deletion: the user row and their memberships go; what they wrote
 // stays. A sticky's `authorId`, a vote's `voterId` and an action item's
@@ -179,36 +180,32 @@ describe("presence on account deletion", () => {
 });
 
 describe("integration connections", () => {
+  // The Jira a connection's webhooks are deleted from, as that connection.
+  let jira: InMemoryJira;
+  let team: FakeSite;
+
   // convex-test runs scheduled jobs on a real setTimeout; faking it keeps the
   // disconnect tail pending until a test runs it.
   beforeEach(() => {
     vi.useFakeTimers({ toFake: ["setTimeout"] });
+    jira = inMemoryJira();
+    team = jira.site("team");
+    vi.spyOn(console, "log").mockImplementation(() => {});
   });
   afterEach(() => {
     vi.useRealTimers();
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
   });
 
-  const seedConnection = (t: T, userId: Id<"users">, expiresAt = Date.now() + 3_600_000) =>
-    t.run((ctx) =>
-      ctx.db.insert("integrationConnections", {
-        userId,
-        provider: "jira",
-        encryptedAccessToken: "enc-access",
-        accessTokenIv: "iv",
-        accessTokenAuthTag: "tag",
-        encryptedRefreshToken: "enc-refresh",
-        refreshTokenIv: "riv",
-        refreshTokenAuthTag: "rtag",
-        expiresAt,
-        cloudId: "cloud-1",
-        scopes: [],
-        connectedAt: Date.now(),
-        lastRefreshedAt: Date.now(),
-      })
-    );
-  /** Maps a fresh room through the connection, with a live webhook when given one. */
+  /** A connection to the team's Jira site; `stale` when its token is due a refresh. */
+  const seedConnection = (t: T, userId: Id<"users">, options: { stale?: boolean } = {}) =>
+    jira.connect(t, userId, team, options);
+  /** Maps a fresh room through the connection, with a webhook live in Jira when given one. */
   const seedMapping = async (t: T, connectionId: Id<"integrationConnections">, jiraWebhookId?: string) => {
     const roomId = await seedRoom(t);
+    if (jiraWebhookId) team.webhooks.set(jiraWebhookId, { url: "x", jqlFilter: "project = PROJ", events: [] });
     return t.run((ctx) =>
       ctx.db.insert("integrationMappings", {
         roomId,
@@ -254,7 +251,7 @@ describe("integration connections", () => {
     it("disconnects the account's connection the way Disconnect does, and its tokens stop being refreshed", async () => {
       const t = withComponents(convexTest(schema, modules));
       const leaverId = await seedUser(t, "leaver", "permanent");
-      const connectionId = await seedConnection(t, leaverId, Date.now() - 1_000);
+      const connectionId = await seedConnection(t, leaverId, { stale: true });
       await seedMapping(t, connectionId, "wh-1");
       await seedMapping(t, connectionId);
       expect(await dueForRefresh(t)).toEqual([connectionId]);
@@ -266,6 +263,10 @@ describe("integration connections", () => {
       // the live webhook with its credentials.
       expect(await disconnectTails(t)).toEqual([{ connectionId, webhookIds: ["wh-1"] }]);
       await t.finishAllScheduledFunctions(vi.runAllTimers);
+      expect(team.webhooks.has("wh-1")).toBe(false);
+      expect(jira.restCalls()).toEqual([
+        expect.objectContaining({ method: "DELETE", token: jira.tokenOf(connectionId) }),
+      ]);
       expect(await getConnection(t, connectionId)).toBeNull();
       expect(await dueForRefresh(t)).toEqual([]);
     });
@@ -329,6 +330,7 @@ describe("integration connections", () => {
       expect(await mappingsOf(t, guestConnectionId)).toEqual([]);
       expect(await disconnectTails(t)).toEqual([{ connectionId: guestConnectionId, webhookIds: ["wh-guest"] }]);
       await t.finishAllScheduledFunctions(vi.runAllTimers);
+      expect([...team.webhooks.keys()]).toEqual(["wh-own"]);
       expect(await getConnection(t, guestConnectionId)).toBeNull();
       expect(await connectionsShownTo(t, "permanent")).toEqual([ownConnectionId]);
       expect(await t.run((ctx) => ctx.db.get("integrationMappings", ownMappingId))).toMatchObject({

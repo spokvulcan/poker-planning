@@ -4,7 +4,9 @@ import path from "path";
 // Three projects, split by environment:
 //   - node:         pure unit tests in src/ (*.test.ts; some mock node built-ins)
 //   - jsdom:        client hook tests in src/ (*.test.tsx) that need a real DOM
-//                   plus effects/re-renders via @testing-library/react.
+//                   plus effects/re-renders via @testing-library/react; its
+//                   setup file gives jsdom the media queries and
+//                   ResizeObserver every browser has.
 //   - convex:       convex/ tests, including convex-test integration tests which
 //                   require the edge-runtime environment.
 // Pure convex unit tests (e.g. permissions, summarize) run fine under
@@ -43,6 +45,7 @@ export default defineConfig({
           name: "jsdom",
           environment: "jsdom",
           include: ["src/**/*.test.tsx"],
+          setupFiles: ["./vitest.jsdom-setup.ts"],
         },
       },
       {

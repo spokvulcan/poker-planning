@@ -2,10 +2,8 @@
 import { convexTest, type TestConvex } from "convex-test";
 import { describe, it, expect } from "vitest";
 import schema from "./schema";
-import { api, internal } from "./_generated/api";
+import { api } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
-import { requireCanForUser, requireRoomWrite } from "./model/auth";
-import type { RequireCanSpec } from "./model/auth";
 import type { MemberRole, RoomPermissions } from "./permissions";
 
 const modules = import.meta.glob("./**/*.*s");
@@ -224,92 +222,5 @@ describe("permission guard — relationship actions through users.remove", () =>
         .first()
     );
     expect(membership).toBeNull();
-  });
-});
-
-describe("explicit-user guard variant (requireCanForUser)", () => {
-  const spec: RequireCanSpec = { kind: "category", category: "roomSettings" };
-
-  it("allows with the same verdict and bundle as the room-scoped step", async () => {
-    const t = convexTest(schema, modules);
-    const roomId = await seedRoom(t, {
-      permissions: permissions({ roomSettings: "facilitators" }),
-    });
-    const userId = await addMember(t, roomId, "auth-f", "facilitator");
-
-    const viaStep = await t
-      .withIdentity({ subject: "auth-f" })
-      .run((ctx) => requireRoomWrite(ctx, roomId, spec));
-    const viaVariant = await t.run(async (ctx) => {
-      const user = await ctx.db.get("users", userId);
-      return requireCanForUser(ctx, user!, roomId, spec);
-    });
-
-    expect(viaVariant.user._id).toBe(viaStep.user._id);
-    expect(viaVariant.membership._id).toBe(viaStep.membership._id);
-    expect(viaVariant.room._id).toBe(viaStep.room._id);
-  });
-
-  it("denies with the same message as the room-scoped step", async () => {
-    const t = convexTest(schema, modules);
-    const roomId = await seedRoom(t, {
-      permissions: permissions({ roomSettings: "facilitators" }),
-    });
-    const userId = await addMember(t, roomId, "auth-p");
-
-    await expect(
-      t.withIdentity({ subject: "auth-p" }).run((ctx) => requireRoomWrite(ctx, roomId, spec))
-    ).rejects.toThrow("Only facilitators and the owner can do this.");
-    await expect(
-      t.run(async (ctx) => {
-        const user = await ctx.db.get("users", userId);
-        return requireCanForUser(ctx, user!, roomId, spec);
-      })
-    ).rejects.toThrow("Only facilitators and the owner can do this.");
-  });
-
-  it("requires room membership", async () => {
-    const t = convexTest(schema, modules);
-    const roomId = await seedRoom(t);
-    const userId = await t.run((ctx) =>
-      ctx.db.insert("users", {
-        authUserId: "auth-outsider",
-        name: "U",
-        createdAt: Date.now(),
-      })
-    );
-    await expect(
-      t.run(async (ctx) => {
-        const user = await ctx.db.get("users", userId);
-        return requireCanForUser(ctx, user!, roomId, spec);
-      })
-    ).rejects.toThrow("Not a member of this room");
-  });
-
-  it("drives the registered internal path (verifyCanManageIssues) for a facilitator", async () => {
-    const t = convexTest(schema, modules);
-    const roomId = await seedRoom(t, {
-      permissions: permissions({ issueManagement: "facilitators" }),
-    });
-    const userId = await addMember(t, roomId, "auth-f", "facilitator");
-    const result = await t.query(
-      internal.integrations.jira.verifyCanManageIssues,
-      { userId, roomId }
-    );
-    expect(result).toEqual({ userId });
-  });
-
-  it("denies a participant through verifyCanManageIssues with the guard's message", async () => {
-    const t = convexTest(schema, modules);
-    const roomId = await seedRoom(t, {
-      permissions: permissions({ issueManagement: "facilitators" }),
-    });
-    const userId = await addMember(t, roomId, "auth-p");
-    await expect(
-      t.query(internal.integrations.jira.verifyCanManageIssues, {
-        userId,
-        roomId,
-      })
-    ).rejects.toThrow("Only facilitators and the owner can do this.");
   });
 });

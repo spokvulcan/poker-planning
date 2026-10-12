@@ -21,6 +21,28 @@ export const jiraWebhookFailureValidator = v.union(
 );
 
 /**
+ * How the last estimate settled on one of a mapping's issues went
+ * (model/estimatePush.ts): pushed; not pushed, with why (no field to write
+ * it to, not a number, the issue on another site than the mapping's
+ * connection, a connection that can't act); or refused by the tracker, in its
+ * words. `at` is when the estimate settled, so a later one's outcome wins.
+ */
+export const lastPushValidator = v.object({
+  at: v.number(),
+  issueKey: v.string(), // the tracker's key: "PROJ-1"
+  estimate: v.string(), // the settled card: "5"
+  outcome: v.union(
+    v.literal("pushed"),
+    v.literal("noField"),
+    v.literal("notANumber"),
+    v.literal("otherSite"),
+    v.literal("connectionUnusable"),
+    v.literal("refused")
+  ),
+  message: v.optional(v.string()), // the tracker's own words for a refusal
+});
+
+/**
  * A permission level, shared by every configurable category (ADR-0013).
  */
 export const permissionLevelValidator = v.union(
@@ -81,6 +103,12 @@ export const retroStateValidator = v.object({
   showAuthors: v.boolean(),
   /** The topic (a loose sticky or a stack's root) the discussion is on. */
   focusStickyId: v.optional(v.id("retroStickies")),
+  /**
+   * While a person has put a topic off the discussion's order in the
+   * spotlight: the topic the walk left for it, which Next carries on from
+   * and Previous goes back to (convex/retroSteps.ts).
+   */
+  walkStickyId: v.optional(v.id("retroStickies")),
   /** The retro started from this one's wrap-up, for everyone to follow. */
   nextRoomId: v.optional(v.id("rooms")),
 });
@@ -439,6 +467,9 @@ export default defineSchema({
     jiraWebhookConnectionId: v.optional(v.id("integrationConnections")), // The connection that registered it
     jiraWebhookProjectKey: v.optional(v.string()), // The project it was registered for
     jiraWebhookFailure: v.optional(jiraWebhookFailureValidator), // Why the last registration failed
+    // How the last settled estimate's push went, written only by the estimate
+    // push (model/estimatePush.ts); the room's settings show it
+    lastPush: v.optional(lastPushValidator),
     // GitHub mapping (Epic 7)
     githubRepo: v.optional(v.string()),
     githubProjectId: v.optional(v.string()),

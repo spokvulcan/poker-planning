@@ -3,10 +3,24 @@ import { v } from "convex/values";
 import * as Users from "./model/users";
 import * as AccountLifecycle from "./model/accountLifecycle";
 import * as Memberships from "./model/memberships";
-import { findUser, getCaller, requireCaller } from "./model/caller";
+import { callerView, findUser, getCaller, requireCaller } from "./model/caller";
 import { requireRoomWrite } from "./model/auth";
 
-// Get global user for the currently authenticated user
+/**
+ * The person signed in, as their own menus show them (model/caller.ts:
+ * callerView), or null when nobody is: the browser's viewer and the page's
+ * first paint both read this.
+ */
+export const getViewer = query({
+  args: {},
+  handler: async (ctx) => {
+    const caller = await getCaller(ctx);
+    return caller ? callerView(caller) : null;
+  },
+});
+
+// The caller's users row, whole. The browser reads the viewer (getViewer);
+// this stays for tabs opened before it did, and for tests reading a row.
 export const getGlobalUser = query({
   args: {},
   handler: async (ctx) => {
@@ -86,13 +100,12 @@ export const remove = mutation({
     roomId: v.id("rooms"),
   },
   handler: async (ctx, args) => {
-    const { room, target } = await requireRoomWrite(
-      ctx,
-      args.roomId,
-      { kind: "relationship", verb: "remove" },
-      args.userId
-    );
-    await Memberships.leave(ctx, room, target!);
+    const { room, target } = await requireRoomWrite(ctx, args.roomId, {
+      kind: "relationship",
+      verb: "remove",
+      target: args.userId,
+    });
+    await Memberships.leave(ctx, room, target);
   },
 });
 

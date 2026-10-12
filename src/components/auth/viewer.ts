@@ -1,54 +1,57 @@
-import type { Doc } from "@/convex/_generated/dataModel";
+import type { CallerView } from "@/convex/model/caller";
 
 /**
- * Who is looking at the page: loading until Convex's auth state and the
- * caller's users row have answered, a visitor when nobody is signed in, else
- * signed in. A signed-in viewer has no row until their first room write
- * makes it (a guest who only continued as one) and is ready all the same:
- * no name, avatar or email yet, and not a permanent account. The auth
- * provider hands it out (auth-provider.tsx), starting from the one the
- * server saw (server-viewer.ts).
+ * Who is looking at the page: loading until Convex's auth state and its
+ * answer about the person (users.getViewer) are in, a visitor when nobody is
+ * signed in, else signed in. A signed-in viewer has no users row until their
+ * first room write makes it (a guest who only continued as one) and is
+ * ready all the same: no name, avatar or email yet. The auth provider hands
+ * it out (auth-provider.tsx), starting from the one the server saw
+ * (server-viewer.ts), and pages read as the viewer through useCallerQuery.
  */
 export type Viewer =
   | { status: "loading" }
   | { status: "visitor" }
   | {
       status: "signedIn";
-      // The users row's, null while there is none
+      // The users row's, null while there is none (a permanent account's token names it)
       name: string | null;
       avatarUrl: string | null;
       email: string | null;
-      // Whether the users row says the account is permanent. A row with no
-      // kind (a guest's made before the server made rows) and no row at all
-      // are not a permanent account's
+      // Whether the account is permanent, as the session's token says
       isPermanent: boolean;
+      // Whether Convex has confirmed the session in this browser. Until it
+      // has (the server's first-paint viewer standing in), reads made as the
+      // viewer wait: useCallerQuery
+      confirmed: boolean;
     };
 
 /** A viewer who is signed in. */
 export type SignedInViewer = Extract<Viewer, { status: "signedIn" }>;
 
+/** What Convex answers about the person signed in (users.getViewer): null when nobody is. */
+export type ViewerAnswer = CallerView | null;
+
 /**
- * The viewer, from Convex's auth state and the caller's users row (undefined
- * until it answers). The server works it out the same way for the first
- * paint (server-viewer.ts), the auth provider in the browser after.
+ * The viewer, from Convex's auth state and its answer (undefined until it
+ * answers), confirmed when Convex authenticated the session. The server works
+ * it out the same way for the first paint (server-viewer.ts), unconfirmed;
+ * the auth provider in the browser after.
  */
-export function viewerOf(isLoading: boolean, isAuthenticated: boolean, row: Doc<"users"> | null | undefined): Viewer {
-  if (isLoading) return { status: "loading" };
-  if (!isAuthenticated) return { status: "visitor" };
-  if (row === undefined) return { status: "loading" };
-  return {
-    status: "signedIn",
-    name: row?.name ?? null,
-    avatarUrl: row?.avatarUrl ?? null,
-    email: row?.email ?? null,
-    isPermanent: row?.accountType === "permanent",
-  };
+export function viewerOf(
+  auth: { isLoading: boolean; isAuthenticated: boolean },
+  answer: ViewerAnswer | undefined,
+  confirmed: boolean = auth.isAuthenticated
+): Viewer {
+  if (auth.isLoading) return { status: "loading" };
+  if (!auth.isAuthenticated || answer === null) return { status: "visitor" };
+  if (answer === undefined) return { status: "loading" };
+  return { status: "signedIn", ...answer, confirmed };
 }
 
 /**
- * The kind of account a signed-in viewer has, as their users row says:
- * "permanent", or "guest" for any other (a row with no kind, or none yet).
- * Null while loading and for a visitor.
+ * The kind of account a signed-in viewer has: "permanent", or "guest" for
+ * any other. Null while loading and for a visitor.
  */
 export function accountKind(viewer: Viewer): "permanent" | "guest" | null {
   if (viewer.status !== "signedIn") return null;

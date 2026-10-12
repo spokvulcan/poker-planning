@@ -11,7 +11,7 @@ const spy = vi.hoisted(() => ({
   push: vi.fn(),
   setTheme: vi.fn(),
   theme: "dark" as string | undefined,
-  auth: { isLoading: false, isAuthenticated: false },
+  auth: { viewer: { status: "visitor" } } as Record<string, unknown>,
 }));
 
 vi.mock("next/navigation", () => ({
@@ -34,15 +34,7 @@ import { resetBlogPostsForTest } from "./use-blog-posts";
 const POSTS = [{ slug: "sprint-retrospectives", title: "How to run a sprint retro", tags: ["Scrum"] }];
 
 beforeEach(() => {
-  // cmdk measures and scrolls its list; jsdom does neither.
-  vi.stubGlobal(
-    "ResizeObserver",
-    class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    }
-  );
+  // cmdk scrolls its list; jsdom doesn't.
   Element.prototype.scrollIntoView = vi.fn();
   vi.stubGlobal(
     "fetch",
@@ -52,7 +44,7 @@ beforeEach(() => {
   spy.push.mockReset();
   spy.setTheme.mockReset();
   spy.theme = "dark";
-  spy.auth = { isLoading: false, isAuthenticated: false };
+  spy.auth = { viewer: { status: "visitor" } };
 });
 
 afterEach(() => {
@@ -140,19 +132,34 @@ describe("the command menu", () => {
   });
 
   it("offers a signed-in person their dashboard", async () => {
-    spy.auth = { isLoading: false, isAuthenticated: true };
+    spy.auth = {
+      viewer: { status: "signedIn", name: "Ada", avatarUrl: null, email: null, isPermanent: true, confirmed: true },
+    };
     renderMenu();
     pressShortcut({ metaKey: true });
 
-    fireEvent.click(await option(/^Your retros/));
+    fireEvent.click(await option(/^Retros/));
     expect(spy.push).toHaveBeenCalledWith("/dashboard/retros");
+  });
+
+  it("offers a guest their dashboard, and Sign in back to the page they are on", async () => {
+    spy.auth = {
+      viewer: { status: "signedIn", name: "Guest 4829", avatarUrl: null, email: null, isPermanent: false, confirmed: true },
+    };
+    renderMenu();
+    pressShortcut({ metaKey: true });
+
+    expect(await option(/^Planning poker/)).toBeTruthy();
+    type("sign in");
+    fireEvent.click(await option(/^Sign in/));
+    expect(spy.push).toHaveBeenCalledWith("/auth/signin?from=%2Fpricing");
   });
 
   it("offers a visitor sign-in instead, back to the page they are on", async () => {
     renderMenu();
     pressShortcut({ metaKey: true });
     await screen.findByRole("dialog");
-    expect(screen.queryByRole("option", { name: /^Your retros/ })).toBeNull();
+    expect(screen.queryByRole("option", { name: /^Retros/ })).toBeNull();
 
     type("sign in");
     fireEvent.click(await option(/^Sign in/));
@@ -160,14 +167,14 @@ describe("the command menu", () => {
   });
 
   it("offers neither while it does not know who is looking", async () => {
-    spy.auth = { isLoading: true, isAuthenticated: false };
+    spy.auth = { viewer: { status: "loading" } };
     renderMenu();
     pressShortcut({ metaKey: true });
     await screen.findByRole("dialog");
 
     type("s");
     await waitFor(() => expect(screen.getAllByRole("option").length).toBeGreaterThan(0));
-    expect(screen.queryByRole("option", { name: /^Your retros/ })).toBeNull();
+    expect(screen.queryByRole("option", { name: /^Retros/ })).toBeNull();
     expect(screen.queryByRole("option", { name: /^Sign in/ })).toBeNull();
   });
 

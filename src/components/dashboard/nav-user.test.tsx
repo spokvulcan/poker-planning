@@ -13,8 +13,6 @@ const mocks = vi.hoisted(() => ({ viewer: { status: "loading" } as Viewer }));
 
 vi.mock("@/components/auth/auth-provider", () => ({
   useAuth: () => ({
-    isLoading: mocks.viewer.status === "loading",
-    isAuthenticated: mocks.viewer.status === "signedIn",
     viewer: mocks.viewer,
   }),
 }));
@@ -36,8 +34,7 @@ vi.mock("next/image", () => ({
 
 vi.mock("@/hooks/useSignOut", () => ({ useSignOut: () => async () => {} }));
 
-// The sidebar's desktop branch: jsdom has no matchMedia.
-vi.mock("@/hooks/use-mobile", () => ({ useIsMobile: () => false }));
+vi.mock("next/navigation", () => ({ usePathname: () => "/dashboard" }));
 
 // The menu's content, drawn in place whether it is open or not.
 vi.mock("@/components/ui/dropdown-menu", async () => {
@@ -79,11 +76,11 @@ afterEach(cleanup);
 
 describe("NavUser", () => {
   it("is there for a guest signed in with no users row yet, as Guest, with Sign in", () => {
-    mocks.viewer = { status: "signedIn", name: null, avatarUrl: null, email: null, isPermanent: false };
+    mocks.viewer = { status: "signedIn", name: null, avatarUrl: null, email: null, isPermanent: false, confirmed: true };
     renderNavUser();
 
     expect(screen.getAllByText("Guest").length).toBeGreaterThan(0);
-    expect(screen.getByRole("link", { name: "Sign in" }).getAttribute("href")).toBe("/auth/signin?from=/dashboard");
+    expect(screen.getByRole("link", { name: "Sign in" }).getAttribute("href")).toBe("/auth/signin?from=%2Fdashboard");
   });
 
   it("shows a permanent account's name, avatar and email, and no Sign in", () => {
@@ -93,6 +90,7 @@ describe("NavUser", () => {
       avatarUrl: "https://lh3.googleusercontent.com/a/ada",
       email: "ada@example.com",
       isPermanent: true,
+      confirmed: true,
     };
     renderNavUser();
 

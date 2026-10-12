@@ -8,18 +8,23 @@
  * Jira is the only adapter today. The seam is deliberately narrow: a handler
  * is the set of capabilities the generic orchestration actually routes — the
  * webhook reconcile, which decides what happens to a mapping's remote
- * webhook, and token refresh. Anything provider-specific that no generic
- * caller needs (issue import, estimate push) stays inside the adapter.
+ * webhook, token refresh, and its side of the estimate push (where a settled
+ * estimate goes on the provider, and the action that writes it there), which
+ * the estimate push (model/estimatePush.ts) decides and dispatches. Anything
+ * provider-specific that no generic caller needs (issue import) stays inside
+ * the adapter.
  *
- * The descriptor holds plain functions from jiraAuth.ts and
- * jiraWebhookReconcile.ts — never an import of jira.ts, which keeps the
- * module graph acyclic: jira.ts → model → here.
+ * The descriptor holds plain functions from jiraAuth.ts,
+ * jiraWebhookReconcile.ts and jiraEstimatePush.ts — never an import of
+ * jira.ts, which keeps the module graph acyclic: jira.ts → model → here.
  */
 
 import { ActionCtx, MutationCtx } from "../_generated/server";
 import { Doc, Id } from "../_generated/dataModel";
+import type { EstimatePush, NotPushed } from "../model/estimatePush";
 import { refreshJiraToken } from "./jiraAuth";
 import { jiraWebhookReconcile } from "./jiraWebhookReconcile";
+import { jiraEstimatePush } from "./jiraEstimatePush";
 
 export type IntegrationProvider = Doc<"integrationConnections">["provider"];
 
@@ -63,6 +68,25 @@ export interface WebhookReconcile {
   ): Promise<"now" | "tail">;
 }
 
+/**
+ * Where a provider would write an estimate settled on a linked issue: the
+ * issue's key on the site the connection acts on, or why it can't go there.
+ */
+export type EstimateTarget =
+  | { ok: true; site: string; issueKey: string }
+  | { ok: false; outcome: Extract<NotPushed, "otherSite" | "connectionUnusable"> };
+
+/**
+ * A provider's side of the estimate push (model/estimatePush.ts), which
+ * decides whether an estimate goes and records how it went.
+ */
+export interface EstimatePusher {
+  /** Where the estimate on the linked issue goes through the mapping's connection. */
+  targetOf(link: Doc<"issueLinks">, connection: Doc<"integrationConnections">): EstimateTarget;
+  /** Hands a decided push to the provider's action, which writes it and reports back. */
+  dispatch(ctx: MutationCtx, push: EstimatePush): Promise<void>;
+}
+
 /** What the generic orchestration routes to a provider. */
 export interface IntegrationProviderHandler {
   webhooks: WebhookReconcile;
@@ -71,11 +95,13 @@ export interface IntegrationProviderHandler {
     ctx: ActionCtx,
     connection: Doc<"integrationConnections">
   ): Promise<string>;
+  estimates: EstimatePusher;
 }
 
 const jiraHandler: IntegrationProviderHandler = {
   webhooks: jiraWebhookReconcile,
   refreshConnection: (ctx, connection) => refreshJiraToken(ctx, connection),
+  estimates: jiraEstimatePush,
 };
 
 const handlers = {

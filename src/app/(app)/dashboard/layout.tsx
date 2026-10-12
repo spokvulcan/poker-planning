@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { isAuthenticated } from "@/lib/auth-server";
 import { DashboardLayout } from "@/components/dashboard/dashboard-layout";
+import { signInHref } from "@/components/auth/account";
 
 export default async function Layout({
   children,
@@ -10,7 +11,7 @@ export default async function Layout({
 }) {
   const authenticated = await isAuthenticated();
   if (!authenticated) {
-    redirect("/auth/signin?from=/dashboard");
+    redirect(signInHref("/dashboard"));
   }
 
   const cookieStore = await cookies();

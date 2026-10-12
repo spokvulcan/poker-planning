@@ -50,12 +50,34 @@ export interface StickyDraft {
   gif?: Gif;
 }
 
+/**
+ * A sticky open in the editor, and, when an edit of it didn't save, what that
+ * edit said, so the editor opens on it again as it was typed.
+ */
+export interface StickyEdit {
+  stickyId: Id<"retroStickies">;
+  unsaved?: { text: string; gif?: Gif };
+}
+
 /** A person at the board, for owners and counts. */
 export interface RetroMember {
   _id: Id<"users">;
   name: string;
   avatarUrl?: string;
 }
+
+/** The discussion's controls on the retro node (build-retro-nodes.ts: discussionView). */
+export type DiscussionView = {
+  /** Where the walk is: "Topic 2 of 5", "Not voted for" for a topic off the order, "No topics"... */
+  label: string;
+  /** How far the walk has come: the topic it stands on of those it walks; none while the order isn't known. */
+  progress?: { value: number; max: number };
+  /** Whether Previous and Next move the spotlight. */
+  previous: boolean;
+  next: boolean;
+  /** Nothing comes after where the walk stands: the main button finishes the retro. */
+  atEnd: boolean;
+};
 
 export type RetroNodeData = {
   name: string;
@@ -66,9 +88,10 @@ export type RetroNodeData = {
   votesCast: number;
   votesPerPerson: number;
   myVotes: number;
-  /** The walk: where the focus is (0-based, -1 when off the list) and how long it is. */
-  topicIndex: number;
-  topicCount: number;
+  /** The viewer's votes left: none, never fewer, when the budget is lowered mid-vote. */
+  votesLeft: number;
+  /** The discussion's controls, from where the discussion stands. */
+  discussion: DiscussionView;
   focusedId?: Id<"retroStickies">;
   focusedLabel?: string;
   nextRoomId?: Id<"rooms">;
@@ -93,6 +116,8 @@ export type StickyNodeData = {
   /** What the retro's step shows everyone. */
   shows: StepShows;
   editing: boolean;
+  /** What an edit that didn't save said: the editor opens on it. */
+  unsaved?: StickyEdit["unsaved"];
   /** The viewer may change what it says (theirs, or a facilitator's call). */
   canEdit: boolean;
   /** The other stickies in its stack, when this is a stack's top, and whether the viewer may take each off. */

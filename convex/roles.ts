@@ -11,13 +11,12 @@ export const promoteFacilitator = mutation({
     targetUserId: v.id("users"),
   },
   handler: async (ctx, args) => {
-    const { room, target } = await requireRoomWrite(
-      ctx,
-      args.roomId,
-      { kind: "relationship", verb: "promote" },
-      args.targetUserId
-    );
-    await Memberships.setRole(ctx, room, target!, "facilitator");
+    const { room, target } = await requireRoomWrite(ctx, args.roomId, {
+      kind: "relationship",
+      verb: "promote",
+      target: args.targetUserId,
+    });
+    await Memberships.setRole(ctx, room, target, "facilitator");
   },
 });
 
@@ -27,13 +26,12 @@ export const demoteFacilitator = mutation({
     targetUserId: v.id("users"),
   },
   handler: async (ctx, args) => {
-    const { room, target } = await requireRoomWrite(
-      ctx,
-      args.roomId,
-      { kind: "relationship", verb: "demote" },
-      args.targetUserId
-    );
-    await Memberships.setRole(ctx, room, target!, "participant");
+    const { room, target } = await requireRoomWrite(ctx, args.roomId, {
+      kind: "relationship",
+      verb: "demote",
+      target: args.targetUserId,
+    });
+    await Memberships.setRole(ctx, room, target, "participant");
   },
 });
 
@@ -43,13 +41,12 @@ export const transferOwnership = mutation({
     targetUserId: v.id("users"),
   },
   handler: async (ctx, args) => {
-    const { room, user, target } = await requireRoomWrite(
-      ctx,
-      args.roomId,
-      { kind: "relationship", verb: "transfer" },
-      args.targetUserId
-    );
-    await Roles.transferOwnership(ctx, room, user, target!);
+    const { room, user, target } = await requireRoomWrite(ctx, args.roomId, {
+      kind: "relationship",
+      verb: "transfer",
+      target: args.targetUserId,
+    });
+    await Roles.transferOwnership(ctx, room, user, target);
   },
 });
 

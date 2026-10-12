@@ -4,6 +4,8 @@ import { useState, useEffect, useCallback } from "react";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { Loader2, Puzzle, ExternalLink, AlertTriangle } from "lucide-react";
 import { api } from "@/convex/_generated/api";
+import { useCallerQuery } from "@/components/auth/use-caller-query";
+import { autoPushProblem } from "@/convex/autoPush";
 import { Doc, Id } from "@/convex/_generated/dataModel";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -15,6 +17,8 @@ import {
   SelectTrigger,
 } from "@/components/ui/select";
 import { toast } from "@/lib/toast";
+import { runAct } from "@/lib/run-act";
+import type { LastPush } from "@/convex/model/estimatePush";
 
 interface IntegrationSettingsSectionProps {
   roomId: Id<"rooms">;
@@ -43,10 +47,24 @@ const WEBHOOK_FAILURE_COPY: Record<
     "Jira renames and deletions won't reach this room: Jira didn't accept the webhook. Save again to retry.",
 };
 
+/** How the last settled estimate's push went, as the estimate push recorded it on the mapping. */
+const LAST_PUSH_COPY: Record<LastPush["outcome"], (push: LastPush) => string> = {
+  pushed: ({ issueKey, estimate }) => `Last estimate pushed: ${estimate} to ${issueKey}.`,
+  noField: ({ issueKey }) =>
+    `${issueKey}'s estimate wasn't pushed: choose the story points field estimates go to.`,
+  notANumber: ({ issueKey, estimate }) =>
+    `${issueKey}'s estimate "${estimate}" wasn't pushed: only a number can be story points.`,
+  otherSite: ({ issueKey }) =>
+    `${issueKey}'s estimate wasn't pushed: it was imported from another Jira site than the one this room's mapping pushes to.`,
+  connectionUnusable: ({ issueKey }) =>
+    `${issueKey}'s estimate wasn't pushed: the Jira connection this room pushes with no longer works. Reconnect Jira, then save the mapping again.`,
+  refused: ({ issueKey }) => `${issueKey}'s estimate wasn't pushed: Jira refused it.`,
+};
+
 export function IntegrationSettingsSection({
   roomId,
 }: IntegrationSettingsSectionProps) {
-  const connections = useQuery(api.integrations.getConnections);
+  const connections = useCallerQuery(api.integrations.getConnections);
   const mapping = useQuery(api.integrations.getRoomMapping, { roomId });
   const saveMapping = useMutation(api.integrations.saveRoomMapping);
   const removeMapping = useMutation(api.integrations.removeRoomMapping);
@@ -79,15 +97,21 @@ export function IntegrationSettingsSection({
     mapping?.storyPointsFieldId ?? ""
   );
 
-  // Sync form state when mapping loads
+  // The form takes the saved settings when they load or a save changes them,
+  // and only then: the mapping's row also changes as its webhook is recorded
+  // and with every estimate pushed, which must not undo what is being typed.
+  const hasMapping = !!mapping;
+  const savedProjectKey = mapping?.jiraProjectKey ?? "";
+  const savedBoardId = mapping?.jiraBoardId ?? null;
+  const savedAutoPush = mapping?.autoPushEstimates ?? false;
+  const savedFieldId = mapping?.storyPointsFieldId ?? "";
   useEffect(() => {
-    if (mapping) {
-      setProjectKey(mapping.jiraProjectKey ?? "");
-      setBoardId(mapping.jiraBoardId ?? null);
-      setAutoPush(mapping.autoPushEstimates);
-      setStoryPointsFieldId(mapping.storyPointsFieldId ?? "");
-    }
-  }, [mapping]);
+    if (!hasMapping) return;
+    setProjectKey(savedProjectKey);
+    setBoardId(savedBoardId);
+    setAutoPush(savedAutoPush);
+    setStoryPointsFieldId(savedFieldId);
+  }, [hasMapping, savedProjectKey, savedBoardId, savedAutoPush, savedFieldId]);
 
   // A saved mapping that wants a webhook is saved for good once its webhook
   // is on record; a registration that failed is on record instead, and the
@@ -172,11 +196,16 @@ export function IntegrationSettingsSection({
     }
   };
 
+  // Auto-push writes each estimate to a field: without one it would push
+  // nothing on every reveal, so the server refuses to save it that way, in
+  // the words shown here (convex/autoPush.ts).
+  const missingField = autoPushProblem({ autoPushEstimates: autoPush, storyPointsFieldId });
+
   const handleSave = async () => {
-    if (!jiraConnection || !projectKey) return;
+    if (!jiraConnection || !projectKey || missingField) return;
     setSaving(true);
-    try {
-      await saveMapping({
+    const saved = await runAct(
+      saveMapping({
         roomId,
         connectionId: jiraConnection._id,
         provider: "jira",
@@ -184,16 +213,14 @@ export function IntegrationSettingsSection({
         jiraBoardId: boardId ?? undefined,
         autoImport: false, // Coming soon; keep disabled until implemented.
         autoPushEstimates: autoPush,
-        storyPointsFieldId: storyPointsFieldId || undefined,
-      });
-      // The save is back with the mapping as it saved it; the effect above
-      // says how it went once its webhook is settled.
-      setAwaitingWebhook(true);
-    } catch {
-      toast.error("Failed to save mapping");
-    } finally {
-      setSaving(false);
-    }
+        storyPointsFieldId: storyPointsFieldId.trim() || undefined,
+      }),
+      "Failed to save mapping"
+    );
+    // The save is back with the mapping as it saved it; the effect above
+    // says how it went once its webhook is settled.
+    if (saved) setAwaitingWebhook(true);
+    setSaving(false);
   };
 
   const handleRemove = async () => {
@@ -342,6 +369,11 @@ export function IntegrationSettingsSection({
           onCheckedChange={setAutoPush}
         />
       </div>
+      {missingField && <p className="text-xs text-muted-foreground">{missingField}</p>}
+
+      {mapping?.autoPushEstimates && mapping.lastPush && (
+        <LastPushLine lastPush={mapping.lastPush} />
+      )}
 
       {mapping?.jiraWebhookFailure && (
         <div
@@ -360,7 +392,7 @@ export function IntegrationSettingsSection({
         <Button
           size="sm"
           onClick={handleSave}
-          disabled={!projectKey || saving}
+          disabled={!projectKey || !!missingField || saving}
           className="text-xs"
         >
           {saving ? "Saving..." : mapping ? "Update Mapping" : "Save Mapping"}
@@ -376,6 +408,34 @@ export function IntegrationSettingsSection({
           </Button>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * How the last estimate's push went: a quiet line when it went, and the way a
+ * failed webhook shows when it didn't, with Jira's own words when Jira
+ * refused it.
+ */
+function LastPushLine({ lastPush }: { lastPush: LastPush }) {
+  const words = LAST_PUSH_COPY[lastPush.outcome](lastPush);
+  if (lastPush.outcome === "pushed") {
+    return (
+      <p role="status" className="text-xs text-muted-foreground">
+        {words}
+      </p>
+    );
+  }
+  return (
+    <div
+      role="alert"
+      className="flex items-start gap-2 rounded-md px-3 py-2 bg-amber-50 dark:bg-status-warning-bg"
+    >
+      <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0 text-amber-600 dark:text-status-warning-fg" />
+      <span className="text-xs text-amber-700 dark:text-status-warning-fg">
+        {words}
+        {lastPush.message && <span className="block mt-1 break-words opacity-80">{lastPush.message}</span>}
+      </span>
     </div>
   );
 }

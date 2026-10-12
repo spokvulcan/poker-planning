@@ -13,25 +13,12 @@ import {
   ReferenceLine,
 } from "recharts";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
   ChartConfig,
   ChartContainer,
   ChartTooltip,
   ChartTooltipContent,
 } from "@/components/ui/chart";
-import { HelpCircle } from "lucide-react";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { DashboardPanel } from "./dashboard-panel";
 
 interface ScatterPoint {
   userId: string;
@@ -70,180 +57,117 @@ export function VoterAlignmentChart({
     return Math.max(Math.ceil(maxAbs * 4) / 4 + 0.25, 0.5);
   }, [data]);
 
-  if (isLoading) {
-    return (
-      <Card className="flex flex-col h-full shadow-sm">
-        <CardHeader>
-          <CardTitle className="text-base font-semibold flex items-center gap-1.5">
-            Voter Alignment
-            <TooltipProvider delay={200}>
-              <Tooltip>
-                <TooltipTrigger render={<HelpCircle className="h-3.5 w-3.5 text-muted-foreground/50 hover:text-muted-foreground cursor-help shrink-0" />} />
-                <TooltipContent className="max-w-[220px] text-center font-normal">
-                  <p>Plots each member by estimation bias and consistency. Center = aligned with consensus.</p>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          </CardTitle>
-          <CardDescription>
-            Estimation bias vs consistency across team members
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex-1 flex flex-col">
-          <div className="flex-1 min-h-[250px] animate-pulse rounded bg-muted" />
-        </CardContent>
-      </Card>
-    );
-  }
-
-  if (data.length === 0) {
-    return (
-      <Card className="flex flex-col h-full shadow-sm">
-        <CardHeader>
-          <CardTitle className="text-base font-semibold flex items-center gap-1.5">
-            Voter Alignment
-            <TooltipProvider delay={200}>
-              <Tooltip>
-                <TooltipTrigger render={<HelpCircle className="h-3.5 w-3.5 text-muted-foreground/50 hover:text-muted-foreground cursor-help shrink-0" />} />
-                <TooltipContent className="max-w-[220px] text-center font-normal">
-                  <p>Plots each member by estimation bias and consistency. Center = aligned with consensus.</p>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          </CardTitle>
-          <CardDescription>
-            Estimation bias vs consistency across team members
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex-1 flex flex-col">
-          <div className="flex flex-1 min-h-[250px] items-center justify-center text-muted-foreground">
-            No individual vote data yet
-          </div>
-        </CardContent>
-      </Card>
-    );
-  }
-
   return (
-    <Card className="flex flex-col h-full shadow-sm">
-      <CardHeader>
-        <CardTitle className="text-base font-semibold flex items-center gap-1.5">
-            Voter Alignment
-            <TooltipProvider delay={200}>
-              <Tooltip>
-                <TooltipTrigger render={<HelpCircle className="h-3.5 w-3.5 text-muted-foreground/50 hover:text-muted-foreground cursor-help shrink-0" />} />
-                <TooltipContent className="max-w-[220px] text-center font-normal">
-                  <p>Plots each member by estimation bias and consistency. Center = aligned with consensus.</p>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          </CardTitle>
-        <CardDescription>
-          X: avg bias (- under, + over) &middot; Y: variability (stddev)
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="flex-1 flex flex-col pb-6">
-        <ChartContainer config={chartConfig} className="flex-1 min-h-[250px] w-full aspect-auto">
-          <ScatterChart
-            accessibilityLayer
-            margin={{ top: 20, right: 10, left: -20, bottom: 0 }}
-          >
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis
-              type="number"
-              dataKey="x"
-              name="Avg Delta"
-              domain={[-xBound, xBound]}
-              tickLine={false}
-              axisLine={false}
-              tickMargin={8}
-            />
-            <YAxis
-              type="number"
-              dataKey="y"
-              name="Variability"
-              tickLine={false}
-              axisLine={false}
-            />
-            <ZAxis range={[60, 60]} />
-            <ReferenceLine
-              x={0}
-              stroke="var(--border)"
-              strokeDasharray="4 4"
-            />
-            <ChartTooltip
-              content={
-                <ChartTooltipContent
-                  labelFormatter={(_label, payload) => {
-                    if (payload?.[0]) {
-                      const item = payload[0].payload as ScatterPoint;
-                      return item.userName;
-                    }
-                    return "";
-                  }}
-                  formatter={(_value, name) => {
-                    if (name === "Avg Delta") return [_value, "Avg Bias"];
-                    if (name === "Variability")
-                      return [_value, "Variability"];
-                    return [_value, name];
-                  }}
-                />
-              }
-            />
-            <Scatter data={data} name="alignment">
-              {data.map((point) => (
-                <Cell key={point.userId} fill={getDotColor(point.x)} />
-              ))}
-              <LabelList
-                dataKey="userName"
-                position="top"
-                offset={8}
-                fontSize={11}
-                content={({ x, y, value, offset: labelOffset }) => {
-                  const name = typeof value === "string" ? value : "";
-                  const displayName =
-                    name.length > 12 ? name.slice(0, 11) + "\u2026" : name;
-                  return (
-                    <text
-                      x={Number(x)}
-                      y={Number(y) - (Number(labelOffset) || 8)}
-                      textAnchor="middle"
-                      className="fill-foreground"
-                      fontSize={11}
-                    >
-                      {displayName}
-                    </text>
-                  );
+    <DashboardPanel
+      title="Voter Alignment"
+      help="Plots each member by estimation bias and consistency. Center = aligned with consensus."
+      description="Estimation bias vs consistency across team members"
+      caption="X: avg bias (- under, + over) · Y: variability (stddev)"
+      layout="tallChart"
+      isLoading={isLoading}
+      isEmpty={data.length === 0}
+      emptyText="No individual vote data yet"
+    >
+      <ChartContainer config={chartConfig} className="flex-1 min-h-[250px] w-full aspect-auto">
+        <ScatterChart
+          accessibilityLayer
+          margin={{ top: 20, right: 10, left: -20, bottom: 0 }}
+        >
+          <CartesianGrid strokeDasharray="3 3" />
+          <XAxis
+            type="number"
+            dataKey="x"
+            name="Avg Delta"
+            domain={[-xBound, xBound]}
+            tickLine={false}
+            axisLine={false}
+            tickMargin={8}
+          />
+          <YAxis
+            type="number"
+            dataKey="y"
+            name="Variability"
+            tickLine={false}
+            axisLine={false}
+          />
+          <ZAxis range={[60, 60]} />
+          <ReferenceLine
+            x={0}
+            stroke="var(--border)"
+            strokeDasharray="4 4"
+          />
+          <ChartTooltip
+            content={
+              <ChartTooltipContent
+                labelFormatter={(_label, payload) => {
+                  if (payload?.[0]) {
+                    const item = payload[0].payload as ScatterPoint;
+                    return item.userName;
+                  }
+                  return "";
+                }}
+                formatter={(_value, name) => {
+                  if (name === "Avg Delta") return [_value, "Avg Bias"];
+                  if (name === "Variability")
+                    return [_value, "Variability"];
+                  return [_value, name];
                 }}
               />
-            </Scatter>
-          </ScatterChart>
-        </ChartContainer>
-        <div className="mt-2 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
-          <span className="flex items-center gap-1">
-            <span
-              className="inline-block h-2.5 w-2.5 rounded-full"
-              style={{ backgroundColor: "var(--status-success-fg)" }}
+            }
+          />
+          <Scatter data={data} name="alignment">
+            {data.map((point) => (
+              <Cell key={point.userId} fill={getDotColor(point.x)} />
+            ))}
+            <LabelList
+              dataKey="userName"
+              position="top"
+              offset={8}
+              fontSize={11}
+              content={({ x, y, value, offset: labelOffset }) => {
+                const name = typeof value === "string" ? value : "";
+                const displayName =
+                  name.length > 12 ? name.slice(0, 11) + "…" : name;
+                return (
+                  <text
+                    x={Number(x)}
+                    y={Number(y) - (Number(labelOffset) || 8)}
+                    textAnchor="middle"
+                    className="fill-foreground"
+                    fontSize={11}
+                  >
+                    {displayName}
+                  </text>
+                );
+              }}
             />
-            Aligned
-          </span>
-          <span className="flex items-center gap-1">
-            <span
-              className="inline-block h-2.5 w-2.5 rounded-full"
-              style={{ backgroundColor: "var(--status-warning-fg)" }}
-            />
-            Slight bias
-          </span>
-          <span className="flex items-center gap-1">
-            <span
-              className="inline-block h-2.5 w-2.5 rounded-full"
-              style={{ backgroundColor: "var(--status-error-fg)" }}
-            />
-            Significant bias
-          </span>
-          <span>&middot; Requires numeric scales.</span>
-        </div>
-      </CardContent>
-    </Card>
+          </Scatter>
+        </ScatterChart>
+      </ChartContainer>
+      <div className="mt-2 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+        <span className="flex items-center gap-1">
+          <span
+            className="inline-block h-2.5 w-2.5 rounded-full"
+            style={{ backgroundColor: "var(--status-success-fg)" }}
+          />
+          Aligned
+        </span>
+        <span className="flex items-center gap-1">
+          <span
+            className="inline-block h-2.5 w-2.5 rounded-full"
+            style={{ backgroundColor: "var(--status-warning-fg)" }}
+          />
+          Slight bias
+        </span>
+        <span className="flex items-center gap-1">
+          <span
+            className="inline-block h-2.5 w-2.5 rounded-full"
+            style={{ backgroundColor: "var(--status-error-fg)" }}
+          />
+          Significant bias
+        </span>
+        <span>&middot; Requires numeric scales.</span>
+      </div>
+    </DashboardPanel>
   );
 }

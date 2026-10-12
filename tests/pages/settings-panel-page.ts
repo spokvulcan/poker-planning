@@ -25,10 +25,11 @@ export class SettingsPanelPage {
       name: "Room settings",
     });
 
-    // The settings panel. On desktop this is a docked panel (a plain div that
-    // animates from w-0 to w-[380px]); on mobile it's a Sheet dialog. Both
-    // carry data-testid="room-settings-panel". When closed the desktop panel
-    // has zero width, so toBeVisible() reflects the open/closed state.
+    // The settings panel. On desktop the board's chrome docks it beside the
+    // board; on mobile it's a Sheet dialog. Both carry
+    // data-testid="room-settings-panel", and only while the panel is open: the
+    // chrome mounts a closed panel nowhere, so toBeVisible() reflects the
+    // open/closed state.
     this.settingsPanel = page.getByTestId("room-settings-panel");
 
     // Close button
@@ -40,7 +41,9 @@ export class SettingsPanelPage {
 
     // Auto-reveal toggle (the Switch component from Base UI)
     // Find the switch using its data-slot attribute within the settings panel
-    this.autoRevealSwitch = this.settingsPanel.locator('[data-slot="switch"]');
+    // The auto-reveal switch by its label: the panel has other switches (the
+    // board's Timer and Session time).
+    this.autoRevealSwitch = this.settingsPanel.getByRole("switch", { name: "Auto-reveal cards" });
 
     // Theme buttons
     this.themeButtons = {

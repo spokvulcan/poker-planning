@@ -33,7 +33,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { SidePanel } from "@/components/ui/side-panel";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ParticipantsSection } from "@/components/room/participants-section";
@@ -163,21 +162,20 @@ function ColumnRow({
 interface RetroSettingsPanelProps {
   roomData: RoomWithRelatedData;
   currentUserId: Id<"users">;
-  isOpen: boolean;
   onClose: () => void;
   onCopySummary: () => void;
 }
 
 /**
- * The retro's settings, docked like the poker room's: name, columns, votes,
- * whether stickies show their author, theme, permissions, the roster, and
- * deleting the retro. Memoized: the board re-renders on every drag frame,
- * and the panel stays mounted while closed.
+ * The retro's settings, docked by the board's chrome like the poker room's,
+ * which mounts them only while they are open: name, columns, votes, whether
+ * stickies show their author, theme, permissions, the roster, and deleting
+ * the retro. Memoized: the board re-renders as a sticky is drafted or
+ * edited, which changes nothing here.
  */
 export const RetroSettingsPanel = memo(function RetroSettingsPanel({
   roomData,
   currentUserId,
-  isOpen,
   onClose,
   onCopySummary,
 }: RetroSettingsPanelProps): ReactElement {
@@ -185,7 +183,8 @@ export const RetroSettingsPanel = memo(function RetroSettingsPanel({
   const { room } = roomData;
   const retro = room.retro!;
   const perms = useRetroPermissions(roomData, currentUserId);
-  const board = useQuery(api.retro.board, isOpen ? { roomId: room._id } : "skip");
+  // Each column's sticky count; the board holds the same subscription.
+  const board = useQuery(api.retro.board, { roomId: room._id });
   const rename = useMutation(api.retro.rename);
   const updateSettings = useMutation(api.retro.updateSettings);
   const updatePermissions = useMutation(api.retro.updatePermissions);
@@ -215,7 +214,6 @@ export const RetroSettingsPanel = memo(function RetroSettingsPanel({
 
   return (
     <>
-      <SidePanel isOpen={isOpen} onClose={onClose} data-testid="retro-settings-panel">
         <div className="flex h-14 shrink-0 items-center justify-between border-b border-gray-200/50 bg-white px-6 dark:border-border dark:bg-surface-1">
           <div className="flex items-center gap-2.5">
             <Settings className="size-5 text-gray-600 dark:text-gray-400" />
@@ -361,7 +359,7 @@ export const RetroSettingsPanel = memo(function RetroSettingsPanel({
               />
             </Accordion>
 
-            <ParticipantsSection roomId={room._id} currentUserId={currentUserId} perms={perms} isOpen={isOpen} />
+            <ParticipantsSection roomId={room._id} currentUserId={currentUserId} perms={perms} />
 
             {/* Keeping it */}
             <div className="space-y-3 border-t border-gray-200/50 pt-6 dark:border-border">
@@ -386,7 +384,6 @@ export const RetroSettingsPanel = memo(function RetroSettingsPanel({
             </div>
           </div>
         </div>
-      </SidePanel>
 
       <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
         <AlertDialogContent size="sm">

@@ -5,8 +5,11 @@ import {
   assertEncryptedTokenFields,
 } from "./tokenVault";
 import * as Rooms from "./rooms";
+import * as EstimatePush from "./estimatePush";
+import { refusal } from "./refusal";
 import { getProviderHandler } from "../integrations/registry";
 import type { UserRows } from "./userRows";
+import { autoPushProblem } from "../autoPush";
 
 /**
  * The integrations model: the one owner of the db-side invariants for
@@ -197,19 +200,24 @@ export interface RoomMappingArgs {
  * chokepoint (Rooms.updateRoomActivity) like every other user-initiated
  * mutation. Then hands the row as it was and as it is to the provider's
  * webhook reconcile, which registers, replaces or removes the mapping's
- * webhook to match.
+ * webhook to match, and to the estimate push, whose last outcome goes when
+ * what decides a push changed. A mapping that pushes estimates names the field
+ * they are written to, or it is refused: one without would push nothing on
+ * every reveal.
  */
 export async function saveRoomMapping(
   ctx: MutationCtx,
   args: RoomMappingArgs
 ): Promise<Id<"integrationMappings">> {
+  const problem = autoPushProblem(args);
+  if (problem) throw refusal("forbidden", problem);
   const fields = {
     connectionId: args.connectionId,
     provider: args.provider,
     jiraProjectKey: args.projectKey,
     jiraBoardId: args.boardId,
     jiraSprintId: args.sprintId,
-    storyPointsFieldId: args.storyPointsFieldId,
+    storyPointsFieldId: args.storyPointsFieldId?.trim() || undefined,
     autoImport: args.autoImport,
     autoPushEstimates: args.autoPushEstimates,
   };
@@ -239,6 +247,7 @@ export async function saveRoomMapping(
     before: existing,
     after,
   });
+  await EstimatePush.mappingSaved(ctx, existing, after);
   return mappingId;
 }
 

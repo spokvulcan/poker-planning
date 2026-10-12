@@ -1,10 +1,10 @@
 /// <reference types="vite/client" />
 /**
- * The token-refresh sweep (cron refresh-oauth-tokens) and its
- * provider-parameterized expiring-connections query. The sweep iterates the
- * provider registry; refresh itself fails closed here (seed tokens never
- * decrypt) and must neither throw nor touch other connections — the success
- * path is covered with injected deps in integrations/jiraAuth.test.ts.
+ * The token-refresh sweep's provider-parameterized expiring-connections
+ * query. The sweep itself (cron refresh-oauth-tokens), which iterates the
+ * provider registry, runs end to end against the in-memory Jira in
+ * jiraActions.test.ts: a refreshed connection keeps its new pair as vault
+ * ciphertext, and one Atlassian refuses stops none of the rest.
  */
 import { convexTest, type TestConvex } from "convex-test";
 import { describe, it, expect } from "vitest";
@@ -67,25 +67,5 @@ describe("getExpiringConnections", () => {
     );
     expect(githubExpiring).toHaveLength(1);
     expect(githubExpiring[0].provider).toBe("github");
-  });
-});
-
-describe("refreshExpiringTokens", () => {
-  it("sweeps expiring connections through the registry and fails closed per connection", async () => {
-    const t = convexTest(schema, modules);
-    const userId = await seedUser(t, "auth-u");
-    const expiring = await seedConnection(t, userId, "jira", Date.now() - 1_000);
-    const fresh = await seedConnection(t, userId, "jira", Date.now() + 7_200_000);
-
-    // Refresh of the expiring connection fails (seed tokens don't decrypt) —
-    // the sweep logs and continues rather than failing the cron run.
-    await t.action(internal.integrations.tokenRefresh.refreshExpiringTokens, {});
-
-    // Nothing was persisted: the failed refresh wrote no tokens, and the
-    // fresh connection was never touched.
-    const expiringAfter = await t.run((ctx) => ctx.db.get("integrationConnections", expiring));
-    const freshAfter = await t.run((ctx) => ctx.db.get("integrationConnections", fresh));
-    expect(expiringAfter?.encryptedAccessToken).toBe("enc-access");
-    expect(freshAfter?.encryptedAccessToken).toBe("enc-access");
   });
 });

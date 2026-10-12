@@ -2,6 +2,7 @@
 import { convexTest } from "convex-test";
 import { describe, it, expect } from "vitest";
 import schema from "./schema";
+import { api } from "./_generated/api";
 import { getCaller, requireCaller, requireUser } from "./model/caller";
 import { seedUser } from "./analytics.seeds";
 
@@ -57,6 +58,57 @@ describe("the caller", () => {
     expect(guest?.user).toBeNull();
 
     expect(await t.action((ctx) => getCaller(ctx))).toBeNull();
+  });
+});
+
+describe("what the person signed in is shown of themselves (users.getViewer)", () => {
+  it("is nothing when no one is signed in", async () => {
+    const t = convexTest(schema, modules);
+
+    expect(await t.query(api.users.getViewer, {})).toBeNull();
+  });
+
+  it("is a guest with no name, avatar or email until a users row is made, whatever their token calls them", async () => {
+    const t = convexTest(schema, modules);
+
+    expect(
+      await t.withIdentity({ subject: "auth-guest", isAnonymous: true, name: "Anonymous" }).query(api.users.getViewer, {})
+    ).toEqual({ name: null, avatarUrl: null, email: null, isPermanent: false });
+  });
+
+  it("is a guest by the token's word, with their row's name", async () => {
+    const t = convexTest(schema, modules);
+    await seedUser(t, "auth-guest", "Guest 4829", "anonymous");
+
+    expect(await t.withIdentity({ subject: "auth-guest", isAnonymous: true }).query(api.users.getViewer, {})).toEqual({
+      name: "Guest 4829",
+      avatarUrl: null,
+      email: null,
+      isPermanent: false,
+    });
+  });
+
+  it("is a permanent account by the token's word, named by it while the account has no users row", async () => {
+    const t = convexTest(schema, modules);
+    // A deleted account that signed back in: BetterAuth kept its user, the row went.
+    const ada = t.withIdentity({ subject: "auth-ada", isAnonymous: false, name: "Ada Lovelace", email: "ada@example.com" });
+
+    expect(await ada.query(api.users.getViewer, {})).toEqual({
+      name: "Ada Lovelace",
+      avatarUrl: null,
+      email: "ada@example.com",
+      isPermanent: true,
+    });
+  });
+
+  it("takes the row's kind when the token doesn't say", async () => {
+    const t = convexTest(schema, modules);
+    await seedUser(t, "auth-ada", "Ada", "permanent");
+
+    expect(await t.withIdentity({ subject: "auth-ada" }).query(api.users.getViewer, {})).toMatchObject({
+      name: "Ada",
+      isPermanent: true,
+    });
   });
 });
 

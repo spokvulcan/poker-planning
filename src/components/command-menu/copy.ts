@@ -44,14 +44,6 @@ export const START = [
   { id: "demo", label: "Try the demo", href: "/demo", hint: "/demo", keywords: ["example", "preview"] },
 ] as const satisfies readonly MenuLink[];
 
-/** The signed-in person's dashboard, as its sidebar names it. */
-export const DASHBOARD = [
-  { id: "overview", label: "Dashboard", href: "/dashboard", hint: "Overview", keywords: ["stats"] },
-  { id: "sessions", label: "Your planning poker rooms", href: "/dashboard/sessions", keywords: ["estimates", "history"] },
-  { id: "retros", label: "Your retros", href: "/dashboard/retros", keywords: ["action items"] },
-  { id: "settings", label: "Settings", href: "/dashboard/settings", keywords: ["account", "integrations", "jira"] },
-] as const satisfies readonly MenuLink[];
-
 export const PAGES = [
   { id: "home", label: "Home", href: "/", hint: "/" },
   { id: "features", label: "Features", href: "/features", hint: "/features" },
@@ -64,7 +56,11 @@ export const PAGES = [
   { id: "refund", label: "Refund Policy", href: "/refund-policy", hint: "/refund-policy", searchOnly: true },
 ] as const satisfies readonly MenuLink[];
 
-/** For someone with no session yet, not even a guest's; the href gains `?from=` the page they are on. */
+/**
+ * Sign in, for anyone without a permanent account. Its href is the account
+ * entries' (components/auth/account.ts), coming back to the page they are on;
+ * the signed-in person's places and the themes are theirs too.
+ */
 export const SIGN_IN = {
   id: "sign-in",
   label: "Sign in",
@@ -72,9 +68,3 @@ export const SIGN_IN = {
   keywords: ["log in", "account"],
   searchOnly: true,
 } as const satisfies MenuLink;
-
-export const THEMES = [
-  { id: "light", label: "Light", keywords: ["theme", "light mode"] },
-  { id: "dark", label: "Dark", keywords: ["theme", "dark mode"] },
-  { id: "system", label: "System", keywords: ["theme", "auto"] },
-] as const;

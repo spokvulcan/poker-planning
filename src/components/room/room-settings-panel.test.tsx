@@ -51,9 +51,6 @@ vi.mock("next/link", () => ({
   default: ({ children }: { children: ReactNode }) => <a>{children}</a>,
 }));
 
-// Desktop branch of SidePanel — jsdom has no matchMedia.
-vi.mock("@/hooks/use-mobile", () => ({ useIsMobile: () => false }));
-
 vi.mock("@/lib/toast", () => ({
   toast: { success: () => {}, error: (message: string) => mocks.errors.push(message) },
 }));
@@ -131,7 +128,6 @@ function renderPanel(actorRole: MemberRole) {
     <RoomSettingsPanel
       roomData={roomDataFor(actorRole)}
       currentUserId={ME}
-      isOpen={true}
       onClose={() => {}}
       timeNodes={{ timer: true, sessionTime: false }}
       onSetTimeNodeShown={() => {}}

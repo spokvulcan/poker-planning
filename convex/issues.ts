@@ -5,21 +5,40 @@ import * as VotingRound from "./model/votingRound";
 import { requireRoomReader, requireRoomWrite } from "./model/auth";
 
 /**
- * List all issues for a room, ordered by their order field
+ * The room's issues, in their order. Room contents: readers only (ADR-0009).
  */
 export const list = query({
   args: { roomId: v.id("rooms") },
   handler: async (ctx, args) => {
+    await requireRoomReader(ctx, args.roomId);
     return await Issues.listIssues(ctx, args.roomId);
   },
 });
 
 /**
- * Get the current issue being voted on
+ * One of the room's issues, for a browser that knows which: the poker board
+ * names the one its copy of the room says is being voted on. It reads the
+ * issue alone, so a patch of the room's row, which every vote makes, doesn't
+ * re-run it for everyone in the room. Null once the issue is gone, or for an
+ * issue of another room. Readers only (ADR-0009).
+ */
+export const get = query({
+  args: { roomId: v.id("rooms"), issueId: v.id("issues") },
+  handler: async (ctx, args) => {
+    await requireRoomReader(ctx, args.roomId);
+    return await Issues.getIssueOfRoom(ctx, args.roomId, args.issueId);
+  },
+});
+
+/**
+ * The issue the room is voting on, as the room's row says: browsers from
+ * before `get` subscribe to it. It reads the room's row, so every patch of it
+ * re-runs this. Readers only (ADR-0009).
  */
 export const getCurrent = query({
   args: { roomId: v.id("rooms") },
   handler: async (ctx, args) => {
+    await requireRoomReader(ctx, args.roomId);
     return await Issues.getCurrentIssue(ctx, args.roomId);
   },
 });

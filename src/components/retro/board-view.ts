@@ -19,17 +19,23 @@ import type { ActionItemView, BoardView, RetroState, StickyView } from "@/convex
 import { edited, ownedBy } from "@/convex/retroFields";
 import { ACTION_ITEM_TEXT, STICKY_TEXT, type RetroColumn, type RetroStep } from "@/convex/retroTemplates";
 import * as Topics from "@/convex/retroTopics";
-import { discussionOrder, stepShows, walk, withSpotlight } from "@/convex/retroSteps";
+import { discussionOrder, stepShows, walked } from "@/convex/retroSteps";
 import { stickyView, type RetroViewer, type StickyRow } from "@/convex/retroStickyView";
 import { optimisticId } from "@/lib/optimistic-id";
 import type { RetroMember } from "./types";
 
 type StickyId = Id<"retroStickies">;
 
-/** The discussion's order of topics, from the totals the board carries from Discuss on. */
-export function topicOrder(board: BoardView | undefined, columns: readonly RetroColumn[]): StickyId[] {
-  if (!board) return [];
-  const totals = new Map(board.stickies.map((s) => [s._id as string, s.votes ?? 0]));
+/**
+ * The discussion's order of topics, from the totals the board carries from
+ * Discuss on. Null while it carries none, before Discuss or for a board read
+ * in Vote that a step change has just moved on from: the order is the
+ * server's to work out then, not a guess from no votes.
+ */
+export function topicOrder(board: BoardView | undefined, columns: readonly RetroColumn[]): StickyId[] | null {
+  const topics = board?.stickies.filter((s) => !s.stackId);
+  if (!board || !topics || topics.some((s) => s.votes === undefined)) return null;
+  const totals = new Map(topics.map((s) => [s._id as string, s.votes ?? 0]));
   return discussionOrder(board.stickies, totals, columns);
 }
 
@@ -152,9 +158,10 @@ export function applyVoteToggle(seen: VotesView, stickyId: StickyId, budget: num
   };
 }
 
-/** The discussion one topic on or back, on the state a browser sees. */
+/** The discussion one topic on or back, on the state a browser sees; left to the server while the order isn't known. */
 export function applyWalk(retro: RetroState, board: BoardView, direction: "next" | "previous"): RetroState {
-  return withSpotlight(retro, walk(topicOrder(board, retro.columns), retro.focusStickyId, direction));
+  const order = topicOrder(board, retro.columns);
+  return order ? walked(retro, order, direction) : retro;
 }
 
 /** An action item as its add sends it, when, and a key the client made for it. */

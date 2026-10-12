@@ -5,21 +5,24 @@ import { api, internal } from "./_generated/api";
 import schema from "./schema";
 import type { Id } from "./_generated/dataModel";
 import * as Integrations from "./model/integrations";
+import { inMemoryJira } from "./integrations/jira.setup";
 
 const modules = import.meta.glob("./**/*.*s");
 
 type T = TestConvex<typeof schema>;
 
 // convex-test dispatches runAfter(0) jobs through a real setTimeout, which
-// can fire mid-test — racing the _scheduled_functions assertions and running
-// Jira actions that need env vars. Faking setTimeout keeps scheduled jobs
-// pending for the duration of each test.
+// can fire mid-test, racing the _scheduled_functions assertions. Faking
+// setTimeout keeps scheduled jobs pending until a test runs them.
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ["setTimeout"] });
 });
 
 afterEach(() => {
   vi.useRealTimers();
+  // The in-memory Jira, where a test stood one up.
+  vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
 });
 
 async function seedRoom(t: T): Promise<Id<"rooms">> {
@@ -255,27 +258,6 @@ describe("disconnect", () => {
     expect(await scheduledByName(t, ":deregisterWebhook")).toHaveLength(0);
   });
 
-  it("finalizeDisconnect deletes the connection row only after the deregistrations had their turn", async () => {
-    const t = convexTest(schema, modules);
-    const userId = await seedUser(t, "auth-u");
-    const connectionId = await seedConnection(t, userId);
-    const roomId = await seedRoom(t);
-    await seedMapping(t, roomId, connectionId, { jiraWebhookId: "wh-a" });
-
-    const asU = t.withIdentity({ subject: "auth-u" });
-    await asU.mutation(api.integrations.disconnect, { connectionId });
-    expect(await countRows(t, "integrationConnections")).toBe(1);
-
-    // Run the scheduled tail. Deregistration fails closed in the test env
-    // (seed tokens don't decrypt), is logged, and the row delete still
-    // lands — the leak is tracked, never silent, and never blocks disconnect.
-    await t.action(internal.integrations.jira.finalizeDisconnect, {
-      connectionId,
-      webhookIds: ["wh-a"],
-    });
-    expect(await countRows(t, "integrationConnections")).toBe(0);
-  });
-
   it("deletes the connection directly when no webhook is live", async () => {
     const t = convexTest(schema, modules);
     const userId = await seedUser(t, "auth-u");
@@ -294,110 +276,9 @@ describe("disconnect", () => {
   });
 });
 
-describe("deregisterWebhook", () => {
-  it("schedules one bounded retry on failure, then stops", async () => {
-    const t = convexTest(schema, modules);
-    const userId = await seedUser(t, "auth-u");
-    const connectionId = await seedConnection(t, userId);
-
-    // Deregistration fails in the test env (seed tokens don't decrypt)…
-    await t.action(internal.integrations.jira.deregisterWebhook, {
-      connectionId,
-      webhookId: "wh-x",
-    });
-
-    // …so exactly one retry is pending, disarmed (attemptsLeft: 0).
-    const retries = await scheduledByName(t, ":deregisterWebhook");
-    expect(retries).toHaveLength(1);
-    expect(
-      (retries[0].args as [{ attemptsLeft: number }])[0].attemptsLeft
-    ).toBe(0);
-
-    // The disarmed retry does not chain another retry.
-    await t.action(internal.integrations.jira.deregisterWebhook, {
-      connectionId,
-      webhookId: "wh-x",
-      attemptsLeft: 0,
-    });
-    expect(await scheduledByName(t, ":deregisterWebhook")).toHaveLength(1);
-  });
-
-  it("does nothing when the connection is already gone", async () => {
-    const t = convexTest(schema, modules);
-    const userId = await seedUser(t, "auth-u");
-    const connectionId = await seedConnection(t, userId);
-    await t.run((ctx) => ctx.db.delete("integrationConnections", connectionId));
-
-    await t.action(internal.integrations.jira.deregisterWebhook, {
-      connectionId,
-      webhookId: "wh-x",
-    });
-
-    expect(await scheduledByName(t, ":deregisterWebhook")).toHaveLength(0);
-  });
-});
-
-describe("registerWebhook", () => {
-  afterEach(() => {
-    vi.unstubAllEnvs();
-  });
-
-  async function seedMember(t: T, roomId: Id<"rooms">, userId: Id<"users">): Promise<void> {
-    await t.run((ctx) =>
-      ctx.db.insert("roomMemberships", { roomId, userId, isSpectator: false, joinedAt: Date.now() })
-    );
-  }
-
-  it("records a failed registration on the mapping, where the room's settings read it", async () => {
-    const t = convexTest(schema, modules);
-    const userId = await seedUser(t, "auth-u");
-    const connectionId = await seedConnection(t, userId);
-    const roomId = await seedRoom(t);
-    await seedMember(t, roomId, userId);
-    const mappingId = await seedMapping(t, roomId, connectionId);
-
-    // No JIRA_WEBHOOK_SECRET is configured in the test env.
-    await t.action(internal.integrations.jira.registerWebhook, { mappingId });
-
-    const shown = await t
-      .withIdentity({ subject: "auth-u" })
-      .query(api.integrations.getRoomMapping, { roomId });
-    expect(shown?.jiraWebhookFailure).toBe("missingSecret");
-    expect(shown?.jiraWebhookId).toBeUndefined();
-  });
-
-  it("records Jira refusing the webhook", async () => {
-    vi.stubEnv("JIRA_WEBHOOK_SECRET", "s3cret");
-    const t = convexTest(schema, modules);
-    const connectionId = await seedConnection(t, await seedUser(t, "auth-u"));
-    const mappingId = await seedMapping(t, await seedRoom(t), connectionId);
-
-    // The seed tokens never decrypt, so no Jira client can be built.
-    await t.action(internal.integrations.jira.registerWebhook, { mappingId });
-
-    const mapping = await t.run((ctx) => ctx.db.get("integrationMappings", mappingId));
-    expect(mapping?.jiraWebhookFailure).toBe("jiraError");
-  });
-
-  it("deletes the webhook it replaces with the connection that made it", async () => {
-    const t = convexTest(schema, modules);
-    const first = await seedConnection(t, await seedUser(t, "auth-a"));
-    const second = await seedConnection(t, await seedUser(t, "auth-b"));
-    const mappingId = await seedMapping(t, await seedRoom(t), second);
-
-    await t.action(internal.integrations.jira.registerWebhook, {
-      mappingId,
-      replacing: { connectionId: first, webhookId: "wh-first" },
-    });
-
-    // The delete fails in the test env (seed tokens don't decrypt), so the
-    // one retry shows which connection it authenticates with.
-    const retries = await scheduledByName(t, ":deregisterWebhook");
-    expect(retries.map((job) => job.args[0])).toEqual([
-      { connectionId: first, webhookId: "wh-first", attemptsLeft: 0 },
-    ]);
-  });
-
+// The webhook actions themselves (registering, replacing, deregistering, the
+// disconnect tail) run against the in-memory Jira in jiraActions.test.ts.
+describe("recordWebhookRegistration (where a registration lands)", () => {
   it("removes a webhook that lands after auto-push was turned off, and records nothing", async () => {
     const t = convexTest(schema, modules);
     const connectionId = await seedConnection(t, await seedUser(t, "auth-u"));
@@ -570,6 +451,7 @@ describe("saveRoomMapping", () => {
         connectionId,
         provider: "jira",
         projectKey: "PROJ",
+        storyPointsFieldId: "customfield_10002",
         autoImport: false,
         autoPushEstimates: true,
       })
@@ -638,6 +520,7 @@ describe("saveRoomMapping", () => {
         connectionId: second,
         provider: "jira",
         projectKey: "PROJ",
+        storyPointsFieldId: "customfield_10016",
         autoImport: false,
         autoPushEstimates: true,
       })
@@ -670,6 +553,7 @@ describe("saveRoomMapping", () => {
         connectionId,
         provider: "jira",
         projectKey: "PROJ",
+        storyPointsFieldId: "customfield_10016",
         autoImport: false,
         autoPushEstimates: true,
       })
@@ -905,9 +789,15 @@ describe("disconnectOrphanedConnections migration", () => {
 
   it("disconnects connections whose user is gone, leaves the rest, and finds nothing on a second run", async () => {
     const t = convexTest(schema, modules);
+    // The orphan's tail deletes its webhook in Jira, as the orphaned connection.
+    const jira = inMemoryJira();
+    const team = jira.site("team");
+    team.webhooks.set("wh-orphan", { url: "x", jqlFilter: "project = PROJ", events: [] });
     const liveConnectionId = await seedConnection(t, await seedUser(t, "auth-live"));
     await seedMapping(t, await seedRoom(t), liveConnectionId, { jiraWebhookId: "wh-live" });
-    const hookedOrphanId = await seedOrphan(t, "auth-gone-1");
+    const orphanedUser = await seedUser(t, "auth-gone-1");
+    const hookedOrphanId = await jira.connect(t, orphanedUser, team);
+    await t.run((ctx) => ctx.db.delete("users", orphanedUser));
     await seedMapping(t, await seedRoom(t), hookedOrphanId, { jiraWebhookId: "wh-orphan" });
     const bareOrphanId = await seedOrphan(t, "auth-gone-2");
 
@@ -926,6 +816,7 @@ describe("disconnectOrphanedConnections migration", () => {
       { connectionId: hookedOrphanId, webhookIds: ["wh-orphan"] },
     ]);
     await t.finishAllScheduledFunctions(vi.runAllTimers);
+    expect(team.webhooks.has("wh-orphan")).toBe(false);
     expect(await getConnection(t, hookedOrphanId)).toBeNull();
     expect(await getConnection(t, liveConnectionId)).not.toBeNull();
 

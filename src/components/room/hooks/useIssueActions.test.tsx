@@ -13,20 +13,12 @@ import { createElement, type ReactNode } from "react";
 import { renderHook, act } from "@testing-library/react";
 import type { Id } from "@/convex/_generated/dataModel";
 
-// Hoisted recorder shared with the (hoisted) vi.mock factory below. Every
-// useMutation returns a recording function, so any backend write is observable.
-const writes = vi.hoisted(() => ({
-  calls: [] as { args: unknown }[],
-}));
+// Convex as the whiteboard's test stand-in: every write is recorded.
+vi.mock("convex/react", async (importOriginal) =>
+  (await import("@/components/whiteboard/testing/convex")).mockConvexReact(await importOriginal<object>())
+);
 
-vi.mock("convex/react", () => ({
-  useMutation: () => (args: unknown) => {
-    writes.calls.push({ args });
-    return Promise.resolve(undefined);
-  },
-  useQuery: () => undefined,
-}));
-
+import { convex, resetConvex } from "@/components/whiteboard/testing/convex";
 import { DemoSimulationProvider } from "../demo/DemoSimulationProvider";
 import { useIssueActions } from "./useIssueActions";
 
@@ -44,9 +36,7 @@ function invokeAll(actions: ReturnType<typeof useIssueActions>) {
   actions.reorderIssues([ISSUE_ID]);
 }
 
-beforeEach(() => {
-  writes.calls = [];
-});
+beforeEach(resetConvex);
 
 describe("useIssueActions — demo no-op", () => {
   it("issues zero backend writes for every method under a demo context", async () => {
@@ -61,7 +51,7 @@ describe("useIssueActions — demo no-op", () => {
       invokeAll(result.current);
     });
 
-    expect(writes.calls).toEqual([]);
+    expect(convex.writes).toEqual([]);
   });
 });
 
@@ -96,8 +86,8 @@ describe("useIssueActions — real mode pass-through", () => {
     rerender({ roomId: "room-2" as Id<"rooms"> });
     await act(async () => result.current.startVoting(ISSUE_ID));
 
-    expect(writes.calls).toHaveLength(1);
-    expect(writes.calls[0].args).toMatchObject({
+    expect(convex.writes).toHaveLength(1);
+    expect(convex.writes[0].args).toMatchObject({
       roomId: "room-2",
       issueId: ISSUE_ID,
     });

@@ -20,7 +20,6 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/components/ui/accordion";
-import { SidePanel } from "@/components/ui/side-panel";
 import { toast } from "@/lib/toast";
 import { runAct } from "@/lib/run-act";
 import { useLiveText } from "@/hooks/use-live-text";
@@ -46,7 +45,6 @@ import { useIsDemoMode } from "./demo/DemoSimulationProvider";
 interface RoomSettingsPanelProps {
   roomData: RoomWithRelatedData;
   currentUserId?: Id<"users">;
-  isOpen: boolean;
   onClose: () => void;
   /** Which time nodes the board shows (ADR-0032). */
   timeNodes: TimeNodesShown;
@@ -67,10 +65,14 @@ const PERMISSION_CONFIG: Record<PokerPermissionCategory, { label: string; descri
   roomSettings: { label: "Room settings", description: "Rename room, toggle auto-reveal" },
 };
 
+/**
+ * The poker room's settings, docked by the board's chrome, which mounts them
+ * only while they are open: nothing here re-renders on a vote while they are
+ * closed, and the integration section's queries run only while they show.
+ */
 export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
   roomData,
   currentUserId,
-  isOpen,
   onClose,
   timeNodes,
   onSetTimeNodeShown,
@@ -114,7 +116,6 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
 
   return (
     <>
-    <SidePanel isOpen={isOpen} onClose={onClose} data-testid="room-settings-panel">
         {/* Header */}
         <div className="flex items-center justify-between px-6 h-14 border-b border-gray-200/50 dark:border-border shrink-0 bg-white dark:bg-surface-1">
           <div className="flex items-center gap-2.5">
@@ -267,10 +268,7 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
                     </div>
                   </AccordionTrigger>
                   <AccordionContent className="pb-4 pt-1">
-                    {/* Mounts only while the panel is open (in addition to the
-                        accordion's own collapsed-state unmount), so its
-                        integration queries detach when the panel closes. */}
-                    {isOpen && <IntegrationSettingsSection roomId={roomData.room._id} />}
+                    <IntegrationSettingsSection roomId={roomData.room._id} />
                   </AccordionContent>
                 </AccordionItem>
                 )}
@@ -281,7 +279,6 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
               roomId={roomData.room._id}
               currentUserId={currentUserId}
               perms={perms}
-              isOpen={isOpen}
             />
             
             {/* Demo CTA */}
@@ -297,8 +294,6 @@ export const RoomSettingsPanel: FC<RoomSettingsPanelProps> = ({
             )}
           </div>
         </div>
-    </SidePanel>
-
     </>
   );
 };

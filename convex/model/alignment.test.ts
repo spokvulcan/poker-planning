@@ -78,6 +78,20 @@ describe("computeVoterAlignment", () => {
     expect(rows[0].deltaSteps).toBeUndefined();
   });
 
+  it("counts steps by number, lowest to highest, whatever order a creator's deck lays its cards in", () => {
+    // Descending, with `?` among the numbers: the same steps as "1, 2, 3, 5, 8".
+    const ownDeck = deckOf({ cards: ["8", "5", "?", "3", "2", "1"], isNumeric: true });
+    const rows = computeVoterAlignment(
+      [
+        { userId: u("a"), cardLabel: "8" },
+        { userId: u("b"), cardLabel: "2" },
+      ],
+      "3",
+      ownDeck
+    );
+    expect(rows.map((row) => row.deltaSteps)).toEqual([2, -1]);
+  });
+
   it("skips deltaSteps when a card is off the scale (deck changed mid-issue)", () => {
     const rows = computeVoterAlignment(
       [{ userId: u("a"), cardLabel: "100" }], // not in the fibonacci deck

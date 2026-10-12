@@ -1,11 +1,10 @@
 "use client";
 
-import { useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { EMPTY_DASHBOARD } from "@/convex/analyticsMath";
 import { useAuth } from "@/components/auth/auth-provider";
+import { useCallerQuery } from "@/components/auth/use-caller-query";
+import { place } from "@/components/auth/account";
 import {
   DashboardHeader,
   StatsSummary,
@@ -35,23 +34,13 @@ function LoadingState() {
 }
 
 export function DashboardContent() {
-  const router = useRouter();
-  const { isLoading: authLoading, isAuthenticated } = useAuth();
+  const { viewer } = useAuth();
   const { dateRange } = useDateRange();
 
   // One read behind every panel: the viewer's history is loaded once.
-  const dashboard = useQuery(
-    api.analytics.getDashboard,
-    isAuthenticated ? { dateRange } : "skip"
-  );
+  const dashboard = useCallerQuery(api.analytics.getDashboard, { dateRange });
 
-  useEffect(() => {
-    if (!authLoading && !isAuthenticated) {
-      router.replace("/auth/signin?from=/dashboard");
-    }
-  }, [authLoading, isAuthenticated, router]);
-
-  if (authLoading || !isAuthenticated) {
+  if (viewer.status !== "signedIn") {
     return <LoadingState />;
   }
 
@@ -70,7 +59,7 @@ export function DashboardContent() {
 
   return (
     <>
-      <DashboardHeader title="Overview" />
+      <DashboardHeader title={place("dashboard").label} />
       <main className="flex-1 p-6">
         <DashboardBanner />
         {/* Stats Summary & Time to Consensus */}

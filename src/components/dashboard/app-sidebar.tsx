@@ -3,15 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
-import {
-  LayoutDashboard,
-  History,
-  MessagesSquare,
-  Settings,
-  HelpCircle,
-  Home,
-  Search,
-} from "lucide-react";
+import { HelpCircle, Home, Search, type LucideIcon } from "lucide-react";
 
 import {
   Sidebar,
@@ -27,31 +19,21 @@ import {
 } from "@/components/ui/sidebar";
 import { CommandMenuShortcut, useOpenCommandMenu } from "@/components/command-menu/command-menu";
 import { COMMAND_MENU } from "@/components/command-menu/copy";
+import { place, PLACE_ICONS } from "@/components/auth/account";
 import { NavUser } from "./nav-user";
 
-const navMain = [
-  {
-    title: "Overview",
-    url: "/dashboard",
-    icon: LayoutDashboard,
-  },
-  {
-    title: "Planning poker",
-    url: "/dashboard/sessions",
-    icon: History,
-  },
-  {
-    title: "Retros",
-    url: "/dashboard/retros",
-    icon: MessagesSquare,
-  },
-];
+// The account's places (components/auth/account.ts), as every menu names them
+const navMain = (["dashboard", "sessions", "retros"] as const).map((id) => ({
+  title: place(id).label,
+  url: place(id).href,
+  icon: PLACE_ICONS[id],
+}));
 
-const navSecondary: { title: string; url: string; icon: typeof Settings; external?: boolean }[] = [
+const navSecondary: { title: string; url: string; icon: LucideIcon; external?: boolean }[] = [
   {
-    title: "Settings",
-    url: "/dashboard/settings",
-    icon: Settings,
+    title: place("settings").label,
+    url: place("settings").href,
+    icon: PLACE_ICONS.settings,
   },
   {
     title: "Help",

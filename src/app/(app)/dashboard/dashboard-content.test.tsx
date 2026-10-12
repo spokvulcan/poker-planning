@@ -5,7 +5,7 @@
  * skeletons and no number at all.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, cleanup, within } from "@testing-library/react";
+import { act, render, screen, cleanup, fireEvent, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 
 const spy = vi.hoisted(() => ({
@@ -27,11 +27,10 @@ vi.mock("next/link", () => ({
 }));
 
 vi.mock("@/components/auth/auth-provider", () => ({
-  useAuth: () => ({ isLoading: false, isAuthenticated: true }),
+  useAuth: () => ({
+    viewer: { status: "signedIn", name: "Ada", avatarUrl: null, email: null, isPermanent: true, confirmed: true },
+  }),
 }));
-
-// The sidebar's desktop branch: jsdom has no matchMedia.
-vi.mock("@/hooks/use-mobile", () => ({ useIsMobile: () => false }));
 
 import { getFunctionName } from "convex/server";
 import type { Dashboard } from "@/convex/analyticsMath";
@@ -111,15 +110,6 @@ function subscribedQueries(): string[] {
 beforeEach(() => {
   spy.queries = [];
   spy.result = undefined;
-  // Recharts measures its container; jsdom has no ResizeObserver.
-  vi.stubGlobal(
-    "ResizeObserver",
-    class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    }
-  );
 });
 
 afterEach(() => {
@@ -212,6 +202,26 @@ describe("DashboardContent", () => {
 
     expect(card("Agreement Trend").getByText("Trending down")).toBeTruthy();
     expect(card("Avg Time to Consensus").getByText("Slower")).toBeTruthy();
+  });
+
+  it("says what the agreement chart plots: the agreement each issue was settled at, not first votes", async () => {
+    spy.result = DASHBOARD;
+    renderOverview();
+    const help = screen
+      .getByText("Agreement Trend")
+      .closest("[data-slot=card]")
+      ?.querySelector("[data-slot=tooltip-trigger]") as Element;
+
+    await act(async () => {
+      fireEvent.mouseEnter(help);
+    });
+
+    expect(
+      await screen.findByText(
+        "The board's Agree figure for each issue: the share of votes on the most common card at the reveal that settled it, averaged by day."
+      )
+    ).toBeTruthy();
+    expect(screen.queryByText(/first vote/)).toBeNull();
   });
 
   it("shows skeletons and no numbers until the read lands", () => {

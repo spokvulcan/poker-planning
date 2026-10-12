@@ -25,20 +25,20 @@ export type WhenAuth = (ready: (state: AuthSnapshot) => boolean, timeoutMs: numb
 
 export type { SignedInViewer, Viewer } from "./viewer";
 
+/**
+ * What the auth provider hands out: who is looking, and the sign-in's waits.
+ * Convex's own auth state is the provider's to read: a page asks the viewer,
+ * and reads as them through useCallerQuery, which waits for Convex to confirm
+ * the session (the lint holds pages to this).
+ */
 interface AuthContextType {
-  // Auth loading state (from Convex - waits for token validation)
-  isLoading: boolean;
-  // Whether user is authenticated (from Convex - token validated)
-  isAuthenticated: boolean;
-  // Who is looking, with the name, avatar and kind of account their users row has
+  // Who is looking: their name, avatar, kind of account, and whether Convex has confirmed their session
   viewer: Viewer;
   // Waits for the auth state to reach a condition (see useEnsureSession)
   whenAuth: WhenAuth;
 }
 
 const AuthContext = createContext<AuthContextType>({
-  isLoading: true,
-  isAuthenticated: false,
   viewer: { status: "loading" },
   whenAuth: () => Promise.reject(new Error("No AuthProvider")),
 });
@@ -66,42 +66,30 @@ export function AuthProvider({
     waiters.update({ authUserId: authUserId ?? null, isSessionPending, isLoading: convexAuthLoading, isAuthenticated });
   }, [waiters, authUserId, isSessionPending, convexAuthLoading, isAuthenticated]);
 
-  // The caller's users row: the app's one subscription to it, read through the viewer
-  const globalUser = useQuery(
-    api.users.getGlobalUser,
-    isAuthenticated ? {} : "skip"
-  );
+  // Who is signed in, as Convex answers: the app's one subscription to it
+  const answer = useQuery(api.users.getViewer, isAuthenticated ? {} : "skip");
 
   const liveViewer = useMemo(
-    () => viewerOf(convexAuthLoading, isAuthenticated, globalUser),
-    [convexAuthLoading, isAuthenticated, globalUser],
+    () => viewerOf({ isLoading: convexAuthLoading, isAuthenticated }, answer),
+    [convexAuthLoading, isAuthenticated, answer],
   );
   // Until Convex first answers, the viewer the server saw stands in, so the
-  // first paint already draws who is looking. Once it has, Convex alone says,
-  // loading included while it checks a session that changed.
+  // first paint already draws who is looking; it is confirmed once Convex has
+  // authenticated the session, which may be before its answer is in. Once it
+  // has answered, Convex alone says, loading included while it checks a
+  // session that changed.
   const [hasAnswered, setHasAnswered] = useState(false);
   const answered = hasAnswered || liveViewer.status !== "loading";
   if (answered && !hasAnswered) setHasAnswered(true);
-  const viewer = answered ? liveViewer : (initialViewer ?? liveViewer);
+  const viewer = useMemo(() => {
+    if (answered || !initialViewer) return liveViewer;
+    return initialViewer.status === "signedIn" ? { ...initialViewer, confirmed: isAuthenticated } : initialViewer;
+  }, [answered, initialViewer, liveViewer, isAuthenticated]);
 
   // Memoize context value to prevent cascading re-renders in consumers
-  const value = useMemo(
-    () => ({
-      isLoading: convexAuthLoading,
-      isAuthenticated,
-      viewer,
-      whenAuth: waiters.when,
-    }),
-    [convexAuthLoading, isAuthenticated, viewer, waiters],
-  );
+  const value = useMemo(() => ({ viewer, whenAuth: waiters.when }), [viewer, waiters]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
-export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error("useAuth must be used within AuthProvider");
-  }
-  return context;
-};
+export const useAuth = (): AuthContextType => useContext(AuthContext);
