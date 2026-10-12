@@ -1,6 +1,6 @@
 # Each module lets go of what it keeps about a person
 
-**Status:** accepted, 2026-09-26.
+**Status:** accepted, 2026-09-26. Amended by [ADR-0033](0033-a-deleted-account-takes-its-sign-in-with-it.md): the lifecycle also deletes the sign-in a deleted account's row stood for, and a users row is made only while its token's session exists.
 
 An account ends in one of two ways: it is deleted (a guest's sign-out included), or a guest signs in and is folded into a permanent account. Both used to be long functions in `convex/model/users.ts` that wrote every table naming a user: memberships, votes, canvas nodes, retro stickies and votes, action items, analytics, presence and room ownership. Each new table was one more thing they had to know about, and they didn't always: an account's Jira connection outlived it, tokens and all. Every table's rule for merging lived there too, far from the table, and a sign-in could leave an owner without the owner role.
 

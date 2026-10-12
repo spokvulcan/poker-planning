@@ -1,3 +1,4 @@
+import { components } from "../_generated/api";
 import { MutationCtx } from "../_generated/server";
 import { Doc, Id } from "../_generated/dataModel";
 import { analyticsUserRows } from "./analytics";
@@ -16,8 +17,10 @@ import type { UserRows } from "./userRows";
  * and a guest signing in, which folds the guest into the account. Every
  * module that keeps rows about a person says how it lets go of them
  * (model/userRows.ts); this module walks them and owns only the `users` row
- * (ADR-0030). A module that starts keeping rows about people registers here,
- * and the completeness test (accountLifecycle.test.ts) fails until it does.
+ * (ADR-0030) and the sign-in the row stands for, which a deleted account
+ * takes with it (ADR-0033). A module that starts keeping rows about people
+ * registers here, and the completeness test (accountLifecycle.test.ts) fails
+ * until it does.
  */
 
 /**
@@ -43,14 +46,48 @@ export function userRows(): readonly UserRows[] {
 }
 
 /**
- * Deletes an account (a guest's sign-out included): each room it owns is
- * handed off (ADR-0029); it leaves every room, its votes and presence go,
- * its integrations disconnect; the stickies and action items it wrote stay
- * in their retros, unnamed.
+ * Deletes the caller's account (a guest's sign-out included): each room it
+ * owns is handed off (ADR-0029); it leaves every room, its votes and presence
+ * go, its integrations disconnect; the stickies and action items it wrote
+ * stay in their retros, unnamed. Then its sign-in goes (ADR-0033), whether or
+ * not the account had a users row yet.
  */
-export async function deleteAccount(ctx: MutationCtx, user: Doc<"users">): Promise<void> {
-  for (const rows of userRows()) await rows.forget(ctx, user._id);
-  await ctx.db.delete("users", user._id);
+export async function deleteAccount(ctx: MutationCtx, { identity, user }: Caller): Promise<void> {
+  if (user) {
+    for (const rows of userRows()) await rows.forget(ctx, user._id);
+    await ctx.db.delete("users", user._id);
+  }
+  await deleteSignIn(ctx, identity.subject);
+}
+
+/** Sessions or accounts deleted per call into BetterAuth's component. */
+const SIGN_IN_BATCH = 100;
+
+/**
+ * Deletes a person's sign-in from BetterAuth's tables, which live in this
+ * deployment (convex/auth.ts), taking what BetterAuth's own user deletion
+ * takes: every session, so no device stays signed in, every account, with
+ * the tokens a provider gave, then the user, with its email, name and image.
+ * Besides deleting an account, only the cleanup of the sign-ins deleted
+ * accounts left behind calls it (migrations.deleteLeftoverSignIns).
+ */
+export async function deleteSignIn(ctx: MutationCtx, authUserId: string): Promise<void> {
+  for (const model of ["session", "account"] as const) {
+    // Each call deletes what it reads, so the next starts from the front.
+    for (;;) {
+      const deleted: { isDone: boolean; count: number } = await ctx.runMutation(
+        components.betterAuth.adapter.deleteMany,
+        {
+          input: { model, where: [{ field: "userId", value: authUserId }] },
+          paginationOpts: { cursor: null, numItems: SIGN_IN_BATCH },
+        }
+      );
+      if (deleted.isDone || deleted.count === 0) break;
+    }
+  }
+  await ctx.runMutation(components.betterAuth.adapter.deleteOne, {
+    input: { model: "user", where: [{ field: "_id", value: authUserId }] },
+  });
 }
 
 /**
@@ -60,7 +97,7 @@ export async function deleteAccount(ctx: MutationCtx, user: Doc<"users">): Promi
  * browser believes about the session can delete a permanent account.
  */
 export async function signOut(ctx: MutationCtx, caller: Caller): Promise<void> {
-  if (isGuest(caller) && caller.user) await deleteAccount(ctx, caller.user);
+  if (isGuest(caller)) await deleteAccount(ctx, caller);
 }
 
 /**

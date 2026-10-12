@@ -120,13 +120,12 @@ export const editGlobalUser = mutation({
   },
 });
 
-// Delete account: deletes the caller's account, whatever its kind (the
-// Account tab). Older browsers also call it to sign a guest out.
+// Delete account: deletes the caller's account, whatever its kind, and its
+// sign-in (the Account tab). Older browsers also call it to sign a guest out.
 export const deleteUser = mutation({
   args: {},
   handler: async (ctx) => {
-    const { user } = await requireCaller(ctx);
-    if (user) await AccountLifecycle.deleteAccount(ctx, user);
+    await AccountLifecycle.deleteAccount(ctx, await requireCaller(ctx));
   },
 });
 

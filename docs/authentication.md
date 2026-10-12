@@ -43,8 +43,8 @@ The authentication system consists of three layers:
 | `convex/model/users.ts` | Identity: user rows, names, avatars; makes the caller's row on their first room write (`findOrMakeUser`) and is the only place a row turns permanent; joining and leaving a room |
 | `convex/model/memberships.ts` | Room attendance: the one writer of `roomMemberships` |
 | `convex/model/ownership.ts` | Who owns a room: creation, transfer, a returning owner, the hand-off |
-| `convex/model/accountLifecycle.ts` | Deleting an account and linking a guest to an account, through every module's `UserRows` |
-| `convex/model/caller.ts` | Who is calling: the one place the signed-in identity is read and the caller's `users` row looked up (`getCaller`, `requireCaller`, `requireUser`) |
+| `convex/model/accountLifecycle.ts` | Deleting an account and linking a guest to an account, through every module's `UserRows`; a deleted account's BetterAuth sign-in goes with it |
+| `convex/model/caller.ts` | Who is calling: the one place the signed-in identity is read and the caller's `users` row looked up (`getCaller`, `requireCaller`, `requireUser`), and whether the session behind it is gone (`sessionEnded`) |
 | `convex/model/auth.ts` | Auth guards: the room-scoped step (`requireRoomWrite`), the permission guard's one way in, and room access (`requireRoomReader`) |
 | `convex/email.ts` | Internal action that sends the Magic Link email via Resend (the only email AgileKit sends) |
 
@@ -110,6 +110,7 @@ One module answers who is calling. It is the only code that reads the signed-in 
 | `requireUser(ctx)` | `{ identity, user }` | You need the caller's `users` row. Throws "Not authenticated", or "User not found" while they have none |
 | `sessionAccountType(caller)` | `"anonymous" \| "permanent" \| undefined` | You need the kind of account the caller has (making their row does): their session's token says so in BetterAuth's `isAnonymous` claim, whatever kind their `users` row has; `undefined` for a token without the claim |
 | `isGuest(caller)` | `boolean` | You need to know whether the caller is a guest (signing out does): `sessionAccountType` is `"anonymous"` |
+| `sessionEnded(ctx, caller)` | `boolean` | You are about to make the caller something that outlives their session (their users row): whether the session their token names is gone from BetterAuth's tables, signed out or deleted with its account. A token outlives its session; a token that names none counts as live |
 | `findUser(ctx, authUserId)` | `user \| null` | Code that is told who the person is rather than asking: BetterAuth's hooks |
 
 `identity.subject` is the BetterAuth user id, the row's `authUserId`. The first three work in any function context: an action has no database of its own, so it reads the row through one internal query (`users.userByAuthId`).
@@ -118,7 +119,7 @@ The token carries every field of BetterAuth's user but its id and image (the Con
 
 ### The caller's users row (`convex/model/users.ts`)
 
-The server makes a signed-in caller's `users` row, never the browser. The global ways in (`rooms.create`, `retro.create`, `users.join`, `users.editGlobalUser`, and `users.ensureGlobalUser`, which only older browsers call) take `findOrMakeUser(ctx, name?)`: it returns the caller's row, making it when they have none, so a person's first room write makes their row whatever the browser did first. A new row is of the kind the session's token says: a permanent account's has the token's email and the name its provider gave (fitted to the person-name rule, or the email's local part when there is none); a guest's is `"anonymous"`, with a guest name such as "Guest 4829". `name` is one the person typed (joining a room, renaming themselves): the row is made with it, or takes it, and it is refused when it breaks the person-name rule. The name the row already holds, which the room page's automatic join sends back, is fitted to the rule instead: a row made before the rule can hold a longer one. A token without the `isAnonymous` claim makes a row of no kind, as rows were made before.
+The server makes a signed-in caller's `users` row, never the browser. The global ways in (`rooms.create`, `retro.create`, `users.join`, `users.editGlobalUser`, and `users.ensureGlobalUser`, which only older browsers call) take `findOrMakeUser(ctx, name?)`: it returns the caller's row, making it when they have none, so a person's first room write makes their row whatever the browser did first. A new row is of the kind the session's token says: a permanent account's has the token's email and the name its provider gave (fitted to the person-name rule, or the email's local part when there is none); a guest's is `"anonymous"`, with a guest name such as "Guest 4829". `name` is one the person typed (joining a room, renaming themselves): the row is made with it, or takes it, and it is refused when it breaks the person-name rule. The name the row already holds, which the room page's automatic join sends back, is fitted to the rule instead: a row made before the rule can hold a longer one. A token without the `isAnonymous` claim makes a row of no kind, as rows were made before. A row is made only while the session the token names exists (`sessionEnded`): a token outlives its session by up to fifteen minutes, so a device whose account was deleted on another, or a guest's other tab after they signed out, makes none and is refused "Not authenticated" (ADR-0033).
 
 The users model is also the only place a row turns permanent (the lint fails otherwise: `eslint.config.mjs`): on an account link, from the auth hook, and on a room write by a permanent account whose row isn't permanent yet (a deleted account that came back with a guest's row before the server made rows). Each time, every retro the account owns is retained (ADR-0029). Queries and actions can't write, so they only look the caller up, and a signed-in caller has no row until their first room write.
 
@@ -269,7 +270,7 @@ databaseHooks.user.update.after:
   - Syncs avatar URL changes to existing Convex user (syncAvatarFromAuth)
 ```
 
-This makes a new account's `users` record exist right after its first sign-in, before it joins any room. The hook runs only when BetterAuth creates its user: an account deleted with Delete account keeps its BetterAuth user, so when it signs back in, its row is made again on its first room write, permanent from its token.
+This makes a new account's `users` record exist right after its first sign-in, before it joins any room. The hook runs only when BetterAuth creates its user. Delete account deletes BetterAuth's user too (ADR-0033), so signing back in with the same email makes a new account, whose row the hook makes. An account deleted before that kept its BetterAuth user: when it signs back in, its row is made again on its first room write, permanent from its token, until `migrations:deleteLeftoverSignIns` deletes the leftover sign-in.
 
 ## Server-Side Auth (Next.js)
 
@@ -366,16 +367,20 @@ A users row's `accountType` is what the session's token said when the row was ma
 2. users.signOut runs while the session still says who they are
    (model/accountLifecycle.ts `signOut`):
    - A guest's account is deleted the way Delete account deletes one: each
-     room it owns is handed off (ADR-0029), and every module lets go of what
-     it keeps about them (ADR-0030)
+     room it owns is handed off (ADR-0029), every module lets go of what
+     it keeps about them (ADR-0030), and its BetterAuth sign-in goes, row
+     or no row (ADR-0033)
    - A permanent account is kept for when the person signs back in
    - With nobody signed in (Convex has no token, a missing or expired one,
      while BetterAuth's session lives on) there is nothing to delete
-3. authClient.signOut() clears the BetterAuth session. When step 2 fails, the
+3. authClient.signOut() clears the BetterAuth session, or only the browser's
+   cookies when step 2 has already deleted it. When step 2 fails, the
    session is kept and the person can try again
 ```
 
 The server tells a guest by the session's token (`isGuest`, see [Who is calling](#who-is-calling-convexmodelcallerts)), never by the browser's `isAnonymous`, which reads false while the session loads, nor by the `users` row's `accountType`, which a row can lack. Delete account (the Account tab, `useDeleteAccount`) stays its own act: `users.deleteUser` deletes the caller's account whatever its kind, then signs them out as above. Older browsers still call `users.deleteUser` to sign a guest out.
+
+Deleting an account deletes its sign-in in the same transaction (ADR-0033): BetterAuth's user, with its email, name and image, every account, with the tokens a provider gave, and every session, so no device stays signed in. The sign-out that follows finds nothing left for `users.signOut` to delete, and BetterAuth's sign-out finds the session already gone and clears the cookies. Another device keeps its token for up to fifteen minutes, and BetterAuth's cookie cache can hand it fresh ones for five more, but its room writes find no users row and make none: it is refused until its token lapses, and is then signed out. Signing back in with the same email makes a new account.
 
 ## Auth Provider Context
 

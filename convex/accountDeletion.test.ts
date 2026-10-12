@@ -3,18 +3,25 @@ import { convexTest } from "convex-test";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import schema from "./schema";
 import { withComponents } from "./components.setup";
-import { api, internal } from "./_generated/api";
+import { api, components, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { presence } from "./model/presence";
 import { type T, seedUser as seedNamedUser, seedRoom } from "./analytics.seeds";
+import {
+  type Device,
+  authRequest,
+  signInByMagicLink,
+  signInRows,
+  stubAuthDeployment,
+} from "./signIn.seeds";
 import { inMemoryJira, type FakeSite, type InMemoryJira } from "./integrations/jira.setup";
 
 // Account deletion: the user row and their memberships go; what they wrote
 // stays. A sticky's `authorId`, a vote's `voterId` and an action item's
 // `ownerId` dangle, and the reads render them as "Former member". A retro the account owned goes to whoever joined it first, or,
 // with nobody else in it, is deleted with the account. Integration
-// connections go the way Disconnect takes them. The auth provider's record
-// is not this module's to touch.
+// connections go the way Disconnect takes them. The sign-in goes too:
+// BetterAuth's user, every session and account (ADR-0033).
 
 const modules = import.meta.glob("./**/*.*s");
 
@@ -338,5 +345,109 @@ describe("integration connections", () => {
         jiraWebhookId: "wh-own",
       });
     });
+  });
+});
+
+describe("the sign-in", () => {
+  // Signed in through BetterAuth's own routes, as a browser is (signIn.seeds.ts).
+  beforeEach(stubAuthDeployment);
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  const on = (t: T, device: Device) => t.withIdentity(device.identity);
+
+  /** The person signed in with Google as well: BetterAuth keeps the tokens Google gave. */
+  const linkGoogle = (t: T, authUserId: string) =>
+    t.mutation(components.betterAuth.adapter.create, {
+      input: {
+        model: "account",
+        data: {
+          accountId: "google-1234",
+          providerId: "google",
+          userId: authUserId,
+          accessToken: "ya29.access",
+          refreshToken: "1//refresh",
+          idToken: "eyJ.id",
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+      },
+    });
+
+  it("goes with the account: BetterAuth's user, with its email, and every session and account, on every device", async () => {
+    const t = withComponents(convexTest(schema, modules));
+    const laptop = await signInByMagicLink(t, "ada@example.com");
+    await signInByMagicLink(t, "ada@example.com"); // her phone
+    await linkGoogle(t, laptop.identity.subject);
+    const bob = await signInByMagicLink(t, "bob@example.com");
+    expect(await signInRows(t, laptop.identity.subject)).toMatchObject({
+      user: { email: "ada@example.com" },
+      sessions: [expect.anything(), expect.anything()],
+      accounts: [expect.objectContaining({ providerId: "google" })],
+    });
+
+    await on(t, laptop).mutation(api.users.deleteUser, {});
+
+    expect(await signInRows(t, laptop.identity.subject)).toEqual({ user: null, sessions: [], accounts: [] });
+    expect(await signInRows(t, bob.identity.subject)).toMatchObject({
+      user: { email: "bob@example.com" },
+      sessions: [expect.anything()],
+    });
+  });
+
+  it("leaves the browser that deleted it to sign out as before: BetterAuth's sign-out clears its cookies", async () => {
+    const t = withComponents(convexTest(schema, modules));
+    const laptop = await signInByMagicLink(t, "ada@example.com");
+    await on(t, laptop).mutation(api.users.deleteUser, {});
+
+    // useSignOut: the server first, while the token still says who it is, then BetterAuth.
+    await on(t, laptop).mutation(api.users.signOut, {});
+    const signedOut = await authRequest(t, "/api/auth/sign-out", { method: "POST", cookie: laptop.cookie, body: {} });
+
+    expect(signedOut.status).toBe(200);
+    expect(signedOut.headers.getSetCookie()).toContainEqual(
+      expect.stringMatching(/^better-auth\.session_token=;.*Max-Age=0/)
+    );
+  });
+
+  it("gives another device no way back: its token makes no row again, and BetterAuth gives it no new one", async () => {
+    const t = withComponents(convexTest(schema, modules));
+    const laptop = await signInByMagicLink(t, "ada@example.com");
+    const phone = await signInByMagicLink(t, "ada@example.com");
+    const bob = await signInByMagicLink(t, "bob@example.com");
+    const roomId = await on(t, bob).mutation(api.rooms.create, { name: "Planning" });
+
+    await on(t, laptop).mutation(api.users.deleteUser, {});
+
+    // The phone's token outlives its session by up to fifteen minutes, and
+    // BetterAuth's cookie cache can hand it fresh ones for five more.
+    await expect(on(t, phone).mutation(api.users.join, { roomId, name: "Ada" })).rejects.toThrow("Not authenticated");
+    await expect(on(t, phone).mutation(api.retro.create, { name: "Sprint 41 retro" })).rejects.toThrow(
+      "Not authenticated"
+    );
+    expect(await on(t, phone).query(api.users.getGlobalUser, {})).toBeNull();
+    expect(await t.run((ctx) => ctx.db.query("users").collect())).toEqual([
+      expect.objectContaining({ authUserId: bob.identity.subject }),
+    ]);
+    // Once the cookie cache lapses, the phone has only its session's cookie, and no session.
+    const sessionCookie = phone.cookie.split("; ").filter((cookie) => cookie.startsWith("better-auth.session_token="));
+    const token = await authRequest(t, "/api/auth/convex/token", { cookie: sessionCookie.join("; ") });
+    expect(token.status).toBe(401);
+  });
+
+  it("makes signing back in with the same email a new account, whose row BetterAuth's sign-in hook makes", async () => {
+    const t = withComponents(convexTest(schema, modules));
+    const laptop = await signInByMagicLink(t, "ada@example.com");
+    const deleted = await on(t, laptop).query(api.users.getGlobalUser, {});
+    await on(t, laptop).mutation(api.users.deleteUser, {});
+
+    const back = await signInByMagicLink(t, "ada@example.com");
+
+    expect(back.identity.subject).not.toBe(laptop.identity.subject);
+    const row = await on(t, back).query(api.users.getGlobalUser, {});
+    expect(row).toMatchObject({ email: "ada@example.com", accountType: "permanent" });
+    expect(row?._id).not.toBe(deleted?._id);
   });
 });

@@ -1,7 +1,7 @@
 import { MutationCtx } from "../_generated/server";
 import { Id, Doc } from "../_generated/dataModel";
 import * as AccountLifecycle from "./accountLifecycle";
-import { findUser, requireCaller, sessionAccountType, type Caller } from "./caller";
+import { findUser, requireCaller, sessionAccountType, sessionEnded, type Caller } from "./caller";
 import * as Memberships from "./memberships";
 import * as Ownership from "./ownership";
 import * as Rooms from "./rooms";
@@ -42,13 +42,19 @@ export interface EditUserArgs {
  * a permanent account's, but which isn't yet (a deleted account came back as
  * a guest's before the server made rows), turns permanent. `name` is one the
  * person sent, joining a room or renaming themselves: the row is made with
- * it, or takes it (see sentName). Throws "Not authenticated".
+ * it, or takes it (see sentName). Throws "Not authenticated" when nobody is
+ * signed in, or when the session the token names is gone: a device whose
+ * account was deleted on another, or that signed out, makes no row again
+ * (ADR-0033).
  */
 export async function findOrMakeUser(ctx: MutationCtx, typedName?: string): Promise<Doc<"users">> {
   const caller = await requireCaller(ctx);
   const { user } = caller;
   const name = typedName === undefined ? undefined : sentName(user, typedName);
-  if (!user) return await makeUser(ctx, caller, name);
+  if (!user) {
+    if (await sessionEnded(ctx, caller)) throw new Error("Not authenticated");
+    return await makeUser(ctx, caller, name);
+  }
   const turnsPermanent = sessionAccountType(caller) === "permanent" && user.accountType !== "permanent";
   const renamed = name !== undefined && name !== user.name;
   if (!turnsPermanent && !renamed) return user;

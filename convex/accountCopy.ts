@@ -10,7 +10,7 @@ export const CANCEL_BUTTON = "Cancel";
 
 export const DELETE_ACCOUNT_SECTION_TITLE = "Delete account";
 export const DELETE_ACCOUNT_SECTION_DESCRIPTION =
-  "Removes your account from AgileKit. Your sign-in provider keeps its own record.";
+  "Removes your account from AgileKit, email address included, and signs you out on every device.";
 export const DELETE_ACCOUNT_BUTTON = "Delete account";
 export const DELETE_ACCOUNT_TITLE = "Delete your account?";
 /** What goes and what stays, before and after the act. */

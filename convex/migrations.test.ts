@@ -1,12 +1,20 @@
 /// <reference types="vite/client" />
 import { convexTest, type TestConvex } from "convex-test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { internal } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 import schema from "./schema";
 import { withComponents } from "./components.setup";
 import type { Id } from "./_generated/dataModel";
 import type { MemberRole } from "./permissions";
 import { seedUser } from "./analytics.seeds";
+import {
+  type Device,
+  authRequest,
+  signInAsGuest,
+  signInByMagicLink,
+  signInRows,
+  stubAuthDeployment,
+} from "./signIn.seeds";
 
 const modules = import.meta.glob("./**/*.*s");
 
@@ -151,5 +159,124 @@ describe("clearTimerRunners", () => {
     expect(after).toEqual(before.map((node) => (node.type === "timer" ? { ...node, data: running } : node)));
     // A second run finds nothing left to clear.
     expect(await t.mutation(internal.migrations.clearTimerRunners, {})).toMatchObject({ timersCleared: 0 });
+  });
+});
+
+describe("deleteLeftoverSignIns", () => {
+  // Signed in through BetterAuth's own routes, as a browser is (signIn.seeds.ts).
+  beforeEach(stubAuthDeployment);
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  /** Counts every sign-in made so far, past the day new ones are spared. */
+  const run = (t: T, args: { dryRun?: boolean; batchSize?: number } = {}) =>
+    t.mutation(internal.migrations.deleteLeftoverSignIns, { createdBefore: Date.now() + 1, ...args });
+
+  const gone = { user: null, sessions: [], accounts: [] };
+
+  /**
+   * The sign-ins an account's ending used to leave behind, and the ones
+   * around them that must stay. Before ADR-0033, Delete account deleted the
+   * users row and kept BetterAuth's user, and a guest's sign-out deleted the
+   * row and left BetterAuth to end the session.
+   */
+  async function seedSignIns(t: T) {
+    const deletedAccount = await signInByMagicLink(t, "ada@example.com");
+    await signInByMagicLink(t, "ada@example.com"); // her phone, still signed in
+    await deleteRowOnly(t, deletedAccount);
+    const signedOutGuest = await signInAsGuest(t);
+    await authRequest(t, "/api/auth/sign-out", { method: "POST", cookie: signedOutGuest.cookie, body: {} });
+    // Still here: an account in use, a guest in a room, and a guest who only continued as one.
+    const account = await signInByMagicLink(t, "bob@example.com");
+    const guest = await signInAsGuest(t);
+    const roomId = await t.withIdentity(account.identity).mutation(api.rooms.create, { name: "Planning" });
+    await t.withIdentity(guest.identity).mutation(api.users.join, { roomId, name: "Ann" });
+    const continuedGuest = await signInAsGuest(t);
+    return { deletedAccount, signedOutGuest, account, guest, continuedGuest };
+  }
+
+  /** The users row goes and BetterAuth's user stays, as Delete account left it. */
+  const deleteRowOnly = async (t: T, device: Device) => {
+    const row = await t.withIdentity(device.identity).query(api.users.getGlobalUser, {});
+    await t.run((ctx) => ctx.db.delete("users", row!._id));
+  };
+
+  it("deletes the sign-ins deleted accounts left, and keeps everyone else's", async () => {
+    const t = withComponents(convexTest(schema, modules));
+    const { deletedAccount, signedOutGuest, account, guest, continuedGuest } = await seedSignIns(t);
+
+    expect(await run(t)).toEqual({ signInsChecked: 5, permanentLeftovers: 1, guestLeftovers: 1, done: true });
+
+    expect(await signInRows(t, deletedAccount.identity.subject)).toEqual(gone);
+    expect(await signInRows(t, signedOutGuest.identity.subject)).toEqual(gone);
+    for (const kept of [account, guest, continuedGuest]) {
+      expect((await signInRows(t, kept.identity.subject)).sessions).toHaveLength(1);
+    }
+    // A second run finds nothing left.
+    expect(await run(t)).toMatchObject({ signInsChecked: 3, permanentLeftovers: 0, guestLeftovers: 0 });
+  });
+
+  it("only counts in a dry run", async () => {
+    const t = withComponents(convexTest(schema, modules));
+    const { deletedAccount, signedOutGuest } = await seedSignIns(t);
+
+    expect(await run(t, { dryRun: true })).toMatchObject({ permanentLeftovers: 1, guestLeftovers: 1 });
+
+    expect((await signInRows(t, deletedAccount.identity.subject)).sessions).toHaveLength(2);
+    expect((await signInRows(t, signedOutGuest.identity.subject)).user).not.toBeNull();
+  });
+
+  it("spares a sign-in made in the last day, whose users row may still be on its way", async () => {
+    const t = withComponents(convexTest(schema, modules));
+    const deletedAccount = await signInByMagicLink(t, "ada@example.com");
+    await deleteRowOnly(t, deletedAccount);
+
+    expect(await t.mutation(internal.migrations.deleteLeftoverSignIns, {})).toMatchObject({
+      signInsChecked: 1,
+      permanentLeftovers: 0,
+    });
+    expect((await signInRows(t, deletedAccount.identity.subject)).user).not.toBeNull();
+  });
+
+  it("works through BetterAuth's users a batch at a time, rescheduling itself until every one is checked", async () => {
+    const t = withComponents(convexTest(schema, modules));
+    const { deletedAccount, signedOutGuest } = await seedSignIns(t);
+    // convex-test dispatches runAfter(0) jobs through a real setTimeout; faking
+    // it keeps a continuation pending until the test runs it.
+    vi.useFakeTimers({ toFake: ["setTimeout"] });
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    expect(await run(t, { batchSize: 2 })).toMatchObject({ signInsChecked: 2, done: false });
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+    expect(log).toHaveBeenCalledWith("Leftover sign-in cleanup complete:", {
+      signInsChecked: 5,
+      permanentLeftovers: 1,
+      guestLeftovers: 1,
+    });
+    expect(await signInRows(t, deletedAccount.identity.subject)).toEqual(gone);
+    expect(await signInRows(t, signedOutGuest.identity.subject)).toEqual(gone);
+  });
+
+  it("keeps a dry run dry, and its cutoff, in every step it reschedules", async () => {
+    const t = withComponents(convexTest(schema, modules));
+    const { deletedAccount, signedOutGuest } = await seedSignIns(t);
+    vi.useFakeTimers({ toFake: ["setTimeout"] });
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    await run(t, { dryRun: true, batchSize: 1 });
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+    expect(log).toHaveBeenCalledWith("Leftover sign-in cleanup complete (dry run):", {
+      signInsChecked: 5,
+      permanentLeftovers: 1,
+      guestLeftovers: 1,
+    });
+    expect((await signInRows(t, deletedAccount.identity.subject)).user).not.toBeNull();
+    expect((await signInRows(t, signedOutGuest.identity.subject)).user).not.toBeNull();
   });
 });
