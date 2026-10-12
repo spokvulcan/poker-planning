@@ -10,10 +10,12 @@ import { ACCOUNT_DELETED, DELETE_ACCOUNT_FAILED } from "@/convex/accountCopy";
  * Delete account for a permanent account: its own act, the user-deletion
  * mutation (signing out deletes only a guest), then the person is signed out
  * the way the user menus sign out. Content stays behind unnamed, and
- * a retro the account owned passes to whoever joined it first; the auth
- * provider's own record is untouched. A failure says why through runAct (a
- * refusal's message, else a readable line) and signs nothing out, so the
- * person can try again. Returns whether the account is gone.
+ * a retro the account owned passes to whoever joined it first; the sign-in
+ * goes too, every device's session with it, so the sign-out that follows
+ * finds this one already ended and only clears the browser. A failure says
+ * why through runAct (a refusal's message, else a readable line) and signs
+ * nothing out, so the person can try again. Returns whether the account is
+ * gone.
  */
 export function useDeleteAccount(): () => Promise<boolean> {
   const deleteUser = useMutation(api.users.deleteUser);

@@ -1,5 +1,5 @@
 import type { UserIdentity } from "convex/server";
-import { internal } from "../_generated/api";
+import { components, internal } from "../_generated/api";
 import type { ActionCtx, MutationCtx, QueryCtx } from "../_generated/server";
 import type { Doc } from "../_generated/dataModel";
 
@@ -72,6 +72,25 @@ export function sessionAccountType(caller: Caller): Doc<"users">["accountType"] 
  */
 export function isGuest(caller: Caller): boolean {
   return sessionAccountType(caller) === "anonymous";
+}
+
+/**
+ * Whether the session the caller's token was issued for is gone: signed out,
+ * or deleted with its account (ADR-0033). A token outlives its session by up
+ * to its own fifteen minutes, so a device whose account was deleted on
+ * another still holds one: asked before the caller is made a users row
+ * (model/users.ts). BetterAuth names the session in every token it issues
+ * (the `sessionId` claim); a token that names none, as convex-test's need
+ * not, has none to have lost.
+ */
+export async function sessionEnded(ctx: AnyCtx, caller: Caller): Promise<boolean> {
+  const { sessionId } = caller.identity;
+  if (typeof sessionId !== "string") return false;
+  const session: unknown = await ctx.runQuery(components.betterAuth.adapter.findOne, {
+    model: "session",
+    where: [{ field: "_id", value: sessionId }],
+  });
+  return !session;
 }
 
 /**

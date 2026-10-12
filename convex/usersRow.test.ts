@@ -1,16 +1,18 @@
 /// <reference types="vite/client" />
 import { convexTest } from "convex-test";
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import schema from "./schema";
 import { withComponents } from "./components.setup";
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { type T, seedUser } from "./analytics.seeds";
+import { authRequest, signInAsGuest, signInByMagicLink, stubAuthDeployment } from "./signIn.seeds";
 
 // A person's users row is the server's to make (model/users.ts): a signed-in
 // caller's first room write makes it, whatever the browser did first, of the
-// kind their session's token says. That the users model is the only place a
-// row is made or turns permanent, the lint holds (eslint.config.mjs).
+// kind their session's token says, while that session lasts. That the users
+// model is the only place a row is made or turns permanent, the lint holds
+// (eslint.config.mjs).
 
 const modules = import.meta.glob("./**/*.*s");
 
@@ -84,16 +86,53 @@ describe("a signed-in caller's first room write", () => {
       accountType: "permanent",
     });
   });
+});
 
-  it("gives a deleted account that signs back in a permanent row again, with its email", async () => {
+describe("a token BetterAuth issued, which outlives its session (ADR-0033)", () => {
+  // Signed in through BetterAuth's own routes, as a browser is (signIn.seeds.ts).
+  beforeEach(stubAuthDeployment);
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  it("makes the row while its session lasts: a guest's first join", async () => {
     const t = withComponents(convexTest(schema, modules));
-    await account(t, "ada", ADA).mutation(api.rooms.create, { name: "Planning" });
-    // Delete account keeps BetterAuth's user, so its create hook never runs for Ada again.
-    await account(t, "ada", ADA).mutation(api.users.deleteUser, {});
+    const roomId = await account(t, "ada", ADA).mutation(api.rooms.create, { name: "Planning" });
+    const ann = await signInAsGuest(t);
 
-    const roomId = await account(t, "ada", ADA).mutation(api.retro.create, { name: "Sprint 41 retro" });
+    await t.withIdentity(ann.identity).mutation(api.users.join, { roomId, name: "Ann" });
 
-    expect(await account(t, "ada", ADA).query(api.users.getGlobalUser, {})).toMatchObject({
+    expect(await t.withIdentity(ann.identity).query(api.users.getGlobalUser, {})).toMatchObject({
+      name: "Ann",
+      accountType: "anonymous",
+    });
+  });
+
+  it("makes none once its session is gone: another tab of a guest who signed out", async () => {
+    const t = withComponents(convexTest(schema, modules));
+    const roomId = await account(t, "ada", ADA).mutation(api.rooms.create, { name: "Planning" });
+    // "Continue as guest", then Sign out: the server first, then BetterAuth.
+    const ann = await signInAsGuest(t);
+    await t.withIdentity(ann.identity).mutation(api.users.signOut, {});
+    await authRequest(t, "/api/auth/sign-out", { method: "POST", cookie: ann.cookie, body: {} });
+
+    await expect(t.withIdentity(ann.identity).mutation(api.users.join, { roomId, name: "Ann" })).rejects.toThrow(
+      "Not authenticated"
+    );
+    expect(await t.withIdentity(ann.identity).query(api.users.getGlobalUser, {})).toBeNull();
+  });
+
+  it("gives an account deleted before its sign-in went with it a permanent row again when it signs back in", async () => {
+    const t = withComponents(convexTest(schema, modules));
+    const ada = await signInByMagicLink(t, "ada@example.com");
+    // Delete account used to keep BetterAuth's user, so its create hook never runs for Ada again.
+    const deleted = await t.withIdentity(ada.identity).query(api.users.getGlobalUser, {});
+    await t.run((ctx) => ctx.db.delete("users", deleted!._id));
+
+    const roomId = await t.withIdentity(ada.identity).mutation(api.retro.create, { name: "Sprint 41 retro" });
+
+    expect(await t.withIdentity(ada.identity).query(api.users.getGlobalUser, {})).toMatchObject({
       email: "ada@example.com",
       accountType: "permanent",
     });

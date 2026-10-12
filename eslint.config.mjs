@@ -74,6 +74,14 @@ const BACKEND_STANDARDS = [
     message: "One writer per concern (CLAUDE.md): only model/roundClock.ts writes the round clock (ADR-0032).",
   },
   {
+    // BetterAuth writes its own tables through the adapter convex/auth.ts gives it.
+    selector:
+      "MemberExpression[object.object.object.name='components'][object.object.property.name='betterAuth'][object.property.name='adapter'][property.name=/^(create|updateOne|updateMany|deleteOne|deleteMany)$/]",
+    except: ["convex/model/accountLifecycle.ts"],
+    message:
+      "One writer per concern (CLAUDE.md): BetterAuth writes its own tables, and only model/accountLifecycle.ts deletes a sign-in, with its account (ADR-0033).",
+  },
+  {
     // The standards above see a write by the table it names.
     selector:
       "CallExpression[callee.object.property.name='db'][callee.property.name=/^(insert|patch|replace|delete)$/]:not([arguments.0.type='Literal'])",
