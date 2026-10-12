@@ -24,7 +24,7 @@ function boardActions(): PokerBoardActions {
   return {
     reveal: vi.fn(),
     reset: vi.fn(),
-    toggleAutoComplete: vi.fn(),
+    setAutoComplete: vi.fn(),
     cancelAutoReveal: vi.fn(),
     selectCard: vi.fn(),
     openIssues: vi.fn(),
@@ -137,7 +137,19 @@ describe("SessionNode — the board's actions and the viewer's decisions", () =>
 
     expect(actions.reveal).toHaveBeenCalledTimes(1);
     expect(actions.openIssues).toHaveBeenCalledTimes(1);
-    expect(actions.toggleAutoComplete).toHaveBeenCalledTimes(1);
+    expect(actions.setAutoComplete).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    [true, false],
+    [false, true],
+  ])("the auto-reveal toggle showing %s asks for %s, whatever the server holds by now", (shown, chosen) => {
+    const actions = boardActions();
+    renderSession(makeData({ autoCompleteVoting: shown, actions }));
+
+    fireEvent.click(screen.getByRole("button", { name: /auto-reveal when all vote/i }));
+
+    expect(actions.setAutoComplete).toHaveBeenCalledWith(chosen);
   });
 
   it("keeps a control the viewer may not use disabled, and says why", () => {

@@ -198,9 +198,9 @@ const SessionCard = memo(
             <ChevronRight className="h-4 w-4 text-gray-400 group-hover:text-gray-600 dark:group-hover:text-gray-300 shrink-0 transition-colors" />
           </button>
 
-          {/* Auto-reveal toggle */}
+          {/* Auto-reveal toggle: asks for the opposite of what it shows */}
           <button
-            onClick={roomSettings.allowed ? actions.toggleAutoComplete : undefined}
+            onClick={roomSettings.allowed ? () => actions.setAutoComplete(!autoCompleteVoting) : undefined}
             disabled={!roomSettings.allowed}
             className={cn(
               "flex items-center gap-2 w-full px-3 py-1.5 mb-3 rounded-md text-xs font-medium transition-colors",

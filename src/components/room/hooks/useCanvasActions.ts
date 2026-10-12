@@ -23,7 +23,12 @@ const NOTE_FAILED = "That note didn't save.";
 export interface CanvasActions {
   reveal: () => void;
   reset: () => void;
-  toggleAutoComplete: () => void;
+  /**
+   * Sets the room's auto-complete setting to what the person chose, never a
+   * flip of what the server holds: the session node's toggle and the settings
+   * panel's switch both write it here.
+   */
+  setAutoComplete: (enabled: boolean) => void;
   cancelAutoReveal: () => void;
   /** Writes the viewer's vote, whose card rises at once: Convex lowers it again if the server refuses. */
   selectCard: (cardLabel: string) => void;
@@ -87,9 +92,9 @@ export function useCanvasActions({
       if (isDemo) return;
       await runAct(resetGame({ roomId }), WRITE_FAILED);
     },
-    toggleAutoComplete: async () => {
+    setAutoComplete: async (enabled: boolean) => {
       if (isDemo) return;
-      await runAct(toggleAutoCompleteMutation({ roomId }), WRITE_FAILED);
+      await runAct(toggleAutoCompleteMutation({ roomId, enabled }), WRITE_FAILED);
     },
     cancelAutoReveal: async () => {
       if (isDemo) return;

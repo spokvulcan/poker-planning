@@ -280,7 +280,7 @@ export async function cancelCountdown(
 }
 
 /**
- * setAutoComplete — flip the room's auto-complete setting and reconcile the
+ * setAutoComplete — set the room's auto-complete setting and reconcile the
  * countdown in the same step, so the setting can't drift from the countdown it
  * feeds (the "remember to reconcile" class ADR-0004 closed for roster exits).
  * Disabling tears the countdown down as one unit; enabling re-evaluates so a

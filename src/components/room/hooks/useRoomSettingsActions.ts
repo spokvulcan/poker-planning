@@ -8,12 +8,12 @@ import { useDemoSimulation } from "../demo/DemoSimulationProvider";
 import { useStableActions } from "@/hooks/useStableActions";
 
 /**
- * Every backend write the room-settings panel can trigger, behind one
- * frozen-identity object — the same seam shape as useCanvasActions.
+ * Every backend write the room-settings panel makes of its own, behind one
+ * frozen-identity object — the same seam shape as useCanvasActions. Its
+ * switches write through the board's actions instead, as the nodes do.
  */
 export interface RoomSettingsActions {
   rename: (name: string) => Promise<void>;
-  toggleAutoComplete: () => Promise<void>;
   removeUser: (userId: Id<"users">) => Promise<void>;
   promoteFacilitator: (userId: Id<"users">) => Promise<void>;
   demoteFacilitator: (userId: Id<"users">) => Promise<void>;
@@ -39,7 +39,6 @@ export function useRoomSettingsActions({
   const isDemo = useDemoSimulation() !== null;
 
   const renameMutation = useMutation(api.rooms.rename);
-  const toggleAutoCompleteMutation = useMutation(api.rooms.toggleAutoComplete);
   const removeUserMutation = useMutation(api.users.remove);
   const promoteFacilitatorMutation = useMutation(api.roles.promoteFacilitator);
   const demoteFacilitatorMutation = useMutation(api.roles.demoteFacilitator);
@@ -52,10 +51,6 @@ export function useRoomSettingsActions({
     rename: async (name) => {
       if (isDemo) return;
       await renameMutation({ roomId, name });
-    },
-    toggleAutoComplete: async () => {
-      if (isDemo) return;
-      await toggleAutoCompleteMutation({ roomId });
     },
     removeUser: async (userId) => {
       if (isDemo) return;

@@ -1422,3 +1422,62 @@ describe("VotingRound.setAutoComplete", () => {
     expect((await readRoom(t, roomId))?.autoCompleteVoting).toBe(true);
   });
 });
+
+// The switch writes what the person chose, not a flip of what the server
+// holds, so a click on a view that someone else's change hasn't reached yet
+// can't do the opposite of what it showed. A tab from before `enabled` sends
+// none, and the setting flips for it as it always did.
+describe("rooms.toggleAutoComplete", () => {
+  /** Someone in the room, signed in, as the switch writes for them. */
+  async function signedInMember(t: T, roomId: Id<"rooms">) {
+    const userId = await addMember(t, roomId);
+    const user = await t.run((ctx) => ctx.db.get("users", userId));
+    return { userId, as: t.withIdentity({ subject: user!.authUserId }) };
+  }
+
+  it.each([
+    [true, true],
+    [false, false],
+    [false, true],
+    [true, false],
+  ])("stored %s, chosen %s: the room keeps what was chosen", async (stored, enabled) => {
+    const t = withComponents(convexTest(schema, modules));
+    const roomId = await seedRoom(t, { autoCompleteVoting: stored });
+    const { as } = await signedInMember(t, roomId);
+
+    await as.mutation(api.rooms.toggleAutoComplete, { roomId, enabled });
+
+    expect((await readRoom(t, roomId))?.autoCompleteVoting).toBe(enabled);
+  });
+
+  it("turning on a room already counting down leaves its countdown alone", async () => {
+    const t = withComponents(convexTest(schema, modules));
+    const roomId = await seedRoom(t, { autoCompleteVoting: true });
+    const { userId, as } = await signedInMember(t, roomId);
+    await castVote(t, roomId, userId); // all in -> armed
+    const armed = (await readRoom(t, roomId))!;
+
+    // The panel still showed it off when the person clicked.
+    await as.mutation(api.rooms.toggleAutoComplete, { roomId, enabled: true });
+
+    const room = (await readRoom(t, roomId))!;
+    expect(room.autoCompleteVoting).toBe(true);
+    expect(room.autoRevealCountdownStartedAt).toBe(armed.autoRevealCountdownStartedAt);
+    expect(room.autoRevealScheduledId).toBe(armed.autoRevealScheduledId);
+    const scheduled = await scheduledFns(t);
+    expect(scheduled).toHaveLength(1);
+    expect(scheduled[0].state.kind).toBe("pending");
+  });
+
+  it("an old tab that sends no value flips the setting, as before", async () => {
+    const t = withComponents(convexTest(schema, modules));
+    const roomId = await seedRoom(t, { autoCompleteVoting: true });
+    const { as } = await signedInMember(t, roomId);
+
+    await as.mutation(api.rooms.toggleAutoComplete, { roomId });
+    expect((await readRoom(t, roomId))?.autoCompleteVoting).toBe(false);
+
+    await as.mutation(api.rooms.toggleAutoComplete, { roomId });
+    expect((await readRoom(t, roomId))?.autoCompleteVoting).toBe(true);
+  });
+});
