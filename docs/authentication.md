@@ -53,7 +53,9 @@ The authentication system consists of three layers:
 | File | Purpose |
 |------|---------|
 | `src/lib/auth-client.ts` | BetterAuth client with anonymous and magic link plugins |
-| `src/lib/auth-server.ts` | Server-side auth helpers (`isAuthenticated`, `fetchAuthQuery`, etc.) for use in Server Components |
+| `src/lib/auth-server.ts` | BetterAuth's server helpers through Convex (`getToken`, `isAuthenticated`, `fetchAuthQuery`, etc.): route handlers use them; a server render asks `getServerSession` instead |
+| `src/lib/server-session.ts` | `getServerSession`, the one way a server render asks who is signed in (see [Server-Side Auth](#server-side-auth-nextjs)) |
+| `src/proxy.ts` | Puts the page's path on every dashboard request (`PAGE_PATH_HEADER`, `src/lib/page-path.ts`), so the dashboard's gate sends a visitor to sign in coming back to the page |
 | `src/app/(app)/layout.tsx` | The app shell, for every page but `/demo`: fetches the session's token on the server and mounts BetterAuth and the auth provider (`src/components/providers.tsx`) |
 | `src/app/(app)/auth/signin/page.tsx` | Dedicated Sign In Page for permanent account upgrade |
 | `src/app/(app)/auth/verify/page.tsx` | Magic Link Verification Page |
@@ -274,20 +276,31 @@ This makes a new account's `users` record exist right after its first sign-in, b
 
 ## Server-Side Auth (Next.js)
 
-`src/lib/auth-server.ts` exports server-side auth utilities for use in Server Components and Route Handlers:
+A server render asks who is signed in through `getServerSession()` (`src/lib/server-session.ts`), and through nothing else, so no page waits on Convex longer than it allows or fails when Convex can't be reached. It gives one answer per request (React's `cache`), which the app shell and a page's gate share. It answers one of three:
+
+- `{ status: "none" }`: nobody is signed in. A request with no session cookie gets this with no network at all; one whose cookie Convex no longer knows, once Convex says so.
+- `{ status: "unknown" }`: Convex didn't give the session's token within `SERVER_AUTH_WAIT_MS` (2.5 s), or couldn't be reached. The page renders all the same, and the browser fetches the session itself.
+- `{ status: "token", token }`: the session's token, with which Convex authenticates the first render.
+
+The app shell's layout hands the token and the viewer read with it to the auth provider (see [Auth Provider Context](#auth-provider-context)). A page that is an account's own gates on the same answer, as the dashboard's layout (`src/app/(app)/dashboard/layout.tsx`) does: it redirects only when there is no session, and leaves an unknown one to the browser's gate.
 
 ```typescript
-import { isAuthenticated } from "@/lib/auth-server";
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { getServerSession } from "@/lib/server-session";
+import { PAGE_PATH_HEADER } from "@/lib/page-path";
+import { signInHref } from "@/components/auth/account";
 
 // In a server layout or page:
-const authenticated = await isAuthenticated();
-if (!authenticated) {
-  redirect("/auth/signin?from=/dashboard");
+const session = await getServerSession();
+if (session.status === "none") {
+  redirect(signInHref((await headers()).get(PAGE_PATH_HEADER) ?? "/dashboard"));
 }
 ```
 
-Use this for pages that require authentication (e.g., dashboard). Client-side redirects alone are insufficient — the page still renders briefly before redirecting.
+Sign in comes back to the page the person asked for, from the server as from the browser: `signInHref` of the page's path. Next gives a layout no pathname, so the proxy (`src/proxy.ts`) puts it on every dashboard request, at no cost in network; a gate on pages outside `/dashboard` adds them to the proxy's matcher. The server's redirect spares a visitor the page altogether, which the browser's gate alone would draw before sending them on. The browser's gate (`useAccountPage` in `src/components/dashboard/dashboard-layout.tsx`) sends on a visitor the server couldn't tell, once the browser knows, and one who signs out while on the page. `src/app/shells.test.tsx` serves a dashboard page with Convex unreachable and to a visitor with no session cookie.
+
+Never gate a page on `isAuthenticated()` from `src/lib/auth-server.ts`: it fetches the token for a visitor with no session cookie too, waits for as long as Convex takes, and throws when Convex can't be reached, failing the page. Its helpers are for route handlers (`src/app/api/`), which answer a request rather than render a page.
 
 ## Auth Flow
 
@@ -420,7 +433,7 @@ What the viewer says of the person is Convex's answer, `users.getViewer`, which 
 
 The first paint already knows the viewer. The app shell's layout reads it on the server (`getServerViewer` in `src/components/auth/server-viewer.ts`: no read when there is no token, else one read of `users.getViewer` with the token the request already fetched) and hands it to the provider, which shows it, unconfirmed, until Convex first answers in the browser (confirming it as soon as Convex has the session) and goes by Convex alone after. So a refresh draws the menus, or Sign in, at once, the same on the server and in the browser, while reads made as the viewer wait for Convex; the menus show a skeleton only when the server couldn't read the viewer or Convex is checking a session that changed. `getServerViewer` and the provider are the only modules that ask who is signed in (`auth-provider.test.tsx` holds them to that).
 
-What the viewer is offered of their account is one list, `src/components/auth/account.ts`, which the account menus (`ViewerMenu`), the command menu, the navbar and the dashboard's sidebar all draw from: the signed-in person's places by one set of names (`PLACES`), Sign in for anyone without a permanent account (a guest included, once the viewer is known), and the one way back from the sign-in page, `signInHref(path)`. The sign-in page takes its `from` through `returnPath`, which keeps only a page on this site: `//host` and `/\host` resolve to another site and send the person home instead. A dashboard page is an account's own: the server redirects a visitor who asks for one, and the dashboard's layout sends one who becomes a visitor on it (signing out, here or in another tab) to sign in, coming back to the page.
+What the viewer is offered of their account is one list, `src/components/auth/account.ts`, which the account menus (`ViewerMenu`), the command menu, the navbar and the dashboard's sidebar all draw from: the signed-in person's places by one set of names (`PLACES`), Sign in for anyone without a permanent account (a guest included, once the viewer is known), and the one way back from the sign-in page, `signInHref(path)`. The sign-in page takes its `from` through `returnPath`, which keeps only a page on this site: `//host` and `/\host` resolve to another site and send the person home instead. A dashboard page is an account's own: the server sends a visitor who asks for one to sign in ([Server-Side Auth](#server-side-auth-nextjs)), and the dashboard's layout in the browser sends one the server couldn't tell, once it knows, and one who becomes a visitor on it (signing out, here or in another tab), each coming back to the page.
 
 `whenAuth(ready, timeoutMs)` resolves with the first auth state `ready` accepts (at once if the current one does, else on the update that makes it hold) and rejects after `timeoutMs`. The provider holds the waiters (`createAuthWaiters` in `src/lib/auth-waiters.ts`) and feeds them every change of `authUserId`, `isSessionPending`, `isLoading` and `isAuthenticated`. It sits in the app shell's layout, above the page, so a wait outlives the component that started it. Outside an `AuthProvider`, `whenAuth` rejects.
 
