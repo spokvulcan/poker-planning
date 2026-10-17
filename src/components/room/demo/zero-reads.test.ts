@@ -5,12 +5,12 @@
  * component, so this guard renders the poker board (`RoomCanvas`, as /demo
  * does) and the demo's other canvas hooks inside the DemoSimulationProvider
  * with the whiteboard's Convex stand-in, which records every query asked
- * for, and asserts that none of the demo/canvas/issues/presence
+ * for, and asserts that none of the demo/canvas/issues/presence/round clock
  * subscriptions are opened: every such `useQuery` is passed
- * `"skip"`, and `usePresence` is never called at all. (The timer opens no
- * subscription at all anymore — its state arrives with the canvas node data —
- * so it is probed for regressions but lists no query.) Directly protects user
- * stories 12/14/17 (ADR-0003).
+ * `"skip"`, and `usePresence` is never called at all. (The retro's stopwatch
+ * opens no subscription at all anymore — its state arrives with the canvas
+ * node data — so it is probed for regressions but lists no query.) Directly
+ * protects user stories 12/14/17 (ADR-0003).
  *
  * The shell is covered too: AuthProvider subscribes `api.users.getViewer`
  * whenever a session is live, on any route, so what keeps it off the demo is
@@ -100,6 +100,7 @@ import { AuthProvider } from "@/components/auth/auth-provider";
 import { RoomCanvas } from "../room-canvas";
 import { useIssues } from "../hooks/useIssues";
 import { useTimerSync } from "../hooks/use-timer-sync";
+import { useRoundClock } from "../hooks/use-round-clock";
 import { useRoomPresence } from "@/hooks/useRoomPresence";
 import { DEMO_VIEWER_ID } from "../types";
 import DemoLayout from "@/app/(demo)/layout";
@@ -112,6 +113,7 @@ const SUBSCRIPTIONS = [
   getFunctionName(api.canvas.getCanvasNodes),
   getFunctionName(api.issues.get),
   getFunctionName(api.issues.list),
+  getFunctionName(api.roundClock.get),
 ];
 
 // The subscription the app shell mounts above every page (AuthProvider). The
@@ -166,6 +168,9 @@ function useProbeHooks(roomId: Id<"rooms">, roomData: RoomWithRelatedData): void
   // only whether the provider is mounted around them.
   useIssues({ roomId, currentIssueId: roomData.room.currentIssueId });
   useRoomPresence(roomId, DEMO_VIEWER_ID, roomData.users);
+  // The round clock the time nodes read: the board mounts no node during a
+  // static render, so the hook is probed here.
+  useRoundClock(roomId, 0);
   useTimerSync({
     roomId,
     nodeId: "timer",

@@ -201,11 +201,11 @@ A control action that moves the **phase**: **start** (begin a round on a target)
 _Avoid_: event, command
 
 **Round record**:
-A round's row in `votingTimestamps`, which every round has, a **Quick Vote**'s included: when it started, when its voting ended (the **reveal**, or the move for a round never revealed), when it was revealed, and when the room moved on (`endedBy`: the next round, another **target**, or the issue dropped). Voting time is start to reveal; discussion time is reveal to the end. Written only by the **voting round**; time-to-consensus totals an issue's records. See [ADR-0032](docs/adr/0032-every-round-is-timed-and-the-clock-keeps-facts.md).
+A round's row in `votingTimestamps`, which every round has, a **Quick Vote**'s included: when it started, when its voting ended (the **reveal**, or the move for a round never revealed), when it was revealed, and when the room moved on (`endedBy`: the next round, another **target**, or the issue dropped). Voting time is start to reveal and discussion time reveal to the end, each less the **breaks** the **round clock** leaves out. A round is open until the room moves on. Written only by the **voting round**. See [ADR-0032](docs/adr/0032-every-round-is-timed-and-the-clock-keeps-facts.md).
 _Avoid_: timing record, timestamp row
 
 **Round clock**:
-A poker room's time beyond the rounds themselves (`convex/model/roundClock.ts`): attendance, **breaks**, the **session**, the **pause** and the **timebox**. It stores facts and leaves what they mean to one pure reading (`convex/roundTime.ts`) the server and browser share. The poker board's **timer** and **session time** read it; hiding either stops nothing.
+A poker room's time beyond the rounds themselves (`convex/model/roundClock.ts`): attendance, **breaks**, the **session**, the **pause** and the **timebox**. It stores facts and leaves what they mean to one pure reading (`convex/roundTime.ts`) the server and browser share. The poker board's **timer** and **session time** read it, and so does an issue's **time-to-consensus**; hiding either node stops nothing.
 _Avoid_: stopwatch
 
 **Break**:
@@ -259,6 +259,10 @@ The daily job that ends what is stale, a page at a time: each room not **retaine
 _Avoid_: cleanup, orphan sweep, orphan net
 
 ### Analytics
+
+**Time-to-consensus**:
+How long the team took to agree on an issue: the time its rounds took up to the **reveal** that reached consensus, voting and the discussion between rounds alike, less the **breaks** the **round clock** leaves out. It is what the **timer** showed at that reveal, settled then and kept on the issue, so a threshold changed later doesn't re-read it.
+_Avoid_: voting duration, elapsed time, time to agreement
 
 **Analytics snapshot**:
 The per-room materialized completed-issue history (`roomAnalyticsSnapshots`), written in the reveal mutation when a **target** issue completes. The analytics queries project purely from it; a missing or stale row falls back to the on-the-fly scan with identical results. Freshness is keyed on **room activity** (`computedAt >= lastActivityAt`), which is why every history-changing write must go through the activity chokepoint. See [ADR-0007](docs/adr/0007-analytics-read-from-a-write-time-snapshot.md).

@@ -9,7 +9,7 @@ import {
   ContextMenuItem,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
-import { clockText, roundsTime, type TimeSplit } from "@/convex/roundTime";
+import { clockText } from "@/convex/roundTime";
 import { cn } from "@/lib/utils";
 import { useRoundClock } from "../hooks/use-round-clock";
 import { TimeLine, TimeTip } from "../round-clock/time-tip";
@@ -38,23 +38,9 @@ export const SessionTimeNode = memo(({ data, selected }: NodeProps<SessionTimeNo
     permissions: { roomSettings },
     actions,
   } = data;
-  const { view, now, breaks } = useRoundClock(roomId, lastActivityAt);
-  const from = view?.sessionStartedAt ?? undefined;
-
-  const items = (view?.items ?? [])
-    .map((item) => ({ item, split: roundsTime(item.rounds, breaks, now, { from }) }))
-    .filter(({ split }) => split.votingMs + split.discussionMs > 0);
-  const total = items.reduce<TimeSplit>(
-    (sum, { split }) => ({
-      votingMs: sum.votingMs + split.votingMs,
-      discussionMs: sum.discussionMs + split.discussionMs,
-      breakMs: sum.breakMs + split.breakMs,
-    }),
-    { votingMs: 0, discussionMs: 0, breakMs: 0 },
-  );
-  const tickets = items.filter(({ item }) => item.issueId).length;
-  const quickVotes = items.length - tickets;
-  const lastOpen = view?.items.at(-1)?.rounds.at(-1)?.endedAt === undefined;
+  const {
+    session: { items, total, tickets, quickVotes, paused },
+  } = useRoundClock(roomId, lastActivityAt);
   const tally = [
     tickets > 0 && count(tickets, "ticket"),
     quickVotes > 0 && count(quickVotes, "round"),
@@ -80,11 +66,11 @@ export const SessionTimeNode = memo(({ data, selected }: NodeProps<SessionTimeNo
             <span className="flex items-baseline gap-2">
               Session
               <span className="font-mono text-sm font-medium tabular-nums text-gray-900 dark:text-gray-100">
-                {clockText(total.votingMs + total.discussionMs)}
+                {clockText(total.ms)}
               </span>
             </span>
             <span className="flex items-baseline gap-1.5">
-              {view?.pausedAt != null && (
+              {paused && (
                 <span className="mr-1 rounded bg-gray-100 px-1.5 py-0.5 text-[11px] text-gray-600 dark:bg-surface-2 dark:text-gray-300">
                   Paused
                 </span>
@@ -104,32 +90,28 @@ export const SessionTimeNode = memo(({ data, selected }: NodeProps<SessionTimeNo
             {items.length === 0 ? (
               <TimeTip className="flex-1 rounded-sm bg-gray-100 dark:bg-surface-2" content="Starts with the first round" />
             ) : (
-              items.map(({ item, split }, index) => (
+              items.map((item) => (
                 <div
-                  key={`${item.rounds[0].startedAt}`}
+                  key={item.startedAt}
+                  data-open={item.open || undefined}
                   className={cn(
                     "flex min-w-1 overflow-hidden rounded-sm",
-                    index === items.length - 1 &&
-                      lastOpen &&
-                      "ring-2 ring-blue-500/30 ring-offset-1 ring-offset-white dark:ring-offset-surface-1",
+                    item.open && "ring-2 ring-blue-500/30 ring-offset-1 ring-offset-white dark:ring-offset-surface-1",
                   )}
-                  style={{ flexGrow: split.votingMs + split.discussionMs + split.breakMs, flexBasis: 0 }}
+                  style={{ flexGrow: item.time.ms + item.time.breakMs, flexBasis: 0 }}
                 >
-                  {PARTS.filter((part) => split[part] > 0).map((part) => (
+                  {PARTS.filter((part) => item.time[part] > 0).map((part) => (
                     <TimeTip
                       key={part}
                       className={FILL[part]}
-                      style={{ flexGrow: split[part], flexBasis: 0 }}
+                      style={{ flexGrow: item.time[part], flexBasis: 0 }}
                       content={
                         <span className="grid gap-0.5">
                           <span className="font-medium">{item.title ?? "Quick vote"}</span>
-                          <TimeLine label={LABEL[part]} ms={split[part]} />
-                          {item.rounds.length > 1 && (
+                          <TimeLine label={LABEL[part]} ms={item.time[part]} />
+                          {item.rounds > 1 && (
                             <span className="opacity-70">
-                              <TimeLine
-                                label={`Ticket · ${item.rounds.length} rounds`}
-                                ms={split.votingMs + split.discussionMs}
-                              />
+                              <TimeLine label={`Ticket · ${item.rounds} rounds`} ms={item.time.ms} />
                             </span>
                           )}
                         </span>

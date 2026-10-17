@@ -8,6 +8,11 @@
  * someone paused, or nobody did anything. What counts as a break is decided
  * here, when reading, so a threshold changed later re-reads the past instead
  * of leaving it wrong.
+ *
+ * Three readings come out of it: a target's time, which the timer shows for
+ * the current target and which an issue's time-to-consensus is at the reveal
+ * that settles it (ADR-0034); what the timer shows; and what session time
+ * shows. The board's nodes draw the last two and work out nothing.
  */
 
 import type { Id } from "./_generated/dataModel";
@@ -40,7 +45,7 @@ export interface BreakFact {
   kind: BreakKind;
 }
 
-/** A voting round as the clock reads it. An open round has no `endedAt`. */
+/** A voting round as the clock reads it. A round is open until the room moves on: it has no `endedAt`. */
 export interface RoundFact {
   issueId?: Id<"issues">;
   startedAt: number;
@@ -56,32 +61,63 @@ export interface SessionItem {
   rounds: RoundFact[];
 }
 
+/**
+ * What the clock knows, as facts with timestamps: what `api.roundClock.get`
+ * returns, or the Demo simulation's own (ADR-0003). The readings read it
+ * against the browser's `now`.
+ */
+export interface RoundClockView {
+  /** When the session began; null until anyone has had the room open since the clock existed. */
+  sessionStartedAt: number | null;
+  pausedAt: number | null;
+  timebox: { startedAt: number; durationMs: number } | null;
+  /** The length the next flip starts with. */
+  timeboxMs: number;
+  /** The current target's rounds, oldest first: an issue's every round, or the open Quick Vote round. */
+  current: RoundFact[];
+  /** The session's items in order, with each issue's title. */
+  items: SessionItem[];
+  /** The breaks that touch the current target or the session. */
+  breaks: BreakFact[];
+}
+
+/** Time spent on rounds, and what the breaks took out of it. */
 export interface TimeSplit {
+  /** Voting and discussion together: the time spent. */
+  ms: number;
   votingMs: number;
   discussionMs: number;
+  /** The breaks left out of those stretches. */
   breakMs: number;
 }
 
+const NO_TIME: TimeSplit = Object.freeze({ ms: 0, votingMs: 0, discussionMs: 0, breakMs: 0 });
+
 type Span = readonly [from: number, to: number];
+
+const isOpen = (round: RoundFact): boolean => round.endedAt === undefined;
 
 /**
  * The breaks still running, which no fact holds yet: a pause called and not
  * lifted, and the quiet past IDLE_MS since the room's last action.
  */
-export function liveBreaks(now: number, live: { pausedAt?: number | null; lastActivityAt?: number }): BreakFact[] {
+function liveBreaks(now: number, pausedAt: number | null, lastActivityAt: number): BreakFact[] {
   const breaks: BreakFact[] = [];
-  if (live.pausedAt != null && live.pausedAt < now) breaks.push({ from: live.pausedAt, to: now, kind: "pause" });
-  if (live.lastActivityAt !== undefined && now - live.lastActivityAt > IDLE_MS) {
-    breaks.push({ from: live.lastActivityAt + IDLE_MS, to: now, kind: "idle" });
-  }
+  if (pausedAt !== null && pausedAt < now) breaks.push({ from: pausedAt, to: now, kind: "pause" });
+  if (now - lastActivityAt > IDLE_MS) breaks.push({ from: lastActivityAt + IDLE_MS, to: now, kind: "idle" });
   return breaks;
+}
+
+/** The view's breaks at `now`: its facts, and those still running. */
+function breaksAt(view: RoundClockView, now: number, lastActivityAt: number): BreakFact[] {
+  return [...view.breaks, ...liveBreaks(now, view.pausedAt, lastActivityAt)];
 }
 
 /**
  * The stretches that count as breaks, merged and in order: every pause and
  * long quiet, and the gaps in attendance of AWAY_BREAK_MS or more.
  */
-export function countedBreaks(breaks: readonly BreakFact[]): Span[] {
+function countedBreaks(breaks: readonly BreakFact[]): Span[] {
   const spans = breaks
     .filter((b) => b.to > b.from && (b.kind !== "away" || b.to - b.from >= AWAY_BREAK_MS))
     .map((b): Span => [b.from, b.to])
@@ -106,7 +142,7 @@ function overlap(span: Span, breaks: readonly Span[]): number {
 }
 
 /** A round's voting stretch (start to its voting's end) and discussion stretch (reveal to its end), open ones up to `now`. */
-export function roundSpans(round: RoundFact, now: number): { voting: Span; discussion: Span | null } {
+function roundSpans(round: RoundFact, now: number): { voting: Span; discussion: Span | null } {
   const end = round.endedAt ?? now;
   const votingEnd = round.votingEndedAt ?? round.revealedAt ?? end;
   return {
@@ -116,31 +152,182 @@ export function roundSpans(round: RoundFact, now: number): { voting: Span; discu
 }
 
 /**
- * How rounds' time splits into voting, discussion and breaks, from `window.from`
- * (a session's start) to `now`. Breaks come out of whichever stretch they fall in.
+ * How rounds' time splits into voting, discussion and breaks, from `from` (a
+ * session's start) to `now`. Breaks come out of whichever stretch they fall in.
  */
-export function roundsTime(
-  rounds: readonly RoundFact[],
-  breaks: readonly BreakFact[],
-  now: number,
-  window: { from?: number } = {},
-): TimeSplit {
+function roundsTime(rounds: readonly RoundFact[], breaks: readonly BreakFact[], now: number, from = -Infinity): TimeSplit {
   const counted = countedBreaks(breaks);
-  const from = window.from ?? -Infinity;
   const clip = (span: Span): Span => [Math.max(span[0], from), Math.min(span[1], now)];
-  const split: TimeSplit = { votingMs: 0, discussionMs: 0, breakMs: 0 };
+  let votingMs = 0;
+  let discussionMs = 0;
+  let breakMs = 0;
   for (const round of rounds) {
     const spans = roundSpans(round, now);
-    for (const [key, span] of [["votingMs", spans.voting], ["discussionMs", spans.discussion]] as const) {
+    for (const [stretch, span] of [["voting", spans.voting], ["discussion", spans.discussion]] as const) {
       if (!span) continue;
       const [start, end] = clip(span);
       if (end <= start) continue;
       const paused = overlap([start, end], counted);
-      split[key] += end - start - paused;
-      split.breakMs += paused;
+      if (stretch === "voting") votingMs += end - start - paused;
+      else discussionMs += end - start - paused;
+      breakMs += paused;
     }
   }
-  return split;
+  return { ms: votingMs + discussionMs, votingMs, discussionMs, breakMs };
+}
+
+const sum = (a: TimeSplit, b: TimeSplit): TimeSplit => ({
+  ms: a.ms + b.ms,
+  votingMs: a.votingMs + b.votingMs,
+  discussionMs: a.discussionMs + b.discussionMs,
+  breakMs: a.breakMs + b.breakMs,
+});
+
+/**
+ * The time a target's rounds took up to `now`: voting and the discussion
+ * between them, less the breaks the clock leaves out. What the timer shows
+ * for the current target, and so an issue's time-to-consensus at the reveal
+ * that settles it (ADR-0034): the server reads it there from the facts, which
+ * by then hold every break the timer counted.
+ */
+export function targetTime(rounds: readonly RoundFact[], breaks: readonly BreakFact[], now: number): TimeSplit {
+  return roundsTime(rounds, breaks, now);
+}
+
+export type TimeboxStatus = "idle" | "running" | "over";
+
+/** The timebox at a moment: how much is left, how far over it is, and the sand still on top. */
+export interface TimeboxReading {
+  status: TimeboxStatus;
+  remainingMs: number;
+  overtimeMs: number;
+  /** The share of sand still on top. */
+  fraction: number;
+  /** How long ago it was flipped. */
+  elapsedMs: number;
+  /** When it was flipped, and for how long; null with no timebox. */
+  startedAt: number | null;
+  durationMs: number | null;
+}
+
+const NO_TIMEBOX: TimeboxReading = Object.freeze({
+  status: "idle",
+  remainingMs: 0,
+  overtimeMs: 0,
+  fraction: 0,
+  elapsedMs: 0,
+  startedAt: null,
+  durationMs: null,
+});
+
+function timeboxAt(timebox: RoundClockView["timebox"], now: number): TimeboxReading {
+  if (!timebox) return NO_TIMEBOX;
+  // A browser whose clock runs a little behind the server's never sees more than the full length.
+  const elapsedMs = Math.max(0, now - timebox.startedAt);
+  const left = timebox.durationMs - elapsedMs;
+  return {
+    status: left > 0 ? "running" : "over",
+    remainingMs: Math.max(0, left),
+    overtimeMs: Math.max(0, -left),
+    fraction: Math.min(1, Math.max(0, left / timebox.durationMs)),
+    elapsedMs,
+    startedAt: timebox.startedAt,
+    durationMs: timebox.durationMs,
+  };
+}
+
+/**
+ * Whether the timer counts, and why not: someone paused for a break, nobody
+ * has done anything for IDLE_MS, or no round is open to count.
+ */
+export type ClockState = "counting" | "paused" | "quiet" | "waiting";
+
+/** What the timer shows. */
+export interface TimerReading {
+  /** The current target's time: its rounds, less the breaks. */
+  time: TimeSplit;
+  state: ClockState;
+  timebox: TimeboxReading;
+  /** The length the next flip starts with. */
+  nextFlipMs: number;
+}
+
+/** What the timer shows at `now`, a room whose last action was at `lastActivityAt`. */
+export function timerReading(view: RoundClockView | undefined, now: number, lastActivityAt: number): TimerReading {
+  const current = view?.current ?? [];
+  const last = current.at(-1);
+  const state: ClockState =
+    view?.pausedAt != null
+      ? "paused"
+      : !last || !isOpen(last)
+        ? "waiting"
+        : now - lastActivityAt > IDLE_MS
+          ? "quiet"
+          : "counting";
+  return {
+    time: view ? targetTime(current, breaksAt(view, now, lastActivityAt), now) : NO_TIME,
+    state,
+    timebox: timeboxAt(view?.timebox ?? null, now),
+    nextFlipMs: view?.timeboxMs ?? DEFAULT_TIMEBOX_MS,
+  };
+}
+
+/** One of the session's items as session time draws it. */
+export interface SessionItemReading {
+  issueId?: Id<"issues">;
+  /** The issue's title; none for a Quick Vote. */
+  title?: string;
+  /** When its first round started: a key that stays put. */
+  startedAt: number;
+  rounds: number;
+  time: TimeSplit;
+  /** The room is still on it. Drawn even before it has counted any time. */
+  open: boolean;
+}
+
+/** What session time shows. */
+export interface SessionReading {
+  /** The items that took time, and the open one. */
+  items: SessionItemReading[];
+  total: TimeSplit;
+  /** How many of the items are issues, and how many Quick Vote rounds. */
+  tickets: number;
+  quickVotes: number;
+  paused: boolean;
+}
+
+/** What session time shows at `now`, a room whose last action was at `lastActivityAt`. */
+export function sessionReading(view: RoundClockView | undefined, now: number, lastActivityAt: number): SessionReading {
+  if (!view) return { items: [], total: NO_TIME, tickets: 0, quickVotes: 0, paused: false };
+  const breaks = breaksAt(view, now, lastActivityAt);
+  const from = view.sessionStartedAt ?? -Infinity;
+  const lastIndex = view.items.length - 1;
+  const items = view.items.flatMap((item, index): SessionItemReading[] => {
+    const first = item.rounds[0];
+    const last = item.rounds.at(-1);
+    if (!first || !last) return [];
+    const time = roundsTime(item.rounds, breaks, now, from);
+    const open = index === lastIndex && isOpen(last);
+    if (time.ms === 0 && !open) return [];
+    return [
+      {
+        ...(item.issueId !== undefined && { issueId: item.issueId }),
+        ...(item.title !== undefined && { title: item.title }),
+        startedAt: first.startedAt,
+        rounds: item.rounds.length,
+        time,
+        open,
+      },
+    ];
+  });
+  const tickets = items.filter((item) => item.issueId !== undefined).length;
+  return {
+    items,
+    total: items.reduce((total, item) => sum(total, item.time), NO_TIME),
+    tickets,
+    quickVotes: items.length - tickets,
+    paused: view.pausedAt !== null,
+  };
 }
 
 /** Rounds in order, grouped into items: one issue's consecutive rounds together, each Quick Vote round alone. */
@@ -157,25 +344,6 @@ export function sessionItems(rounds: readonly RoundFact[]): SessionItem[] {
 /** Whether any of a round's time falls after `from`: a session holds the rounds that do. */
 export function overlapsFrom(round: RoundFact, from: number): boolean {
   return (round.endedAt ?? Infinity) > from;
-}
-
-export type TimeboxStatus = "idle" | "running" | "over";
-
-/** The timebox at `now`: how much is left, how far over it is, and the share of sand still on top. */
-export function timeboxAt(
-  timebox: { startedAt: number; durationMs: number } | null | undefined,
-  now: number,
-): { status: TimeboxStatus; remainingMs: number; overtimeMs: number; fraction: number } {
-  if (!timebox) return { status: "idle", remainingMs: 0, overtimeMs: 0, fraction: 0 };
-  // A browser whose clock runs a little behind the server's never sees more than the full length.
-  const elapsed = Math.max(0, now - timebox.startedAt);
-  const left = timebox.durationMs - elapsed;
-  return {
-    status: left > 0 ? "running" : "over",
-    remainingMs: Math.max(0, left),
-    overtimeMs: Math.max(0, -left),
-    fraction: Math.min(1, Math.max(0, left / timebox.durationMs)),
-  };
 }
 
 const pad = (n: number) => n.toString().padStart(2, "0");

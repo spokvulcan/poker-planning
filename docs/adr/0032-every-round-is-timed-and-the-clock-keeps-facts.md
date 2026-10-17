@@ -1,6 +1,6 @@
 # Every round is timed, and the clock keeps facts the reader interprets
 
-**Status:** accepted, 2026-10-12. Amends the glossary's **Quick Vote** (no longer untimed) and replaces the poker room's manual stopwatch; the retro's timer is unchanged.
+**Status:** accepted, 2026-10-12. Amends the glossary's **Quick Vote** (no longer untimed) and replaces the poker room's manual stopwatch; the retro's timer is unchanged. Amended by [ADR-0034](0034-time-to-consensus-is-what-the-timer-showed-at-the-consensus-reveal.md): time-to-consensus is what the timer showed at the reveal that reached consensus, no longer the total of an issue's voting.
 
 The poker room's timer was a manual stopwatch every room got and few used: in production, 21% of poker rooms ever started it, three were left running for days, and its reading was thrown away on reset. Meanwhile the server already timed issue-backed rounds for time-to-consensus, but not Quick Vote rounds, which are most rounds (78% of poker rooms never create an issue), and nothing in the room showed it. Research on other tools (`docs/research/estimation-timer-teardown.md`) found that timers that get used are bound to the round, and the complaints are about sound, controls anyone can grab, and enforcement at zero.
 

@@ -507,7 +507,7 @@ describe("VotingRound.abandon", () => {
         .first()
     );
     expect(ts?.votingEndedAt).toEqual(expect.any(Number));
-    expect(ts?.durationMs).toEqual(expect.any(Number));
+    expect(ts?.endedAt).toEqual(expect.any(Number));
   });
 
   it("cancels an armed countdown", async () => {
@@ -664,7 +664,6 @@ describe("VotingRound.reset", () => {
         issueId,
         votingStartedAt: Date.now() - 10_000,
         votingEndedAt: Date.now() - 5_000,
-        durationMs: 5_000,
         roundNumber: 1,
       })
     );

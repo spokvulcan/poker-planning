@@ -24,8 +24,7 @@ import {
 import type { Doc, Id } from "@/convex/_generated/dataModel";
 import type { CanvasNode } from "@/convex/model/canvas";
 import type { RoomWithRelatedData, SanitizedVote } from "@/convex/model/rooms";
-import type { RoundClockView } from "@/convex/model/roundClock";
-import { DEFAULT_TIMEBOX_MS, type BreakFact, type RoundFact } from "@/convex/roundTime";
+import { DEFAULT_TIMEBOX_MS, type BreakFact, type RoundClockView, type RoundFact } from "@/convex/roundTime";
 import { cardNumericValue } from "@/convex/scales";
 import {
   advanceDemo,

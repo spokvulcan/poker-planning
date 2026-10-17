@@ -9,6 +9,7 @@ import type { Id } from "./_generated/dataModel";
 import type { T } from "./analytics.seeds";
 import { as, join, seedUser } from "./people.seeds";
 import * as Rooms from "./model/rooms";
+import { timerReading } from "./roundTime";
 
 // The round clock (ADR-0032): every round timed, the stretches nobody was
 // there or nobody did anything, the session, the pause and the timebox, told
@@ -87,11 +88,12 @@ describe("every round is timed", () => {
       votingStartedAt: T0 + 10 * S,
       revealedAt: T0 + 70 * S,
       votingEndedAt: T0 + 70 * S,
-      durationMs: 60 * S,
       endedAt: T0 + 130 * S,
       endedBy: "nextRound",
       roundNumber: 1,
     });
+    // How long it took is the reader's to say (ADR-0034), never stored.
+    expect(first.durationMs).toBeUndefined();
     expect(second).toMatchObject({ votingStartedAt: T0 + 130 * S, roundNumber: 1 });
     expect(second.endedAt).toBeUndefined();
 
@@ -132,19 +134,55 @@ describe("every round is timed", () => {
     await owner().mutation(api.issues.clearCurrentIssue, { roomId });
 
     const all = await rounds();
-    expect(all.at(-2)).toMatchObject({ issueId: a, endedAt: T0 + 2 * MIN, endedBy: "dropped", durationMs: 2 * MIN });
+    expect(all.at(-2)).toMatchObject({ issueId: a, votingEndedAt: T0 + 2 * MIN, endedAt: T0 + 2 * MIN, endedBy: "dropped" });
     expect(all.at(-1)).toMatchObject({ votingStartedAt: T0 + 2 * MIN });
     expect(all.at(-1)?.issueId).toBeUndefined();
   });
 
-  it("time-to-consensus still totals an issue's voting across its rounds", async () => {
+});
+
+describe("time-to-consensus is what the timer showed at the reveal that reached consensus (ADR-0034)", () => {
+  /** What the room's timer shows now: the clock's facts, read as the browser reads them. */
+  const timerShows = async (now: number) => {
+    const room = await t.run((ctx) => ctx.db.get("rooms", roomId));
+    return timerReading(await clock(), now, room!.lastActivityAt).time.ms;
+  };
+  const settled = async (issueId: Id<"issues">) =>
+    (await t.run((ctx) => ctx.db.get("issues", issueId)))?.voteStats?.timeToConsensusMs;
+
+  it("counts the discussion between rounds, and leaves out a pause", async () => {
+    const a = await issue("Checkout flow");
+    await startVoting(a);
+    at(1 * MIN);
+    await vote("?");
+    at(2 * MIN);
+    await reveal(); // a special card only: no consensus, so the team talks
+    at(5 * MIN);
+    await newRound();
+    at(6 * MIN);
+    await owner().mutation(api.roundClock.pause, { roomId });
+    at(9 * MIN);
+    await owner().mutation(api.roundClock.resume, { roomId });
+    at(10 * MIN);
+    await vote("3");
+    at(11 * MIN);
+    await reveal(); // consensus
+
+    // 2 minutes' voting, 3 of discussion, then 6 minutes' voting less the 3-minute pause.
+    expect(await settled(a)).toBe(8 * MIN);
+    expect(await timerShows(T0 + 11 * MIN)).toBe(8 * MIN);
+  });
+
+  it("leaves out a long quiet past its first twenty minutes", async () => {
     const a = await issue("Checkout flow");
     await startVoting(a);
     at(1 * MIN);
     await vote("3");
-    await reveal(); // one vote: consensus
-    const done = await t.run((ctx) => ctx.db.get("issues", a));
-    expect(done?.voteStats?.timeToConsensusMs).toBe(1 * MIN);
+    at(50 * MIN);
+    await reveal(); // nobody did anything from 1 minute in until now
+
+    expect(await settled(a)).toBe(21 * MIN);
+    expect(await timerShows(T0 + 50 * MIN)).toBe(21 * MIN);
   });
 });
 
