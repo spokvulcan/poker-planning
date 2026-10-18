@@ -1,17 +1,13 @@
 /**
- * use-timer-sync — the TimerNode's hook, with its writes routed through the
- * canvas-actions seam. Pinned here:
+ * use-timer-sync — the retro TimerNode's hook, with its writes routed through
+ * the timer's actions seam. Pinned here:
  *
- *  1. Demo no-op (ADR-0003): inside a demo context start/pause/reset issue
- *     zero backend writes and the display is the local stopped 0:00.
- *  2. Real room: the controls forward to the seam with the acting user; with
- *     no acting user they no-op silently (the same guard as selectCard & co.).
- *  3. The display still derives from the persisted timer state via the shared
- *     math — the seam changed only where writes go.
- *  4. A refused timer write shows the refusal's message.
+ *  1. The controls forward to the seam with the acting user; with no acting
+ *     user they no-op silently.
+ *  2. The display derives from the persisted timer state via the shared math.
+ *  3. A refused timer write shows the refusal's message.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { createElement, type ReactNode } from "react";
 import { renderHook, act } from "@testing-library/react";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { TimerState } from "@/convex/timerState";
@@ -31,7 +27,6 @@ vi.mock("@/lib/toast", () => ({
 
 import { refusal } from "@/convex/model/refusal";
 import { convex, refuse, resetConvex } from "@/components/whiteboard/testing/convex";
-import { DemoSimulationProvider } from "../demo/DemoSimulationProvider";
 import { useTimerSync } from "./use-timer-sync";
 
 const ROOM_ID = "room-1" as Id<"rooms">;
@@ -51,36 +46,7 @@ beforeEach(() => {
   toasts.length = 0;
 });
 
-describe("use-timer-sync — demo no-op", () => {
-  it("issues zero backend writes and shows 0:00", async () => {
-    const wrapper = ({ children }: { children: ReactNode }) =>
-      createElement(DemoSimulationProvider, null, children);
-
-    const { result } = renderHook(
-      () =>
-        useTimerSync({
-          roomId: ROOM_ID,
-          nodeId: "timer",
-          // The demo viewer has no membership, so buildCanvasNodes passes no id.
-          userId: undefined,
-          timerState: STOPPED_TIMER_STATE,
-        }),
-      { wrapper },
-    );
-
-    await act(async () => {
-      result.current.onStart();
-      result.current.onPause();
-      result.current.onReset();
-    });
-
-    expect(convex.writes).toEqual([]);
-    expect(result.current.displayTime).toBe("0:00");
-    expect(result.current.isRunning).toBe(false);
-  });
-});
-
-describe("use-timer-sync — real room", () => {
+describe("use-timer-sync — the controls", () => {
   it("forwards start/pause/reset to the seam, leaving who is calling to the server", async () => {
     const { result } = renderHook(() =>
       useTimerSync({

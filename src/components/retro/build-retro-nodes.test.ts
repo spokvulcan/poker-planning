@@ -82,6 +82,24 @@ describe("buildRetroNodes", () => {
     expect(nodes.some((n) => n.id === "actions")).toBe(true);
   });
 
+  it("draws the timer, the manual stopwatch, from the state it stores, run as the viewer", () => {
+    const running = { startedAt: 1_000, pausedAt: null, elapsedSeconds: 42, isRunning: true, lastAction: "start" as const };
+    const nodes = buildRetroNodes(
+      input({
+        canvasNodes: [
+          { roomId: "room-1" as Id<"rooms">, nodeId: "timer", type: "timer", position: { x: 5, y: 6 }, data: running, lastUpdatedAt: 0 },
+        ],
+      })
+    );
+    expect(nodes.find((n) => n.id === "timer")).toEqual({
+      id: "timer",
+      type: "timer",
+      position: { x: 5, y: 6 },
+      data: { ...running, roomId: "room-1", userId: "me", nodeId: "timer" },
+      draggable: true,
+    });
+  });
+
   it("makes each topic a node, keyed by its client id, with its stack inside it", () => {
     const nodes = stickyNodes(
       buildRetroNodes(

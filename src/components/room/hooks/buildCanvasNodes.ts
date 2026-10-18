@@ -26,7 +26,6 @@ import {
   type CustomNodeType,
   type PokerBoardActions,
   type TimeNodesShown,
-  type TimerNodeType,
 } from "../types";
 
 /** The room fields the nodes builder reads — a view, not the whole document. */
@@ -164,26 +163,6 @@ function buildPlayerNode(
       card: input.phase === "revealed" ? userVote?.cardLabel || null : null,
       phase: input.phase,
       role: user.role ?? "participant",
-    },
-    draggable: !node.isLocked,
-  };
-}
-
-/** The timer node, shared with the retro board. */
-export function buildTimerNode(
-  node: CanvasNode & { type: "timer" },
-  input: Pick<CanvasNodesInput, "roomId" | "viewerId">,
-): TimerNodeType {
-  return {
-    id: node.nodeId,
-    type: "timer",
-    position: node.position,
-    data: {
-      ...node.data,
-      isRunning: node.data.isRunning ?? false,
-      roomId: input.roomId,
-      userId: input.viewerId,
-      nodeId: node.nodeId,
     },
     draggable: !node.isLocked,
   };

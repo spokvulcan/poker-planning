@@ -6,8 +6,7 @@ import {
   calculateCurrentTime,
   type TimerState,
 } from "@/convex/timerState";
-import { useDemoSimulation } from "../demo/DemoSimulationProvider";
-import { useTimerActions } from "./useTimerActions";
+import { useTimerActions } from "./use-timer-actions";
 
 interface UseTimerSyncProps {
   roomId: Id<"rooms">;
@@ -29,18 +28,16 @@ interface UseTimerSyncReturn {
 }
 
 /**
- * The timer's display derives entirely from the persisted state delivered with
- * the canvas node (`api.canvas.getCanvasNodes` via buildCanvasNodes) — there is
- * no second subscription. While the timer runs, a 100ms local interval re-reads
- * the clock through the shared math (`@/convex/timerState`) so the display ticks
- * smoothly between server snapshots; paused/reset states are static and re-derive
- * whenever the node data changes.
+ * The retro's timer, a manual stopwatch. Its display derives entirely from the
+ * persisted state delivered with the canvas node (`api.canvas.getCanvasNodes`
+ * via buildRetroNodes) — there is no second subscription. While the timer
+ * runs, a 100ms local interval re-reads the clock through the shared math
+ * (`@/convex/timerState`) so the display ticks smoothly between server
+ * snapshots; paused/reset states are static and re-derive whenever the node
+ * data changes.
  *
- * Writes go through the timer's action seam (useTimerActions): the demo no-op
- * policy and the missing-user guard live there, same as every other *Actions
- * seam (ADR-0003), so the old "User ID required" red error is unreachable — in
- * the demo every action silently no-ops, in a real room the viewer always
- * exists.
+ * Writes go through the timer's action seam (useTimerActions), which holds
+ * the missing-user guard and says why a write failed.
  */
 export function useTimerSync({
   roomId,
@@ -48,22 +45,18 @@ export function useTimerSync({
   userId,
   timerState,
 }: UseTimerSyncProps): UseTimerSyncReturn {
-  // In the Demo simulation the timer is local and stopped — it renders 0:00
-  // from the demo provider and never touches Convex (zero reads, ADR-0003).
-  const demo = useDemoSimulation();
-
   // The seam also owns failure reporting (a toast through runAct, same as
-  // reveal/reset), so this hook carries no error state of its own.
+  // the board's other writes), so this hook carries no error state of its own.
   const actions = useTimerActions({ roomId, currentUserId: userId });
 
   // Local clock for smooth ticking while running
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
-    if (demo || !timerState.isRunning) return;
+    if (!timerState.isRunning) return;
     const interval = setInterval(() => setNow(Date.now()), 100);
     return () => clearInterval(interval);
-  }, [demo, timerState.isRunning]);
+  }, [timerState.isRunning]);
 
   // Control functions — thin adapters over the seam. The seam's methods hold
   // frozen identities, so these stay stable too (nodeId is the only input).
@@ -71,11 +64,8 @@ export function useTimerSync({
   const onPause = useCallback(() => actions.pauseTimer(nodeId), [actions, nodeId]);
   const onReset = useCallback(() => actions.resetTimer(nodeId), [actions, nodeId]);
 
-  // Current display values, computed via the shared math. In demo mode the
-  // timer is a local, stopped 0:00 regardless of the fixture state.
-  const { currentSeconds, isRunning, displayTime } = demo
-    ? { currentSeconds: 0, isRunning: false, displayTime: "0:00" }
-    : calculateCurrentTime(timerState, now);
+  // Current display values, computed via the shared math.
+  const { currentSeconds, isRunning, displayTime } = calculateCurrentTime(timerState, now);
 
   return {
     currentSeconds,

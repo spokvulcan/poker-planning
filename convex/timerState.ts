@@ -1,8 +1,10 @@
 /**
- * timerState — the ONE declaration of the canvas timer node's persisted state
- * and its time math, kept at the Convex root (alongside `summarize`, `phase`,
- * and the permission decision) so the backend model and the browser compute
- * the same reading from the same shape. Pure: no IO, no Convex runtime.
+ * timerState — the ONE declaration of the retro's timer, the manual stopwatch:
+ * the state its canvas node persists and its time math, kept at the Convex
+ * root (alongside `summarize`, `phase`, and the permission decision) so the
+ * backend model and the browser compute the same reading from the same shape.
+ * A poker room's timer reads the round clock instead (roundTime.ts). Pure: no
+ * IO, no Convex runtime.
  */
 
 /** A control action on the timer (the transitions the model accepts). */
@@ -23,13 +25,22 @@ export type TimerState = {
   lastAction: TimerAction | null;
 };
 
-/** A timer that has never run: the state every canvas's timer node starts in. */
+/** A timer that has never run: the state a retro's timer node starts in. */
 export const IDLE_TIMER: TimerState = {
   startedAt: null,
   pausedAt: null,
   elapsedSeconds: 0,
   lastAction: null,
 };
+
+/**
+ * The state a timer node's `data` holds. A retro's timer holds its state from
+ * the start; one holding none (a poker room's, which reads the round clock)
+ * reads as a timer that has never run.
+ */
+export function timerStateOf(data: Partial<TimerState>): TimerState {
+  return { ...IDLE_TIMER, ...data };
+}
 
 /** A point-in-time reading derived from the persisted state. */
 export type CurrentTimerTime = {

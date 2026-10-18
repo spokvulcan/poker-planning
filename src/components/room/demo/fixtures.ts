@@ -125,12 +125,7 @@ function buildDemoCanvasNodes(): CanvasNode[] {
       nodeId: "timer",
       type: "timer",
       position: { ...TIMER_POSITION },
-      data: {
-        startedAt: null,
-        pausedAt: null,
-        elapsedSeconds: 0,
-        lastAction: null,
-      },
+      data: {},
       lastUpdatedAt: 0,
     },
     {

@@ -7,7 +7,6 @@ import type { Id } from "./_generated/dataModel";
 import * as VotingRound from "./model/votingRound";
 import * as Issues from "./model/issues";
 import * as Canvas from "./model/canvas";
-import * as Timer from "./model/timer";
 import * as Rooms from "./model/rooms";
 import * as Retro from "./model/retro";
 import { getMembership } from "./model/memberships";
@@ -186,35 +185,7 @@ describe("room activity — voting round transitions bump", () => {
   });
 });
 
-describe("room activity — timer and canvas ops bump", () => {
-  it("updateTimerState bumps", async () => {
-    const t = convexTest(schema, modules);
-    const stale = staleTimestamp();
-    const roomId = await seedRoom(t, stale);
-    const userId = await addMember(t, roomId, "auth-a");
-    await t.run((ctx) =>
-      ctx.db.insert("canvasNodes", {
-        roomId,
-        nodeId: "timer",
-        type: "timer",
-        position: { x: 0, y: 0 },
-        data: {
-          startedAt: null,
-          pausedAt: null,
-          elapsedSeconds: 0,
-          lastAction: null,
-        },
-        lastUpdatedAt: Date.now(),
-      })
-    );
-
-    await t.run(async (ctx) =>
-      Timer.updateTimerState(ctx, { room: (await ctx.db.get("rooms", roomId))!, nodeId: "timer", action: "start", userId })
-    );
-
-    await expectBumped(t, roomId, stale);
-  });
-
+describe("room activity — canvas ops bump", () => {
   it("moveNodes bumps", async () => {
     const t = convexTest(schema, modules);
     const stale = staleTimestamp();
@@ -608,6 +579,17 @@ describe("room activity — every retro write goes through the chokepoint (ADR-0
       },
       updateActionItem: () => owner.mutation(api.retro.updateActionItem, { itemId, done: true }),
       deleteActionItem: () => owner.mutation(api.retro.deleteActionItem, { itemId }),
+    });
+  });
+
+  it("starting, pausing and resetting the timer bump", async () => {
+    const t = convexTest(schema, modules);
+    const { roomId, owner } = await seedRetro(t);
+
+    await expectEachBumps(t, roomId, {
+      startTimer: () => owner.mutation(api.timer.startTimer, { roomId, nodeId: "timer" }),
+      pauseTimer: () => owner.mutation(api.timer.pauseTimer, { roomId, nodeId: "timer" }),
+      resetTimer: () => owner.mutation(api.timer.resetTimer, { roomId, nodeId: "timer" }),
     });
   });
 

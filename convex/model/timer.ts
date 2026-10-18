@@ -2,6 +2,8 @@ import { MutationCtx } from "../_generated/server";
 import { Doc, Id } from "../_generated/dataModel";
 import * as Canvas from "./canvas";
 import * as Rooms from "./rooms";
+import { refusal } from "./refusal";
+import { NOT_THIS_CEREMONY, rulesOf } from "../ceremony";
 import {
   calculateCurrentTime,
   validateTimerAction,
@@ -38,10 +40,13 @@ function transition(state: TimerState, action: TimerAction, now: number): TimerS
 }
 
 /**
- * Runs a timer action on a canvas timer: the timer's rules are here and in
- * timerState, its storage is the canvas's.
+ * Runs a timer action on a retro's timer, the manual stopwatch: the timer's
+ * rules are here and in timerState, its storage is the canvas's. A poker
+ * room's timer reads the round clock (ADR-0032), so it refuses the act as the
+ * other ceremony's (ADR-0031).
  */
 export async function updateTimerState(ctx: MutationCtx, args: UpdateTimerStateArgs): Promise<void> {
+  if (!rulesOf(args.room).stopwatch) throw refusal("missing", NOT_THIS_CEREMONY);
   const now = Date.now();
   await Canvas.updateTimer(ctx, args.room._id, args.nodeId, args.userId, (state) => {
     validateTimerAction(state, args.action);

@@ -3,6 +3,9 @@ import { mutation } from "./_generated/server";
 import * as Timer from "./model/timer";
 import { requireRoomWrite } from "./model/auth";
 
+// The retro's timer, a manual stopwatch anyone in the room runs. A poker
+// room's timer reads the round clock instead, and refuses these (ADR-0032).
+
 // Start the timer
 export const startTimer = mutation({
   args: {

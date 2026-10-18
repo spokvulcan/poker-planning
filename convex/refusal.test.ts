@@ -131,6 +131,10 @@ describe("a write aimed at the other ceremony", () => {
     expect(
       await refusalOf(owner.mutation(api.retro.updatePermissions, { roomId, permissions: DEFAULT_RETRO_PERMISSIONS }))
     ).toEqual(OTHER_CEREMONY);
+    // The stopwatch is the retro's timer: a poker room's reads the round clock (ADR-0032).
+    expect(await refusalOf(owner.mutation(api.timer.startTimer, { roomId, nodeId: "timer" }))).toEqual(OTHER_CEREMONY);
+    expect(await refusalOf(owner.mutation(api.timer.pauseTimer, { roomId, nodeId: "timer" }))).toEqual(OTHER_CEREMONY);
+    expect(await refusalOf(owner.mutation(api.timer.resetTimer, { roomId, nodeId: "timer" }))).toEqual(OTHER_CEREMONY);
     expect(
       await refusalOf(
         owner.mutation(api.retro.addSticky, {

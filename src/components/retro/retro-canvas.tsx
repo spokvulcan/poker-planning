@@ -14,7 +14,6 @@ import type { RetroStep } from "@/convex/retroTemplates";
 import { stepShows, topicActAllowed } from "@/convex/retroSteps";
 import { nextStickyPosition, PAD_WIDTH, padNodeId, STICKY_MIN_HEIGHT, STICKY_WIDTH } from "@/convex/retroLayout";
 import { BoardChrome, type ChromeBoard, type ChromePanel, type ShareEntry } from "@/components/room/board-chrome";
-import { TimerNode } from "@/components/room/nodes/TimerNode";
 import { UserMenu } from "@/components/user-menu";
 import { useSeatControls } from "@/components/room/seat-controls";
 import {
@@ -33,6 +32,7 @@ import { RetroNode } from "./nodes/retro-node";
 import { PadNode } from "./nodes/pad-node";
 import { StickyNode } from "./nodes/sticky-node";
 import { ActionsNode } from "./nodes/actions-node";
+import { TimerNode } from "./nodes/timer-node";
 import { RetroSettingsPanel } from "./retro-settings-panel";
 import { buildRetroEdges, buildRetroNodes } from "./build-retro-nodes";
 import { isOptimistic } from "@/lib/optimistic-id";
