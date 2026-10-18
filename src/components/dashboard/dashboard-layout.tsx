@@ -15,8 +15,10 @@ interface DashboardLayoutProps {
 
 /**
  * Every dashboard page is an account's own. The server sends a visitor who
- * asks for one to sign in; this sends one who becomes a visitor while on it
- * (signing out here or in another tab), coming back to the page once they're in.
+ * asks for one to sign in; this sends one the server couldn't tell (Convex
+ * slow or unreachable) once the browser knows, and one who becomes a visitor
+ * while on it (signing out here or in another tab), each coming back to the
+ * page once they're in.
  */
 function useAccountPage() {
   const { viewer } = useAuth();

@@ -11,6 +11,7 @@
  * The backend is faked at its edges: the server's token fetch, the browser's
  * requests, and every socket a Convex client opens. The homepage frames
  * `/demo?embed=true` on every visit; a visitor can also open /demo itself.
+ * A dashboard page sits in the app shell behind the dashboard's gate.
  */
 import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from "vitest";
 import { act, cleanup, render } from "@testing-library/react";
@@ -27,8 +28,12 @@ const backend = vi.hoisted(() => {
     reachable: true,
     /** Whether the document is the homepage's frame or a page of its own. */
     framed: false,
+    /** The path of the page the document is served for. */
+    path: "/",
     /** Every request that reached the backend, from the server or the browser. */
     requests: [] as string[],
+    /** Every page the browser was sent to after the document loaded. */
+    navigations: [] as string[],
     /** Every socket a Convex client opened. */
     sockets: [] as string[],
     /** The live session's token, decodable so a Convex client has nothing to log. */
@@ -79,14 +84,17 @@ const backend = vi.hoisted(() => {
 });
 
 // The server fetches the session's token through this module, and reads the
-// viewer with it through Convex's.
-vi.mock("@/lib/auth-server", () => ({
-  getToken: async () => {
+// viewer with it through Convex's. Its isAuthenticated is the same fetch, as
+// the real one is, with none of getServerSession's rules: it fetches with no
+// session cookie too, and rethrows when Convex can't be reached.
+vi.mock("@/lib/auth-server", () => {
+  const getToken = async () => {
     backend.requests.push("server: /api/auth/convex/token");
     if (!backend.reachable) throw new TypeError("fetch failed");
     return backend.liveSession ? backend.token : null;
-  },
-}));
+  };
+  return { getToken, isAuthenticated: async () => !!(await getToken()) };
+});
 vi.mock("convex/nextjs", () => ({
   fetchQuery: async () => {
     backend.requests.push("server: /api/query");
@@ -95,15 +103,20 @@ vi.mock("convex/nextjs", () => ({
 }));
 
 // The request the document is served for, from a visitor who has not made an
-// analytics choice yet, with the session cookie of a live session.
-vi.mock("next/headers", () => ({
-  cookies: async () => ({ get: () => undefined }),
-  headers: async () =>
-    new Headers({
-      "sec-fetch-dest": backend.framed ? "iframe" : "document",
-      ...(backend.liveSession && { cookie: "better-auth.session_token=session-1.signature" }),
-    }),
-}));
+// analytics choice yet, with the session cookie of a live session, and the
+// page's path as the proxy puts it on the request.
+vi.mock("next/headers", async () => {
+  const { PAGE_PATH_HEADER } = await import("@/lib/page-path");
+  return {
+    cookies: async () => ({ get: () => undefined }),
+    headers: async () =>
+      new Headers({
+        "sec-fetch-dest": backend.framed ? "iframe" : "document",
+        [PAGE_PATH_HEADER]: backend.path,
+        ...(backend.liveSession && { cookie: "better-auth.session_token=session-1.signature" }),
+      }),
+  };
+});
 
 // Next's compiler replaces these calls at build time.
 vi.mock("next/font/google", () => {
@@ -111,14 +124,22 @@ vi.mock("next/font/google", () => {
   return { Geist: font, Geist_Mono: font, Outfit: font };
 });
 
-// There is no app router in jsdom.
+// There is no app router in jsdom. A redirect ends the server's render, as
+// Next's does, and names the page the document sends the browser to instead.
 vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(backend.framed ? "embed=true" : ""),
-  useRouter: () => ({ push: () => {} }),
+  usePathname: () => backend.path,
+  useRouter: () => ({ push: () => {}, replace: (href: string) => backend.navigations.push(href) }),
+  redirect: (href: string) => {
+    throw Object.assign(new Error(`Redirected to ${href}`), { redirectedTo: href });
+  },
 }));
 
 import RootLayout from "./layout";
 import AppLayout from "./(app)/layout";
+import DashboardLayout from "./(app)/dashboard/layout";
+import DashboardPage from "./(app)/dashboard/page";
+import RetrosPage from "./(app)/dashboard/retros/page";
 import DemoLayout from "./(demo)/layout";
 import DemoPage from "./(demo)/demo/page";
 
@@ -129,6 +150,11 @@ async function serve(groupLayout: Layout, page: ReactElement) {
   return RootLayout({ children: await groupLayout({ children: page }) });
 }
 
+/** Serves a dashboard page: the app shell around the dashboard's layout around the page. */
+async function serveDashboard(page: ReactElement) {
+  return serve(AppLayout, await DashboardLayout({ children: page }));
+}
+
 /** Loads a served document in the browser and lets its effects run. */
 async function load(served: ReactNode) {
   render(served, { container: document });
@@ -136,7 +162,9 @@ async function load(served: ReactNode) {
 }
 
 beforeEach(() => {
+  backend.path = "/";
   backend.requests = [];
+  backend.navigations = [];
   backend.sockets = [];
   backend.reachable = true;
 });
@@ -205,5 +233,33 @@ describe("the app shell", () => {
     expect(document.body.textContent).toContain("An app page");
     expect(backend.requests).toContain("server: /api/auth/convex/token");
     expect(backend.requests).not.toContain("server: /api/query");
+  });
+});
+
+describe("a dashboard page", () => {
+  it("still serves when the server can't reach Convex, leaving the session to the browser's gate", async () => {
+    backend.framed = false;
+    backend.liveSession = true;
+    backend.reachable = false;
+    backend.path = "/dashboard";
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await load(await serveDashboard(<DashboardPage />));
+
+    // The page waits for the browser to know who is looking, and nobody is sent to sign in meanwhile.
+    expect(document.body.textContent).toContain("Loading dashboard...");
+    expect(backend.requests).toContain("server: /api/auth/convex/token");
+    expect(backend.navigations).toEqual([]);
+  });
+
+  it("sends a visitor with no session to sign in, coming back to the page, without fetching a token", async () => {
+    backend.framed = false;
+    backend.liveSession = false;
+    backend.path = "/dashboard/retros";
+
+    await expect(serveDashboard(<RetrosPage />)).rejects.toMatchObject({
+      redirectedTo: "/auth/signin?from=%2Fdashboard%2Fretros",
+    });
+    expect(backend.requests).toEqual([]);
   });
 });

@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { headers } from "next/headers";
 import { getSessionCookie } from "better-auth/cookies";
 import { getToken } from "@/lib/auth-server";
@@ -27,13 +28,15 @@ export function within<T>(promise: Promise<T>, ms: number, what: string): Promis
 export type ServerSession = { status: "none" } | { status: "unknown" } | { status: "token"; token: string };
 
 /**
- * The session's token for the page's first render. A visitor with no
- * session cookie costs no network at all, so a page that needs no session
- * never waits on Convex; a signed-in person's waits at most
- * SERVER_AUTH_WAIT_MS, and a token Convex can't give leaves the session
- * unknown, for the browser to fetch, rather than failing the page.
+ * The session's token for the page's first render, and the one way a server
+ * render asks who is signed in. A visitor with no session cookie costs no
+ * network at all, so a page that needs no session never waits on Convex; a
+ * signed-in person's waits at most SERVER_AUTH_WAIT_MS, and a token Convex
+ * can't give leaves the session unknown, for the browser to fetch, rather
+ * than failing the page. One answer per request: the app shell and a page's
+ * gate (the dashboard's layout) share it.
  */
-export async function getServerSession(): Promise<ServerSession> {
+export const getServerSession = cache(async (): Promise<ServerSession> => {
   if (!getSessionCookie(await headers())) return { status: "none" };
   try {
     const token = await within(getToken(), SERVER_AUTH_WAIT_MS, "The session's token");
@@ -42,4 +45,4 @@ export async function getServerSession(): Promise<ServerSession> {
     console.error("Couldn't fetch the session's token on the server:", error);
     return { status: "unknown" };
   }
-}
+});
