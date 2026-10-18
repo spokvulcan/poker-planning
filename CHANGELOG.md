@@ -1,5 +1,20 @@
 # Changelog
 
+## [2.13.2](https://github.com/spokvulcan/poker-planning/compare/agilekit-v2.13.1...agilekit-v2.13.2) (2026-10-18)
+
+
+### Bug Fixes
+
+* a poker room neither stores nor accepts the retro's stopwatch ([#435](https://github.com/spokvulcan/poker-planning/issues/435)) ([bcc872a](https://github.com/spokvulcan/poker-planning/commit/bcc872a35af3f5e72d98d5966e65c3edc8cbe32e))
+* **auth:** a session the browser can't fetch stays unknown, so an outage sends nobody to sign in ([#438](https://github.com/spokvulcan/poker-planning/issues/438)) ([8645ffc](https://github.com/spokvulcan/poker-planning/commit/8645ffcdf38c63b918d1667425efb74dc448841f))
+* **dashboard:** dashboard pages render when Convex is slow or unreachable, and Sign in returns to the page ([#436](https://github.com/spokvulcan/poker-planning/issues/436)) ([21e9ee6](https://github.com/spokvulcan/poker-planning/commit/21e9ee6f25c0cc48a63b5905bf6c8f7d1c4dfa91))
+* time-to-consensus is what the timer showed at the reveal that reached consensus ([#434](https://github.com/spokvulcan/poker-planning/issues/434)) ([0e2e069](https://github.com/spokvulcan/poker-planning/commit/0e2e069ff5e34281393f9ab148655bfe4dd5573c))
+
+
+### Miscellaneous
+
+* drop the round record's durationMs and its one-off migration ([#437](https://github.com/spokvulcan/poker-planning/issues/437)) ([af181c0](https://github.com/spokvulcan/poker-planning/commit/af181c0c30ba84603163de9d49c2c24fa9052d4c))
+
 ## [2.13.1](https://github.com/spokvulcan/poker-planning/compare/agilekit-v2.13.0...agilekit-v2.13.1) (2026-10-12)
 
 
