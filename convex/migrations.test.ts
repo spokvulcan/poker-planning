@@ -162,42 +162,6 @@ describe("clearTimerRunners", () => {
   });
 });
 
-describe("clearRoundDurations", () => {
-  beforeEach(() => {
-    vi.useFakeTimers({ toFake: ["setTimeout"] });
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
-    vi.restoreAllMocks();
-  });
-
-  it("clears every round record's wall-clock duration a batch at a time, and nothing else", async () => {
-    const t = withComponents(convexTest(schema, modules));
-    const roomId = await seedOwnedRoom(t, await seedUser(t, "auth-owner"));
-    await t.run(async (ctx) => {
-      await ctx.db.insert("votingTimestamps", { roomId, votingStartedAt: 0, votingEndedAt: 60_000, durationMs: 60_000, roundNumber: 1 });
-      await ctx.db.insert("votingTimestamps", { roomId, votingStartedAt: 0, votingEndedAt: 30_000, durationMs: 30_000, roundNumber: 1 });
-      await ctx.db.insert("votingTimestamps", { roomId, votingStartedAt: 90_000, roundNumber: 1 });
-    });
-    const before = await t.run((ctx) => ctx.db.query("votingTimestamps").collect());
-    const log = vi.spyOn(console, "log").mockImplementation(() => {});
-
-    expect(await t.mutation(internal.migrations.clearRoundDurations, { batchSize: 2 })).toEqual({
-      roundsChecked: 2,
-      durationsCleared: 2,
-      done: false,
-    });
-    await t.finishAllScheduledFunctions(vi.runAllTimers);
-
-    const after = await t.run((ctx) => ctx.db.query("votingTimestamps").collect());
-    expect(after).toEqual(before.map(({ durationMs: _, ...round }) => round));
-    expect(log).toHaveBeenCalledWith("Round duration cleanup complete:", { roundsChecked: 3, durationsCleared: 2 });
-    // A second run finds nothing left to clear.
-    expect(await t.mutation(internal.migrations.clearRoundDurations, {})).toMatchObject({ durationsCleared: 0 });
-  });
-});
-
 describe("deleteLeftoverSignIns", () => {
   // Signed in through BetterAuth's own routes, as a browser is (signIn.seeds.ts).
   beforeEach(stubAuthDeployment);

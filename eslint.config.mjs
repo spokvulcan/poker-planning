@@ -64,7 +64,7 @@ const BACKEND_STANDARDS = [
   },
   {
     selector: writeTo("votingTimestamps"),
-    except: ["convex/model/votingRound.ts", "convex/model/issues.ts", "convex/migrations.ts"],
+    except: ["convex/model/votingRound.ts", "convex/model/issues.ts"],
     message:
       "One writer per concern (CLAUDE.md): only model/votingRound.ts writes round records, and model/issues.ts lets an issue's go with it.",
   },
