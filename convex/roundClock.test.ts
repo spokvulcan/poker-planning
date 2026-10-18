@@ -92,8 +92,6 @@ describe("every round is timed", () => {
       endedBy: "nextRound",
       roundNumber: 1,
     });
-    // How long it took is the reader's to say (ADR-0034), never stored.
-    expect(first.durationMs).toBeUndefined();
     expect(second).toMatchObject({ votingStartedAt: T0 + 130 * S, roundNumber: 1 });
     expect(second.endedAt).toBeUndefined();
 

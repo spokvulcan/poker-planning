@@ -335,9 +335,6 @@ export default defineSchema({
     issueId: v.optional(v.id("issues")), // absent for a Quick Vote's round
     votingStartedAt: v.number(),
     votingEndedAt: v.optional(v.number()), // the reveal, or the end of a round never revealed
-    // No longer written or read (ADR-0034): migrations:clearRoundDurations
-    // clears it, and the release after that has run drops it.
-    durationMs: v.optional(v.number()),
     revealedAt: v.optional(v.number()),
     endedAt: v.optional(v.number()), // the room moved on: a new round, another target, the issue dropped
     endedBy: v.optional(v.union(v.literal("nextRound"), v.literal("nextTarget"), v.literal("dropped"))),
