@@ -56,10 +56,12 @@ The authentication system consists of three layers:
 | `src/lib/auth-server.ts` | BetterAuth's server helpers through Convex (`getToken`, `isAuthenticated`, `fetchAuthQuery`, etc.): route handlers use them; a server render asks `getServerSession` instead |
 | `src/lib/server-session.ts` | `getServerSession`, the one way a server render asks who is signed in (see [Server-Side Auth](#server-side-auth-nextjs)) |
 | `src/proxy.ts` | Puts the page's path on every dashboard request (`PAGE_PATH_HEADER`, `src/lib/page-path.ts`), so the dashboard's gate sends a visitor to sign in coming back to the page |
-| `src/app/(app)/layout.tsx` | The app shell, for every page but `/demo`: fetches the session's token on the server and mounts BetterAuth and the auth provider (`src/components/providers.tsx`) |
+| `src/app/(app)/layout.tsx` | The app shell, for every page but `/demo`: fetches the session's token on the server and mounts Convex signed in with BetterAuth's session, and the auth provider (`src/components/providers.tsx`) |
 | `src/app/(app)/auth/signin/page.tsx` | Dedicated Sign In Page for permanent account upgrade |
 | `src/app/(app)/auth/verify/page.tsx` | Magic Link Verification Page |
 | `src/app/api/auth/[...all]/route.ts` | Next.js API route handler |
+| `src/components/auth/browser-session.ts` | What the browser knows of its BetterAuth session: loading, unknown (it couldn't fetch it), none, or live |
+| `src/components/auth/convex-session.tsx` | `ConvexSessionProvider`: Convex signed in with the browser's session, where only an answer signs a person out (see [A session the browser couldn't fetch](#a-session-the-browser-couldnt-fetch)) |
 | `src/components/auth/auth-provider.tsx` | React context for the viewer (who is looking, as `users.getViewer` answers, and whether Convex has confirmed their session) and `whenAuth` for waiting on auth state; `use-caller-query.ts` reads as the viewer |
 | `src/hooks/useEnsureSession.ts` | The session every guest way in goes through (see [Guest flow](#first-time-user-joining-a-room-guest)) |
 | `src/lib/auth-waiters.ts` | Promises on the changing auth state, held by the auth provider |
@@ -298,7 +300,7 @@ if (session.status === "none") {
 }
 ```
 
-Sign in comes back to the page the person asked for, from the server as from the browser: `signInHref` of the page's path. Next gives a layout no pathname, so the proxy (`src/proxy.ts`) puts it on every dashboard request, at no cost in network; a gate on pages outside `/dashboard` adds them to the proxy's matcher. The server's redirect spares a visitor the page altogether, which the browser's gate alone would draw before sending them on. The browser's gate (`useAccountPage` in `src/components/dashboard/dashboard-layout.tsx`) sends on a visitor the server couldn't tell, once the browser knows, and one who signs out while on the page. `src/app/shells.test.tsx` serves a dashboard page with Convex unreachable and to a visitor with no session cookie.
+Sign in comes back to the page the person asked for, from the server as from the browser: `signInHref` of the page's path. Next gives a layout no pathname, so the proxy (`src/proxy.ts`) puts it on every dashboard request, at no cost in network; a gate on pages outside `/dashboard` adds them to the proxy's matcher. The server's redirect spares a visitor the page altogether, which the browser's gate alone would draw before sending them on. The browser's gate (`useAccountPage` in `src/components/dashboard/dashboard-layout.tsx`) sends on a visitor the server couldn't tell, once the browser knows, and one who signs out while on the page. `src/app/shells.test.tsx` serves a dashboard page with Convex unreachable, from the server and from the browser, to a visitor with no session cookie, and to a person who signs out on it.
 
 Never gate a page on `isAuthenticated()` from `src/lib/auth-server.ts`: it fetches the token for a visitor with no session cookie too, waits for as long as Convex takes, and throws when Convex can't be reached, failing the page. Its helpers are for route handlers (`src/app/api/`), which answer a request rather than render a page.
 
@@ -324,7 +326,8 @@ Never gate a page on `isAuthenticated()` from `src/lib/auth-server.ts`: it fetch
 2. The auth provider's viewer is a visitor (Convex says nobody is signed in) → JoinRoomDialog shown
 3. User enters a name and clicks Join
 4. JoinRoomDialog calls ensureSession() (useEnsureSession):
-   a. Waits until BetterAuth's session and Convex's auth state have both loaded (isSessionPending and isLoading false)
+   a. Waits until BetterAuth's session and Convex's auth state have both loaded (isSessionPending and isLoading false;
+      a session the browser couldn't fetch hasn't)
    b. No session → authClient.signIn.anonymous() creates the guest's session (cookie set)
    c. Waits until Convex has the session's token (isAuthenticated true)
    Either wait taking longer than 10 s fails with "Failed to create session. Please try again."
@@ -336,7 +339,7 @@ Never gate a page on `isAuthenticated()` from `src/lib/auth-server.ts`: it fetch
 
 Every guest way in goes through `useEnsureSession` (`src/hooks/useEnsureSession.ts`): joining a room from its link (above), "Continue as guest" on the sign-in page, and creating a poker room or a retro. It works in this order:
 
-- **It waits until BetterAuth's session and Convex's auth state have both loaded** before deciding whether there is a session. With the server-rendered token (`initialToken` in `src/app/(app)/layout.tsx`) Convex can load while BetterAuth's session is still on its way, and signing in anonymously over a live session is a BetterAuth 400 for a guest and a new guest for a permanent account.
+- **It waits until BetterAuth's session and Convex's auth state have both loaded** before deciding whether there is a session. With the server-rendered token (`initialToken` in `src/app/(app)/layout.tsx`) Convex can load while BetterAuth's session is still on its way, and signing in anonymously over a live session is a BetterAuth 400 for a guest and a new guest for a permanent account. A session the browser couldn't fetch hasn't loaded either: it may be live.
 - **It waits until Convex has the token** after signing in. A fresh session reaches BetterAuth before Convex, and the room write that follows needs a caller the server can identify.
 - **It writes nothing.** The room write that follows (creating a room, joining one) makes the caller's users row when they have none ([The caller's users row](#the-callers-users-row-convexmodelusersts)). "Continue as guest" makes no row: a guest who only continues has none until their first room write.
 - **The waits are the auth provider's** (`whenAuth`, see [Auth Provider Context](#auth-provider-context)), not the calling component's, so they finish even when the page unmounts the caller meanwhile. The room page swaps out the join dialog while Convex takes the new session.
@@ -397,7 +400,7 @@ Deleting an account deletes its sign-in in the same transaction (ADR-0033): Bett
 
 ## Auth Provider Context
 
-The auth provider (`src/components/auth/auth-provider.tsx`) takes auth state from Convex (`useConvexAuth()`, which waits for token validation) and holds the app's one subscription to Convex's answer about the person signed in (`users.getViewer`, once Convex has the session), which it hands out as the viewer. BetterAuth's session only feeds the waits (`whenAuth`). Only the app shell mounts it: `/demo` sits in its own route group, whose shell has no auth at all (ADR-0003).
+The auth provider (`src/components/auth/auth-provider.tsx`) takes auth state from Convex (`useConvexAuth()`, which waits for token validation, and for a session the browser couldn't fetch: see [A session the browser couldn't fetch](#a-session-the-browser-couldnt-fetch)) and holds the app's one subscription to Convex's answer about the person signed in (`users.getViewer`, once Convex has the session), which it hands out as the viewer. BetterAuth's session only feeds the waits (`whenAuth`). Only the app shell mounts it: `/demo` sits in its own route group, whose shell has no auth at all (ADR-0003).
 
 ```typescript
 interface AuthContextType {
@@ -406,8 +409,8 @@ interface AuthContextType {
 }
 
 type Viewer =
-  | { status: "loading" }       // Convex's auth state or its answer hasn't come yet
-  | { status: "visitor" }       // Nobody is signed in
+  | { status: "loading" }       // Convex's auth state or its answer hasn't come yet (the session may be unknown)
+  | { status: "visitor" }       // Nobody is signed in, as BetterAuth or Convex answered
   | {
       status: "signedIn";
       name: string | null;      // The users row's, as are the avatar and email: null while there is none
@@ -419,7 +422,7 @@ type Viewer =
 
 interface AuthSnapshot {
   authUserId: string | null;    // From BetterAuth's session: null means no session only once it has loaded
-  isSessionPending: boolean;    // Whether BetterAuth's session is still loading
+  isSessionPending: boolean;    // Whether BetterAuth's session is still loading, or couldn't be fetched
   isLoading: boolean;           // Convex's auth state, for the sign-in's waits only
   isAuthenticated: boolean;
 }
@@ -431,11 +434,23 @@ The viewer is the frontend's one answer to who is looking (its type and `account
 
 What the viewer says of the person is Convex's answer, `users.getViewer`, which `callerView` in `convex/model/caller.ts` works out as the server goes by: the kind of account from the session's token (`sessionAccountType`), falling back to the row's kind only for a token without the claim, and never from BetterAuth's `isAnonymous` in the browser, which reads false while the session loads. A signed-in caller has no row until their first room write makes it (a guest who only continued as one, or a deleted account that came back) and is ready all the same: a guest with no name, avatar or email, whom the menus show as "Guest" with Sign in and the join gate asks for a name; a permanent account named by its token, and kept as one. `users.getGlobalUser`, the row whole, stays for tabs opened before the viewer asked `getViewer`.
 
-The first paint already knows the viewer. The app shell's layout reads it on the server (`getServerViewer` in `src/components/auth/server-viewer.ts`: no read when there is no token, else one read of `users.getViewer` with the token the request already fetched) and hands it to the provider, which shows it, unconfirmed, until Convex first answers in the browser (confirming it as soon as Convex has the session) and goes by Convex alone after. So a refresh draws the menus, or Sign in, at once, the same on the server and in the browser, while reads made as the viewer wait for Convex; the menus show a skeleton only when the server couldn't read the viewer or Convex is checking a session that changed. `getServerViewer` and the provider are the only modules that ask who is signed in (`auth-provider.test.tsx` holds them to that).
+The first paint already knows the viewer. The app shell's layout reads it on the server (`getServerViewer` in `src/components/auth/server-viewer.ts`: no read when there is no token, else one read of `users.getViewer` with the token the request already fetched) and hands it to the provider, which shows it, unconfirmed, until Convex first answers in the browser (confirming it as soon as Convex has the session) and goes by Convex alone after. So a refresh draws the menus, or Sign in, at once, the same on the server and in the browser, while reads made as the viewer wait for Convex; the menus show a skeleton only when the server couldn't read the viewer, Convex is checking a session that changed, or the browser couldn't fetch the session. `getServerViewer` and the provider are the only modules that ask who is signed in (`auth-provider.test.tsx` holds them to that).
 
 What the viewer is offered of their account is one list, `src/components/auth/account.ts`, which the account menus (`ViewerMenu`), the command menu, the navbar and the dashboard's sidebar all draw from: the signed-in person's places by one set of names (`PLACES`), Sign in for anyone without a permanent account (a guest included, once the viewer is known), and the one way back from the sign-in page, `signInHref(path)`. The sign-in page takes its `from` through `returnPath`, which keeps only a page on this site: `//host` and `/\host` resolve to another site and send the person home instead. A dashboard page is an account's own: the server sends a visitor who asks for one to sign in ([Server-Side Auth](#server-side-auth-nextjs)), and the dashboard's layout in the browser sends one the server couldn't tell, once it knows, and one who becomes a visitor on it (signing out, here or in another tab), each coming back to the page.
 
 `whenAuth(ready, timeoutMs)` resolves with the first auth state `ready` accepts (at once if the current one does, else on the update that makes it hold) and rejects after `timeoutMs`. The provider holds the waiters (`createAuthWaiters` in `src/lib/auth-waiters.ts`) and feeds them every change of `authUserId`, `isSessionPending`, `isLoading` and `isAuthenticated`. It sits in the app shell's layout, above the page, so a wait outlives the component that started it. Outside an `AuthProvider`, `whenAuth` rejects.
+
+### A session the browser couldn't fetch
+
+The browser asks for its session through the auth route (`src/app/api/auth/[...all]/route.ts`), which asks Convex: when Convex is slow or unreachable, the route answers 500, and the session is unknown, not gone. `browserSessionOf` (`src/components/auth/browser-session.ts`) tells the two apart from BetterAuth's session state: loading; unknown, a fetch that failed with no session known from before (BetterAuth keeps a session it held through a fetch that fails); none, once BetterAuth answers that there is no session (or a 401); or live.
+
+Convex is signed in from it by `ConvexSessionProvider` (`src/components/auth/convex-session.tsx`), which the app shell mounts around the auth provider. It stands where `@convex-dev/better-auth`'s `ConvexBetterAuthProvider` would, which takes a session or a token it couldn't fetch for none: Convex said nobody was signed in, so the viewer was a visitor and the dashboard sent a signed-in person to sign in for as long as Convex couldn't be reached. Here only an answer signs a person out:
+
+- **While the session is unknown**, Convex's auth state stays loading (or signed in with the server's token, when the server got one), and the session is asked for again after a second, waiting twice as long each time up to half a minute (`retryDelay`), until BetterAuth answers.
+- **A token the auth route can't give** is asked for the same way, and Convex waits for it meanwhile. A 401 is its answer that there is no session, and signs Convex out.
+- **The server's token** stands in until the browser knows the session, so a refresh is signed in at once.
+
+So the viewer stays `loading` through an outage: the dashboard's gate and the Sign in entries act on a visitor only, and a real sign-out, here or in another tab, still makes one, since BetterAuth then answers that there is no session. The sign-in's waits take an unknown session for one still loading (`isSessionPending`), so no guest way in signs in anonymously over a session that may be live. `auth-provider.test.tsx` holds every other module off mounting Convex's auth, and `convex-session.test.tsx` holds the provider's rules.
 
 ## Environment Variables
 

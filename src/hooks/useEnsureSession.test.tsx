@@ -14,9 +14,10 @@ import { act, cleanup, renderHook } from "@testing-library/react";
 import type { ReactNode } from "react";
 
 const auth = vi.hoisted(() => ({
-  // BetterAuth's session
+  // BetterAuth's session, and the failed fetch it couldn't answer with
   authUserId: null as string | null,
   isSessionPending: false,
+  sessionError: null as { status: number } | null,
   // Convex's auth state
   isLoading: false,
   isAuthenticated: false,
@@ -59,6 +60,7 @@ vi.mock("@/lib/auth-client", async () => {
         useSyncExternalStore(auth.subscribe, () => auth.version);
         return {
           data: auth.authUserId ? { user: { id: auth.authUserId } } : null,
+          error: auth.sessionError,
           isPending: auth.isSessionPending,
         };
       },
@@ -84,6 +86,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   auth.authUserId = null;
   auth.isSessionPending = false;
+  auth.sessionError = null;
   auth.isLoading = false;
   auth.isAuthenticated = false;
   auth.calls = [];
@@ -156,6 +159,27 @@ describe("useEnsureSession", () => {
 
     await expect(pending).resolves.toBeUndefined();
     expect(auth.calls).toEqual([]);
+  });
+
+  it("decides nothing while the browser can't fetch BetterAuth's session, which may be live", async () => {
+    auth.sessionError = { status: 500 };
+    const { result } = renderEnsureSession();
+
+    let pending!: Promise<void>;
+    await act(async () => {
+      pending = result.current();
+    });
+    expect(auth.calls).toEqual([]);
+
+    // BetterAuth answers that there is no session: now the visitor signs in as a guest.
+    auth.sessionError = null;
+    await act(async () => authChanged());
+    expect(auth.calls).toEqual(["signIn"]);
+
+    auth.authUserId = "guest-1";
+    auth.isAuthenticated = true;
+    await act(async () => authChanged());
+    await expect(pending).resolves.toBeUndefined();
   });
 
   it("decides nothing while Convex's auth state loads, though BetterAuth's session has loaded", async () => {

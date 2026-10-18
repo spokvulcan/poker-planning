@@ -5,11 +5,13 @@ import { useConvexAuth, useQuery } from "convex/react";
 import { authClient } from "@/lib/auth-client";
 import { api } from "@/convex/_generated/api";
 import { createAuthWaiters } from "@/lib/auth-waiters";
+import { browserSessionOf } from "./browser-session";
 import { viewerOf, type Viewer } from "./viewer";
 
 /** The auth state a sign-in waits on. */
 export interface AuthSnapshot {
-  // BetterAuth's session: a null authUserId means no session only once it has loaded
+  // BetterAuth's session: a null authUserId means no session only once it has
+  // loaded, and one the browser couldn't fetch hasn't (browser-session.ts)
   authUserId: string | null;
   isSessionPending: boolean;
   // Convex's auth state
@@ -51,19 +53,21 @@ export function AuthProvider({
   // The viewer the server saw (server-viewer.ts), shown until Convex answers
   initialViewer?: Viewer;
 }) {
-  // Use Convex's auth state - this waits for token validation
+  // Use Convex's auth state - this waits for token validation, and stays
+  // loading while the browser couldn't fetch the session (convex-session.tsx)
   // Per docs: "Better Auth will reflect an authenticated user before Convex does"
   const { isAuthenticated, isLoading: convexAuthLoading } = useConvexAuth();
 
   // BetterAuth's session, for the sign-in's waits only: whether there is a session at all
-  const { data: session, isPending: isSessionPending } = authClient.useSession();
-  const authUserId = session?.user?.id;
+  const session = browserSessionOf(authClient.useSession());
+  const authUserId = session.status === "live" ? session.authUserId : null;
+  const isSessionPending = session.status === "loading" || session.status === "unknown";
 
   const [waiters] = useState(() =>
     createAuthWaiters<AuthSnapshot>({ authUserId: null, isSessionPending: true, isLoading: true, isAuthenticated: false })
   );
   useEffect(() => {
-    waiters.update({ authUserId: authUserId ?? null, isSessionPending, isLoading: convexAuthLoading, isAuthenticated });
+    waiters.update({ authUserId, isSessionPending, isLoading: convexAuthLoading, isAuthenticated });
   }, [waiters, authUserId, isSessionPending, convexAuthLoading, isAuthenticated]);
 
   // Who is signed in, as Convex answers: the app's one subscription to it

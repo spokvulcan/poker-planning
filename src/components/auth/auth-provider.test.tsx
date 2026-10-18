@@ -195,3 +195,15 @@ describe("who is looking", () => {
     expect(Object.keys(modules).filter((path) => /\bisAnonymous\b/.test(code(path)))).toEqual([]);
   });
 });
+
+// Convex's auth state, which the viewer is worked out from, comes from the
+// browser's session in one place, where only an answer signs a person out:
+// @convex-dev/better-auth's own provider takes a session or a token it
+// couldn't fetch (Convex unreachable) for none.
+describe("Convex's auth state", () => {
+  it("comes from the browser's session through convex-session.tsx alone", () => {
+    const signsIn = (path: string) => /\b(ConvexProviderWithAuth|ConvexBetterAuthProvider)\b/.test(code(path));
+
+    expect(Object.keys(modules).filter(signsIn)).toEqual(["./convex-session.tsx"]);
+  });
+});

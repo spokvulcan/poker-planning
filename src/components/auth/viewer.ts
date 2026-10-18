@@ -5,9 +5,12 @@ import type { CallerView } from "@/convex/model/caller";
  * answer about the person (users.getViewer) are in, a visitor when nobody is
  * signed in, else signed in. A signed-in viewer has no users row until their
  * first room write makes it (a guest who only continued as one) and is
- * ready all the same: no name, avatar or email yet. The auth provider hands
- * it out (auth-provider.tsx), starting from the one the server saw
- * (server-viewer.ts), and pages read as the viewer through useCallerQuery.
+ * ready all the same: no name, avatar or email yet. Convex's auth state
+ * stays loading while the browser couldn't fetch the session
+ * (convex-session.tsx), so only an answer makes a visitor, never an outage.
+ * The auth provider hands it out (auth-provider.tsx), starting from the one
+ * the server saw (server-viewer.ts), and pages read as the viewer through
+ * useCallerQuery.
  */
 export type Viewer =
   | { status: "loading" }
