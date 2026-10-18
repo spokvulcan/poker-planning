@@ -147,13 +147,14 @@ describe("deleting an account", () => {
   it("stops the canvas naming it, in a room it has already left: the timer it ran and the nodes it moved", async () => {
     const t = withComponents(convexTest(schema, modules));
     await seedUser(t, "owner");
-    const roomId = await as(t, "owner").mutation(api.rooms.create, { name: "Planning" });
+    // A retro: its timer is the stopwatch anyone in the room runs.
+    const roomId = await as(t, "owner").mutation(api.retro.create, { name: "Sprint 41 retro" });
     const leaverId = await join(t, roomId, "leaver");
     await as(t, "leaver").mutation(api.timer.startTimer, { roomId, nodeId: "timer", userId: leaverId });
     await as(t, "leaver").mutation(api.canvas.moveNodes, {
       roomId,
       userId: leaverId,
-      moves: [{ nodeId: "session-current", position: { x: 40, y: 40 } }],
+      moves: [{ nodeId: "retro", position: { x: 40, y: 40 } }],
     });
     // Someone else moves the timer last, and the leaver leaves: no membership leads back to the room.
     const ownerId = (await room(t, roomId))!.ownerId!;

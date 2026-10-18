@@ -292,7 +292,7 @@ describe("buildCanvasNodes — player nodes", () => {
 function timeCanvasNode(type: "timer" | "sessionTime", hidden = false): CanvasNode {
   const row = { roomId: ROOM_ID, position: { x: 0, y: 0 }, lastUpdatedAt: 0, ...(hidden && { isHidden: true }) };
   return type === "timer"
-    ? { ...row, nodeId: "timer", type, data: { startedAt: null, pausedAt: null, elapsedSeconds: 0, lastAction: null } }
+    ? { ...row, nodeId: "timer", type, data: {} }
     : { ...row, nodeId: "session-time", type, data: {} };
 }
 

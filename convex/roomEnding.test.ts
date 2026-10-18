@@ -509,10 +509,12 @@ describe("the sweep", () => {
     expect(await countRows(t, "rooms")).toBe(0);
   });
 
-  it("leaves a room with recent timer-only activity alone", async () => {
+  it("leaves a retro with recent timer-only activity alone", async () => {
     const t = withComponents(convexTest(schema, modules));
     const roomId = await seedQuietRoom(t);
     const userId = await seedPerson(t);
+    // A retro: its timer is the stopwatch anyone in the room runs.
+    await t.run((ctx) => ctx.db.patch("rooms", roomId, { roomType: "retro" }));
     await t.run((ctx) =>
       ctx.db.insert("canvasNodes", {
         roomId,

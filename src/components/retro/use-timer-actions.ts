@@ -3,11 +3,10 @@
 import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import { useDemoSimulation } from "../demo/DemoSimulationProvider";
 import { useStableActions } from "@/hooks/useStableActions";
 import { runAct } from "@/lib/run-act";
 
-/** The TimerNode's three writes, behind one frozen-identity object. */
+/** The retro TimerNode's three writes, behind one frozen-identity object. */
 export interface TimerActions {
   startTimer: (nodeId: string) => void;
   pauseTimer: (nodeId: string) => void;
@@ -20,17 +19,15 @@ interface UseTimerActionsProps {
 }
 
 /**
- * The timer's slice of the action-seam policy — the same demo no-op (ADR-0003),
- * missing-user guard and failure copy (runAct) as useCanvasActions — without
- * mounting the full canvas seam per TimerNode. Frozen method identity comes from
- * useStableActions, like every other *Actions seam.
+ * The retro timer's writes, with the missing-user guard and failure copy
+ * (runAct) of the board's other writes, without mounting a board seam per
+ * TimerNode. Frozen method identity comes from useStableActions, like every
+ * other *Actions seam.
  */
 export function useTimerActions({
   roomId,
   currentUserId,
 }: UseTimerActionsProps): TimerActions {
-  const isDemo = useDemoSimulation() !== null;
-
   const startTimerMutation = useMutation(api.timer.startTimer);
   const pauseTimerMutation = useMutation(api.timer.pauseTimer);
   const resetTimerMutation = useMutation(api.timer.resetTimer);
@@ -42,7 +39,7 @@ export function useTimerActions({
       label: string,
     ) =>
     async (nodeId: string) => {
-      if (isDemo || !currentUserId) return;
+      if (!currentUserId) return;
       await runAct(mutate({ roomId, nodeId }), `The timer didn't ${label}. Try again.`);
     };
 

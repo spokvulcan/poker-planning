@@ -141,10 +141,12 @@ describe("validateTimerAction", () => {
 
 // --- Model transitions (convex-test, pattern: votingRound.test.ts) ---------
 
+/** A retro: the stopwatch is its timer (a poker room's reads the round clock). */
 async function seedRoom(t: T): Promise<Id<"rooms">> {
   return t.run((ctx) =>
     ctx.db.insert("rooms", {
       name: "R",
+      roomType: "retro",
       autoCompleteVoting: false,
       isGameOver: false,
       createdAt: Date.now(),

@@ -21,6 +21,12 @@ export interface CeremonyRules {
   votingRounds: boolean;
   /** Whether each member gets a player node on the canvas. */
   playerNodes: boolean;
+  /**
+   * Whether the board's timer is the manual stopwatch anyone in the room
+   * starts, pauses and resets. A poker room's timer reads the round clock
+   * instead (ADR-0032).
+   */
+  stopwatch: boolean;
   /** Whether a room owned by a permanent account outlives the inactivity sweep. */
   retainedByPermanentOwner: boolean;
   /**
@@ -46,6 +52,7 @@ export const CEREMONY_RULES: Readonly<Record<Ceremony, CeremonyRules>> = Object.
     spectators: true,
     votingRounds: true,
     playerNodes: true,
+    stopwatch: false,
     retainedByPermanentOwner: false,
     outlivesLoneOwner: true,
     activityGranularityMs: 0,
@@ -56,6 +63,7 @@ export const CEREMONY_RULES: Readonly<Record<Ceremony, CeremonyRules>> = Object.
     spectators: false,
     votingRounds: false,
     playerNodes: false,
+    stopwatch: true,
     retainedByPermanentOwner: true,
     outlivesLoneOwner: false,
     activityGranularityMs: HOUR_MS,

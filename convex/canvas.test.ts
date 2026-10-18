@@ -292,9 +292,10 @@ describe("who a write on the board is from", () => {
     expect(await nodeById(t, roomId, nodeId)).toBeUndefined();
   });
 
-  it("the timer runs as the caller, whatever user id comes with it, or none", async () => {
+  it("a retro's timer runs as the caller, whatever user id comes with it, or none", async () => {
     const t = withComponents(convexTest(schema, modules));
-    const { roomId, ownerId } = await pokerRoom(t);
+    const ownerId = await seedUser(t, "owner");
+    const roomId = await as(t, "owner").mutation(api.retro.create, { name: "Sprint 41 retro" });
     const annId = await join(t, roomId, "ann");
     const ann = as(t, "ann");
 
@@ -368,6 +369,21 @@ describe("the time nodes", () => {
       as(t, "ann").mutation(api.canvas.setTimeNodeShown, { roomId, node: "timer", shown: false })
     ).rejects.toThrow();
     expect(await hiddenNodeIds(t, roomId)).toEqual(["session-time"]);
+  });
+
+  it("a poker room's timer reads the round clock: it stores no stopwatch and takes no stopwatch write", async () => {
+    const t = withComponents(convexTest(schema, modules));
+    const { roomId } = await pokerRoom(t);
+    const quietSince = Date.now() - 60_000;
+    await t.run((ctx) => ctx.db.patch("rooms", roomId, { lastActivityAt: quietSince }));
+
+    await expect(as(t, "owner").mutation(api.timer.startTimer, { roomId, nodeId: "timer" })).rejects.toThrow(
+      "does not apply"
+    );
+
+    expect((await nodesOf(t, roomId)).find((n) => n.nodeId === "timer")?.data).toEqual({});
+    // Nor does the refused write move the room's activity, which would end the round clock's quiet.
+    expect((await t.run((ctx) => ctx.db.get("rooms", roomId)))?.lastActivityAt).toBe(quietSince);
   });
 
   it("a retro has no time nodes to show", async () => {

@@ -7,10 +7,8 @@
  * with the whiteboard's Convex stand-in, which records every query asked
  * for, and asserts that none of the demo/canvas/issues/presence/round clock
  * subscriptions are opened: every such `useQuery` is passed
- * `"skip"`, and `usePresence` is never called at all. (The retro's stopwatch
- * opens no subscription at all anymore — its state arrives with the canvas
- * node data — so it is probed for regressions but lists no query.) Directly
- * protects user stories 12/14/17 (ADR-0003).
+ * `"skip"`, and `usePresence` is never called at all. Directly protects user
+ * stories 12/14/17 (ADR-0003).
  *
  * The shell is covered too: AuthProvider subscribes `api.users.getViewer`
  * whenever a session is live, on any route, so what keeps it off the demo is
@@ -99,7 +97,6 @@ import {
 import { AuthProvider } from "@/components/auth/auth-provider";
 import { RoomCanvas } from "../room-canvas";
 import { useIssues } from "../hooks/useIssues";
-import { useTimerSync } from "../hooks/use-timer-sync";
 import { useRoundClock } from "../hooks/use-round-clock";
 import { useRoomPresence } from "@/hooks/useRoomPresence";
 import { DEMO_VIEWER_ID } from "../types";
@@ -151,17 +148,6 @@ function capturedRootSubscriptions(): { name: string; args: unknown }[] {
 //     mounts behind `{!isDemoMode && …}` in room-settings-panel, which the
 //     chrome mounts only while the settings panel is open.
 // If one of those gates regresses this Probe won't catch it — re-audit on change.
-// A stopped persisted timer, as a freshly created canvas node delivers it.
-// useTimerSync opens no subscription in either mode — it is probed so a
-// regression that reintroduces one fails the leak assertion above.
-const STOPPED_TIMER_STATE = {
-  startedAt: null,
-  pausedAt: null,
-  elapsedSeconds: 0,
-  isRunning: false,
-  lastAction: null,
-};
-
 function useProbeHooks(roomId: Id<"rooms">, roomData: RoomWithRelatedData): void {
   // The board and the hooks take no `isDemoMode` prop: they read the demo
   // signal from the provider seam, so what differs between the two cases is
@@ -171,12 +157,6 @@ function useProbeHooks(roomId: Id<"rooms">, roomData: RoomWithRelatedData): void
   // The round clock the time nodes read: the board mounts no node during a
   // static render, so the hook is probed here.
   useRoundClock(roomId, 0);
-  useTimerSync({
-    roomId,
-    nodeId: "timer",
-    userId: undefined,
-    timerState: STOPPED_TIMER_STATE,
-  });
 }
 
 function DemoProbe(): ReactNode {

@@ -25,11 +25,12 @@ describe("rulesOf", () => {
     expect(rulesOf({})).toBe(CEREMONY_RULES.poker);
   });
 
-  it("keeps spectators, player nodes, rounds and analytics to planning poker", () => {
+  it("keeps spectators, player nodes, rounds and analytics to planning poker, and the stopwatch to a retro", () => {
     expect(rulesOf({ roomType: "canvas" })).toMatchObject({
       spectators: true,
       playerNodes: true,
       votingRounds: true,
+      stopwatch: false,
       inAnalytics: true,
       retainedByPermanentOwner: false,
       activityGranularityMs: 0,
@@ -38,6 +39,7 @@ describe("rulesOf", () => {
       spectators: false,
       playerNodes: false,
       votingRounds: false,
+      stopwatch: true,
       inAnalytics: false,
       retainedByPermanentOwner: true,
     });

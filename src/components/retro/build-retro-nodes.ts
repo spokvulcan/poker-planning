@@ -25,8 +25,16 @@ import {
   STICKY_MIN_HEIGHT,
   STICKY_WIDTH,
 } from "@/convex/retroLayout";
-import { buildTimerNode } from "@/components/room/hooks/buildCanvasNodes";
-import type { DiscussionView, RetroBoardActions, RetroFlowNode, RetroMember, StickyDraft, StickyEdit } from "./types";
+import { timerStateOf } from "@/convex/timerState";
+import type {
+  DiscussionView,
+  RetroBoardActions,
+  RetroFlowNode,
+  RetroMember,
+  StickyDraft,
+  StickyEdit,
+  TimerNodeType,
+} from "./types";
 import { isOptimistic } from "@/lib/optimistic-id";
 import { topicOrder } from "./board-view";
 import { plural } from "./retro-summary";
@@ -77,6 +85,27 @@ export function discussionView(place: DiscussionPlace): DiscussionView {
           ? "Not voted for"
           : `${plural(place.count, "topic")} to discuss`;
   return { label, progress: { value: place.at, max: place.count }, ...moves };
+}
+
+/** The retro's timer, a manual stopwatch: its state is the node's. */
+function buildTimerNode(
+  node: CanvasNode & { type: "timer" },
+  input: Pick<RetroNodesInput, "roomId" | "viewerId">,
+): TimerNodeType {
+  const state = timerStateOf(node.data);
+  return {
+    id: node.nodeId,
+    type: "timer",
+    position: node.position,
+    data: {
+      ...state,
+      isRunning: state.isRunning ?? false,
+      roomId: input.roomId,
+      userId: input.viewerId,
+      nodeId: node.nodeId,
+    },
+    draggable: !node.isLocked,
+  };
 }
 
 /** A short, readable label for a topic: its words, its GIF's title, or its face. */

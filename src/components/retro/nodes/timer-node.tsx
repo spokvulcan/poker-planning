@@ -5,7 +5,7 @@ import { Play, Pause, RotateCcw } from "lucide-react";
 import { ReactElement, memo, useCallback } from "react";
 
 import { cn } from "@/lib/utils";
-import { useTimerSync } from "../hooks/use-timer-sync";
+import { useTimerSync } from "../use-timer-sync";
 import type { TimerNodeType } from "../types";
 
 export const TimerNode = memo(

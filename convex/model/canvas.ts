@@ -21,7 +21,7 @@ import {
   RETRO_NODE_POSITION,
   RETRO_TIMER_POSITION,
 } from "../retroLayout";
-import { IDLE_TIMER, type TimerState } from "../timerState";
+import { IDLE_TIMER, timerStateOf, type TimerState } from "../timerState";
 import type { UserRows } from "./userRows";
 
 /**
@@ -39,7 +39,11 @@ import type { UserRows } from "./userRows";
  */
 export type CanvasNodeData =
   | { type: "player"; data: { userId: Id<"users"> } }
-  | { type: "timer"; data: TimerState }
+  // The timer. A retro's is the manual stopwatch, and stores its state; a poker
+  // room's reads the round clock (model/roundClock.ts) and stores nothing, as
+  // session time doesn't (ADR-0032). A poker room's timer from before keeps
+  // the stopwatch fields it stored, which nothing reads.
+  | { type: "timer"; data: TimerState | Record<string, never> }
   // A poker room's session time: the round clock is its data (model/roundClock.ts)
   | { type: "sessionTime"; data: Record<string, never> }
   | {
@@ -183,7 +187,7 @@ export async function openBoard(
         nodeId: TIMER_NODE_ID,
         type: "timer",
         position: TIMER_POSITION,
-        data: { ...IDLE_TIMER },
+        data: {},
         isHidden: !timeNodes.timer,
       }),
       insertNode(ctx, room._id, { nodeId: SESSION_NODE_ID, type: "session", position: SESSION_INITIAL_POSITION, data: {} }),
@@ -375,8 +379,9 @@ export async function issueRemoved(ctx: MutationCtx, roomId: Id<"rooms">, issueI
 // --- The timer ------------------------------------------------------------------
 
 /**
- * Moves a timer node on: `next` turns its current state into the new one
- * (the timer's own rules live in timerState). Throws when the node is not a timer.
+ * Moves a retro's timer, the manual stopwatch, on: `next` turns its current
+ * state into the new one (the timer's own rules live in model/timer.ts and
+ * timerState). Throws when the node is not a timer.
  */
 export async function updateTimer(
   ctx: MutationCtx,
@@ -388,7 +393,7 @@ export async function updateTimer(
   const node = await nodeById(ctx, roomId, nodeId);
   if (!node || node.type !== "timer") throw new Error("Timer node not found");
   await ctx.db.patch("canvasNodes", node._id, {
-    data: next(dataOf(node, "timer")),
+    data: next(timerStateOf(dataOf(node, "timer"))),
     lastUpdatedBy: userId,
     lastUpdatedAt: Date.now(),
   });
@@ -415,7 +420,7 @@ export async function setTimeNodeShown(
     await ctx.db.patch("canvasNodes", node._id, { isHidden: !shown, lastUpdatedAt: Date.now() });
   } else if (shown) {
     if (which === "timer") {
-      await insertNode(ctx, room._id, { nodeId, type: "timer", position: TIMER_POSITION, data: { ...IDLE_TIMER } });
+      await insertNode(ctx, room._id, { nodeId, type: "timer", position: TIMER_POSITION, data: {} });
     } else {
       await insertNode(ctx, room._id, { nodeId, type: "sessionTime", position: SESSION_TIME_POSITION, data: {} });
     }

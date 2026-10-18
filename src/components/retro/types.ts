@@ -4,7 +4,7 @@ import type { ActionItemView, Gif, StickyView } from "@/convex/model/retro";
 import type { ResolvedDecision } from "@/convex/permissions";
 import type { StepShows } from "@/convex/retroSteps";
 import type { RetroColumn, RetroStep, StickyColor } from "@/convex/retroTemplates";
-import type { TimerNodeType } from "@/components/room/types";
+import type { TimerState } from "@/convex/timerState";
 
 /**
  * Every write the board can trigger, behind one frozen-identity object that
@@ -143,6 +143,20 @@ export type ActionsNodeData = {
   canManage: ResolvedDecision;
   actions: RetroBoardActions;
 };
+
+/**
+ * The retro's timer, a manual stopwatch. Persisted fields come from the single
+ * declaration in @/convex/timerState; this adds only the view-side extras the
+ * node needs to render and control.
+ */
+export type TimerNodeData = TimerState & {
+  isRunning: boolean; // required in the view — buildRetroNodes defaults the persisted optional
+  roomId: Id<"rooms">; // Room ID for timer controls
+  userId?: Id<"users">; // Current user ID for timer controls
+  nodeId: string; // Node ID for timer controls
+};
+
+export type TimerNodeType = Node<TimerNodeData, "timer">;
 
 export type RetroFlowNode =
   | Node<RetroNodeData, "retro">
