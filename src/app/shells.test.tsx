@@ -14,7 +14,7 @@
  * A dashboard page sits in the app shell behind the dashboard's gate.
  */
 import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from "vitest";
-import { act, cleanup, render } from "@testing-library/react";
+import { act, cleanup, render, waitFor } from "@testing-library/react";
 import type { ReactElement, ReactNode } from "react";
 
 const backend = vi.hoisted(() => {
@@ -26,6 +26,10 @@ const backend = vi.hoisted(() => {
     liveSession: false,
     /** Whether the server can reach Convex for the session. */
     reachable: true,
+    /** The browser's requests the auth route can't answer: it asks Convex, and answers 500 without it. */
+    failing: [] as string[],
+    /** Who Convex says the live session is (users.getViewer). */
+    viewer: { name: "Ada Lovelace", avatarUrl: null, email: null, isPermanent: false },
     /** Whether the document is the homepage's frame or a page of its own. */
     framed: false,
     /** The path of the page the document is served for. */
@@ -51,6 +55,11 @@ const backend = vi.hoisted(() => {
   vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
     const { pathname } = new URL(input instanceof Request ? input.url : String(input));
     backend.requests.push(`browser: ${pathname}`);
+    if (backend.failing.includes(pathname)) return new Response(null, { status: 500 });
+    if (pathname === "/api/auth/sign-out") {
+      backend.liveSession = false;
+      return json({ success: true });
+    }
     if (pathname === "/api/auth/get-session") {
       return json(
         backend.liveSession
@@ -98,7 +107,7 @@ vi.mock("@/lib/auth-server", () => {
 vi.mock("convex/nextjs", () => ({
   fetchQuery: async () => {
     backend.requests.push("server: /api/query");
-    return null;
+    return backend.liveSession ? backend.viewer : null;
   },
 }));
 
@@ -135,13 +144,29 @@ vi.mock("next/navigation", () => ({
   },
 }));
 
-import RootLayout from "./layout";
-import AppLayout from "./(app)/layout";
-import DashboardLayout from "./(app)/dashboard/layout";
-import DashboardPage from "./(app)/dashboard/page";
-import RetrosPage from "./(app)/dashboard/retros/page";
-import DemoLayout from "./(demo)/layout";
-import DemoPage from "./(demo)/demo/page";
+// Each document loads in a browser of its own: the modules are evaluated anew
+// for every test, so nothing a browser learned for another document carries
+// over (BetterAuth's session, the Convex clients).
+let RootLayout: typeof import("./layout").default;
+let AppLayout: typeof import("./(app)/layout").default;
+let DashboardLayout: typeof import("./(app)/dashboard/layout").default;
+let DashboardPage: typeof import("./(app)/dashboard/page").default;
+let RetrosPage: typeof import("./(app)/dashboard/retros/page").default;
+let DemoLayout: typeof import("./(demo)/layout").default;
+let DemoPage: typeof import("./(demo)/demo/page").default;
+let authClient: typeof import("@/lib/auth-client").authClient;
+
+beforeEach(async () => {
+  vi.resetModules();
+  ({ default: RootLayout } = await import("./layout"));
+  ({ default: AppLayout } = await import("./(app)/layout"));
+  ({ default: DashboardLayout } = await import("./(app)/dashboard/layout"));
+  ({ default: DashboardPage } = await import("./(app)/dashboard/page"));
+  ({ default: RetrosPage } = await import("./(app)/dashboard/retros/page"));
+  ({ default: DemoLayout } = await import("./(demo)/layout"));
+  ({ default: DemoPage } = await import("./(demo)/demo/page"));
+  ({ authClient } = await import("@/lib/auth-client"));
+});
 
 type Layout = (props: { children: ReactNode }) => ReactNode | Promise<ReactNode>;
 
@@ -167,6 +192,7 @@ beforeEach(() => {
   backend.navigations = [];
   backend.sockets = [];
   backend.reachable = true;
+  backend.failing = [];
 });
 
 afterEach(() => {
@@ -261,5 +287,76 @@ describe("a dashboard page", () => {
       redirectedTo: "/auth/signin?from=%2Fdashboard%2Fretros",
     });
     expect(backend.requests).toEqual([]);
+  });
+});
+
+// Convex unreachable from the server and, through the auth route, from the
+// browser: a signed-in person's session is unknown, not gone.
+describe("a dashboard page, while Convex can't be reached", () => {
+  beforeEach(() => {
+    backend.framed = false;
+    backend.liveSession = true;
+    backend.reachable = false;
+    backend.path = "/dashboard";
+    vi.spyOn(console, "error").mockImplementation(() => {});
+  });
+
+  it("waits for a session the browser can't fetch, sending nobody to sign in", async () => {
+    backend.failing = ["/api/auth/get-session", "/api/auth/convex/token"];
+
+    await load(await serveDashboard(<DashboardPage />));
+
+    expect(backend.requests).toContain("browser: /api/auth/get-session");
+    expect(document.body.textContent).toContain("Loading dashboard...");
+    expect(backend.navigations).toEqual([]);
+  });
+
+  it("waits for a session whose token the browser can't fetch, sending nobody to sign in", async () => {
+    backend.failing = ["/api/auth/convex/token"];
+
+    await load(await serveDashboard(<DashboardPage />));
+
+    expect(backend.requests).toContain("browser: /api/auth/convex/token");
+    expect(document.body.textContent).toContain("Loading dashboard...");
+    expect(backend.navigations).toEqual([]);
+  });
+
+  it("asks for the session again, and sends the person to sign in once the browser finds it ended", async () => {
+    backend.failing = ["/api/auth/get-session", "/api/auth/convex/token"];
+    await load(await serveDashboard(<DashboardPage />));
+
+    // Convex is back, and the session ended meanwhile.
+    backend.failing = [];
+    backend.liveSession = false;
+
+    await waitFor(() => expect(backend.navigations).toEqual(["/auth/signin?from=%2Fdashboard"]), { timeout: 3_000 });
+  });
+});
+
+describe("a dashboard page, for a signed-in person", () => {
+  it.each([
+    { where: "here", signOut: () => authClient.signOut() },
+    {
+      where: "in another tab",
+      // BetterAuth's message to every other tab of the site
+      signOut: () => {
+        backend.liveSession = false;
+        const message = { event: "session", data: { trigger: "signout" }, clientId: "another-tab" };
+        window.dispatchEvent(new StorageEvent("storage", { key: "better-auth.message", newValue: JSON.stringify(message) }));
+      },
+    },
+  ])("sends them to sign in, coming back to the page, once they sign out $where", async ({ signOut }) => {
+    backend.framed = false;
+    backend.liveSession = true;
+    backend.path = "/dashboard";
+    await load(await serveDashboard(<DashboardPage />));
+    expect(document.body.textContent).toContain("Ada Lovelace");
+    expect(backend.navigations).toEqual([]);
+
+    await act(async () => {
+      await signOut();
+    });
+
+    await waitFor(() => expect(backend.navigations).toEqual(["/auth/signin?from=%2Fdashboard"]));
   });
 });
