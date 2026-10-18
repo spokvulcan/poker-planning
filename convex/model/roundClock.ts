@@ -13,10 +13,10 @@ import {
   TIMEBOX_MIN_MS,
   overlapsFrom,
   sessionItems,
-  type BreakFact,
+  targetTime,
   type BreakKind,
+  type RoundClockView,
   type RoundFact,
-  type SessionItem,
 } from "../roundTime";
 
 /**
@@ -25,8 +25,8 @@ import {
  * pause and the timebox. The one writer of `roundClocks`, `roomAttendance` and
  * `roomBreaks`. The rounds are the voting round's (model/votingRound.ts),
  * which tells this module when a round moves on; this module only reads
- * them, for the clock query. It stores facts and leaves what they mean to
- * the reader (convex/roundTime.ts).
+ * them, for the clock query and an issue's time-to-consensus. It stores
+ * facts and leaves what they mean to the reader (convex/roundTime.ts).
  */
 
 /** How stale `lastSeenAt` may get before a heartbeat writes it: attendance is kept to the minute. */
@@ -200,22 +200,6 @@ export async function roundActed(ctx: MutationCtx, room: Doc<"rooms">, now = Dat
 
 // --- The clock query --------------------------------------------------------------
 
-/** What the clock knows, as facts with timestamps: the browser reads them against its own `now`. */
-export interface RoundClockView {
-  /** When the session began; null until anyone has had the room open since the clock existed. */
-  sessionStartedAt: number | null;
-  pausedAt: number | null;
-  timebox: { startedAt: number; durationMs: number } | null;
-  /** The length the next flip starts with. */
-  timeboxMs: number;
-  /** The current target's rounds, oldest first: an issue's every round, or the open Quick Vote round. */
-  current: RoundFact[];
-  /** The session's items in order, with each issue's title. */
-  items: SessionItem[];
-  /** The breaks that touch the current target or the session. */
-  breaks: BreakFact[];
-}
-
 function factOf(row: Doc<"votingTimestamps">): RoundFact {
   return {
     ...(row.issueId !== undefined && { issueId: row.issueId }),
@@ -286,4 +270,32 @@ export async function clockOf(ctx: QueryCtx, roomId: Id<"rooms">): Promise<Round
     }),
     breaks: breaks.map(({ from, to, kind }) => ({ from, to, kind })),
   };
+}
+
+// --- Time-to-consensus ------------------------------------------------------------
+
+/**
+ * An issue's time-to-consensus, at `now`, the reveal that settles it
+ * (ADR-0034): the time its rounds took, voting and the discussion between
+ * them, less the breaks the clock leaves out. That is what the timer showed
+ * at that moment: by the reveal, a pause it lifted and a long quiet before it
+ * are facts too. None when no round of the issue was timed.
+ */
+export async function timeToConsensus(ctx: QueryCtx, issueId: Id<"issues">, now: number): Promise<number | undefined> {
+  const rounds = await ctx.db
+    .query("votingTimestamps")
+    .withIndex("by_issue", (q) => q.eq("issueId", issueId))
+    .take(MAX_ISSUE_ROUNDS);
+  const first = rounds[0];
+  if (!first) return undefined;
+  const since = Math.min(...rounds.map((round) => round.votingStartedAt));
+  const breaks = await ctx.db
+    .query("roomBreaks")
+    .withIndex("by_room_to", (q) => q.eq("roomId", first.roomId).gt("to", since))
+    .take(MAX_BREAKS);
+  return targetTime(
+    rounds.map(factOf),
+    breaks.map(({ from, to, kind }) => ({ from, to, kind })),
+    now
+  ).ms;
 }

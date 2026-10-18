@@ -14,7 +14,7 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { IDLE_MS, TIMEBOX_PRESETS_MS, clockText, countdownText, roundsTime, timeboxAt } from "@/convex/roundTime";
+import { TIMEBOX_PRESETS_MS, clockText, countdownText } from "@/convex/roundTime";
 import { permissionProps } from "@/hooks/usePermissions";
 import { cn } from "@/lib/utils";
 import { useRoundClock } from "../hooks/use-round-clock";
@@ -66,16 +66,10 @@ export const RoundTimerNode = memo(({ data, selected }: NodeProps<RoundTimerNode
     permissions: { gameFlow, roomSettings },
     actions,
   } = data;
-  const { view, now, breaks } = useRoundClock(roomId, lastActivityAt);
-
-  const current = view?.current ?? [];
-  const split = roundsTime(current, breaks, now);
-  const ticketMs = split.votingMs + split.discussionMs;
-  const box = timeboxAt(view?.timebox, now);
-  const paused = view?.pausedAt != null;
-  // The clock counts while a round is open and nobody paused it or went quiet.
-  const counting = !paused && current.at(-1)?.endedAt === undefined && current.length > 0 && now - lastActivityAt <= IDLE_MS;
-  const timeboxMs = view?.timeboxMs ?? TIMEBOX_PRESETS_MS[1];
+  const {
+    timer: { time, state, timebox: box, nextFlipMs },
+  } = useRoundClock(roomId, lastActivityAt);
+  const paused = state === "paused";
   const flow = permissionProps(gameFlow);
 
   return (
@@ -90,7 +84,7 @@ export const RoundTimerNode = memo(({ data, selected }: NodeProps<RoundTimerNode
         />
         <div
           role="timer"
-          aria-label={`Time on this ticket: ${clockText(ticketMs)}`}
+          aria-label={`Time on this ticket: ${clockText(time.ms)}`}
           className={cn(
             "w-[168px] rounded-lg border border-gray-200 bg-white px-3 pb-2 pt-1.5 shadow-md dark:border-border dark:bg-surface-1",
             selected && "ring-2 ring-blue-500 ring-offset-2 ring-offset-white dark:ring-blue-400 dark:ring-offset-surface-1",
@@ -112,14 +106,14 @@ export const RoundTimerNode = memo(({ data, selected }: NodeProps<RoundTimerNode
                   <PixelHourglass
                     fraction={box.fraction}
                     tone={box.status}
-                    flippedAt={view?.timebox?.startedAt ?? 0}
-                    turnOnMount={now - (view?.timebox?.startedAt ?? 0) < 1_500}
+                    flippedAt={box.startedAt ?? 0}
+                    turnOnMount={box.elapsedMs < 1_500}
                   />
                 </TooltipTrigger>
                 <TooltipContent>
                   {box.status === "over"
-                    ? `${countdownText(view?.timebox?.durationMs ?? 0)} timebox, ${clockText(box.overtimeMs)} over · click to stop`
-                    : `${countdownText(box.remainingMs)} left of ${countdownText(view?.timebox?.durationMs ?? 0)} · click to stop`}
+                    ? `${countdownText(box.durationMs ?? 0)} timebox, ${clockText(box.overtimeMs)} over · click to stop`
+                    : `${countdownText(box.remainingMs)} left of ${countdownText(box.durationMs ?? 0)} · click to stop`}
                 </TooltipContent>
               </Tooltip>
             )}
@@ -128,7 +122,7 @@ export const RoundTimerNode = memo(({ data, selected }: NodeProps<RoundTimerNode
                 "flex-1 font-mono text-2xl font-medium tabular-nums",
                 box.status === "over"
                   ? "text-amber-600 dark:text-amber-400"
-                  : box.status === "running" || counting
+                  : box.status === "running" || state === "counting"
                     ? "text-gray-900 dark:text-gray-100"
                     : "text-gray-400 dark:text-gray-500",
               )}
@@ -137,7 +131,7 @@ export const RoundTimerNode = memo(({ data, selected }: NodeProps<RoundTimerNode
                 ? countdownText(box.remainingMs)
                 : box.status === "over"
                   ? `+${clockText(box.overtimeMs)}`
-                  : clockText(ticketMs)}
+                  : clockText(time.ms)}
             </span>
             <div className="nodrag nopan -mr-1.5 flex items-center">
               {box.status === "idle" &&
@@ -147,8 +141,8 @@ export const RoundTimerNode = memo(({ data, selected }: NodeProps<RoundTimerNode
                   </IconButton>
                 ) : (
                   <IconButton
-                    label={`Start a ${countdownText(timeboxMs)} timebox`}
-                    onClick={() => actions.startTimebox(timeboxMs)}
+                    label={`Start a ${countdownText(nextFlipMs)} timebox`}
+                    onClick={() => actions.startTimebox(nextFlipMs)}
                     overlay={flow}
                   >
                     <Hourglass />
@@ -160,7 +154,7 @@ export const RoundTimerNode = memo(({ data, selected }: NodeProps<RoundTimerNode
                 </IconButton>
               )}
               {box.status === "over" && (
-                <IconButton label="Flip again" onClick={() => actions.startTimebox(timeboxMs)} overlay={flow}>
+                <IconButton label="Flip again" onClick={() => actions.startTimebox(nextFlipMs)} overlay={flow}>
                   <RotateCcw />
                 </IconButton>
               )}
@@ -170,7 +164,7 @@ export const RoundTimerNode = memo(({ data, selected }: NodeProps<RoundTimerNode
             <p className="mt-0.5 h-4 text-[11px] leading-4 text-gray-400 dark:text-gray-500">Paused for a break</p>
           ) : (
             <div className="nodrag nopan mt-0.5 flex h-4 gap-px">
-              {ticketMs === 0 ? (
+              {time.ms === 0 ? (
                 <TimeTip className="flex flex-1 flex-col justify-center" content="Starts with the round">
                   <div className="h-1 rounded-full bg-gray-100 dark:bg-surface-2" />
                 </TimeTip>
@@ -178,16 +172,16 @@ export const RoundTimerNode = memo(({ data, selected }: NodeProps<RoundTimerNode
                 <>
                   <TimeTip
                     className="flex min-w-1 flex-col justify-center"
-                    style={{ flexGrow: split.votingMs, flexBasis: 0 }}
-                    content={<TimeLine label="Voting" ms={split.votingMs} />}
+                    style={{ flexGrow: time.votingMs, flexBasis: 0 }}
+                    content={<TimeLine label="Voting" ms={time.votingMs} />}
                   >
                     <div className="h-1 rounded-full bg-blue-500" />
                   </TimeTip>
-                  {split.discussionMs > 0 && (
+                  {time.discussionMs > 0 && (
                     <TimeTip
                       className="flex min-w-1 flex-col justify-center"
-                      style={{ flexGrow: split.discussionMs, flexBasis: 0 }}
-                      content={<TimeLine label="Discussion" ms={split.discussionMs} />}
+                      style={{ flexGrow: time.discussionMs, flexBasis: 0 }}
+                      content={<TimeLine label="Discussion" ms={time.discussionMs} />}
                     >
                       <div className="h-1 rounded-full bg-emerald-500" />
                     </TimeTip>
@@ -207,7 +201,7 @@ export const RoundTimerNode = memo(({ data, selected }: NodeProps<RoundTimerNode
             <ContextMenuSeparator />
           </>
         )}
-        <ContextMenuRadioGroup value={timeboxMs} onValueChange={(ms: number) => actions.startTimebox(ms)}>
+        <ContextMenuRadioGroup value={nextFlipMs} onValueChange={(ms: number) => actions.startTimebox(ms)}>
           {TIMEBOX_PRESETS_MS.map((ms) => (
             <ContextMenuRadioItem key={ms} value={ms} disabled={!gameFlow.allowed} closeOnClick>
               {ms / 60_000}-minute timebox

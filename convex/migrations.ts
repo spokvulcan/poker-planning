@@ -199,6 +199,56 @@ export const clearTimerRunners = internalMutation({
   },
 });
 
+/** How many round records one step of `clearRoundDurations` checks. */
+const ROUND_DURATION_BATCH = 500;
+
+/**
+ * Clears the wall-clock `durationMs` from every round record. Time-to-consensus
+ * no longer totals it: the round clock reads it at the reveal as what the
+ * timer showed (ADR-0034), so nothing reads the field, and the round stopped
+ * writing it. The release after this has run in production drops it from
+ * the schema.
+ *
+ * Pages through every round record, rescheduling itself until done, so no
+ * step outgrows a transaction. Each step returns the running totals, and the
+ * last one also logs them.
+ */
+export const clearRoundDurations = internalMutation({
+  args: {
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+    roundsChecked: v.optional(v.number()),
+    durationsCleared: v.optional(v.number()),
+  },
+  handler: async (
+    ctx,
+    args
+  ): Promise<{ roundsChecked: number; durationsCleared: number; done: boolean }> => {
+    const batchSize = args.batchSize ?? ROUND_DURATION_BATCH;
+    const { page, isDone, continueCursor } = await ctx.db
+      .query("votingTimestamps")
+      .paginate({ numItems: batchSize, cursor: args.cursor ?? null });
+
+    const timed = page.filter((round) => round.durationMs !== undefined);
+    await Promise.all(timed.map((round) => ctx.db.patch("votingTimestamps", round._id, { durationMs: undefined })));
+
+    const totals = {
+      roundsChecked: (args.roundsChecked ?? 0) + page.length,
+      durationsCleared: (args.durationsCleared ?? 0) + timed.length,
+    };
+    if (isDone) {
+      console.log("Round duration cleanup complete:", totals);
+    } else {
+      await ctx.scheduler.runAfter(0, internal.migrations.clearRoundDurations, {
+        cursor: continueCursor,
+        batchSize,
+        ...totals,
+      });
+    }
+    return { ...totals, done: isDone };
+  },
+});
+
 /**
  * How many BetterAuth users one step of `deleteLeftoverSignIns` checks. Each
  * leftover costs up to four calls into BetterAuth's component.

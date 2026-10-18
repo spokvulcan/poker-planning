@@ -4,8 +4,7 @@ import { useQuery } from "convex/react";
 import { useEffect, useState } from "react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import type { RoundClockView } from "@/convex/model/roundClock";
-import { liveBreaks, type BreakFact } from "@/convex/roundTime";
+import { sessionReading, timerReading, type SessionReading, type TimerReading } from "@/convex/roundTime";
 import { useDemoSimulation } from "../demo/DemoSimulationProvider";
 
 /** This browser's clock, moving on each whole second so every reading on the board changes in step. */
@@ -25,24 +24,22 @@ function useSecondTick(): number {
   return now;
 }
 
+/** What the board's time nodes show, read from the round clock this second. */
 export interface RoundClockReading {
-  view: RoundClockView | undefined;
-  now: number;
-  /** The breaks the facts hold, plus those still running: a pause, and the quiet past IDLE_MS. */
-  breaks: BreakFact[];
+  timer: TimerReading;
+  session: SessionReading;
 }
 
 /**
- * The round clock the board's time nodes read (ADR-0032): its facts from
- * Convex, or the Demo simulation's (zero reads, ADR-0003), against this
- * browser's clock ticking once a second. Nodes of one room share the one
- * subscription.
+ * The round clock as the board's time nodes show it (ADR-0032): its facts
+ * from Convex, or the Demo simulation's (zero reads, ADR-0003), read by
+ * convex/roundTime.ts against this browser's clock ticking once a second.
+ * Nodes of one room share the one subscription, and draw what they're given.
  */
 export function useRoundClock(roomId: Id<"rooms">, lastActivityAt: number): RoundClockReading {
   const demo = useDemoSimulation();
   const live = useQuery(api.roundClock.get, demo ? "skip" : { roomId });
   const now = useSecondTick();
   const view = demo ? demo.roundClock : live;
-  const breaks = view ? [...view.breaks, ...liveBreaks(now, { pausedAt: view.pausedAt, lastActivityAt })] : [];
-  return { view, now, breaks };
+  return { timer: timerReading(view, now, lastActivityAt), session: sessionReading(view, now, lastActivityAt) };
 }

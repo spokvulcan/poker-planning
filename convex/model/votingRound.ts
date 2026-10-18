@@ -155,11 +155,14 @@ export async function reveal(ctx: MutationCtx, room: Doc<"rooms">): Promise<void
 
     // No consensus to snapshot (all special / no votes) leaves the issue
     // un-completed; its round's voting ended at the reveal all the same.
+    // By now the round clock holds every break the timer counted: the quiet
+    // before this reveal (the activity chokepoint) and a pause it lifted.
     if (summary.consensus) {
       await completeTargetIssue(ctx, {
         issueId: room.currentIssueId,
         finalEstimate: summary.consensus,
         voteStats: summary.stats,
+        now,
       });
     }
 
@@ -412,11 +415,9 @@ async function openRound(
   });
 }
 
-/** The fields that end a round's voting at `at`, unless it already ended. */
+/** The field that ends a round's voting at `at`, unless it already ended. */
 function votingEnd(round: Doc<"votingTimestamps">, at: number) {
-  return round.votingEndedAt !== undefined
-    ? {}
-    : { votingEndedAt: at, durationMs: at - round.votingStartedAt };
+  return round.votingEndedAt !== undefined ? {} : { votingEndedAt: at };
 }
 
 /** The open round was revealed at `now`: its voting ends there. */
@@ -453,11 +454,11 @@ async function ensureOpenRound(ctx: MutationCtx, room: Doc<"rooms">, now: number
 }
 
 /**
- * completeTargetIssue — the `completed` transition of an issue-backed target:
- * sets the final estimate and stats snapshot, and records time-to-consensus
- * as the total voting time across the issue's rounds (the reveal ended the
- * last one's). The round module owns this lifecycle write (ADR-0002); the
- * issues module keeps CRUD only.
+ * completeTargetIssue — the `completed` transition of an issue-backed target,
+ * at the reveal `now` that reached consensus: sets the final estimate and
+ * stats snapshot, and settles time-to-consensus, which the round clock reads
+ * as what the timer showed at that reveal (ADR-0034). The round module owns
+ * this lifecycle write (ADR-0002); the issues module keeps CRUD only.
  */
 async function completeTargetIssue(
   ctx: MutationCtx,
@@ -465,20 +466,11 @@ async function completeTargetIssue(
     issueId: Id<"issues">;
     finalEstimate: string;
     voteStats: VoteStatsSummary;
+    now: number;
   }
 ): Promise<void> {
-  const now = Date.now();
-
-  // Total the voting time across the issue's rounds; an issue none of whose
-  // rounds was timed has no time-to-consensus.
-  const timed = (
-    await ctx.db
-      .query("votingTimestamps")
-      .withIndex("by_issue", (q) => q.eq("issueId", args.issueId))
-      .collect()
-  ).filter((round) => round.durationMs !== undefined);
-  const timeToConsensusMs =
-    timed.length > 0 ? timed.reduce((sum, round) => sum + (round.durationMs ?? 0), 0) : undefined;
+  const { now } = args;
+  const timeToConsensusMs = await RoundClock.timeToConsensus(ctx, args.issueId, now);
 
   await ctx.db.patch("issues", args.issueId, {
     status: "completed",

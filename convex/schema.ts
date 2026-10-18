@@ -328,14 +328,16 @@ export default defineSchema({
 
   // One row per voting round (CONTEXT.md: Round record): when it started,
   // when its voting ended and it was revealed, and when the room moved on.
-  // A Quick Vote's round has no issue. Time-to-consensus sums an issue's
-  // rows; the round clock reads them all (ADR-0032).
+  // A Quick Vote's round has no issue. The round clock reads them all, an
+  // issue's time-to-consensus included (ADR-0032, ADR-0034).
   votingTimestamps: defineTable({
     roomId: v.id("rooms"),
     issueId: v.optional(v.id("issues")), // absent for a Quick Vote's round
     votingStartedAt: v.number(),
     votingEndedAt: v.optional(v.number()), // the reveal, or the end of a round never revealed
-    durationMs: v.optional(v.number()), // votingEndedAt - votingStartedAt
+    // No longer written or read (ADR-0034): migrations:clearRoundDurations
+    // clears it, and the release after that has run drops it.
+    durationMs: v.optional(v.number()),
     revealedAt: v.optional(v.number()),
     endedAt: v.optional(v.number()), // the room moved on: a new round, another target, the issue dropped
     endedBy: v.optional(v.union(v.literal("nextRound"), v.literal("nextTarget"), v.literal("dropped"))),
