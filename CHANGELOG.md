@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.13.3](https://github.com/spokvulcan/poker-planning/compare/agilekit-v2.13.2...agilekit-v2.13.3) (2026-10-19)
+
+
+### Miscellaneous
+
+* **deps:** refresh the lockfile ([#439](https://github.com/spokvulcan/poker-planning/issues/439)) ([26e4358](https://github.com/spokvulcan/poker-planning/commit/26e43580bf4bd6a2a3a412006f5004eaf99f3a00))
+
 ## [2.13.2](https://github.com/spokvulcan/poker-planning/compare/agilekit-v2.13.1...agilekit-v2.13.2) (2026-10-18)
 
 
