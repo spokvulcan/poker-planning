@@ -1,0 +1,37 @@
+{
+  /* This TypeScript project config describes the environment that
+   * Convex functions run in and is used to typecheck them.
+   * You can modify it, but some settings are required to use Convex.
+   */
+  "compilerOptions": {
+    /* These settings are not required by Convex and can be modified. */
+    "allowJs": true,
+    "strict": true,
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "skipLibCheck": true,
+    "allowSyntheticDefaultImports": true,
+    /* TypeScript 6 no longer loads every @types package by default, and
+     * Convex functions read process.env. */
+    "types": ["node"],
+
+    /* The root tsconfig.json's path aliases, relative to this folder. Convex
+     * bundles each file with the nearest tsconfig.json, so without these an
+     * import like "@/lib/site-config" in convex/ can't be resolved. */
+    "paths": {
+      "@/*": ["../src/*"],
+      "@/convex/_generated/*": ["./_generated/*"],
+      "@/convex/*": ["./*"]
+    },
+
+    /* These compiler options are required by Convex */
+    "target": "ESNext",
+    "lib": ["ES2023", "dom"],
+    "forceConsistentCasingInFileNames": true,
+    "module": "ESNext",
+    "isolatedModules": true,
+    "noEmit": true
+  },
+  "include": ["./**/*"],
+  "exclude": ["./_generated"]
+}
