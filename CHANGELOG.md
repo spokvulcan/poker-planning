@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.13.4](https://github.com/spokvulcan/poker-planning/compare/agilekit-v2.13.3...agilekit-v2.13.4) (2026-11-20)
+
+
+### Miscellaneous
+
+* **deps:** bump next from 16.4.0 to 16.4.6 ([#449](https://github.com/spokvulcan/poker-planning/issues/449)) ([16934da](https://github.com/spokvulcan/poker-planning/commit/16934dad8af8a9e5879faaab4b40f6fe389b5c0c))
+* **deps:** refresh the lockfile ([#448](https://github.com/spokvulcan/poker-planning/issues/448)) ([116e185](https://github.com/spokvulcan/poker-planning/commit/116e1850b6b5b3c3d7be09634a31cbf0a98b0007))
+
 ## [2.13.3](https://github.com/spokvulcan/poker-planning/compare/agilekit-v2.13.2...agilekit-v2.13.3) (2026-10-28)
 
 
